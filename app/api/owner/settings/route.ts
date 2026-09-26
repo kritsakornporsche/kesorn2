@@ -53,6 +53,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
     }
 
+    const body = await req.json();
     const {
       name,
       address,
@@ -70,8 +71,10 @@ export async function POST(req: Request) {
       has_air_con,
       cover_image,
       promptpay_number,
-      promptpay_name
-    } = await req.json();
+      promptpay_name,
+      ocr_api_key,
+      ocr_provider
+    } = body;
 
     const sql = getDb();
 
@@ -82,14 +85,16 @@ export async function POST(req: Request) {
         INSERT INTO dormitory_profile (
           name, address, phone, tax_id, water_rate, electricity_rate,
           has_wifi, has_parking, pet_friendly, has_lan, facilities, map_url,
-          description, has_air_con, cover_image, promptpay_number, promptpay_name
+          description, has_air_con, cover_image, promptpay_number, promptpay_name,
+          ocr_api_key, ocr_provider
         ) VALUES (
           ${name || 'หอพักเกษร 2'}, ${address || ''}, ${phone || ''}, ${tax_id || ''}, 
-          ${water_rate || 18.00}, ${electricity_rate || 8.00},
+          ${water_rate !== undefined ? water_rate : 0.00}, ${electricity_rate || 6.00},
           ${has_wifi ? 1 : 0}, ${has_parking ? 1 : 0}, ${pet_friendly ? 1 : 0}, ${has_lan ? 1 : 0}, 
           ${facilities || ''}, ${map_url || ''}, ${description || ''}, 
           ${has_air_con ? 1 : 0}, ${cover_image || ''},
-          ${promptpay_number || ''}, ${promptpay_name || ''}
+          ${promptpay_number || ''}, ${promptpay_name || ''},
+          ${ocr_api_key || null}, ${ocr_provider || 'gemini'}
         )
       `;
     } else {
@@ -100,8 +105,8 @@ export async function POST(req: Request) {
           address = ${address || ''},
           phone = ${phone || ''},
           tax_id = ${tax_id || ''},
-          water_rate = ${water_rate || 18.00},
-          electricity_rate = ${electricity_rate || 8.00},
+          water_rate = ${water_rate !== undefined ? water_rate : 0.00},
+          electricity_rate = ${electricity_rate || 6.00},
           has_wifi = ${has_wifi ? 1 : 0},
           has_parking = ${has_parking ? 1 : 0},
           pet_friendly = ${pet_friendly ? 1 : 0},
@@ -112,7 +117,9 @@ export async function POST(req: Request) {
           has_air_con = ${has_air_con ? 1 : 0},
           cover_image = ${cover_image || ''},
           promptpay_number = ${promptpay_number || ''},
-          promptpay_name = ${promptpay_name || ''}
+          promptpay_name = ${promptpay_name || ''},
+          ocr_api_key = COALESCE(${ocr_api_key !== undefined ? (ocr_api_key || null) : null}, ocr_api_key),
+          ocr_provider = COALESCE(${ocr_provider || null}, ocr_provider)
         WHERE id = ${existing[0].id}
       `;
     }

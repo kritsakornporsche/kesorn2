@@ -102,7 +102,7 @@ async function patchSchema() {
     console.error('Error patching move_out_requests:', e.message);
   }
 
-  // 2.1 Patch dormitory_profile table (add dorm_id if missing)
+  // 2.1 Patch dormitory_profile table (add dorm_id, ocr_api_key, ocr_provider if missing)
   try {
     const [cols] = await conn.query('DESCRIBE dormitory_profile');
     const colNames = cols.map(c => c.Field);
@@ -110,7 +110,15 @@ async function patchSchema() {
       console.log('Adding dorm_id to dormitory_profile...');
       await conn.query('ALTER TABLE dormitory_profile ADD COLUMN dorm_id INT NOT NULL DEFAULT 1 AFTER id');
     }
-    console.log('✅ dormitory_profile patched.');
+    if (!colNames.includes('ocr_api_key')) {
+      console.log('Adding ocr_api_key to dormitory_profile...');
+      await conn.query('ALTER TABLE dormitory_profile ADD COLUMN ocr_api_key VARCHAR(255) NULL AFTER promptpay_name');
+    }
+    if (!colNames.includes('ocr_provider')) {
+      console.log('Adding ocr_provider to dormitory_profile...');
+      await conn.query('ALTER TABLE dormitory_profile ADD COLUMN ocr_provider VARCHAR(50) DEFAULT "gemini" AFTER ocr_api_key');
+    }
+    console.log('✅ dormitory_profile patched with ocr_api_key and ocr_provider.');
   } catch (e) {
     console.error('Error patching dormitory_profile:', e.message);
   }

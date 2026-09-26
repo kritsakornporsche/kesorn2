@@ -756,6 +756,29 @@ export default function CameraMeterModal({
                 </span>
               </div>
 
+              {/* OCR Engine Indicator Badge */}
+              {engineUsed && (
+                <div className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-purple-950/40 border border-purple-500/20 text-[10px]">
+                  <span className="text-purple-300/80 font-medium">ระบบอ่านค่า:</span>
+                  {engineUsed === 'gemini-custom-key' ? (
+                    <span className="text-emerald-300 font-bold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      ⚡ Google Gemini Vision (API Key ของคุณ)
+                    </span>
+                  ) : engineUsed === 'gemini-system-key' ? (
+                    <span className="text-indigo-300 font-bold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                      ✨ Google Gemini Vision (ระบบกลาง)
+                    </span>
+                  ) : (
+                    <span className="text-amber-300 font-bold flex items-center gap-1">
+                      <span>⚙️</span>
+                      Tesseract OCR (ออฟไลน์ในเครื่อง)
+                    </span>
+                  )}
+                </div>
+              )}
+
               {/* Input & Units delta row */}
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">

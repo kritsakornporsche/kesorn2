@@ -64,6 +64,16 @@ export default function MetersPage() {
   const [pageSize, setPageSize] = useState<number>(10);
   const [currentPage, setCurrentPage] = useState<number>(1);
   
+  // Meter OCR AI Key Modal States
+  const [showApiKeyModal, setShowApiKeyModal] = useState<boolean>(false);
+  const [apiKeyInput, setApiKeyInput] = useState<string>('');
+  const [showKeySecret, setShowKeySecret] = useState<boolean>(false);
+  const [testingKey, setTestingKey] = useState<boolean>(false);
+  const [savingKey, setSavingKey] = useState<boolean>(false);
+  const [keyTestStatus, setKeyTestStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [hasCustomKey, setHasCustomKey] = useState<boolean>(false);
+  const [systemFallback, setSystemFallback] = useState<boolean>(false);
+  
   // Single Entry Form
   const [form, setForm] = useState({
     room_id: '',
@@ -128,9 +138,81 @@ export default function MetersPage() {
     }
   };
 
+  const fetchApiKeyStatus = async () => {
+    try {
+      const res = await fetch('/api/owner/meters/ocr/key');
+      const data = await res.json();
+      if (data.success) {
+        setApiKeyInput(data.apiKey || '');
+        setHasCustomKey(Boolean(data.hasCustomKey));
+        setSystemFallback(Boolean(data.systemFallbackAvailable));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleTestKey = async () => {
+    if (!apiKeyInput.trim()) {
+      setKeyTestStatus({ type: 'error', message: 'กรุณากรอก API Key ก่อนกดทดสอบ' });
+      return;
+    }
+    setTestingKey(true);
+    setKeyTestStatus(null);
+    try {
+      const res = await fetch('/api/owner/meters/ocr/test-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: apiKeyInput.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setKeyTestStatus({ type: 'success', message: data.message });
+      } else {
+        setKeyTestStatus({ type: 'error', message: data.message || 'ทดสอบล้มเหลว' });
+      }
+    } catch (err: any) {
+      setKeyTestStatus({ type: 'error', message: err.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ' });
+    } finally {
+      setTestingKey(false);
+    }
+  };
+
+  const handleSaveKey = async (overrideKey?: string) => {
+    setSavingKey(true);
+    setKeyTestStatus(null);
+    const keyToSave = overrideKey !== undefined ? overrideKey : apiKeyInput.trim();
+    try {
+      const res = await fetch('/api/owner/meters/ocr/key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: keyToSave, provider: 'gemini' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setApiKeyInput(keyToSave);
+        setHasCustomKey(Boolean(keyToSave));
+        setKeyTestStatus({ 
+          type: 'success', 
+          message: keyToSave ? '✅ บันทึก API Key สำเร็จ! ระบบจะใช้คีย์นี้อ่านมิเตอร์อัตโนมัติ' : 'ล้างการตั้งค่าคีย์เรียบร้อยแล้ว' 
+        });
+        if (keyToSave) {
+          setTimeout(() => setShowApiKeyModal(false), 1500);
+        }
+      } else {
+        setKeyTestStatus({ type: 'error', message: data.message || 'บันทึกล้มเหลว' });
+      }
+    } catch (err: any) {
+      setKeyTestStatus({ type: 'error', message: err.message || 'เกิดข้อผิดพลาดในการบันทึก' });
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
   useEffect(() => {
     fetchMeters();
     fetchRooms();
+    fetchApiKeyStatus();
   }, [fetchMeters]);
 
   // Unique billing cycles for filter
@@ -441,6 +523,21 @@ export default function MetersPage() {
              className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-xs font-black px-4 py-2.5 rounded-xl shadow-lg shadow-amber-500/20 transition-all transform hover:scale-105 active:scale-95 flex items-center gap-2 cursor-pointer"
            >
              <span>💰</span> ไปหน้าออกบิลค่าเช่า →
+           </button>
+           <button 
+             onClick={() => { setShowApiKeyModal(true); setKeyTestStatus(null); }}
+             className={`text-xs font-bold px-3.5 py-2.5 rounded-xl border transition-all transform hover:scale-105 active:scale-95 flex items-center gap-2 cursor-pointer ${
+               hasCustomKey 
+                 ? 'bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 border-purple-500/40 shadow-sm'
+                 : 'bg-secondary hover:bg-secondary/80 text-foreground border-border'
+             }`}
+             title="ตั้งค่า Google Gemini API Key สำหรับระบบอ่านมิเตอร์ด้วย AI"
+           >
+             <span>🔑</span>
+             <span>ตั้งค่า AI Key</span>
+             {hasCustomKey && (
+               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+             )}
            </button>
            <button 
              onClick={fetchMeters} 
@@ -1355,6 +1452,142 @@ export default function MetersPage() {
                 >
                   ปิดหน้าต่าง
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Gemini AI API Key Settings for Meter OCR */}
+        {showApiKeyModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+            <div className="bg-[#120B24] border border-purple-500/30 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative my-auto">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-purple-500/20">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-amber-500 flex items-center justify-center text-lg text-white shadow-lg shadow-purple-500/20">
+                    🔑
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-display font-black text-white">ตั้งค่า Google Gemini API Key</h3>
+                    <p className="text-xs text-purple-300/80">ระบบ AI สแกนอ่านมิเตอร์น้ำ-ไฟอัตโนมัติ</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowApiKeyModal(false)}
+                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-sm transition-colors cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Status Badge */}
+              <div className="mt-4 p-3.5 rounded-2xl bg-[#1A1033] border border-purple-500/20 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full ${hasCustomKey ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+                  <span className="text-xs font-bold text-white">
+                    {hasCustomKey ? 'ใช้งาน Google Gemini AI (คีย์ส่วนตัว)' : systemFallback ? 'ใช้งาน Gemini AI (ระบบกลาง)' : 'ใช้งาน Tesseract OCR (ออฟไลน์)'}
+                  </span>
+                </div>
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] font-bold text-amber-300 hover:text-amber-200 underline flex items-center gap-1 cursor-pointer"
+                >
+                  <span>รับคีย์ฟรี</span>
+                  <span>↗</span>
+                </a>
+              </div>
+
+              {/* Body */}
+              <div className="mt-4 space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-purple-200 mb-1.5">
+                    Google AI Studio API Key:
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showKeySecret ? 'text' : 'password'}
+                      value={apiKeyInput}
+                      onChange={(e) => {
+                        setApiKeyInput(e.target.value);
+                        setKeyTestStatus(null);
+                      }}
+                      placeholder="เช่น AIzaSyD..."
+                      className="w-full bg-[#0B0617] border border-purple-500/30 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-muted-foreground font-mono outline-none pr-20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKeySecret(!showKeySecret)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-purple-300 hover:text-white px-2 py-1 rounded bg-white/5 cursor-pointer"
+                    >
+                      {showKeySecret ? 'ซ่อน' : 'แสดง'}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">
+                    💡 เจ้าของหอสามารถขอ Gemini API Key ได้ฟรีจาก Google AI Studio เพื่อใช้สแกนมิเตอร์ได้รวดเร็วและแม่นยำสูง หากไม่กรอก ระบบจะใช้ระบบตรวจจับตัวเลขออฟไลน์ในเครื่องให้อัตโนมัติ
+                  </p>
+                </div>
+
+                {/* Feedback message */}
+                {keyTestStatus && (
+                  <div className={`p-3 rounded-xl text-xs font-bold border ${
+                    keyTestStatus.type === 'success'
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                  }`}>
+                    {keyTestStatus.message}
+                  </div>
+                )}
+
+                {/* Guide Box */}
+                <div className="p-3.5 rounded-2xl bg-purple-950/30 border border-purple-500/20 text-xs text-purple-200/90 space-y-1.5">
+                  <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                    <span>📌</span> วิธีรับ API Key ฟรีใน 1 นาที:
+                  </div>
+                  <ol className="list-decimal list-inside space-y-1 text-[11px] text-purple-300/80">
+                    <li>ไปที่ <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-amber-300 underline font-bold">aistudio.google.com/app/apikey</a></li>
+                    <li>ล็อกอินด้วยบัญชี Google ของท่าน</li>
+                    <li>กดปุ่ม <strong>"Create API key"</strong></li>
+                    <li>คัดลอกคีย์มาวางในช่องด้านบน แล้วกดบันทึก</li>
+                  </ol>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-purple-500/20">
+                <div>
+                  {hasCustomKey && (
+                    <button
+                      type="button"
+                      onClick={() => handleSaveKey('')}
+                      disabled={savingKey}
+                      className="text-xs text-rose-400 hover:text-rose-300 px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 transition-colors cursor-pointer"
+                    >
+                      ลบคีย์ออก
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleTestKey}
+                    disabled={testingKey || !apiKeyInput.trim()}
+                    className="px-4 py-2.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 hover:text-white border border-purple-500/40 text-xs font-bold transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                  >
+                    {testingKey ? <span className="animate-spin">⏳</span> : <span>🧪</span>}
+                    <span>{testingKey ? 'กำลังทดสอบ...' : 'ทดสอบคีย์'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveKey()}
+                    disabled={savingKey}
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-xs font-black shadow-lg shadow-amber-500/20 transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                  >
+                    {savingKey ? <span className="animate-spin">⏳</span> : <span>💾</span>}
+                    <span>{savingKey ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า'}</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

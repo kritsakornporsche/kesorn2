@@ -150,6 +150,22 @@ async function runComprehensiveAudit() {
     const meters = await fetchUrl('/api/owner/meters', 'GET', null, ownerH);
     recordTest('Owner', 'API GET /api/owner/meters', meters.status === 200 && (meters.json?.data?.length > 0 || meters.json?.readings?.length > 0), `Count: ${meters.json?.data?.length}`);
 
+    // 2.3.1 Meter OCR AI Key Configuration (Self-service Owner API Key)
+    const ocrKeyGet = await fetchUrl('/api/owner/meters/ocr/key', 'GET', null, ownerH);
+    recordTest('Owner', 'API GET /api/owner/meters/ocr/key', ocrKeyGet.status === 200 && ocrKeyGet.json?.success === true, `HasKey: ${ocrKeyGet.json?.hasCustomKey}`);
+
+    const ocrKeySave = await fetchUrl('/api/owner/meters/ocr/key', 'POST', {
+      apiKey: 'AIzaSyTestAuditSampleKey_Kesorn2_2026',
+      provider: 'gemini'
+    }, ownerH);
+    recordTest('Owner', 'API POST /api/owner/meters/ocr/key (Save Custom Key)', ocrKeySave.status === 200 && ocrKeySave.json?.success === true, `Saved: ${ocrKeySave.json?.success}`);
+
+    const ocrKeyVerify = await fetchUrl('/api/owner/meters/ocr/key', 'GET', null, ownerH);
+    recordTest('Owner', 'API GET /api/owner/meters/ocr/key (Verify Saved Key)', ocrKeyVerify.status === 200 && ocrKeyVerify.json?.apiKey === 'AIzaSyTestAuditSampleKey_Kesorn2_2026', `KeyVerified: ${Boolean(ocrKeyVerify.json?.apiKey)}`);
+
+    // Reset back to blank for clean default state
+    await fetchUrl('/api/owner/meters/ocr/key', 'POST', { apiKey: '', provider: 'gemini' }, ownerH);
+
     // 2.4 Owner Meters POST (Record Meter)
     const postMeter = await fetchUrl('/api/owner/meters', 'POST', {
       room_id: 1,

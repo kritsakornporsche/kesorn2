@@ -135,7 +135,7 @@ export async function POST(req: Request) {
       // ignore
     }
 
-    const { image, cropImage, previous_reading, type } = await req.json();
+    const { image, cropImage, previous_reading, type, apiKey } = await req.json();
 
     if (!image && !cropImage) {
       return NextResponse.json({ success: false, message: 'Image data is required' }, { status: 400 });
@@ -147,8 +147,21 @@ export async function POST(req: Request) {
     let engineUsed = 'tesseract-smart';
     let allCandidates: number[] = [];
 
-    // 1. Try Gemini Vision if GEMINI_API_KEY is available (industry-leading multimodal dial reader)
-    const geminiKey = process.env.GEMINI_API_KEY;
+    // 1. Try Gemini Vision using Owner's custom key or system fallback
+    let ownerOcrKey: string | null = null;
+    try {
+      const { getDb } = await import('@/lib/db');
+      const sql = getDb();
+      const dormProfile = await sql`SELECT ocr_api_key, ocr_provider FROM dormitory_profile LIMIT 1`;
+      if (dormProfile.length > 0 && dormProfile[0].ocr_api_key) {
+        ownerOcrKey = String(dormProfile[0].ocr_api_key).trim();
+      }
+    } catch (e) {
+      console.warn('Could not fetch custom ocr_api_key:', e);
+    }
+
+    const geminiKey = (apiKey ? String(apiKey).trim() : null) || ownerOcrKey || process.env.GEMINI_API_KEY;
+    const isCustomKey = Boolean(apiKey || ownerOcrKey);
     const targetImageForVision = image || cropImage;
 
     if (geminiKey && targetImageForVision) {
@@ -164,9 +177,9 @@ export async function POST(req: Request) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-        // Try gemini-3.6-flash (current standard in Google AI Studio) with fallback to gemini-flash-latest
+        // Try gemini-2.0-flash / gemini-3.6-flash (multimodal dial reader)
         const geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
           {
             method: 'POST',
             signal: controller.signal,
@@ -204,7 +217,7 @@ without markdown formatting. Previous reading was ${previous_reading || 0}. If c
           if (parsed && typeof parsed.reading === 'number') {
             detectedNumber = parsed.reading;
             confidence = parsed.confidence || 0.99;
-            engineUsed = 'gemini-3.6-flash';
+            engineUsed = isCustomKey ? 'gemini-custom-key' : 'gemini-system-key';
             if (parsed.digits) {
               rawText = String(parsed.digits);
             }
@@ -288,6 +301,7 @@ without markdown formatting. Previous reading was ${previous_reading || 0}. If c
         warning,
         candidates: allCandidates,
         engine: engineUsed,
+        hasCustomKey: Boolean(ownerOcrKey),
       },
     });
   } catch (err: any) {
