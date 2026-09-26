@@ -10,7 +10,7 @@ import ThemeToggle from '@/app/components/ThemeToggle';
 const navItems = [
   { href: '/tenant', label: 'หน้าหลัก', icon: '🏠', sublabel: 'ข้อมูลห้องพักและสถานะ', exact: true },
   { href: '/tenant/billing', label: 'บิลค่าเช่า', icon: '🧾', sublabel: 'ค่าเช่า ค่าน้ำ ค่าไฟ' },
-  { href: '/tenant/maintenance', label: 'แจ้งซ่อม', icon: '🔧', sublabel: 'แจ้งปัญหาภายในห้องพัก' },
+  { href: '/tenant/maintenance', label: 'แจ้งซ่อม / ทำความสะอาด', icon: '🔧', sublabel: 'แจ้งปัญหาและบริการทำความสะอาด' },
   { href: '/tenant/chat', label: 'แชทหอพัก', icon: '💬', sublabel: 'สนทนากับเจ้าของหอพัก' },
   { href: '/tenant/contract', label: 'สัญญาเช่า', icon: '📝', sublabel: 'เงื่อนไขและวันหมดอายุ' },
   { href: '/tenant/announcements', label: 'ประกาศข่าวสาร', icon: '📢', sublabel: 'ข่าวสารจากหอพัก' },

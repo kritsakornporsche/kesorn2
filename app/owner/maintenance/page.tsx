@@ -106,8 +106,8 @@ export default function OwnerMaintenancePage() {
         
         <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-white/20/10 pb-8">
            <div>
-             <h1 className="text-4xl font-black text-foreground tracking-tight">การจัดการแจ้งซ่อม</h1>
-             <p className="text-muted-foreground mt-2 font-medium">ติดตามและอัปเดตสถานะปัญหาการใช้งานของผู้เช่า</p>
+             <h1 className="text-4xl font-black text-foreground tracking-tight">การจัดการแจ้งซ่อมและทำความสะอาด</h1>
+             <p className="text-muted-foreground mt-2 font-medium">ติดตามและอัปเดตสถานะปัญหาการใช้งานและงานบริการของผู้เช่า</p>
            </div>
         </header>
 

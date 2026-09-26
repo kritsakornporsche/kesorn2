@@ -317,7 +317,7 @@ export default async function TenantDashboard() {
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-black text-white flex items-center gap-4">
                   <div className="w-3 h-8 bg-primary rounded-full" />
-                  สถานะการดูแลแจ้งซ่อม
+                  สถานะการดูแลแจ้งซ่อม & ทำความสะอาด
                 </h2>
                 <Link href="/tenant/maintenance" className="text-sm font-black text-muted-foreground hover:text-white/80 uppercase tracking-widest border-b-2 border-transparent hover:border-primary transition-all pb-1">ดูประวัติทั้งหมด</Link>
               </div>
@@ -328,8 +328,8 @@ export default async function TenantDashboard() {
                       <div className="w-14 h-14 bg-card rounded-full flex items-center justify-center mx-auto mb-3">
                         <svg className="w-7 h-7 text-muted-foreground/60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
                       </div>
-                      <p className="text-white/50 font-bold text-sm">ยังไม่มีรายการแจ้งซ่อมในขณะนี้</p>
-                      <Link href="/tenant/maintenance" className="mt-3 inline-block text-primary font-bold text-xs">แจ้งซ่อมใหม่ →</Link>
+                      <p className="text-white/50 font-bold text-sm">ยังไม่มีรายการแจ้งซ่อมหรือทำความสะอาดในขณะนี้</p>
+                      <Link href="/tenant/maintenance" className="mt-3 inline-block text-primary font-bold text-xs">แจ้งซ่อม / ทำความสะอาด →</Link>
                     </div>
                 ) : recentMaintenance.map((maint: any) => {
                     const isPending = maint.status === 'Pending' || maint.status === 'pending';

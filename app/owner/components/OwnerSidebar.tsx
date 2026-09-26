@@ -34,7 +34,7 @@ const navSections = [
     group: 'บริการ & อื่นๆ',
     items: [
       { href: '/owner/rules', label: 'กฎและระเบียบหอ', icon: '⚖️' },
-      { href: '/owner/maintenance', label: 'แจ้งซ่อมบำรุง', icon: '🔧' },
+      { href: '/owner/maintenance', label: 'แจ้งซ่อม / ทำความสะอาด', icon: '🔧' },
       { href: '/owner/chat', label: 'แชทลูกหอ', icon: '💬' },
       { href: '/owner/keepers', label: 'ทีมผู้ดูแล', icon: '🧹' },
       { href: '/owner/settings', label: 'ตั้งค่าหอพัก', icon: '⚙️' },

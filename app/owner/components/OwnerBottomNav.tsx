@@ -190,8 +190,8 @@ export default function OwnerBottomNav() {
       subActions: [
         {
           href: '/owner/maintenance',
-          label: 'แจ้งซ่อมบำรุง',
-          sublabel: 'ติดตามงานแจ้งซ่อม มอบหมายงานให้ช่าง',
+          label: 'แจ้งซ่อม / ทำความสะอาด',
+          sublabel: 'ติดตามงานแจ้งซ่อมและงานทำความสะอาด',
           icon: '🔧',
         },
         {

@@ -119,7 +119,7 @@ export default function TenantBottomNav() {
     {
       id: 'maintenance',
       href: '/tenant/maintenance',
-      label: 'แจ้งซ่อม',
+      label: 'ซ่อม/ทำความสะอาด',
       icon: '🔧',
       activeIcon: '🛠️',
       isActive: pathname.startsWith('/tenant/maintenance'),

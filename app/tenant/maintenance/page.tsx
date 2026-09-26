@@ -76,25 +76,25 @@ export default function TenantMaintenancePage() {
       <div className="max-w-4xl mx-auto pb-16 space-y-12">
         <header className="flex justify-between items-end">
           <div>
-            <h1 className="text-3xl font-black text-foreground mb-2">การดูแลรักษา (Maintenance)</h1>
-            <p className="text-muted-foreground font-medium">แจ้งปัญหาและติดตามกระบวนการซ่อมแซมภายในห้องพัก</p>
+            <h1 className="text-3xl font-black text-foreground mb-2">การดูแลรักษาและทำความสะอาด (Maintenance & Cleaning)</h1>
+            <p className="text-muted-foreground font-medium">แจ้งปัญหา ซ่อมแซม หรือขอรับบริการทำความสะอาดภายในห้องพัก</p>
           </div>
           {!showForm && (
             <button 
                 onClick={() => setShowForm(true)}
                 className="bg-primary text-white px-8 py-3.5 rounded-2xl font-bold text-sm shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
             >
-                + แจ้งซ่อมใหม่
+                + แจ้งซ่อม / ทำความสะอาด
             </button>
           )}
         </header>
 
         {showForm && (
           <div className="bg-card rounded-[2.5rem] border border-border p-10 shadow-2xl animate-in zoom-in-95 duration-300">
-            <h2 className="text-xl font-black text-foreground mb-8">แบบฟอร์มแจ้งซ่อม</h2>
+            <h2 className="text-xl font-black text-foreground mb-8">แบบฟอร์มแจ้งซ่อม / ขอรับบริการทำความสะอาด</h2>
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">ประเภทปัญหา</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">ประเภทปัญหา / บริการ</label>
                 <select 
                     value={issueType}
                     onChange={(e) => setIssueType(e.target.value)}
@@ -110,11 +110,11 @@ export default function TenantMaintenancePage() {
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">รายละเอียดปัญหา</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">รายละเอียดปัญหา / งานที่ต้องการให้ดูแล</label>
                 <textarea 
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="กรุณาระบุปัญหาที่พบ เช่น ไฟเพดานดวงกลางดับ, น้ำหยดใต้ซิงค์..."
+                    placeholder="กรุณาระบุปัญหาที่พบ เช่น ไฟเพดานดวงกลางดับ, น้ำหยดใต้ซิงค์ หรือขอให้แม่บ้านทำความสะอาดห้องน้ำ..."
                     className="w-full bg-card border border-border rounded-2xl px-6 py-5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 min-h-[150px]"
                     required
                 />
@@ -132,7 +132,7 @@ export default function TenantMaintenancePage() {
                   disabled={submitting}
                   className="flex-1 py-4 bg-primary text-white rounded-2xl font-bold text-sm shadow-xl shadow-primary/20 disabled:opacity-50"
                 >
-                  {submitting ? 'กำลังส่งข้อมูล...' : 'ส่งเรื่องแจ้งซ่อม'}
+                  {submitting ? 'กำลังส่งข้อมูล...' : 'ส่งเรื่องแจ้งซ่อม / ทำความสะอาด'}
                 </button>
               </div>
             </form>
@@ -141,7 +141,7 @@ export default function TenantMaintenancePage() {
 
         <div className="space-y-6">
           <h2 className="text-xl font-black text-foreground flex items-center gap-3">
-             ประวัติการแจ้งซ่อมล่วงหน้า
+             ประวัติการแจ้งซ่อมและทำความสะอาด
              <span className="text-xs bg-white/5 text-muted-foreground px-2 py-0.5 rounded-lg">{requests.length}</span>
           </h2>
           
@@ -150,7 +150,7 @@ export default function TenantMaintenancePage() {
               <div className="text-center py-20 animate-pulse text-muted-foreground">กำลังโหลดข้อมูล...</div>
             ) : requests.length === 0 ? (
               <div className="bg-card border-2 border-dashed border-border rounded-[2.5rem] p-20 text-center">
-                <p className="text-muted-foreground font-bold">ยังไม่มีประวัติการแจ้งซ่อม</p>
+                <p className="text-muted-foreground font-bold">ยังไม่มีประวัติการแจ้งซ่อมหรือทำความสะอาด</p>
               </div>
             ) : (
               requests.map((req) => {
