@@ -60,7 +60,7 @@ export async function GET(req: Request) {
       const unpaidBills = await sql`
         SELECT id, title, amount, billing_cycle, created_at, status
         FROM bills
-        WHERE tenant_id = ${item.tenant_id} AND status != 'paid'
+        WHERE tenant_id = ${item.tenant_id} AND status NOT IN ('Paid', 'paid')
         ORDER BY id ASC
       `;
 
@@ -146,7 +146,7 @@ export async function POST(req: Request) {
     // Calculate live unpaid bills for this tenant at this moment
     const liveUnpaidBills = await sql`
       SELECT id, amount, title, status FROM bills 
-      WHERE tenant_id = ${moveReq.tenant_id} AND status != 'paid'
+      WHERE tenant_id = ${moveReq.tenant_id} AND status NOT IN ('Paid', 'paid')
       ORDER BY id ASC
     `;
     const liveUnpaidTotal = liveUnpaidBills.reduce((sum: number, b: any) => sum + Number(b.amount || 0), 0);
@@ -206,8 +206,8 @@ export async function POST(req: Request) {
     // 6. Mark unpaid bills as paid (settled through deposit and/or owner confirmation)
     await sql`
       UPDATE bills 
-      SET status = 'paid' 
-      WHERE tenant_id = ${moveReq.tenant_id} AND status != 'paid'
+      SET status = 'Paid' 
+      WHERE tenant_id = ${moveReq.tenant_id} AND status NOT IN ('Paid', 'paid')
     `;
 
     return NextResponse.json({

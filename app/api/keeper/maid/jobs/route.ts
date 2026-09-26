@@ -149,6 +149,8 @@ export async function PATCH(request: Request) {
             LEFT JOIN rooms r ON t.room_id = r.id
             WHERE (t.room_id = ${j.room_id} OR r.room_number = ${String(j.room_number || '')})
               AND (t.dorm_id = ${j.dorm_id || 1})
+              AND t.status IN ('active', 'Active')
+            ORDER BY t.id DESC
             LIMIT 1
           `;
 

@@ -34,13 +34,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const { room_id, tenant_email } = contracts[0];
 
     // 2. Update contract status to Active and save owner approval
-    const updateContract = await sql`
+    await sql`
       UPDATE contracts 
       SET 
         status = 'Active',
         owner_signature_data = ${ownerSignatureData}
       WHERE id = ${id}
-      RETURNING *
     `;
 
     // 3. Update room status to Occupied
@@ -54,8 +53,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (tenant_email) {
       await sql`
         UPDATE users 
-        SET role = 'tenant' 
-        WHERE email = ${tenant_email} AND role = 'guest'
+        SET role = 'tenant', primary_role = 'tenant' 
+        WHERE email = ${tenant_email} AND (role = 'guest' OR primary_role = 'guest' OR role IS NULL)
       `;
     }
 

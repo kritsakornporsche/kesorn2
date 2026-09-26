@@ -76,7 +76,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // ── Direct User authentication for Kesorn 2 ─────────────────────────
         try {
           const users = await sql`
-            SELECT id, name, email, password, role, sub_role, is_active
+            SELECT id, name, email, password, COALESCE(role, primary_role, 'guest') as role, primary_role, sub_role, is_active
             FROM users
             WHERE (
               LOWER(email) = ${targetEmail} 
@@ -95,7 +95,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 id: String(user.id),
                 name: user.name,
                 email: user.email,
-                role: user.role || 'guest',
+                role: user.role || user.primary_role || 'guest',
                 sub_role: user.sub_role || null,
               } as any;
             }

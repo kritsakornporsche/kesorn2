@@ -154,6 +154,8 @@ export async function PATCH(request: Request) {
               FROM tenants t
               JOIN rooms r ON t.room_id = r.id
               WHERE r.room_number = ${String(m.room_number)}
+                AND t.status IN ('active', 'Active')
+              ORDER BY t.id DESC
               LIMIT 1
             `;
             if (tRows.length > 0) tenantId = tRows[0].id;

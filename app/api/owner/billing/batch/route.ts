@@ -22,6 +22,16 @@ export async function POST(req: Request) {
 
     const targetDormId = parseInt(String(dormId), 10);
 
+    // Fetch dormitory utility rates (default water: 100 THB, electricity: 7 THB)
+    const profileRes = await sql`
+      SELECT water_rate, electricity_rate 
+      FROM dormitory_profile 
+      WHERE dorm_id = ${targetDormId} OR id = ${targetDormId}
+      LIMIT 1
+    `;
+    const flatWaterRate = profileRes.length > 0 ? Number(profileRes[0].water_rate || 100) : 100.00;
+    const electricUnitPrice = profileRes.length > 0 ? Number(profileRes[0].electricity_rate || 7) : 7.00;
+
     // 1. Find all active tenants in this dormitory via rooms/contracts
     const activeTenants = await sql`
       SELECT 
@@ -50,8 +60,7 @@ export async function POST(req: Request) {
       
       if (existing.length === 0) {
         const roomRent = Number(tenant.amount) || 2800;
-        // In Kesorn 2: flat water rate 100 THB/month
-        const flatWater = 100.00;
+        const flatWater = flatWaterRate;
         const waterUnits = 1.00;
 
         // Auto-fetch electricity meter reading for this room
@@ -60,7 +69,7 @@ export async function POST(req: Request) {
 
         if (tenant.room_id) {
           const meters = await sql`
-            SELECT previous_reading, current_reading, units_used 
+            SELECT previous_reading, current_reading, COALESCE(units_used, current_reading - previous_reading, 0) as units_used 
             FROM meter_readings 
             WHERE room_id = ${tenant.room_id} 
               AND (type = 'Electricity' OR type = 'Electric')
@@ -69,15 +78,15 @@ export async function POST(req: Request) {
           `;
           if (meters.length > 0) {
             const m = meters[0];
-            const units = Number(m.units_used) || (Number(m.current_reading) - Number(m.previous_reading)) || 0;
+            const units = Math.max(0, Number(m.units_used) || (Number(m.current_reading) - Number(m.previous_reading)) || 0);
             if (units > 0) {
               electricUnits = units;
-              electricAmount = units * 7.00;
+              electricAmount = parseFloat((units * electricUnitPrice).toFixed(2));
             }
           }
         }
 
-        const totalAmount = roomRent + flatWater + electricAmount;
+        const totalAmount = parseFloat((roomRent + flatWater + electricAmount).toFixed(2));
 
         await sql`
           INSERT INTO bills (
@@ -126,4 +135,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
 }
-

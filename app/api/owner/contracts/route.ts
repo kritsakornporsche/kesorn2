@@ -124,8 +124,8 @@ export async function POST(req: Request) {
     if (users.length === 0) {
       const defaultPasswordHash = await bcrypt.hash('smartdom', 12);
       const userInsert = await sql`
-        INSERT INTO users (name, email, password, phone, primary_role)
-        VALUES (${tenantName.trim()}, ${tenantEmail.trim()}, ${defaultPasswordHash}, ${tenantPhone?.trim() || null}, 'tenant')
+        INSERT INTO users (name, email, password, phone, role, primary_role)
+        VALUES (${tenantName.trim()}, ${tenantEmail.trim()}, ${defaultPasswordHash}, ${tenantPhone?.trim() || null}, 'tenant', 'tenant')
       `;
       userId = (userInsert as any).insertId;
     } else {
@@ -133,7 +133,8 @@ export async function POST(req: Request) {
       // Upgrade role to tenant if current role is guest/user
       await sql`
         UPDATE users 
-        SET primary_role = 'tenant', 
+        SET role = 'tenant',
+            primary_role = 'tenant', 
             name = COALESCE(${tenantName.trim()}, name),
             phone = COALESCE(${tenantPhone?.trim() || null}, phone)
         WHERE id = ${userId}

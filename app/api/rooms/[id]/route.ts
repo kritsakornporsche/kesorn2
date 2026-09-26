@@ -86,7 +86,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ success: false, message: 'Room number already exists in this dormitory' }, { status: 409 });
     }
 
-    const result = await sql`
+    await sql`
       UPDATE rooms 
       SET room_number = ${room_number}, 
           room_type = ${room_type}, 
@@ -95,14 +95,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
           floor = ${floor}, 
           image_url = ${image_url || null}
       WHERE id = ${id}
-      RETURNING *
     `;
 
-    if (result.length === 0) {
+    const updated = await sql`SELECT * FROM rooms WHERE id = ${id} LIMIT 1`;
+    if (updated.length === 0) {
       return NextResponse.json({ success: false, message: 'Room not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, message: 'Room updated successfully', data: result[0] }, { status: 200 });
+    return NextResponse.json({ success: true, message: 'Room updated successfully', data: updated[0] }, { status: 200 });
   } catch (error: any) {
     console.error('Error updating room:', error);
     return NextResponse.json({ success: false, message: 'Failed to update room', error: error.message }, { status: 500 });
@@ -125,15 +125,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 
     const sql = getDormDbFromSession(session);
     
-    const result = await sql`
-      DELETE FROM rooms
-      WHERE id = ${id}
-      RETURNING id
-    `;
-
-    if (result.length === 0) {
-      return NextResponse.json({ success: false, message: 'Room not found' }, { status: 404 });
-    }
+    await sql`DELETE FROM rooms WHERE id = ${id}`;
 
     return NextResponse.json({ success: true, message: 'Room deleted successfully' }, { status: 200 });
   } catch (error: any) {

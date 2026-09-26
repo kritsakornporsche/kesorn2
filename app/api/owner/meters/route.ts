@@ -150,18 +150,23 @@ export async function POST(req: Request) {
           WHERE dorm_id = ${dormId} AND room_id = ${room_id} AND type = ${type} AND billing_cycle = ${billing_cycle}
         `;
 
+        const prev = parseFloat(previous_reading) || 0;
+        const curr = parseFloat(current_reading) || 0;
+        const unitsUsed = Math.max(0, parseFloat((curr - prev).toFixed(2)));
+
         if (existing.length > 0) {
           await sql`
             UPDATE meter_readings
-            SET previous_reading = ${previous_reading || 0}, 
-                current_reading = ${current_reading},
+            SET previous_reading = ${prev}, 
+                current_reading = ${curr},
+                units_used = ${unitsUsed},
                 photo_url = COALESCE(${finalPhotoUrl || null}, photo_url)
             WHERE id = ${existing[0].id}
           `;
         } else {
           await sql`
-            INSERT INTO meter_readings (dorm_id, room_id, type, previous_reading, current_reading, billing_cycle, photo_url)
-            VALUES (${dormId}, ${room_id}, ${type}, ${previous_reading || 0}, ${current_reading}, ${billing_cycle}, ${finalPhotoUrl || null})
+            INSERT INTO meter_readings (dorm_id, room_id, type, previous_reading, current_reading, units_used, billing_cycle, photo_url)
+            VALUES (${dormId}, ${room_id}, ${type}, ${prev}, ${curr}, ${unitsUsed}, ${billing_cycle}, ${finalPhotoUrl || null})
           `;
         }
         insertedCount++;
@@ -179,6 +184,10 @@ export async function POST(req: Request) {
     // Persist photo to disk and get static URL
     const finalPhotoUrl = saveMeterPhoto(photo_url, dormId, Number(room_id), type, billing_cycle);
 
+    const prev = parseFloat(previous_reading) || 0;
+    const curr = parseFloat(current_reading) || 0;
+    const unitsUsed = Math.max(0, parseFloat((curr - prev).toFixed(2)));
+
     // Check for existing record
     const existing = await sql`
       SELECT id FROM meter_readings 
@@ -188,8 +197,9 @@ export async function POST(req: Request) {
     if (existing.length > 0) {
       await sql`
         UPDATE meter_readings
-        SET previous_reading = ${previous_reading || 0}, 
-            current_reading = ${current_reading},
+        SET previous_reading = ${prev}, 
+            current_reading = ${curr},
+            units_used = ${unitsUsed},
             photo_url = COALESCE(${finalPhotoUrl || null}, photo_url)
         WHERE id = ${existing[0].id}
       `;
@@ -197,8 +207,8 @@ export async function POST(req: Request) {
     }
 
     const result = await sql`
-      INSERT INTO meter_readings (dorm_id, room_id, type, previous_reading, current_reading, billing_cycle, photo_url)
-      VALUES (${dormId}, ${room_id}, ${type}, ${previous_reading || 0}, ${current_reading}, ${billing_cycle}, ${finalPhotoUrl || null})
+      INSERT INTO meter_readings (dorm_id, room_id, type, previous_reading, current_reading, units_used, billing_cycle, photo_url)
+      VALUES (${dormId}, ${room_id}, ${type}, ${prev}, ${curr}, ${unitsUsed}, ${billing_cycle}, ${finalPhotoUrl || null})
     `;
 
     return NextResponse.json({ success: true, message: 'บันทึกมิเตอร์เรียบร้อยแล้ว', data: { id: (result as any).insertId } }, { status: 201 });

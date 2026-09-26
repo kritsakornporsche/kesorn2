@@ -33,11 +33,12 @@ export async function POST(request: Request) {
     const tenantId = tenantRes[0].id;
     const roomNumber = tenantRes[0].room_number;
 
-    const result = await sql`
+    const insertResult: any = await sql`
       INSERT INTO maintenance_requests (tenant_id, room_number, issue_type, description, status)
       VALUES (${tenantId}, ${roomNumber}, ${issue_type}, ${description}, 'Pending')
-      RETURNING *
     `;
+
+    const newId = insertResult.insertId;
 
     // If request is for cleaning, also create a job in cleaning_jobs for Maid portal
     if (issue_type.includes('ทำความสะอาด') && tenantRes[0].room_id) {
@@ -51,7 +52,17 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ success: true, data: result[0] });
+    return NextResponse.json({ 
+      success: true, 
+      data: { 
+        id: newId, 
+        tenant_id: tenantId, 
+        room_number: roomNumber, 
+        issue_type, 
+        description, 
+        status: 'Pending' 
+      } 
+    });
   } catch (error: any) {
     console.error('[POST /api/tenant/maintenance] Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

@@ -54,16 +54,16 @@ export async function GET(req: Request) {
     let dormDisplayName = profileRes.length > 0 ? (profileRes[0].name || profileRes[0].promptpay_name) : null;
     
     if (!promptpayNumber) {
-      // Check dormitory_registry
-      const regRes = await sql`SELECT dorm_name, promptpay_number FROM dormitory_registry WHERE id = ${dormId} LIMIT 1`;
+      // Check dormitory_registry (use phone as promptpay number)
+      const regRes = await sql`SELECT dorm_name, phone FROM dormitory_registry WHERE id = ${dormId} LIMIT 1`;
       if (regRes.length > 0) {
-        if (regRes[0].promptpay_number) promptpayNumber = regRes[0].promptpay_number;
+        if (regRes[0].phone) promptpayNumber = regRes[0].phone;
         if (!dormDisplayName && regRes[0].dorm_name) dormDisplayName = regRes[0].dorm_name;
       }
     }
 
     if (!promptpayNumber) {
-      promptpayNumber = '0812345678'; // Standard fallback promptpay
+      promptpayNumber = '0829853519'; // Kesorn 2 verified PromptPay
     }
 
     // Clean PromptPay number (remove dashes, spaces)

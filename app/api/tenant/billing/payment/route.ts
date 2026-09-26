@@ -32,7 +32,7 @@ export async function POST(req: Request) {
 
     const bill = billRes[0];
 
-    if (bill.status === 'Paid') {
+    if (bill.status && bill.status.toLowerCase() === 'paid') {
       return NextResponse.json({ success: false, message: 'บิลนี้ได้รับการชำระเงินเรียบร้อยแล้ว' }, { status: 400 });
     }
 

@@ -432,7 +432,7 @@ export default function OwnerBillingPage() {
   const stats = useMemo(() => {
     const pendingBills = bills.filter((b) => b.status === 'Pending');
     const unpaidBills = bills.filter((b) => b.status === 'Unpaid' || b.status === 'Overdue');
-    const paidBills = bills.filter((b) => b.status === 'Paid');
+    const paidBills = bills.filter((b) => b.status === 'Paid' || b.status === 'paid');
 
     const totalPendingAmount = pendingBills.reduce((acc, b) => acc + Number(b.amount || 0), 0);
     const totalUnpaidAmount = unpaidBills.reduce((acc, b) => acc + Number(b.amount || 0), 0);
@@ -804,7 +804,7 @@ export default function OwnerBillingPage() {
                 ) : (
                   filteredBills.map((bill) => {
                     const isPending = bill.status === 'Pending';
-                    const isPaid = bill.status === 'Paid';
+                    const isPaid = bill.status === 'Paid' || bill.status === 'paid';
                     const isUnpaid = bill.status === 'Unpaid';
                     const isOverdue = bill.status === 'Overdue';
 
@@ -1214,9 +1214,9 @@ export default function OwnerBillingPage() {
                 <div className="text-right">
                   <span className={cn(
                     "px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider inline-block",
-                    receiptBill.status === 'Paid' ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40" : "bg-rose-500/20 text-rose-400 border border-rose-500/40"
+                    (receiptBill.status === 'Paid' || receiptBill.status === 'paid') ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40" : "bg-rose-500/20 text-rose-400 border border-rose-500/40"
                   )}>
-                    {receiptBill.status === 'Paid' ? '✓ ชำระเงินแล้ว (PAID)' : 'ค้างชำระ (UNPAID)'}
+                    {(receiptBill.status === 'Paid' || receiptBill.status === 'paid') ? '✓ ชำระเงินแล้ว (PAID)' : 'ค้างชำระ (UNPAID)'}
                   </span>
                   <p className="text-xs text-slate-400 mt-2 font-mono">เลขที่: #{receiptBill.id.toString().padStart(6, '0')}</p>
                   <p className="text-xs text-slate-400 font-mono">วันที่ออก: {new Date(receiptBill.created_at).toLocaleDateString('th-TH')}</p>

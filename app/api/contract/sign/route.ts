@@ -32,12 +32,15 @@ export async function POST(req: Request) {
       if (tenants.length > 0) {
         tenantId = tenants[0].id;
       } else {
-        const newTenants = await sql`
+        const insertResult: any = await sql`
           INSERT INTO tenants (name, email, status)
           VALUES (${session.user.name || 'User'}, ${userEmail}, 'Active')
-          RETURNING id
         `;
-        tenantId = newTenants.length > 0 ? newTenants[0].id : null;
+        tenantId = insertResult.insertId || null;
+        if (!tenantId) {
+          const fetchAgain = await sql`SELECT id FROM tenants WHERE email = ${userEmail} LIMIT 1`;
+          if (fetchAgain.length > 0) tenantId = fetchAgain[0].id;
+        }
       }
     } else {
       const fallbackTenants = await sql`SELECT id FROM tenants LIMIT 1`;
