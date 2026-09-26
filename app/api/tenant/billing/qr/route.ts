@@ -9,35 +9,44 @@ export async function GET(req: Request) {
     const session = await auth();
     const { searchParams } = new URL(req.url);
     const billId = searchParams.get('billId');
+    const amountParam = searchParams.get('amount');
 
-    if (!billId) {
-      return NextResponse.json({ success: false, message: 'Missing billId' }, { status: 400 });
+    if (!billId && !amountParam) {
+      return NextResponse.json({ success: false, message: 'Missing billId or amount' }, { status: 400 });
     }
 
     const sql = getDb();
-    
-    // 1. Find the bill
-    const billRes = await sql`
-      SELECT b.*, t.email as tenant_email, t.dorm_id as tenant_dorm_id
-      FROM bills b
-      LEFT JOIN tenants t ON b.tenant_id = t.id
-      WHERE b.id = ${billId}
-      LIMIT 1
-    `;
+    let amount = 0;
+    let dormId = 1;
+    let billTitle = 'ค่าเช่าห้องพัก';
 
-    if (billRes.length === 0) {
-      return NextResponse.json({ success: false, message: 'ไม่พบรายการบิลนี้ในระบบ' }, { status: 404 });
+    if (billId) {
+      // 1. Find the bill
+      const billRes = await sql`
+        SELECT b.*, t.email as tenant_email, t.dorm_id as tenant_dorm_id
+        FROM bills b
+        LEFT JOIN tenants t ON b.tenant_id = t.id
+        WHERE b.id = ${billId}
+        LIMIT 1
+      `;
+
+      if (billRes.length === 0) {
+        return NextResponse.json({ success: false, message: 'ไม่พบรายการบิลนี้ในระบบ' }, { status: 404 });
+      }
+
+      const bill = billRes[0];
+      amount = Number(bill.amount);
+      dormId = bill.dorm_id || bill.tenant_dorm_id || 1;
+      billTitle = bill.title;
+    } else {
+      amount = parseFloat(amountParam!);
     }
-
-    const bill = billRes[0];
-    const amount = Number(bill.amount);
-    const dormId = bill.dorm_id || bill.tenant_dorm_id || 1;
 
     // 2. Get owner's PromptPay number from dormitory_profile or dormitory_registry
     const profileRes = await sql`
       SELECT promptpay_number, promptpay_name, name 
       FROM dormitory_profile 
-      WHERE dorm_id = ${dormId} 
+      WHERE dorm_id = ${dormId} OR id = ${dormId}
       LIMIT 1
     `;
     
@@ -74,7 +83,7 @@ export async function GET(req: Request) {
       qrImage: qrDataUrl, 
       amount, 
       promptpayNumber,
-      billTitle: bill.title,
+      billTitle: billTitle || 'ค่าเช่าห้องพัก',
       dormName: dormDisplayName || 'SmartDom Dormitory'
     });
 

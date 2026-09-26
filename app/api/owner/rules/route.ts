@@ -23,12 +23,7 @@ export async function GET(req: Request) {
     const session = await auth();
     const { searchParams } = new URL(req.url);
     const dormIdParam = searchParams.get('dormId');
-
-    if (!dormIdParam) {
-      return NextResponse.json({ success: false, message: 'Missing dormId' }, { status: 400 });
-    }
-
-    const dormId = parseInt(dormIdParam, 10);
+    const dormId = dormIdParam ? parseInt(dormIdParam, 10) : ((session?.user as any)?.dormId ? parseInt((session?.user as any).dormId, 10) : 1);
     const sql = getDb();
 
     // Query rules ordered by category and sort_order
