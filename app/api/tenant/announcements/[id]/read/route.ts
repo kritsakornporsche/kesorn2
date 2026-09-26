@@ -16,21 +16,37 @@ export async function POST(
 
     const sql = getDormDbFromSession(session);
     
-    // Find tenant by email
-    const tenantRes = await sql`SELECT id FROM tenants WHERE email = ${session.user.email} LIMIT 1`;
+    // Find tenant and user ID
+    const tenantRes = await sql`
+      SELECT t.id, COALESCE(t.user_id, u.id) as user_id 
+      FROM tenants t 
+      LEFT JOIN users u ON LOWER(t.email) = LOWER(u.email)
+      WHERE LOWER(t.email) = LOWER(${session.user.email}) 
+      LIMIT 1
+    `;
     if (tenantRes.length === 0) return NextResponse.json({ success: false, message: 'Tenant not found' }, { status: 404 });
     const tenantId = tenantRes[0].id;
+    let userId = tenantRes[0].user_id;
+
+    if (!userId) {
+      const uRes = await sql`SELECT id FROM users WHERE LOWER(email) = LOWER(${session.user.email}) LIMIT 1`;
+      if (uRes.length > 0) userId = uRes[0].id;
+    }
+
+    if (!userId) {
+      return NextResponse.json({ success: false, message: 'User identity could not be resolved' }, { status: 400 });
+    }
 
     // Insert acknowledgment if not already read
     const existing = await sql`
       SELECT id FROM announcement_reads 
-      WHERE tenant_id = ${tenantId} AND announcement_id = ${announcementId} 
+      WHERE (user_id = ${userId} OR tenant_id = ${tenantId}) AND announcement_id = ${announcementId} 
       LIMIT 1
     `;
     if (existing.length === 0) {
       await sql`
-        INSERT INTO announcement_reads (tenant_id, announcement_id)
-        VALUES (${tenantId}, ${announcementId})
+        INSERT INTO announcement_reads (user_id, tenant_id, announcement_id)
+        VALUES (${userId}, ${tenantId}, ${announcementId})
       `;
     }
 

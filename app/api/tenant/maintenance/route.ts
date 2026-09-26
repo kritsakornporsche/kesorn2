@@ -16,13 +16,12 @@ export async function POST(request: Request) {
 
     const sql = getDormDbFromSession(session);
     
-    // Find tenant ID and room_number using COALESCE to handle data migration gaps
     const tenantRes = await sql`
-      SELECT t.id, COALESCE(t.room_id, c.room_id) as room_id, r.room_number
+      SELECT t.id, COALESCE(t.room_id, c.room_id) as room_id, r.room_number, COALESCE(t.dorm_id, r.dorm_id, 1) as dorm_id
       FROM tenants t
       LEFT JOIN contracts c ON t.id = c.tenant_id AND c.status = 'Active'
       LEFT JOIN rooms r ON r.id = COALESCE(t.room_id, c.room_id)
-      WHERE t.email = ${session.user.email}
+      WHERE LOWER(t.email) = LOWER(${session.user.email})
       LIMIT 1
     `;
 
@@ -32,10 +31,11 @@ export async function POST(request: Request) {
 
     const tenantId = tenantRes[0].id;
     const roomNumber = tenantRes[0].room_number;
+    const dormId = tenantRes[0].dorm_id || 1;
 
     const insertResult: any = await sql`
-      INSERT INTO maintenance_requests (tenant_id, room_number, issue_type, description, status)
-      VALUES (${tenantId}, ${roomNumber}, ${issue_type}, ${description}, 'Pending')
+      INSERT INTO maintenance_requests (tenant_id, room_number, issue_type, description, status, photo_url, image_url, dorm_id)
+      VALUES (${tenantId}, ${roomNumber}, ${issue_type}, ${description}, 'Pending', ${photo_url || null}, ${photo_url || null}, ${dormId})
     `;
 
     const newId = insertResult.insertId;

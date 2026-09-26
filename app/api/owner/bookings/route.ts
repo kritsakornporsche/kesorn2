@@ -149,7 +149,25 @@ export async function POST(req: Request) {
 
       // 4. Update user role to tenant
       if (tenantEmail) {
-        await sql`UPDATE users SET role = 'tenant' WHERE email = ${tenantEmail}`;
+        await sql`
+          UPDATE users 
+          SET role = 'tenant', primary_role = 'tenant' 
+          WHERE LOWER(email) = LOWER(${tenantEmail})
+        `;
+
+        // Ensure user_dorm_roles entry exists
+        try {
+          const uRes = await sql`SELECT id FROM users WHERE LOWER(email) = LOWER(${tenantEmail}) LIMIT 1`;
+          if (uRes.length > 0) {
+            const uId = uRes[0].id;
+            const existingRole = await sql`SELECT id FROM user_dorm_roles WHERE user_id = ${uId} AND dorm_id = ${contract.dorm_id || 1} LIMIT 1`;
+            if (existingRole.length === 0) {
+              await sql`INSERT INTO user_dorm_roles (user_id, dorm_id, role) VALUES (${uId}, ${contract.dorm_id || 1}, 'tenant')`;
+            }
+          }
+        } catch (re) {
+          console.warn('user_dorm_roles sync warn:', re);
+        }
       }
 
       // 5. Optionally create first month rent invoice (ใบแจ้งหนี้ค่าเช่าเดือนแรก)
@@ -179,6 +197,27 @@ export async function POST(req: Request) {
             'Unpaid'
           )
         `;
+      }
+
+      // 6. Notify tenant about approval
+      try {
+        const uRes = await sql`SELECT id FROM users WHERE LOWER(email) = LOWER(${tenantEmail}) LIMIT 1`;
+        if (uRes.length > 0) {
+          await sql`
+            INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+            VALUES (
+              ${uRes[0].id},
+              'การจองห้องพักได้รับการอนุมัติแล้ว',
+              ${'การจองห้อง ' + (contract.room_number || '-') + ' ได้รับการอนุมัติแล้ว คุณสามารถเข้าสู่ระบบผู้เช่าเพื่อดูสัญญาและข้อมูลห้องพักได้ทันที'},
+              'booking_approved',
+              0,
+              '/tenant',
+              NOW()
+            )
+          `;
+        }
+      } catch (ne) {
+        console.warn('Booking approve notify warn:', ne);
       }
 
       return NextResponse.json({ 
@@ -250,6 +289,27 @@ export async function POST(req: Request) {
       // 3. Remove booking progress
       if (tenantEmail) {
         await sql`DELETE FROM booking_progress WHERE user_email = ${tenantEmail} AND room_id = ${roomId}`;
+
+        // 4. Notify guest/tenant about rejection
+        try {
+          const uRes = await sql`SELECT id FROM users WHERE LOWER(email) = LOWER(${tenantEmail}) LIMIT 1`;
+          if (uRes.length > 0) {
+            await sql`
+              INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+              VALUES (
+                ${uRes[0].id},
+                'คำขอจองห้องพักไม่ผ่านการอนุมัติ',
+                ${'คำขอจองห้องพักไม่ผ่านการอนุมัติ: ' + (reason || 'กรุณาติดต่อเจ้าหน้าที่หอพักเพื่อสอบถามรายละเอียดเพิ่มเติม')},
+                'booking_rejected',
+                0,
+                '/explore',
+                NOW()
+              )
+            `;
+          }
+        } catch (ne) {
+          console.warn('Booking reject notify warn:', ne);
+        }
       }
 
       return NextResponse.json({ 

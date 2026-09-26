@@ -26,17 +26,19 @@ export async function GET(req: Request) {
         m.status,
         m.cost,
         m.bill_id,
+        COALESCE(m.photo_url, m.image_url) as photo_url,
         m.created_at,
         COALESCE(t.name, u.name, 'ผู้เช่า') as tenant_name,
         COALESCE(t.phone, u.phone, '081-234-5678') as tenant_phone
       FROM maintenance_requests m
       LEFT JOIN tenants t ON m.tenant_id = t.id
-      LEFT JOIN users u ON t.user_id = u.id
-      WHERE m.dorm_id = ${dormId} OR t.dorm_id = ${dormId}
+      LEFT JOIN users u ON t.user_id = u.id OR LOWER(t.email) = LOWER(u.email)
+      LEFT JOIN rooms r ON r.room_number = m.room_number
+      WHERE (m.dorm_id = ${dormId} OR t.dorm_id = ${dormId} OR r.dorm_id = ${dormId} OR (m.dorm_id IS NULL AND t.dorm_id IS NULL))
       ORDER BY 
         CASE 
           WHEN m.status = 'Pending' THEN 1
-          WHEN m.status = 'InProgress' THEN 2
+          WHEN m.status IN ('InProgress', 'In Progress') THEN 2
           ELSE 3
         END,
         m.created_at DESC

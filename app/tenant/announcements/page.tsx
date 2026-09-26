@@ -7,10 +7,22 @@ async function getAnnouncements() {
   const sql = getDb();
   
   let tenantId = 1;
+  let userId = (session?.user as any)?.id || null;
   if (session?.user?.email) {
-    const tenantRes = await sql`SELECT id FROM tenants WHERE email = ${session.user.email} LIMIT 1`;
+    const tenantRes = await sql`
+      SELECT t.id, COALESCE(t.user_id, u.id) as user_id 
+      FROM tenants t 
+      LEFT JOIN users u ON LOWER(t.email) = LOWER(u.email)
+      WHERE LOWER(t.email) = LOWER(${session.user.email}) 
+      LIMIT 1
+    `;
     if (tenantRes.length > 0) {
       tenantId = tenantRes[0].id;
+      if (!userId) userId = tenantRes[0].user_id;
+    }
+    if (!userId) {
+      const uRes = await sql`SELECT id FROM users WHERE LOWER(email) = LOWER(${session.user.email}) LIMIT 1`;
+      if (uRes.length > 0) userId = uRes[0].id;
     }
   }
 
@@ -25,7 +37,7 @@ async function getAnnouncements() {
       CASE WHEN ar.id IS NOT NULL THEN true ELSE false END as is_read,
       ar.read_at
     FROM announcements a
-    LEFT JOIN announcement_reads ar ON a.id = ar.announcement_id AND ar.tenant_id = ${tenantId}
+    LEFT JOIN announcement_reads ar ON a.id = ar.announcement_id AND (ar.tenant_id = ${tenantId} OR (ar.user_id = ${userId || 0} AND ${userId || 0} > 0))
     WHERE a.is_active = 1 OR a.is_active IS NULL
     ORDER BY a.is_important DESC, a.created_at DESC
   `;
