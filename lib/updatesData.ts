@@ -15,10 +15,65 @@ export interface DailyUpdate {
 
 export const SYSTEM_UPDATES: DailyUpdate[] = [
   {
+    date: '26 กันยายน 2026',
+    version: 'v2.7.0',
+    tagline: 'ระบบจัดการ Google Gemini API Key สำหรับอ่านมิเตอร์ด้วยตนเอง, ตรวจสอบและแก้ไขข้อผิดพลาดทั้งระบบ (100% Pass), ปรับปรุงความถูกต้องตามข้อมูลจริงหอพักเกษร 2 และเพิ่มการสำรองระบบ AI สแกนมิเตอร์ 3 ระดับ',
+    isLatest: true,
+    tasks: [
+      {
+        id: '2026-09-26-1',
+        title: 'ระบบให้เจ้าของหอพักเปลี่ยนและทดสอบ Google Gemini API Key สำหรับอ่านมิเตอร์ด้วยตนเอง (Self-Service OCR Key)',
+        category: 'Feature',
+        details: [
+          'เพิ่มปุ่ม "🔑 ตั้งค่า AI Key" พร้อมไฟสถานะบนแถบเมนูหน้าจดมิเตอร์ (/owner/meters)',
+          'เพิ่มการ์ด "ระบบ AI สแกนอ่านมิเตอร์น้ำ-ไฟ (Meter OCR AI Key)" ในหน้าตั้งค่าหอพัก (/owner/settings)',
+          'พัฒนา API POST /api/owner/meters/ocr/test-key เชื่อมต่อทดสอบกับโมเดล gemini-2.0-flash แบบเรียลไทม์ พร้อมแจ้งเตือนผลลัพธ์ทันที',
+          'พัฒนา API GET/POST /api/owner/meters/ocr/key จัดเก็บ API Key ในตาราง dormitory_profile และผูกเข้ากับระบบสแกนมิเตอร์อัตโนมัติ',
+          'เพิ่มคำแนะนำ 4 ขั้นตอนและลิงก์ตรงไปยัง Google AI Studio เพื่อขอรับ API Key ฟรี (โควต้า 1,500 ครั้ง/วัน)',
+          'เพิ่ม Badge แสดงผลในกล้องสแกนมิเตอร์ (CameraMeterModal) ระบุชัดเจนว่าอ่านด้วย Gemini AI (คีย์ส่วนตัว/ระบบกลาง) หรือ Tesseract OCR'
+        ]
+      },
+      {
+        id: '2026-09-26-2',
+        title: 'ตรวจสอบระบบเชิงลึกและแก้ไขข้อผิดพลาดสำคัญ 7 จุด (Deep System Audit & Bug Fixes)',
+        category: 'Fix',
+        details: [
+          'แก้ไข bills.status จาก ENUM เป็น VARCHAR(50) รองรับสถานะ Pending ป้องกัน Error 500 เวลาผู้เช่าส่งสลิปชำระเงิน',
+          'แก้ไข maintenance_requests.status ให้รองรับทั้ง In Progress และ InProgress จากฟอร์มหน้าเว็บ',
+          'แก้ไข app/api/owner/maintenance/[id]/route.ts โดยตัด PostgreSQL RETURNING * ออกและใช้มาตรฐาน MariaDB/MySQL',
+          'แก้ไข Keeper API Routes (maid/jobs และ technician/jobs) รองรับทั้ง PUT และ PATCH ป้องกัน HTTP 405 Method Not Allowed',
+          'เพิ่มคอลัมน์ notes และ photo_url ในตาราง maintenance_requests รองรับการปิดงานของช่าง',
+          'เพิ่มคอลัมน์ dorm_id ในตาราง bills และ desired_date ในตาราง move_out_requests',
+          'ผ่านการทดสอบแบบ End-to-End ครบถ้วน 63/63 รายการ (100% Pass) และการทดสอบ Write Operations ครบ 15/15 รายการ (100% Pass)'
+        ]
+      },
+      {
+        id: '2026-09-26-3',
+        title: 'ปรับปรุงข้อมูลหอพักและห้องพักให้ตรงตามข้อมูลจริงของหอพักเกษร 2 (หน้า ม.พะเยา)',
+        category: 'Design',
+        details: [
+          'ปรับปรุงข้อมูลการติดต่อ: เบอร์โทร 082-985-3519, ค่าไฟ ฿6/หน่วย, ค่าน้ำฟรี, ค่าเช่า ฿2,800 - ฿3,100/เดือน',
+          'จัดโครงสร้างห้องพัก 20 ห้อง (ชั้น 1 และ ชั้น 2) และนำเข้ารูปถ่ายจริงของหอพักเกษร 2 เข้าสู่ระบบแกลเลอรี',
+          'ผูกภาพหลักฐานการอ่านมิเตอร์จริงและป้ายกำกับหน่วยมิเตอร์เข้าสู่ระบบอัตโนมัติ'
+        ]
+      },
+      {
+        id: '2026-09-26-4',
+        title: 'ระบบสำรองการอ่านมิเตอร์ 3 ระดับ (Triple-Tier OCR Fallback)',
+        category: 'Performance',
+        details: [
+          'ระดับ 1: ใช้งาน Google Gemini Vision ด้วย API Key ส่วนตัวของเจ้าของหอ',
+          'ระดับ 2: สำรองด้วย Google Gemini Vision ระบบส่วนกลางของเซิร์ฟเวอร์',
+          'ระดับ 3: สำรองด้วย Dual-Pass Tesseract OCR ภายในเครื่อง สามารถอ่านมิเตอร์ได้แบบออฟไลน์ 100% โดยไม่ต้องใช้อินเทอร์เน็ต'
+        ]
+      }
+    ]
+  },
+  {
     date: '25 กันยายน 2026',
     version: 'v2.6.2',
     tagline: 'ปรับปรุงโครงสร้างค่าสาธารณูปโภค (ไฟ 7 บาท/หน่วย, น้ำเหมาจ่าย 100 บาท/เดือน), ถอดระบบจดมิเตอร์น้ำ, สร้าง DFD & สถาปัตยกรรมระบบในแดชบอร์ด Researcher, ปรับฐานข้อมูลห้องพัก 20 ห้อง (แอร์/พัดลม) และระบบบัญชีตามบทบาท',
-    isLatest: true,
+    isLatest: false,
     tasks: [
       {
         id: '2026-09-25-1',
