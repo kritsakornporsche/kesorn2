@@ -154,7 +154,14 @@ export default function TenantSidebar({
             <div className="px-3 pb-4 pt-2 border-t border-border/60 shrink-0">
               <button
                 type="button"
-                onClick={() => signOut({ callbackUrl: '/signin' })}
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    localStorage.removeItem('userRole');
+                    localStorage.removeItem('userEmail');
+                    localStorage.removeItem('userName');
+                  }
+                  signOut({ callbackUrl: '/' });
+                }}
                 className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-rose-500/10 hover:bg-rose-500/15 border border-rose-500/20 text-rose-600 dark:text-rose-400 font-bold text-sm transition-all active:scale-[0.98] cursor-pointer"
               >
                 <span className="w-10 h-10 rounded-xl bg-rose-500/15 flex items-center justify-center text-lg shrink-0">
@@ -250,7 +257,14 @@ export default function TenantSidebar({
           {/* Sign Out (Visible on both Mobile and Desktop) */}
           <button
             type="button"
-            onClick={() => signOut({ callbackUrl: '/signin' })}
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('userRole');
+                localStorage.removeItem('userEmail');
+                localStorage.removeItem('userName');
+              }
+              signOut({ callbackUrl: '/' });
+            }}
             className="flex h-9 px-2.5 sm:px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-500 hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-100 border border-rose-500/30 transition-all items-center gap-1.5 text-xs font-bold shadow-sm cursor-pointer active:scale-95 shrink-0"
             title="ออกจากระบบ"
           >

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 function clearSessionAndRedirect(req: Request) {
   const url = new URL(req.url);
-  const target = url.searchParams.get('callbackUrl') || '/signin';
+  const target = url.searchParams.get('callbackUrl') || '/';
   const redirectUrl = new URL(target, req.url);
 
   const response = NextResponse.redirect(redirectUrl);

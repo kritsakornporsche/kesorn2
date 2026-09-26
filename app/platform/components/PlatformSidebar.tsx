@@ -88,7 +88,14 @@ export default function PlatformSidebar() {
           {/* Sign Out Button */}
           <button
             type="button"
-            onClick={() => signOut({ callbackUrl: '/signin' })}
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('userRole');
+                localStorage.removeItem('userEmail');
+                localStorage.removeItem('userName');
+              }
+              signOut({ callbackUrl: '/' });
+            }}
             className="h-9 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-600 dark:text-rose-300 hover:text-rose-700 dark:hover:text-rose-100 border border-rose-500/30 transition-all flex items-center gap-1.5 text-xs font-bold shadow-sm cursor-pointer active:scale-95 shrink-0"
             title="ออกจากระบบ"
           >
@@ -182,7 +189,14 @@ export default function PlatformSidebar() {
         {/* Logout */}
         <div className="p-4 border-t border-border bg-secondary/30">
           <button
-            onClick={() => signOut({ callbackUrl: '/signin' })}
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('userRole');
+                localStorage.removeItem('userEmail');
+                localStorage.removeItem('userName');
+              }
+              signOut({ callbackUrl: '/' });
+            }}
             className="w-full flex items-center justify-center gap-3 py-2.5 px-4 bg-rose-500/15 hover:bg-rose-500/25 text-rose-600 dark:text-rose-300 hover:text-rose-700 dark:hover:text-rose-100 border border-rose-500/30 rounded-xl font-bold text-sm transition-all cursor-pointer shadow-sm active:scale-95"
           >
             <span className="text-base">🚪</span>

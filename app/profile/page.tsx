@@ -227,7 +227,14 @@ export default function ProfilePage() {
                 </button>
                 <button 
                   type="button" 
-                  onClick={() => signOut({ callbackUrl: '/signin' })}
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      localStorage.removeItem('userRole');
+                      localStorage.removeItem('userEmail');
+                      localStorage.removeItem('userName');
+                    }
+                    signOut({ callbackUrl: '/' });
+                  }}
                   className="px-6 border border-rose-100 bg-rose-50 text-rose-600 rounded-2xl font-bold text-sm hover:bg-rose-100 transition-all"
                 >
                   ออกจากระบบ

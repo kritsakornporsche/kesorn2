@@ -99,7 +99,14 @@ export default function MaidJobsPage() {
                     </div>
                     <div className="flex items-center gap-4">
                         <button
-                            onClick={() => signOut({ callbackUrl: '/signin' })}
+                            onClick={() => {
+                                if (typeof window !== 'undefined') {
+                                    localStorage.removeItem('userRole');
+                                    localStorage.removeItem('userEmail');
+                                    localStorage.removeItem('userName');
+                                }
+                                signOut({ callbackUrl: '/' });
+                            }}
                             className="text-xs font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 border border-rose-100 hover:bg-rose-100 transition-colors px-4 py-2 rounded-xl"
                         >
                             ออกจากระบบ

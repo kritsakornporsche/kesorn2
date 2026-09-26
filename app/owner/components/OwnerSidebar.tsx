@@ -135,7 +135,14 @@ export default function OwnerSidebar({ isOpen, onClose }: OwnerSidebarProps) {
       {/* Bottom Logout Button & Version */}
       <div className="p-3 border-t border-border bg-secondary/30 shrink-0 space-y-2">
         <button
-          onClick={() => signOut({ callbackUrl: '/signin' })}
+          onClick={() => {
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem('userRole');
+              localStorage.removeItem('userEmail');
+              localStorage.removeItem('userName');
+            }
+            signOut({ callbackUrl: '/' });
+          }}
           className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-500 hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-100 border border-rose-500/30 text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-sm"
         >
           <span className="text-sm">🚪</span>

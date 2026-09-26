@@ -75,7 +75,7 @@ export default function ResearcherNavbar({ onToggleMobileMenu }: ResearcherNavba
               localStorage.removeItem('userEmail');
               localStorage.removeItem('userName');
             }
-            signOut({ callbackUrl: '/signin' });
+            signOut({ callbackUrl: '/' });
           }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold transition-colors border border-rose-500/20 cursor-pointer"
           title="ออกจากระบบ"

@@ -182,7 +182,14 @@ export default function KeeperBottomNav({ dorms = [], selectedDormId = 'all', on
 
                   <button
                     type="button"
-                    onClick={() => signOut({ callbackUrl: '/signin' })}
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        localStorage.removeItem('userRole');
+                        localStorage.removeItem('userEmail');
+                        localStorage.removeItem('userName');
+                      }
+                      signOut({ callbackUrl: '/' });
+                    }}
                     className="w-full p-3.5 rounded-2xl bg-rose-500/10 hover:bg-rose-500/15 border border-rose-500/25 text-rose-600 dark:text-rose-400 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer"
                   >
                     <span>🚪</span>
