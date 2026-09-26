@@ -178,11 +178,37 @@ export default function OwnerBillingPage() {
   }, []);
 
   // When tenant is selected in single bill form
-  const handleTenantChange = (tenantId: string) => {
+  const handleTenantChange = async (tenantId: string) => {
     const found = tenants.find((t) => String(t.id) === tenantId);
     if (found) {
-      const roomPrice = found.price || 3500;
+      const roomPrice = Number(found.price) || 2800;
       const defaultWater = 100;
+      let eleUnits = 0;
+      let eleAmount = 0;
+
+      // Auto-lookup latest electricity meter reading for this room
+      try {
+        const mRes = await fetch(`/api/owner/meters?dormId=${ownerDormId || 1}`);
+        const mData = await mRes.json();
+        if (mData.success && Array.isArray(mData.data)) {
+          const roomReadings = mData.data.filter((r: any) => 
+            (String(r.room_number) === String(found.room_number) || String(r.room_id) === String(found.room_id)) &&
+            (r.type === 'Electricity' || r.type === 'Electric')
+          );
+          if (roomReadings.length > 0) {
+            roomReadings.sort((a: any, b: any) => b.id - a.id);
+            const latest = roomReadings[0];
+            const units = Number(latest.units_used) || (Number(latest.current_reading) - Number(latest.previous_reading)) || 0;
+            if (units > 0) {
+              eleUnits = units;
+              eleAmount = units * 7;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Could not auto-fetch meter reading:', err);
+      }
+
       setFormData((prev) => ({
         ...prev,
         tenant_id: tenantId,
@@ -190,7 +216,9 @@ export default function OwnerBillingPage() {
         room_amount: String(roomPrice),
         water_amount: String(defaultWater),
         water_units: '1',
-        amount: String(Number(roomPrice) + defaultWater + Number(prev.electric_amount || 0)),
+        electric_units: String(eleUnits),
+        electric_amount: String(eleAmount),
+        amount: String(roomPrice + defaultWater + eleAmount),
       }));
     } else {
       setFormData((prev) => ({ ...prev, tenant_id: tenantId, room_number: '' }));
@@ -1446,42 +1474,79 @@ export default function OwnerBillingPage() {
               </div>
 
               {/* Utility and Room breakdown */}
-              <div className="grid grid-cols-3 gap-3 bg-secondary/40 p-4 rounded-2xl border border-border text-xs">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 mb-1">ค่าเช่าห้อง (฿)</label>
-                  <input
-                    type="number"
-                    value={formData.room_amount}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
-                      updateUtilityAmounts(parseFloat(formData.water_amount) || 0, parseFloat(formData.electric_amount) || 0, val);
-                    }}
-                    className="w-full px-3 py-2 bg-card border border-border rounded-xl text-foreground font-bold"
-                  />
+              <div className="space-y-3 bg-secondary/40 p-4 rounded-2xl border border-border text-xs">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">ค่าเช่าห้อง (฿)</label>
+                    <input
+                      type="number"
+                      value={formData.room_amount}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        updateUtilityAmounts(parseFloat(formData.water_amount) || 0, parseFloat(formData.electric_amount) || 0, val);
+                      }}
+                      className="w-full px-3 py-2 bg-card border border-border rounded-xl text-foreground font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-cyan-300 mb-1">ค่าน้ำเหมาจ่าย (฿)</label>
+                    <input
+                      type="number"
+                      value={formData.water_amount}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        updateUtilityAmounts(val, parseFloat(formData.electric_amount) || 0, parseFloat(formData.room_amount) || 0);
+                      }}
+                      className="w-full px-3 py-2 bg-card border border-border rounded-xl text-foreground font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-amber-300 mb-1">ค่าไฟฟ้า (฿)</label>
+                    <input
+                      type="number"
+                      value={formData.electric_amount}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        updateUtilityAmounts(parseFloat(formData.water_amount) || 0, val, parseFloat(formData.room_amount) || 0);
+                      }}
+                      className="w-full px-3 py-2 bg-card border border-border rounded-xl text-foreground font-bold"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-cyan-300 mb-1">ค่าน้ำ (฿)</label>
-                  <input
-                    type="number"
-                    value={formData.water_amount}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
-                      updateUtilityAmounts(val, parseFloat(formData.electric_amount) || 0, parseFloat(formData.room_amount) || 0);
-                    }}
-                    className="w-full px-3 py-2 bg-card border border-border rounded-xl text-foreground font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-amber-300 mb-1">ค่าไฟ (฿)</label>
-                  <input
-                    type="number"
-                    value={formData.electric_amount}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
-                      updateUtilityAmounts(parseFloat(formData.water_amount) || 0, val, parseFloat(formData.room_amount) || 0);
-                    }}
-                    className="w-full px-3 py-2 bg-card border border-border rounded-xl text-foreground font-bold"
-                  />
+
+                {/* Meter units inputs */}
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/50">
+                  <div>
+                    <label className="block text-[10px] font-bold text-amber-400 mb-1">
+                      ⚡ หน่วยไฟที่ใช้ (ยูนิต × ฿7)
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.electric_units}
+                      onChange={(e) => {
+                        const units = parseFloat(e.target.value) || 0;
+                        const elecAmt = units * 7;
+                        setFormData((prev) => ({ ...prev, electric_units: String(units) }));
+                        updateUtilityAmounts(parseFloat(formData.water_amount) || 0, elecAmt, parseFloat(formData.room_amount) || 0);
+                      }}
+                      className="w-full px-3 py-2 bg-card border border-amber-500/30 rounded-xl text-amber-400 font-bold"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-cyan-400 mb-1">
+                      💧 หน่วยน้ำ (เหมาจ่าย)
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.water_units}
+                      onChange={(e) => {
+                        setFormData((prev) => ({ ...prev, water_units: e.target.value }));
+                      }}
+                      className="w-full px-3 py-2 bg-card border border-cyan-500/30 rounded-xl text-cyan-400 font-bold"
+                      placeholder="1"
+                    />
+                  </div>
                 </div>
               </div>
 

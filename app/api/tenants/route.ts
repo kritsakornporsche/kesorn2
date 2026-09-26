@@ -17,10 +17,19 @@ export async function GET(req: Request) {
 
   try {
     const tenants = await sql`
-      SELECT t.id, t.name, t.email, t.phone, t.status, r.room_number
+      SELECT 
+        t.id, 
+        t.name, 
+        t.email, 
+        t.phone, 
+        t.status, 
+        r.room_number,
+        r.id as room_id,
+        COALESCE(r.price, 2800) as price
       FROM tenants t
       LEFT JOIN rooms r ON r.id = t.room_id
-      ORDER BY r.room_number ASC
+      WHERE t.status = 'active' OR t.status = 'Active'
+      ORDER BY CAST(r.room_number AS UNSIGNED) ASC, r.room_number ASC
     `;
     
     return NextResponse.json({ success: true, data: tenants });

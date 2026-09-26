@@ -58,6 +58,13 @@ export default function MaidDashboardPage() {
   const [finishNotes, setFinishNotes] = useState('');
   const [finishPhoto, setFinishPhoto] = useState('');
 
+  // Create Job Modal states
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newRoomNumber, setNewRoomNumber] = useState('5');
+  const [newJobType, setNewJobType] = useState('ทำความสะอาดทั่วไป');
+  const [newNotes, setNewNotes] = useState('');
+  const [creatingJob, setCreatingJob] = useState(false);
+
   const fetchData = useCallback(async (dormId = activeDormId, showLoading = true) => {
     if (showLoading) setLoadingData(true);
     try {
@@ -286,16 +293,25 @@ export default function MaidDashboardPage() {
                   <h2 className="font-display text-base font-bold text-white">คิวงานทำความสะอาด ({filteredJobs.length})</h2>
                   <p className="text-xs text-white/50 mt-0.5">รายการงานที่ตรงตามเงื่อนไขหอพักที่เลือก</p>
                 </div>
-                <button 
-                  onClick={() => fetchData(activeDormId)} 
-                  disabled={loadingData}
-                  className={`text-xs font-semibold hover:text-white/80 flex items-center gap-1 transition-all ${loadingData ? 'text-white/50 opacity-50 cursor-not-allowed' : 'text-muted-foreground'}`}
-                >
-                  <svg className={`w-3.5 h-3.5 ${loadingData ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  {loadingData ? 'กำลังโหลด...' : 'รีเฟรชข้อมูล'}
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-orange-500/20 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <span>➕</span>
+                    <span>บันทึกงานใหม่</span>
+                  </button>
+                  <button 
+                    onClick={() => fetchData(activeDormId)} 
+                    disabled={loadingData}
+                    className={`text-xs font-semibold hover:text-white/80 flex items-center gap-1 transition-all ${loadingData ? 'text-white/50 opacity-50 cursor-not-allowed' : 'text-muted-foreground'}`}
+                  >
+                    <svg className={`w-3.5 h-3.5 ${loadingData ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    {loadingData ? 'กำลังโหลด...' : 'รีเฟรชข้อมูล'}
+                  </button>
+                </div>
               </div>
               
               {loadingData ? (
@@ -563,6 +579,121 @@ export default function MaidDashboardPage() {
           </div>
         )}
 
+        {/* Create Job Modal */}
+        {isCreateModalOpen && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-[#0F172A] border border-white/10 rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-orange-500/20 text-orange-400 flex items-center justify-center text-xl">
+                      🧹
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-black text-white">บันทึกงานทำความสะอาด</h2>
+                      <p className="text-xs text-orange-400 font-bold">New Cleaning Task</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setIsCreateModalOpen(false)}
+                    className="text-white/50 hover:text-white text-sm font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <form 
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    setCreatingJob(true);
+                    try {
+                      const res = await fetch('/api/keeper/maid/jobs', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          room_number: newRoomNumber,
+                          job_type: newJobType,
+                          notes: newNotes,
+                          dorm_id: activeDormId === 'all' ? 1 : Number(activeDormId),
+                        }),
+                      });
+                      const d = await res.json();
+                      if (d.success) {
+                        setIsCreateModalOpen(false);
+                        setNewNotes('');
+                        fetchData(activeDormId);
+                      } else {
+                        alert(d.message || 'เกิดข้อผิดพลาด');
+                      }
+                    } catch (err: any) {
+                      alert(err.message);
+                    } finally {
+                      setCreatingJob(false);
+                    }
+                  }}
+                  className="space-y-4 text-xs font-bold"
+                >
+                  <div>
+                    <label className="text-[10px] uppercase text-white/50 block mb-1">เลือกห้องพัก</label>
+                    <select
+                      value={newRoomNumber}
+                      onChange={(e) => setNewRoomNumber(e.target.value)}
+                      className="w-full px-4 py-3 bg-[#080F1E] border border-white/10 rounded-xl text-white font-bold outline-none"
+                    >
+                      {Array.from({ length: 20 }, (_, i) => String(i + 1)).map(num => (
+                        <option key={num} value={num} className="bg-[#0F172A] text-white">
+                          ห้อง {num} (หอพักเกษร 2)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] uppercase text-white/50 block mb-1">ประเภทงาน</label>
+                    <select
+                      value={newJobType}
+                      onChange={(e) => setNewJobType(e.target.value)}
+                      className="w-full px-4 py-3 bg-[#080F1E] border border-white/10 rounded-xl text-white font-bold outline-none"
+                    >
+                      <option value="ทำความสะอาดทั่วไป">ทำความสะอาดทั่วไป</option>
+                      <option value="move_out">เตรียมห้องย้ายออก / ย้ายเข้า</option>
+                      <option value="weekly">ทำความสะอาดประจำสัปดาห์</option>
+                      <option value="requested">คำขอพิเศษ</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] uppercase text-white/50 block mb-1">รายละเอียด / บันทึกเพิ่มเติม</label>
+                    <textarea
+                      rows={3}
+                      value={newNotes}
+                      onChange={(e) => setNewNotes(e.target.value)}
+                      placeholder="ระบุจุดที่ต้องเน้น เช่น ระเบียง ห้องน้ำ..."
+                      className="w-full px-4 py-3 bg-[#080F1E] border border-white/10 rounded-xl text-white font-medium outline-none resize-none"
+                    />
+                  </div>
+
+                  <div className="flex gap-3 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsCreateModalOpen(false)}
+                      className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white/50 rounded-xl transition-all"
+                    >
+                      ยกเลิก
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={creatingJob}
+                      className="flex-[2] py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-slate-950 rounded-xl font-black shadow-lg shadow-orange-500/20 transition-all disabled:opacity-50 cursor-pointer"
+                    >
+                      {creatingJob ? 'กำลังบันทึก...' : 'บันทึกงาน'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

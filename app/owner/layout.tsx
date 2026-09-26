@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { auth } from '@/auth';
+import { getDb } from '@/lib/db';
 import { redirect } from 'next/navigation';
 import OwnerNavbar from './components/OwnerNavbar';
 import OwnerSidebar from './components/OwnerSidebar';
@@ -19,7 +20,19 @@ export default async function OwnerLayout({
   }
 
   // SEC-02: Must have owner role
-  const role = (session.user as any)?.role;
+  let role = (session.user as any)?.role;
+  if (role !== 'owner' && session.user.email) {
+    try {
+      const sql = getDb();
+      const u = await sql`SELECT role FROM users WHERE LOWER(email) = ${session.user.email.toLowerCase()} LIMIT 1`;
+      if (u.length > 0 && u[0].role === 'owner') {
+        role = 'owner';
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
   if (role !== 'owner') {
     redirect('/signin?error=' + encodeURIComponent('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (เฉพาะเจ้าของหอพัก)'));
   }

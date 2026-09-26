@@ -39,6 +39,18 @@ export async function POST(request: Request) {
       RETURNING *
     `;
 
+    // If request is for cleaning, also create a job in cleaning_jobs for Maid portal
+    if (issue_type.includes('ทำความสะอาด') && tenantRes[0].room_id) {
+      try {
+        await sql`
+          INSERT INTO cleaning_jobs (room_id, dorm_id, task, job_type, notes, status)
+          VALUES (${tenantRes[0].room_id}, 1, ${'คำขอทำความสะอาด: ' + description}, 'requested', ${description}, 'pending')
+        `;
+      } catch (ce) {
+        console.warn('Auto cleaning job notice:', ce);
+      }
+    }
+
     return NextResponse.json({ success: true, data: result[0] });
   } catch (error: any) {
     console.error('[POST /api/tenant/maintenance] Error:', error);

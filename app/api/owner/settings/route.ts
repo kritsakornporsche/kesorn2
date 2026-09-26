@@ -89,7 +89,7 @@ export async function POST(req: Request) {
           ocr_api_key, ocr_provider
         ) VALUES (
           ${name || 'หอพักเกษร 2'}, ${address || ''}, ${phone || ''}, ${tax_id || ''}, 
-          ${water_rate !== undefined ? water_rate : 0.00}, ${electricity_rate || 6.00},
+          ${water_rate !== undefined ? water_rate : 100.00}, ${electricity_rate || 7.00},
           ${has_wifi ? 1 : 0}, ${has_parking ? 1 : 0}, ${pet_friendly ? 1 : 0}, ${has_lan ? 1 : 0}, 
           ${facilities || ''}, ${map_url || ''}, ${description || ''}, 
           ${has_air_con ? 1 : 0}, ${cover_image || ''},
@@ -105,8 +105,8 @@ export async function POST(req: Request) {
           address = ${address || ''},
           phone = ${phone || ''},
           tax_id = ${tax_id || ''},
-          water_rate = ${water_rate !== undefined ? water_rate : 0.00},
-          electricity_rate = ${electricity_rate || 6.00},
+          water_rate = ${water_rate !== undefined ? water_rate : 100.00},
+          electricity_rate = ${electricity_rate || 7.00},
           has_wifi = ${has_wifi ? 1 : 0},
           has_parking = ${has_parking ? 1 : 0},
           pet_friendly = ${pet_friendly ? 1 : 0},

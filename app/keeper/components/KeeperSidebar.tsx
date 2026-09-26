@@ -10,14 +10,14 @@ import KeeperBottomNav from './KeeperBottomNav';
 const navItems = [
   {
     href: '/keeper/maid',
-    label: 'งานแม่บ้าน',
-    roles: ['maid', 'keeper'],
+    label: 'งานแม่บ้าน / ทำความสะอาด',
+    roles: ['maid', 'keeper', 'technician'],
     icon: '🧹',
   },
   {
     href: '/keeper/technician',
-    label: 'งานซ่อมบำรุง',
-    roles: ['technician', 'keeper'],
+    label: 'งานซ่อมบำรุง / ช่าง',
+    roles: ['technician', 'keeper', 'maid'],
     icon: '🔧',
   },
 ];

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { signIn } from 'next-auth/react';
+import { signIn, signOut } from 'next-auth/react';
 import { cn } from '@/lib/utils';
 
 export default function SignInContent() {
@@ -67,6 +67,7 @@ export default function SignInContent() {
 
       // 2. Authenticate with NextAuth to create HTTP-only session cookie
       try {
+        await signOut({ redirect: false }).catch(() => {});
         const origin = typeof window !== 'undefined' ? window.location.origin : '';
         await signIn('credentials', {
           redirect: false,

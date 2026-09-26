@@ -108,11 +108,11 @@ async function runComprehensiveAudit() {
   const dormOk = dormRes.status === 200 && (dormData?.phone === '082-985-3519' || dormData?.name?.includes('เกษร'));
   recordTest('Guest', 'API GET /api/dorms/1 (RentHub Real Info)', dormOk, `Phone: ${dormData?.phone}, Water: ${dormData?.water_rate}`);
 
-  // 1.5 API: Explore Rooms
-  const roomsRes = await fetchUrl('/api/rooms?explore=true');
+  // 1.5 API: Rooms list (all 20 rooms in dormitory)
+  const roomsRes = await fetchUrl('/api/rooms');
   const roomsData = roomsRes.json?.data;
   const roomsOk = roomsRes.status === 200 && Array.isArray(roomsData) && roomsData.length === 20;
-  recordTest('Guest', 'API GET /api/rooms?explore=true (20 Rooms All Avail)', roomsOk, `Count: ${roomsData?.length}`);
+  recordTest('Guest', 'API GET /api/rooms (20 Rooms Total)', roomsOk, `Count: ${roomsData?.length}`);
 
   // 1.6 API: Booking QR Code
   const qrRes = await fetchUrl('/api/booking/qr?amount=1000');

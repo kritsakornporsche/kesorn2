@@ -145,3 +145,46 @@ export async function PATCH(request: Request) {
 }
 
 export const PUT = PATCH;
+
+export async function POST(request: Request) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { room_id, room_number, dorm_id, task, job_type, notes } = body;
+
+    const sql = getDb();
+    let targetRoomId = room_id;
+    if (!targetRoomId && room_number) {
+      const r = await sql`SELECT id FROM rooms WHERE room_number = ${String(room_number)} LIMIT 1`;
+      if (r.length > 0) targetRoomId = r[0].id;
+    }
+
+    if (!targetRoomId) {
+      return NextResponse.json({ success: false, message: 'กรุณาระบุห้องพัก' }, { status: 400 });
+    }
+
+    const taskTitle = task || (
+      job_type === 'move_out' ? 'ทำความสะอาดห้องหลังย้ายออก' :
+      job_type === 'weekly' ? 'ทำความสะอาดประจำสัปดาห์' :
+      'ทำความสะอาดทั่วไปตามคำขอ'
+    );
+
+    const result = await sql`
+      INSERT INTO cleaning_jobs (room_id, dorm_id, task, job_type, notes, status)
+      VALUES (${targetRoomId}, ${dorm_id || 1}, ${taskTitle}, ${job_type || 'requested'}, ${notes || null}, 'pending')
+    `;
+
+    return NextResponse.json({ 
+      success: true, 
+      message: 'สร้างงานทำความสะอาดเรียบร้อยแล้ว',
+      data: { id: (result as any).insertId } 
+    });
+  } catch (error: any) {
+    console.error('[Create Cleaning Job Error]', error);
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  }
+}

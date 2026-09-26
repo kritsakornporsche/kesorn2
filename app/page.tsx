@@ -347,7 +347,7 @@ export default function Home() {
               <div>
                 <span className="text-[10px] font-bold text-muted-foreground uppercase block">ราคาห้องพัก</span>
                 <span className="text-sm font-black text-purple-500">
-                  ฿2,800 - 3,100 <span className="text-[11px] font-medium text-muted-foreground">/ ด.</span>
+                  ฿2,800 - 3,400 <span className="text-[11px] font-medium text-muted-foreground">/ ด.</span>
                 </span>
               </div>
             </div>
@@ -394,7 +394,7 @@ export default function Home() {
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center font-bold text-xs shrink-0">✓</span>
-                  <span><strong>ฟรีค่าน้ำประปา:</strong> รวมในค่าห้องพักแล้ว • ค่าไฟหน่วยละ 6 บาท</span>
+                  <span><strong>ค่าน้ำประปา:</strong> เหมาจ่าย 100 บาท/เดือน • ค่าไฟหน่วยละ 7 บาท</span>
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center font-bold text-xs shrink-0">✕</span>
@@ -681,7 +681,7 @@ export default function Home() {
                           <span className="text-xs font-medium text-white/90"> /เดือน</span>
                         </div>
                         <span className="text-[10px] text-emerald-300 font-bold block drop-shadow">
-                          ✓ ฟรีค่าน้ำ • ฟรี Wi-Fi เราเตอร์
+                          ✓ ค่าน้ำ ฿100/ด. • ค่าไฟ ฿7/หน่วย • ฟรี Wi-Fi
                         </span>
                       </div>
                     </div>

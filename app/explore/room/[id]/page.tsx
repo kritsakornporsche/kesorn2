@@ -438,7 +438,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     <div>
                       <span className="text-[10px] uppercase font-bold text-muted-foreground block">ค่าไฟฟ้า</span>
                       <span className="text-lg font-black text-amber-500">
-                        ฿{room.electricity_rate !== undefined && room.electricity_rate !== null ? Number(room.electricity_rate) : 6}{' '}
+                        ฿{room.electricity_rate !== undefined && room.electricity_rate !== null ? Number(room.electricity_rate) : 7}{' '}
                         <span className="text-xs font-bold text-muted-foreground">/ ยูนิต</span>
                       </span>
                     </div>
@@ -579,14 +579,14 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   <div className="flex justify-between items-center text-sm">
                     <div>
                       <span className="text-muted-foreground block">ค่าเช่ารายเดือน</span>
-                      <span className="text-[11px] text-emerald-500 font-semibold">✓ ฟรีค่าน้ำ • ฟรี Wi-Fi เราเตอร์ทุกห้อง</span>
+                      <span className="text-[11px] text-cyan-500 font-semibold">ค่าน้ำเหมาจ่าย ฿100/ด. • ฟรี Wi-Fi</span>
                     </div>
                     <span className="font-bold">฿{Number(room.price).toLocaleString()} / เดือน</span>
                   </div>
 
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">อัตราค่าไฟฟ้า</span>
-                    <span className="font-bold text-amber-500">฿6 / ยูนิต</span>
+                    <span className="font-bold text-amber-500">฿{room.electricity_rate || 7} / ยูนิต</span>
                   </div>
 
                   <div className="flex justify-between items-center text-sm pt-2 border-t border-border/50">

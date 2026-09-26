@@ -84,6 +84,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
     }
 
+    // Prevent duplicate bill for same tenant in same billing cycle
+    if (billing_cycle) {
+      const existing = await sql`
+        SELECT id FROM bills 
+        WHERE tenant_id = ${tenant_id} 
+        AND billing_cycle = ${billing_cycle}
+        LIMIT 1
+      `;
+      if (existing.length > 0) {
+        return NextResponse.json({ 
+          success: false, 
+          message: `มีใบแจ้งหนี้รอบบิล "${billing_cycle}" สำหรับผู้เช่ารายนี้แล้ว ไม่สามารถออกบิลซ้ำได้` 
+        }, { status: 400 });
+      }
+    }
+
     const result = await sql`
       INSERT INTO bills (
         tenant_id, 

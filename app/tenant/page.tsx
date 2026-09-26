@@ -2,7 +2,6 @@ import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import Link from 'next/link';
 import AnnouncementsSection from '../components/AnnouncementsSection';
-import MoveOutTestButton from './components/MoveOutTestButton';
 import DormRulesCard from './components/DormRulesCard';
 import CancelBookingButton from './components/CancelBookingButton';
 
@@ -412,19 +411,7 @@ export default async function TenantDashboard() {
               {/* Dormitory Rules Card */}
               <DormRulesCard />
 
-              {/* Developer Test Tools */}
-              <div className="bg-[#FFF4E5]/50 rounded-[2.5rem] p-8 border border-[#FFD8A8]/50 shadow-inner text-center">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#FFD8A8] text-[#873800] text-[10px] font-black uppercase tracking-widest mb-4">
-                    🧪 Dev Testing
-                </div>
-                <h3 className="text-lg font-black text-[#873800] mb-2">ทดสอบระบบย้ายออก</h3>
-                <p className="text-[10px] font-bold text-[#873800]/60 uppercase tracking-widest mb-6 leading-relaxed">
-                    คืนสถานะห้องพักและรีเซ็ตบทบาทกลับเป็น Guest เพื่อจองใหม่
-                </p>
-                <div className="flex flex-col gap-3">
-                    <MoveOutTestButton />
-                </div>
-              </div>
+
           </div>
         </div>
       </div>

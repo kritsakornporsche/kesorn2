@@ -29,6 +29,14 @@ export default function KeepersManagement() {
     password: '',
   });
 
+  // Cleaning Job Assignment states
+  const [isCleaningModalOpen, setIsCleaningModalOpen] = useState(false);
+  const [cleaningRoomNumber, setCleaningRoomNumber] = useState('5');
+  const [cleaningJobType, setCleaningJobType] = useState('ทำความสะอาดทั่วไป');
+  const [cleaningNotes, setCleaningNotes] = useState('');
+  const [cleaningSubmitting, setCleaningSubmitting] = useState(false);
+  const [cleaningMsg, setCleaningMsg] = useState('');
+
 
   useEffect(() => {
     const fetchDormData = async () => {
@@ -134,15 +142,24 @@ export default function KeepersManagement() {
             <h1 className="text-3xl font-black mb-2">จัดการเจ้าหน้าที่</h1>
             <p className="text-muted-foreground font-medium">เพิ่ม แก้ไข และลบข้อมูลแม่บ้านหรือช่างประจำหอพัก</p>
           </div>
-          <button 
-            onClick={() => handleOpenModal()}
-            className="px-6 py-3 bg-primary text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            เพิ่มเจ้าหน้าที่
-          </button>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsCleaningModalOpen(true)}
+              className="px-5 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-2xl font-black flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all cursor-pointer text-sm"
+            >
+              <span>🧹</span>
+              <span>มอบหมายงานทำความสะอาด</span>
+            </button>
+            <button 
+              onClick={() => handleOpenModal()}
+              className="px-6 py-3 bg-primary text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all cursor-pointer text-sm"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              เพิ่มเจ้าหน้าที่
+            </button>
+          </div>
         </header>
 
         {loading ? (
@@ -294,6 +311,131 @@ export default function KeepersManagement() {
                     className="flex-[2] py-4 bg-[#3E342B] text-white rounded-2xl font-bold shadow-lg hover:-translate-y-1 transition-all"
                   >
                     {editingKeeper ? 'บันทึกการแก้ไข' : 'เพิ่มเจ้าหน้าที่'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🧹 Cleaning Job Assignment Modal */}
+      {isCleaningModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-[2.5rem] w-full max-w-lg shadow-2xl border border-border overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-xl">
+                    🧹
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-foreground">มอบหมายงานให้แม่บ้าน</h2>
+                    <p className="text-xs text-amber-400 font-bold">Assign Cleaning Task</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsCleaningModalOpen(false)}
+                  className="text-muted-foreground hover:text-foreground text-sm font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {cleaningMsg && (
+                <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-bold">
+                  {cleaningMsg}
+                </div>
+              )}
+
+              <form 
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setCleaningSubmitting(true);
+                  try {
+                    const res = await fetch('/api/keeper/maid/jobs', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        room_number: cleaningRoomNumber,
+                        job_type: cleaningJobType,
+                        notes: cleaningNotes,
+                        dorm_id: dormId || 1,
+                      }),
+                    });
+                    const d = await res.json();
+                    if (d.success) {
+                      setCleaningMsg('✓ มอบหมายงานทำความสะอาดสำเร็จ');
+                      setTimeout(() => {
+                        setCleaningMsg('');
+                        setIsCleaningModalOpen(false);
+                        setCleaningNotes('');
+                      }, 1200);
+                    } else {
+                      alert(d.message || 'เกิดข้อผิดพลาด');
+                    }
+                  } catch (err: any) {
+                    alert(err.message);
+                  } finally {
+                    setCleaningSubmitting(false);
+                  }
+                }}
+                className="space-y-4 text-xs font-bold"
+              >
+                <div>
+                  <label className="text-[10px] uppercase text-muted-foreground block mb-1">เลือกห้องพัก</label>
+                  <select
+                    value={cleaningRoomNumber}
+                    onChange={(e) => setCleaningRoomNumber(e.target.value)}
+                    className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-xl text-foreground font-bold outline-none"
+                  >
+                    {Array.from({ length: 20 }, (_, i) => String(i + 1)).map(num => (
+                      <option key={num} value={num} className="bg-card text-foreground">
+                        ห้อง {num} (หอพักเกษร 2)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] uppercase text-muted-foreground block mb-1">ประเภทงานทำความสะอาด</label>
+                  <select
+                    value={cleaningJobType}
+                    onChange={(e) => setCleaningJobType(e.target.value)}
+                    className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-xl text-foreground font-bold outline-none"
+                  >
+                    <option value="ทำความสะอาดทั่วไป">ทำความสะอาดทั่วไป (Routine Cleaning)</option>
+                    <option value="move_out">ทำความสะอาดเตรียมห้องย้ายออก / ย้ายเข้า</option>
+                    <option value="weekly">ทำความสะอาดประจำสัปดาห์</option>
+                    <option value="requested">คำขอพิเศษจากผู้เช่า</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] uppercase text-muted-foreground block mb-1">รายละเอียด / หมายเหตุ</label>
+                  <textarea
+                    rows={3}
+                    value={cleaningNotes}
+                    onChange={(e) => setCleaningNotes(e.target.value)}
+                    placeholder="เช่น กวาดถูพื้น ล้างระเบียง เปลี่ยนผ้าปูที่นอน..."
+                    className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-xl text-foreground font-medium outline-none resize-none"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsCleaningModalOpen(false)}
+                    className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-muted-foreground rounded-xl transition-all"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={cleaningSubmitting}
+                    className="flex-[2] py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-black shadow-lg shadow-amber-500/20 transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {cleaningSubmitting ? 'กำลังส่งข้อมูล...' : 'ยืนยันมอบหมายงาน'}
                   </button>
                 </div>
               </form>
