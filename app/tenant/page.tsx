@@ -331,17 +331,20 @@ export default async function TenantDashboard() {
                       <p className="text-white/50 font-bold text-sm">ยังไม่มีรายการแจ้งซ่อมในขณะนี้</p>
                       <Link href="/tenant/maintenance" className="mt-3 inline-block text-primary font-bold text-xs">แจ้งซ่อมใหม่ →</Link>
                     </div>
-                ) : recentMaintenance.map((maint: any) => (
+                ) : recentMaintenance.map((maint: any) => {
+                    const isPending = maint.status === 'Pending' || maint.status === 'pending';
+                    const isInProgress = maint.status === 'InProgress' || maint.status === 'in_progress' || maint.status === 'In Progress';
+                    return (
                     <div key={maint.id} className="bg-card rounded-[2rem] border border-border p-6 sm:p-8 shadow-sm hover:shadow-lg transition-all group">
                       <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-4">
                         <div className="flex gap-4 items-start">
                             <div className={`h-11 w-11 rounded-xl flex items-center justify-center shrink-0 ${
-                                maint.status === 'Pending' ? 'bg-[#FAF3E8]' :
-                                maint.status === 'In Progress' ? 'bg-[#E3F2FD]' : 'bg-[#E8F5E9]'
+                                isPending ? 'bg-[#FAF3E8]' :
+                                isInProgress ? 'bg-[#E3F2FD]' : 'bg-[#E8F5E9]'
                             }`}>
                                 <svg className={`w-5 h-5 ${
-                                    maint.status === 'Pending' ? 'text-[#D4A373]' :
-                                    maint.status === 'In Progress' ? 'text-[#2196F3]' : 'text-[#4CAF50]'
+                                    isPending ? 'text-[#D4A373]' :
+                                    isInProgress ? 'text-[#2196F3]' : 'text-[#4CAF50]'
                                 }`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg>
                             </div>
                             <div>
@@ -353,16 +356,17 @@ export default async function TenantDashboard() {
                             </div>
                         </div>
                         <span className={`px-3.5 py-1 text-[10px] font-black uppercase tracking-widest rounded-full border ${
-                            maint.status === 'Pending' ? 'bg-[#FAF3E8] text-[#D4A373] border-[#E9C46A]' :
-                            maint.status === 'In Progress' ? 'bg-[#E3F2FD] text-[#2196F3] border-[#BBDEFB]' :
+                            isPending ? 'bg-[#FAF3E8] text-[#D4A373] border-[#E9C46A]' :
+                            isInProgress ? 'bg-[#E3F2FD] text-[#2196F3] border-[#BBDEFB]' :
                             'bg-[#E8F5E9] text-[#4CAF50] border-[#C8E6C9]'
                         }`}>
-                            {maint.status === 'Pending' ? 'รอดำเนินการ' : maint.status === 'In Progress' ? 'กำลังดำเนินการ' : 'เสร็จสิ้น'}
+                            {isPending ? 'รอดำเนินการ' : isInProgress ? 'กำลังดำเนินการ' : 'เสร็จสิ้น'}
                         </span>
                       </div>
                       <p className="text-white/80 leading-relaxed text-sm italic border-l-4 border-white/20 pl-4">"{maint.description}"</p>
                     </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
 

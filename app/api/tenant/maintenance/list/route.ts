@@ -12,9 +12,15 @@ export async function GET() {
     const sql = getDormDbFromSession(session);
     
     // Find tenant ID
-    const tenantRes = await sql`SELECT id FROM tenants WHERE email = ${session.user.email}`;
+    const userEmail = session.user.email.toLowerCase();
+    const userId = (session.user as any)?.id || 0;
+    const tenantRes = await sql`
+      SELECT id FROM tenants 
+      WHERE LOWER(email) = ${userEmail} OR user_id = ${userId}
+      LIMIT 1
+    `;
     if (tenantRes.length === 0) {
-      return NextResponse.json({ success: false, data: [] });
+      return NextResponse.json({ success: true, data: [] });
     }
 
     const tenantId = tenantRes[0].id;

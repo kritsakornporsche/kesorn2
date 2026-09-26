@@ -74,18 +74,28 @@ export default function OwnerMaintenancePage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'Pending': return 'bg-amber-50 text-amber-600 border border-amber-200';
-      case 'In Progress': return 'bg-blue-50 text-blue-600 border border-blue-200';
-      case 'Resolved': return 'bg-emerald-50 text-emerald-600 border border-emerald-200';
+      case 'Pending':
+      case 'pending': return 'bg-amber-50 text-amber-600 border border-amber-200';
+      case 'In Progress':
+      case 'InProgress':
+      case 'in_progress': return 'bg-blue-50 text-blue-600 border border-blue-200';
+      case 'Resolved':
+      case 'Completed':
+      case 'completed': return 'bg-emerald-50 text-emerald-600 border border-emerald-200';
       default: return 'bg-gray-50 text-gray-600 border border-gray-200';
     }
   };
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'Pending': return 'รอรับเรื่อง';
-      case 'In Progress': return 'กำลังดำเนินการ';
-      case 'Resolved': return 'แก้ไขเรียบร้อย';
+      case 'Pending':
+      case 'pending': return 'รอรับเรื่อง';
+      case 'In Progress':
+      case 'InProgress':
+      case 'in_progress': return 'กำลังดำเนินการ';
+      case 'Resolved':
+      case 'Completed':
+      case 'completed': return 'แก้ไขเรียบร้อย';
       default: return status;
     }
   };
@@ -106,21 +116,21 @@ export default function OwnerMaintenancePage() {
               <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-500 text-2xl font-bold">!</div>
               <div>
                  <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">รอดำเนินการ</p>
-                 <p className="text-2xl font-black text-foreground">{requests.filter(r => r.status === 'Pending').length}</p>
+                 <p className="text-2xl font-black text-foreground">{requests.filter(r => r.status === 'Pending' || r.status === 'pending').length}</p>
               </div>
            </div>
            <div className="bg-card p-6 rounded-3xl border border-white/20/10 shadow-sm flex items-center gap-6">
               <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-500 text-2xl font-bold">⚙</div>
               <div>
                  <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">กำลังดำเนินการ</p>
-                 <p className="text-2xl font-black text-foreground">{requests.filter(r => r.status === 'In Progress').length}</p>
+                 <p className="text-2xl font-black text-foreground">{requests.filter(r => r.status === 'In Progress' || r.status === 'InProgress' || r.status === 'in_progress').length}</p>
               </div>
            </div>
            <div className="bg-card p-6 rounded-3xl border border-white/20/10 shadow-sm flex items-center gap-6">
               <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-500 text-2xl font-bold">✓</div>
               <div>
                  <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">ดำเนินการเสร็จสิ้น</p>
-                 <p className="text-2xl font-black text-foreground">{requests.filter(r => r.status === 'Resolved').length}</p>
+                 <p className="text-2xl font-black text-foreground">{requests.filter(r => r.status === 'Resolved' || r.status === 'Completed' || r.status === 'completed').length}</p>
               </div>
            </div>
         </div>
@@ -168,7 +178,11 @@ export default function OwnerMaintenancePage() {
                          <td className="px-0 sm:px-8 py-4 sm:py-6 align-top">
                             <span className="inline-flex sm:hidden text-[10px] font-black text-foreground/50 uppercase tracking-widest mb-3">สถานะ</span>
                             <select 
-                               value={req.status}
+                               value={
+                                 req.status === 'In Progress' || req.status === 'in_progress' || req.status === 'InProgress' ? 'InProgress' :
+                                 req.status === 'Resolved' || req.status === 'completed' || req.status === 'Completed' ? 'Completed' :
+                                 'Pending'
+                               }
                                onChange={(e) => updateStatus(req.id, e.target.value)}
                                className={cn(
                                   "w-full text-xs font-black uppercase tracking-widest px-4 py-3 rounded-xl border-2 outline-none cursor-pointer",
@@ -176,8 +190,8 @@ export default function OwnerMaintenancePage() {
                                )}
                             >
                                <option value="Pending">รอรับเรื่อง</option>
-                               <option value="In Progress">กำลังดำเนินการ</option>
-                               <option value="Resolved">แก้ไขเรียบร้อย</option>
+                               <option value="InProgress">กำลังดำเนินการ</option>
+                               <option value="Completed">แก้ไขเรียบร้อย</option>
                             </select>
                          </td>
                       </tr>

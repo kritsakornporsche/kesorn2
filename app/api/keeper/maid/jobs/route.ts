@@ -107,6 +107,10 @@ export async function PATCH(request: Request) {
     if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    const role = (session.user as any)?.role;
+    if (role !== 'keeper' && role !== 'owner' && role !== 'admin') {
+      return NextResponse.json({ success: false, message: 'Forbidden: Insufficient permissions' }, { status: 403 });
+    }
 
     const body = await request.json();
     const id = body.id || body.job_id;
@@ -151,6 +155,10 @@ export async function POST(request: Request) {
     const session = await auth();
     if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+    const role = (session.user as any)?.role;
+    if (role !== 'keeper' && role !== 'owner' && role !== 'admin') {
+      return NextResponse.json({ success: false, message: 'Forbidden: Insufficient permissions' }, { status: 403 });
     }
 
     const body = await request.json();

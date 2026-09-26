@@ -153,11 +153,14 @@ export default function TenantMaintenancePage() {
                 <p className="text-muted-foreground font-bold">ยังไม่มีประวัติการแจ้งซ่อม</p>
               </div>
             ) : (
-              requests.map((req) => (
+              requests.map((req) => {
+                const isPending = req.status === 'Pending' || req.status === 'pending';
+                const isInProgress = req.status === 'InProgress' || req.status === 'in_progress' || req.status === 'In Progress';
+                return (
                 <div key={req.id} className="bg-card rounded-[2.5rem] border border-border shadow-sm overflow-hidden flex items-stretch hover:shadow-xl transition-all group">
                    <div className={`w-4 shrink-0 ${
-                      req.status === 'Pending' ? 'bg-[#E9C46A]' :
-                      req.status === 'In Progress' ? 'bg-[#2196F3]' :
+                      isPending ? 'bg-[#E9C46A]' :
+                      isInProgress ? 'bg-[#2196F3]' :
                       'bg-[#4CAF50]'
                    }`}></div>
                    <div className="p-8 flex-1 flex flex-col md:flex-row justify-between gap-6 md:items-center">
@@ -175,16 +178,17 @@ export default function TenantMaintenancePage() {
                      
                      <div className="shrink-0">
                         <span className={`inline-block px-6 py-2.5 text-[10px] font-black uppercase tracking-[0.15em] rounded-full border-2 ${
-                          req.status === 'Pending' ? 'bg-[#FAF3E8] text-[#D4A373] border-[#E9C46A]' :
-                          req.status === 'In Progress' ? 'bg-[#E3F2FD] text-[#2196F3] border-[#BBDEFB]' :
+                          isPending ? 'bg-[#FAF3E8] text-[#D4A373] border-[#E9C46A]' :
+                          isInProgress ? 'bg-[#E3F2FD] text-[#2196F3] border-[#BBDEFB]' :
                           'bg-[#E8F5E9] text-[#4CAF50] border-[#C8E6C9]'
                         }`}>
-                          {req.status === 'Pending' ? 'รอดำเนินการ' : req.status === 'In Progress' ? 'กำลังซ่อมแซม' : 'เสร็จสิ้น'}
+                          {isPending ? 'รอดำเนินการ' : isInProgress ? 'กำลังซ่อมแซม' : 'เสร็จสิ้น'}
                         </span>
                      </div>
                    </div>
                 </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
