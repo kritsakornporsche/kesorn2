@@ -76,6 +76,57 @@ function getGoogleMapsDirectUrl(mapUrl?: string, address?: string, dormName?: st
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
+const DORM_GALLERY = [
+  {
+    id: 1,
+    title: 'อาคารหอพักเกษร 2 (วิวภายนอก)',
+    category: 'exterior',
+    categoryName: 'ภายนอกอาคาร',
+    desc: 'อาคาร 2 ชั้น โทนสีฟ้าสดใส บรรยากาศโปร่งสบาย สะอาดและเงียบสงบ อยู่ฝั่งเดียวกับมอ ใกล้หอวรางคณา',
+    src: '/images/kesorn/building-exterior.jpg',
+  },
+  {
+    id: 2,
+    title: 'ด้านหน้าอาคารหอพักเต็มอาคาร (20 ห้องพัก)',
+    category: 'exterior',
+    categoryName: 'ภายนอกอาคาร',
+    desc: 'อาคาร 2 ชั้น รวม 20 ห้องพัก มีบันไดขึ้นชั้น 2 ระเบียงทางเดินกว้าง และพื้นที่จอดรถด้านหน้า',
+    src: '/images/kesorn/building-front.jpg',
+  },
+  {
+    id: 3,
+    title: 'ภายในห้องพัก: เตียงนอน 5 ฟุต & ตู้เสื้อผ้าไม้สัก',
+    category: 'room',
+    categoryName: 'ห้องพัก',
+    desc: 'เตียงนอนพร้อมฟูก 5 ฟุต, ตู้เสื้อผ้าไม้สักบานเกล็ด, โต๊ะและเก้าอี้ทำงานไม้, ชั้นวางของติดผนัง 3 ชั้น และผ้าม่านบังแดด',
+    src: '/images/kesorn/room-bed.jpg',
+  },
+  {
+    id: 4,
+    title: 'มุมโต๊ะทำงาน & เครื่องปรับอากาศ / พัดลมติดผนัง',
+    category: 'room',
+    categoryName: 'ห้องพัก',
+    desc: 'ติดตั้งเครื่องปรับอากาศ, พัดลมติดผนัง, โต๊ะทำงาน, ราวแขวนสิ่งของ และกล่องเราเตอร์อินเทอร์เน็ต Wi-Fi ประจำห้อง',
+    src: '/images/kesorn/room-ac-fan.jpg',
+  },
+  {
+    id: 5,
+    title: 'ห้องน้ำส่วนตัวในห้องพัก (กว้างขวาง)',
+    category: 'bathroom',
+    categoryName: 'ห้องน้ำ',
+    desc: 'ห้องน้ำกว้างมาก พร้อมเครื่องทำน้ำอุ่น อ่างล้างหน้า กระจกแต่งหน้า สุขภัณฑ์ชักโครกพร้อมสายฉีด และผ้าม่านกั้นส่วนเปียก-แห้ง',
+    src: '/images/kesorn/bathroom.jpg',
+  },
+  {
+    id: 6,
+    title: 'ระเบียงและทางเดินชั้น 2',
+    category: 'balcony',
+    categoryName: 'ระเบียงและทางเดิน',
+    desc: 'ทางเดินปูกระเบื้องสะอาดตา ราวกันตกสแตนเลสโปร่งรับลมธรรมชาติ บรรยากาศเงียบสงบและปลอดภัย',
+    src: '/images/kesorn/corridor.jpg',
+  },
+];
+
 export default function Home() {
   const router = useRouter();
   const { data: session } = useSession();
@@ -84,6 +135,8 @@ export default function Home() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterTab, setFilterTab] = useState<'all' | 'available' | 'moving_out'>('all');
+  const [selectedPhoto, setSelectedPhoto] = useState<typeof DORM_GALLERY[0] | null>(null);
+  const [galleryFilter, setGalleryFilter] = useState<'all' | 'exterior' | 'room' | 'bathroom' | 'balcony'>('all');
 
   const handleOpenChat = () => {
     if (!session) {
@@ -155,11 +208,11 @@ export default function Home() {
   const movingOutCount = validRooms.filter(isMovingOut).length;
 
   const getFirstImage = (imageParam: string | null) => {
-    if (!imageParam) return '/up-header.jpg';
+    if (!imageParam) return '/images/kesorn/room-bed.jpg';
     try {
       if (imageParam.startsWith('[') && imageParam.endsWith(']')) {
         const images = JSON.parse(imageParam);
-        return images[0] || '/up-header.jpg';
+        return images[0] || '/images/kesorn/room-bed.jpg';
       }
       return imageParam;
     } catch {
@@ -167,7 +220,7 @@ export default function Home() {
     }
   };
 
-  const dormName = dormInfo?.name || 'หอพักเกษร 2';
+  const dormName = dormInfo?.name || 'หอพักเกษร 2 (หน้า ม.พะเยา)';
 
   return (
     <div className="min-h-screen bg-background text-foreground transition-colors duration-200">
@@ -177,7 +230,7 @@ export default function Home() {
       <section className="relative h-[55vh] min-h-[420px] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0">
           <Image
-            src={dormInfo?.cover_image || '/up-header.jpg'}
+            src={dormInfo?.cover_image || '/images/kesorn/building-exterior.jpg'}
             alt={dormName}
             fill
             className="object-cover brightness-[0.45] dark:brightness-[0.35]"
@@ -257,14 +310,14 @@ export default function Home() {
             </div>
           </div>
 
-          {/* 💧 Utility Rates & Highlights Bar */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-border">
+          {/* 💧 Utility Rates & Highlights Bar (Exact RentHub Data) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-4 border-t border-border">
             <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center gap-3">
               <span className="text-2xl">💧</span>
               <div>
                 <span className="text-[10px] font-bold text-muted-foreground uppercase block">ค่าน้ำประปา</span>
-                <span className="text-base font-black text-cyan-500">
-                  ฿{dormInfo?.water_rate || 100} <span className="text-xs font-medium text-muted-foreground">/ เดือน (เหมาจ่าย)</span>
+                <span className="text-sm font-black text-cyan-500">
+                  ฟรี <span className="text-[11px] font-medium text-muted-foreground">(รวมในค่าห้อง)</span>
                 </span>
               </div>
             </div>
@@ -273,8 +326,8 @@ export default function Home() {
               <span className="text-2xl">⚡</span>
               <div>
                 <span className="text-[10px] font-bold text-muted-foreground uppercase block">ค่าไฟฟ้า</span>
-                <span className="text-base font-black text-amber-500">
-                  ฿{dormInfo?.electricity_rate || 7} <span className="text-xs font-medium text-muted-foreground">/ ยูนิต</span>
+                <span className="text-sm font-black text-amber-500">
+                  ฿6 <span className="text-[11px] font-medium text-muted-foreground">/ ยูนิต</span>
                 </span>
               </div>
             </div>
@@ -283,8 +336,8 @@ export default function Home() {
               <span className="text-2xl">🚪</span>
               <div>
                 <span className="text-[10px] font-bold text-muted-foreground uppercase block">ห้องว่างพร้อมอยู่</span>
-                <span className="text-base font-black text-emerald-500">
-                  {availableCount} <span className="text-xs font-medium text-muted-foreground">ห้อง</span>
+                <span className="text-sm font-black text-emerald-500">
+                  {availableCount} <span className="text-[11px] font-medium text-muted-foreground">ห้อง</span>
                 </span>
               </div>
             </div>
@@ -292,58 +345,171 @@ export default function Home() {
             <div className="p-4 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center gap-3">
               <span className="text-2xl">🏷️</span>
               <div>
-                <span className="text-[10px] font-bold text-muted-foreground uppercase block">ราคาเริ่มต้น</span>
-                <span className="text-base font-black text-purple-500">
-                  ฿{dormInfo?.min_price ? Number(dormInfo.min_price).toLocaleString() : '2,800'} <span className="text-xs font-medium text-muted-foreground">/ เดือน</span>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase block">ราคาห้องพัก</span>
+                <span className="text-sm font-black text-purple-500">
+                  ฿2,800 - 3,100 <span className="text-[11px] font-medium text-muted-foreground">/ ด.</span>
+                </span>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center gap-3">
+              <span className="text-2xl">🔒</span>
+              <div>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase block">เงินประกัน</span>
+                <span className="text-sm font-black text-blue-500">
+                  ฿2,000 <span className="text-[11px] font-medium text-muted-foreground">(คืนครบสัญญา)</span>
+                </span>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center gap-3">
+              <span className="text-2xl">📝</span>
+              <div>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase block">ค่าจองสิทธิ์</span>
+                <span className="text-sm font-black text-rose-500">
+                  ฿1,000 <span className="text-[11px] font-medium text-muted-foreground">(ล็อกห้องทันที)</span>
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Rules & Facilities Overview */}
+          {/* Rules & Facilities Overview (From RentHub Photos & Post) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-            <div className="p-5 rounded-2xl bg-muted/20 border border-border/80 space-y-3">
-              <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                <span>📋</span> ระเบียบและข้อกำหนดหอพัก
+            <div className="p-6 rounded-3xl bg-muted/20 border border-border/80 space-y-4">
+              <h3 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                <span>📋</span> ระเบียบและข้อกำหนดหอพักเกษร 2
               </h3>
-              <ul className="text-xs space-y-2 text-foreground font-medium">
-                <li className="flex items-center gap-2">
-                  <span className={dormInfo?.pet_friendly ? 'text-emerald-500' : 'text-rose-500'}>
-                    {dormInfo?.pet_friendly ? '✓' : '✕'}
-                  </span>
-                  <span>{dormInfo?.pet_friendly ? 'อนุญาตให้เลี้ยงสัตว์เลี้ยงได้ (เช่น แมว)' : 'ไม่อนุญาตให้เลี้ยงสัตว์เลี้ยง'}</span>
+              <ul className="text-xs space-y-2.5 text-foreground font-medium">
+                <li className="flex items-center gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center font-bold text-xs shrink-0">✓</span>
+                  <span><strong>อนุญาตให้เลี้ยงสัตว์ได้ (Pet-Friendly):</strong> เช่น สุนัข แมว โดยผู้พักดูแลความสะอาด</span>
                 </li>
-                <li className="flex items-center gap-2">
-                  <span className={dormInfo?.has_parking ? 'text-emerald-500' : 'text-rose-500'}>
-                    {dormInfo?.has_parking ? '✓' : '✕'}
-                  </span>
-                  <span>{dormInfo?.has_parking ? 'มีที่จอดรถยนต์และรถจักรยานยนต์ในร่ม' : 'ที่จอดรถมีจำนวนจำกัด'}</span>
+                <li className="flex items-center gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center font-bold text-xs shrink-0">✓</span>
+                  <span><strong>ที่จอดรถสะดวก:</strong> มีที่จอดรถยนต์ และที่จอดรถมอเตอร์ไซค์/จักรยาน</span>
                 </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-emerald-500">✓</span>
-                  <span>{dormInfo?.has_wifi ? 'มีสัญญาณอินเทอร์เน็ต Wi-Fi ฟรีครอบคลุมทุกห้อง' : 'มีระบบอินเทอร์เน็ต'}</span>
+                <li className="flex items-center gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center font-bold text-xs shrink-0">✓</span>
+                  <span><strong>อินเทอร์เน็ต Wi-Fi ฟรี:</strong> ติดตั้งกล่องเราเตอร์ประจำห้องทุกห้อง สัญญาณแรง</span>
                 </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-rose-500">✕</span>
-                  <span>ห้ามสูบบุหรี่และสิ่งเสพติดภายในห้องพักและพื้นที่ส่วนกลางเด็ดขาด</span>
+                <li className="flex items-center gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center font-bold text-xs shrink-0">✓</span>
+                  <span><strong>ฟรีค่าน้ำประปา:</strong> รวมในค่าห้องพักแล้ว • ค่าไฟหน่วยละ 6 บาท</span>
+                </li>
+                <li className="flex items-center gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center font-bold text-xs shrink-0">✕</span>
+                  <span><strong>ห้ามสูบบุหรี่และสิ่งเสพติด:</strong> ปลอดบุหรี่ในห้องพักและอาคารเด็ดขาด</span>
+                </li>
+                <li className="flex items-center gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center font-bold text-xs shrink-0">ℹ</span>
+                  <span><strong>เงื่อนไขเข้าพัก:</strong> จองเพียง 1,000 บาท • เงินประกัน 2,000 บาท</span>
                 </li>
               </ul>
             </div>
 
-            <div className="p-5 rounded-2xl bg-muted/20 border border-border/80 space-y-3">
-              <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                <span>✨</span> สิ่งอำนวยความสะดวก
+            <div className="p-6 rounded-3xl bg-muted/20 border border-border/80 space-y-4">
+              <h3 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                <span>✨</span> สิ่งอำนวยความสะดวกครบครัน
               </h3>
               <div className="flex flex-wrap gap-2 pt-1">
-                {dormInfo?.has_air_con && <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">❄️ เครื่องปรับอากาศ</span>}
-                {dormInfo?.has_wifi && <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">📶 Wi-Fi ความเร็วสูง</span>}
-                {dormInfo?.has_lan && <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🌐 ช่องเสียบสาย LAN</span>}
-                {dormInfo?.has_parking && <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🚗 ที่จอดรถยนต์ & รถมอเตอร์ไซค์</span>}
-                {dormInfo?.pet_friendly && <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🐱 เลี้ยงสัตว์ได้</span>}
-                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🔒 กล้องวงจรปิด CCTV 24 ชม.</span>
-                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🔑 ระบบคีย์การ์ดเข้า-ออก</span>
+                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🛏️ เตียงที่นอน 5 ฟุต</span>
+                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🚪 ตู้เสื้อผ้าไม้สักบานเกล็ด</span>
+                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🧊 ตู้เย็นประจำห้อง</span>
+                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🪑 โต๊ะและเก้าอี้ทำงานไม้</span>
+                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🌀 พัดลมติดผนัง</span>
+                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🚿 เครื่องทำน้ำอุ่น (ห้องน้ำกว้างมาก)</span>
+                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🍽️ อ่างล้างจานระเบียง (ทำกับข้าวได้)</span>
+                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🧺 ระเบียงด้านนอกกว้างมาก</span>
+                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">📚 ชั้นวางของติดผนัง 3 ชั้น</span>
+                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🪝 ราวแขวนของรอบห้อง</span>
+                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">📶 กล่องเราเตอร์ Wi-Fi ทุกห้อง</span>
+                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🚗 ที่จอดรถยนต์ & รถมอเตอร์ไซค์</span>
+                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">📹 กล้องวงจรปิด (CCTV)</span>
+                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">🐶 อนุญาตให้เลี้ยงสัตว์ได้</span>
+                <span className="px-3 py-1.5 bg-secondary text-xs font-bold rounded-xl border border-border">❄️ เครื่องปรับอากาศ (ห้องแอร์)</span>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* 📸 Real Dormitory Photo Gallery Section (แกลเลอรีภาพถ่ายสถานที่จริง) */}
+        <div className="rounded-[2.5rem] bg-card text-card-foreground border border-border p-6 sm:p-10 shadow-2xl space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div>
+              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-primary flex items-center gap-1.5 mb-1.5">
+                <span>📸</span> Real Photos & Facilities
+              </span>
+              <h2 className="text-2xl sm:text-3xl font-display font-black tracking-tight text-foreground">
+                แกลเลอรีภาพถ่ายสถานที่จริง หอพักเกษร 2
+              </h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                ภาพถ่ายจริงของตัวอาคาร ภายในห้องพัก ห้องน้ำ และระเบียงทางเดิน (คลิกที่ภาพเพื่อดูรูปขยายใหญ่)
+              </p>
+            </div>
+
+            {/* Gallery Category Filter */}
+            <div className="flex flex-wrap items-center gap-1.5 p-1 bg-muted/60 rounded-2xl border border-border shrink-0">
+              {[
+                { id: 'all', label: 'ทั้งหมด (6)' },
+                { id: 'exterior', label: 'ภายนอกอาคาร (2)' },
+                { id: 'room', label: 'ห้องพัก (2)' },
+                { id: 'bathroom', label: 'ห้องน้ำ (1)' },
+                { id: 'balcony', label: 'ระเบียงทางเดิน (1)' }
+              ].map(f => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setGalleryFilter(f.id as any)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    galleryFilter === f.id
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Photo Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
+            {DORM_GALLERY
+              .filter(item => galleryFilter === 'all' || item.category === galleryFilter)
+              .map((photo) => (
+                <div
+                  key={photo.id}
+                  onClick={() => setSelectedPhoto(photo)}
+                  className="group relative rounded-3xl overflow-hidden bg-muted border border-border shadow-lg cursor-pointer hover:-translate-y-1.5 hover:border-primary hover:shadow-2xl transition-all duration-300"
+                >
+                  <div className="relative h-60 w-full overflow-hidden">
+                    <Image
+                      src={photo.src}
+                      alt={photo.title}
+                      fill
+                      className="object-cover group-hover:scale-110 transition-transform duration-700"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-80 group-hover:opacity-90 transition-opacity" />
+
+                    <span className="absolute top-3.5 left-3.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-black/60 backdrop-blur-md text-white border border-white/20">
+                      {photo.categoryName}
+                    </span>
+
+                    <span className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-white/20 backdrop-blur-md text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                      🔍
+                    </span>
+
+                    <div className="absolute bottom-4 left-4 right-4 text-white space-y-1">
+                      <h4 className="font-bold text-sm line-clamp-1 group-hover:text-primary-foreground">
+                        {photo.title}
+                      </h4>
+                      <p className="text-[11px] text-white/80 line-clamp-2 leading-relaxed">
+                        {photo.desc}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
           </div>
         </div>
 
@@ -512,8 +678,11 @@ export default function Home() {
                       <div className="absolute bottom-4 left-4 z-10">
                         <div className="text-xl sm:text-2xl font-black text-white drop-shadow-md">
                           ฿{Number(room.price).toLocaleString()}
-                          <span className="text-xs font-medium text-white/80"> /เดือน</span>
+                          <span className="text-xs font-medium text-white/90"> /เดือน</span>
                         </div>
+                        <span className="text-[10px] text-emerald-300 font-bold block drop-shadow">
+                          ✓ ฟรีค่าน้ำ • ฟรี Wi-Fi เราเตอร์
+                        </span>
                       </div>
                     </div>
 
@@ -552,6 +721,52 @@ export default function Home() {
           )}
         </div>
       </main>
+
+      {/* 🖼️ Photo Lightbox Modal */}
+      {selectedPhoto && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200"
+          onClick={() => setSelectedPhoto(null)}
+        >
+          <div
+            className="relative max-w-4xl w-full bg-card rounded-3xl overflow-hidden border border-border shadow-2xl flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Image */}
+            <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] bg-black">
+              <Image
+                src={selectedPhoto.src}
+                alt={selectedPhoto.title}
+                fill
+                className="object-contain"
+                priority
+              />
+              <button
+                type="button"
+                onClick={() => setSelectedPhoto(null)}
+                className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center font-bold text-lg backdrop-blur-md border border-white/20 transition-all cursor-pointer z-10"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Footer Description */}
+            <div className="p-6 bg-card space-y-2 border-t border-border">
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
+                  {selectedPhoto.categoryName}
+                </span>
+                <h3 className="text-lg font-black text-foreground">
+                  {selectedPhoto.title}
+                </h3>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {selectedPhoto.desc}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ChatWidget />
     </div>

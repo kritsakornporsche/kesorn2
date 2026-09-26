@@ -67,7 +67,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
   const router = useRouter();
 
   const getImagesArray = (imageParam: string | null) => {
-    if (!imageParam) return ['/modern_dorm_room_2_1775739199686.png'];
+    if (!imageParam) return ['/images/kesorn/room-bed.jpg'];
     try {
       if (imageParam.startsWith('[') && imageParam.endsWith(']')) {
         return JSON.parse(imageParam);
@@ -172,7 +172,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
       if (step === 4 && room) {
         setQrLoading(true);
         try {
-          const depositAmount = Number(room.price) * 1; // 1 month deposit only
+          const depositAmount = 1000; // ค่าจองห้องพักเพื่อยืนยันสิทธิ์ 1,000 บาท ตามเงื่อนไขหอพักเกษร 2
           const res = await fetch(`/api/booking/qr?roomId=${roomId}&dormId=${room.dorm_id}&amount=${depositAmount}`);
           const data = await res.json();
           if (data.success) {
@@ -234,7 +234,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
           signature: contractSignature,
           startDate,
           endDate,
-          depositAmount: Number(room.price) * 1, // 1 month deposit only
+          depositAmount: 1000, // ค่าจองห้องพักเพื่อยืนยันสิทธิ์ 1,000 บาท
           monthlyRent: Number(room.price),
           tenantName: bookingData.name,
           slipUrl: slipData
@@ -272,8 +272,9 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     );
   }
 
-  const images = getImagesArray(room.images);
-  const totalDeposit = Number(room.price) * 1; // 1 month deposit
+  const images = getImagesArray(room.images || room.image_url);
+  const totalDeposit = 1000; // ค่าจองห้องพักเพื่อยืนยันสิทธิ์ 1,000 บาท ตามประกาศจริง
+  const securityDeposit = 2000; // เงินประกันความเสียหาย 2,000 บาท
   const contractStartDate = new Date().toLocaleDateString('th-TH');
   const contractEndDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toLocaleDateString('th-TH');
 
@@ -303,7 +304,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
             <div className="space-y-4">
               <div className="relative aspect-video rounded-[2.5rem] overflow-hidden bg-muted border border-border shadow-lg">
                 <Image
-                  src={images[activeImageIndex] || '/modern_dorm_room_2_1775739199686.png'}
+                  src={images[activeImageIndex] || '/images/kesorn/room-bed.jpg'}
                   alt={`Room ${room.room_number}`}
                   fill
                   className="object-cover"
@@ -423,8 +424,10 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                       💧
                     </div>
                     <div>
-                      <span className="text-[10px] uppercase font-bold text-muted-foreground block">ค่าน้ำ</span>
-                      <span className="text-lg font-black text-cyan-500">฿{Number(room.water_rate) || 100} <span className="text-xs font-bold text-muted-foreground">/ เดือน (เหมาจ่าย)</span></span>
+                      <span className="text-[10px] uppercase font-bold text-muted-foreground block">ค่าน้ำประปา</span>
+                      <span className="text-base font-black text-cyan-500">
+                        {Number(room.water_rate) === 0 ? 'ฟรี (รวมในค่าห้อง)' : `฿${Number(room.water_rate)} / เดือน`}
+                      </span>
                     </div>
                   </div>
 
@@ -433,8 +436,11 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                       ⚡
                     </div>
                     <div>
-                      <span className="text-[10px] uppercase font-bold text-muted-foreground block">ค่าไฟ</span>
-                      <span className="text-lg font-black text-amber-500">฿{Number(room.electricity_rate) || 7} <span className="text-xs font-bold text-muted-foreground">/ ยูนิต</span></span>
+                      <span className="text-[10px] uppercase font-bold text-muted-foreground block">ค่าไฟฟ้า</span>
+                      <span className="text-lg font-black text-amber-500">
+                        ฿{room.electricity_rate !== undefined && room.electricity_rate !== null ? Number(room.electricity_rate) : 6}{' '}
+                        <span className="text-xs font-bold text-muted-foreground">/ ยูนิต</span>
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -485,7 +491,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     <div className="text-xs">
                       <span className="font-bold block">อินเทอร์เน็ต</span>
                       <span className="text-muted-foreground text-[11px]">
-                        {room.has_wifi ? 'Wi-Fi ฟรีส่วนกลาง' : 'ไม่มี Wi-Fi'} {room.has_lan ? '• มีช่องสาย LAN' : ''}
+                        ฟรี Wi-Fi (มีกล่องเราเตอร์แยกทุกห้อง)
                       </span>
                     </div>
                   </div>
@@ -493,8 +499,8 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   <div className="p-3.5 rounded-xl bg-muted/40 border border-border flex items-center gap-3">
                     <span className="text-lg">📝</span>
                     <div className="text-xs">
-                      <span className="font-bold block">ระยะเวลาสัญญา</span>
-                      <span className="text-muted-foreground text-[11px]">สัญญา 1 ปี (เงินประกัน 1 เดือน คืนเมื่อครบสัญญา)</span>
+                      <span className="font-bold block">การจองและเงินประกัน</span>
+                      <span className="text-muted-foreground text-[11px]">จองเพียง 1,000 บาท (เงินประกัน 2,000 บาท คืนเมื่อสิ้นสุดสัญญา)</span>
                     </div>
                   </div>
                 </div>
@@ -571,30 +577,38 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
                 <div className="space-y-4 bg-secondary/50 p-6 rounded-3xl border border-border">
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground">ค่าเช่ารายเดือน</span>
+                    <div>
+                      <span className="text-muted-foreground block">ค่าเช่ารายเดือน</span>
+                      <span className="text-[11px] text-emerald-500 font-semibold">✓ ฟรีค่าน้ำ • ฟรี Wi-Fi เราเตอร์ทุกห้อง</span>
+                    </div>
                     <span className="font-bold">฿{Number(room.price).toLocaleString()} / เดือน</span>
                   </div>
-                  
+
                   <div className="flex justify-between items-center text-sm">
-                    <div>
-                      <span className="font-semibold block">เงินประกันสัญญา (1 เดือน)</span>
-                      <span className="text-[11px] text-emerald-500">ชำระเพื่อยืนยันการจองห้อง</span>
-                    </div>
-                    <span className="font-bold text-emerald-500">฿{totalDeposit.toLocaleString()}</span>
+                    <span className="text-muted-foreground">อัตราค่าไฟฟ้า</span>
+                    <span className="font-bold text-amber-500">฿6 / ยูนิต</span>
                   </div>
 
                   <div className="flex justify-between items-center text-sm pt-2 border-t border-border/50">
                     <div>
-                      <span className="text-muted-foreground block">ค่าเช่าเดือนแรก</span>
-                      <span className="text-[11px] text-muted-foreground/70">เจ้าของหอจะคิดตอนเข้าพัก</span>
+                      <span className="font-semibold block">เงินประกันความเสียหาย</span>
+                      <span className="text-[11px] text-muted-foreground">ชำระวันทำสัญญา/ย้ายเข้า (คืนเมื่อครบสัญญา)</span>
                     </div>
-                    <span className="text-xs font-semibold text-muted-foreground">ยังไม่ต้องชำระตอนนี้</span>
+                    <span className="font-bold text-muted-foreground">฿{securityDeposit.toLocaleString()}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-sm">
+                    <div>
+                      <span className="font-semibold block text-primary">ค่าจองห้องพักล่วงหน้า</span>
+                      <span className="text-[11px] text-emerald-500">ชำระวันนี้เพื่อล็อกสิทธิ์ห้องพัก</span>
+                    </div>
+                    <span className="font-bold text-primary">฿{totalDeposit.toLocaleString()}</span>
                   </div>
 
                   <div className="border-t border-border pt-4 flex justify-between items-center">
                     <div>
                       <span className="font-bold text-sm block">ยอดชำระเงินจองวันนี้</span>
-                      <span className="text-[11px] text-muted-foreground">(เงินประกันสัญญา 1 เดือน)</span>
+                      <span className="text-[11px] text-muted-foreground">(เงินจองเพื่อยืนยันสิทธิ์)</span>
                     </div>
                     <span className="text-2xl font-black text-primary">฿{totalDeposit.toLocaleString()}</span>
                   </div>
@@ -727,7 +741,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                 <div className="space-y-2 text-center">
                   <span className="text-[10px] font-black uppercase tracking-widest text-amber-500">ขั้นตอนที่ 3: การชำระเงิน</span>
                   <h2 className="text-2xl font-black tracking-tight">โอนเงินค่าจองและแนบสลิป</h2>
-                  <p className="text-xs text-muted-foreground">ชำระเงินประกันสัญญา 1 เดือน เพื่อล็อกห้องพัก</p>
+                  <p className="text-xs text-muted-foreground">ชำระเงินจอง 1,000 บาท เพื่อล็อกห้องพักและยืนยันสิทธิ์</p>
                 </div>
 
                 {/* QR Code Container */}
@@ -745,7 +759,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                         <p className="text-sm font-bold text-white">{qrData.promptpayName}</p>
                         <p className="text-xs text-white/50 font-mono">พร้อมเพย์: {qrData.promptpayNumber}</p>
                         <div className="pt-1">
-                          <span className="text-[10px] uppercase font-bold text-white/50 block">ยอดชำระเงินประกันสัญญา (1 เดือน)</span>
+                          <span className="text-[10px] uppercase font-bold text-white/50 block">ยอดชำระเงินจองห้องพัก</span>
                           <span className="text-2xl font-black text-amber-400">฿{totalDeposit.toLocaleString()}</span>
                         </div>
                       </div>

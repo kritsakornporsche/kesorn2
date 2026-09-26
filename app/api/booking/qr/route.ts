@@ -15,11 +15,8 @@ export async function GET(req: Request) {
     let targetDormId = dormId && dormId !== 'undefined' ? parseInt(dormId) : 1;
     let targetAmount = amountParam ? parseFloat(amountParam) : 0;
 
-    if (roomId && !targetAmount) {
-      const roomRes = await sql`SELECT price FROM rooms WHERE id = ${parseInt(roomId)} LIMIT 1`;
-      if (roomRes.length > 0) {
-        targetAmount = Number(roomRes[0].price) * 1; // Default deposit (1 month)
-      }
+    if (!targetAmount) {
+      targetAmount = 1000; // จองห้องพักเพียง 1,000 บาท ตามเงื่อนไขหอพักเกษร 2
     }
 
     // Get owner's PromptPay number from dormitory_profile
