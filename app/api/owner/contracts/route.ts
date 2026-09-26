@@ -44,6 +44,9 @@ export async function GET(req: Request) {
         c.renewal_requested,
         c.renewal_note,
         c.parent_contract_id,
+        COALESCE(c.id_card_number, t.id_card_number, '') as id_card_number,
+        COALESCE(c.tenant_address, t.address, '') as tenant_address,
+        COALESCE(c.id_card_image, t.id_card_image, '') as id_card_image,
         COALESCE(t.name, u.name, 'ไม่ระบุชื่อ') as tenant_name,
         COALESCE(t.email, u.email, '') as tenant_email,
         COALESCE(t.phone, u.phone, '') as tenant_phone,
@@ -77,7 +80,10 @@ export async function POST(req: Request) {
       start_date, 
       end_date, 
       deposit_amount, 
-      contract_file_url 
+      contract_file_url,
+      id_card_number,
+      tenant_address,
+      id_card_image
     } = body;
 
     const sql = getDb();
@@ -131,8 +137,8 @@ export async function POST(req: Request) {
 
     if (tenants.length === 0) {
       const tenantInsert = await sql`
-        INSERT INTO tenants (name, email, phone, room_id, user_id)
-        VALUES (${tenantName.trim()}, ${tenantEmail.trim()}, ${tenantPhone?.trim() || null}, ${room_id}, ${userId})
+        INSERT INTO tenants (name, email, phone, room_id, user_id, id_card_number, id_card_image, address)
+        VALUES (${tenantName.trim()}, ${tenantEmail.trim()}, ${tenantPhone?.trim() || null}, ${room_id}, ${userId}, ${id_card_number?.trim() || null}, ${id_card_image || null}, ${tenant_address?.trim() || null})
       `;
       tenantId = (tenantInsert as any).insertId;
     } else {
@@ -142,7 +148,10 @@ export async function POST(req: Request) {
         SET room_id = ${room_id}, 
             name = ${tenantName.trim()}, 
             phone = ${tenantPhone?.trim() || null},
-            user_id = ${userId}
+            user_id = ${userId},
+            id_card_number = COALESCE(${id_card_number?.trim() || null}, id_card_number),
+            id_card_image = COALESCE(${id_card_image || null}, id_card_image),
+            address = COALESCE(${tenant_address?.trim() || null}, address)
         WHERE id = ${tenantId}
       `;
     }
@@ -159,13 +168,15 @@ export async function POST(req: Request) {
       `;
     }
 
-    // 4. Save Contract with contract_file_url and status 'Active'
+    // 4. Save Contract with id_card_number, tenant_address, id_card_image, contract_file_url and status 'Active'
     const contractInsert = await sql`
       INSERT INTO contracts (
-        tenant_id, room_id, start_date, end_date, deposit_amount, status, contract_file_url
+        tenant_id, room_id, start_date, end_date, deposit_amount, status, contract_file_url,
+        id_card_number, tenant_address, id_card_image
       )
       VALUES (
-        ${tenantId}, ${room_id}, ${start_date}, ${end_date}, ${deposit_amount || 0}, 'Active', ${contract_file_url || null}
+        ${tenantId}, ${room_id}, ${start_date}, ${end_date}, ${deposit_amount || 0}, 'Active', ${contract_file_url || null},
+        ${id_card_number?.trim() || null}, ${tenant_address?.trim() || null}, ${id_card_image || null}
       )
     `;
     const contractId = (contractInsert as any).insertId;

@@ -6,10 +6,15 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 
+import PrintableContractModal from '@/components/PrintableContractModal';
+
 interface ContractDetail {
   id: number;
   tenant_name: string;
   tenant_email: string;
+  tenant_phone?: string;
+  id_card_number?: string;
+  tenant_address?: string;
   room_number: string;
   room_price: number;
   start_date: string;
@@ -33,6 +38,7 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
   const [error, setError] = useState('');
   const [approving, setApproving] = useState(false);
   const [previewSlip, setPreviewSlip] = useState(false);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
 
   useEffect(() => {
     async function fetchContract() {
@@ -108,7 +114,15 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
           <h1 className="text-3xl font-black text-white tracking-tight">รายละเอียดสัญญาเช่า #{contract.id}</h1>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => setIsPrintModalOpen(true)}
+            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95"
+          >
+            <span>🖨️</span>
+            <span>พิมพ์สัญญาเช่า (PDF)</span>
+          </button>
+
           <span className={cn(
             "px-4 py-1.5 rounded-full text-xs font-bold border flex items-center gap-1.5",
             contract.status === 'Active' ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
@@ -278,6 +292,13 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
           </div>
         </div>
       )}
+
+      {/* Printable Contract Modal */}
+      <PrintableContractModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+        contract={contract}
+      />
     </div>
   );
 }

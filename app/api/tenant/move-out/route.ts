@@ -1,38 +1,184 @@
 import { NextResponse } from 'next/server';
-import { getDormDbFromSession } from '@/lib/db';
+import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import generatePayload from 'promptpay-qr';
+
+export async function GET(req: Request) {
+  const session = await auth();
+  if (!session?.user?.email) {
+    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const sql = getDb();
+    
+    // Find tenant by email or user_id
+    const tenantRes = await sql`
+      SELECT id, room_id, name, phone, email, id_card_number 
+      FROM tenants 
+      WHERE email = ${session.user.email} 
+      LIMIT 1
+    `;
+    if (tenantRes.length === 0) {
+      return NextResponse.json({ success: false, message: 'Tenant not found' }, { status: 404 });
+    }
+    const tenant = tenantRes[0];
+
+    // Find active contract
+    const contractRes = await sql`
+      SELECT id, start_date, end_date, deposit_amount, status 
+      FROM contracts 
+      WHERE tenant_id = ${tenant.id} AND status IN ('Active', 'Approved') 
+      ORDER BY id DESC 
+      LIMIT 1
+    `;
+    const contract = contractRes.length > 0 ? contractRes[0] : null;
+
+    // Find unpaid bills
+    const unpaidBills = await sql`
+      SELECT id, title, amount, billing_cycle, status, created_at
+      FROM bills 
+      WHERE tenant_id = ${tenant.id} AND status != 'paid'
+      ORDER BY id ASC
+    `;
+    const unpaidTotal = unpaidBills.reduce((sum: number, b: any) => sum + Number(b.amount || 0), 0);
+
+    // Find active move-out request
+    const requestRes = await sql`
+      SELECT * FROM move_out_requests 
+      WHERE tenant_id = ${tenant.id} 
+      ORDER BY id DESC 
+      LIMIT 1
+    `;
+    const moveOutRequest = requestRes.length > 0 ? requestRes[0] : null;
+
+    return NextResponse.json({
+      success: true,
+      tenant,
+      contract,
+      unpaidBills,
+      unpaidTotal,
+      moveOutRequest,
+    });
+  } catch (error: any) {
+    console.error('[GET /api/tenant/move-out]', error);
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  }
+}
 
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user?.email) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  if (!session?.user?.email) {
+    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
 
   try {
     const body = await req.json();
     const desiredDate = body.desiredDate || body.desired_date || body.move_out_date || body.date;
     const reason = body.reason;
-    if (!desiredDate) return NextResponse.json({ success: false, message: 'Missing desired date' }, { status: 400 });
+    const promptpayTargetInput = body.promptpayTarget || body.promptpay_target;
+    const promptpayName = body.promptpayName || body.promptpay_name;
+    const bankName = body.bankName || body.bank_name;
 
-    const sql = getDormDbFromSession(session);
-    
-    // Find tenant by email
-    const tenantRes = await sql`SELECT id, room_id FROM tenants WHERE email = ${session.user.email} LIMIT 1`;
-    if (tenantRes.length === 0) return NextResponse.json({ success: false, message: 'Tenant not found' }, { status: 404 });
-    const tenantId = tenantRes[0].id;
-    const roomId = tenantRes[0].room_id || null;
-
-    // Check if there is already a pending request
-    const existingReq = await sql`SELECT id FROM move_out_requests WHERE tenant_id = ${tenantId} AND status IN ('Pending', 'Approved')`;
-    if (existingReq.length > 0) {
-      return NextResponse.json({ success: false, message: 'You already have an active move-out request.' }, { status: 400 });
+    if (!desiredDate) {
+      return NextResponse.json({ success: false, message: 'กรุณาระบุวันที่ต้องการย้ายออก' }, { status: 400 });
     }
 
-    // Insert new request
+    const sql = getDb();
+    
+    // Find tenant by email
+    const tenantRes = await sql`
+      SELECT id, room_id, name, phone, email, id_card_number 
+      FROM tenants 
+      WHERE email = ${session.user.email} 
+      LIMIT 1
+    `;
+    if (tenantRes.length === 0) {
+      return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลผู้เช่า' }, { status: 404 });
+    }
+    const tenant = tenantRes[0];
+    const tenantId = tenant.id;
+    const roomId = tenant.room_id || null;
+
+    // Check if there is already an active pending/approved request
+    const existingReq = await sql`
+      SELECT id FROM move_out_requests 
+      WHERE tenant_id = ${tenantId} AND status IN ('Pending', 'Approved')
+    `;
+    if (existingReq.length > 0) {
+      return NextResponse.json({ success: false, message: 'คุณมีคำขอย้ายออกที่กำลังดำเนินการอยู่แล้ว' }, { status: 400 });
+    }
+
+    // 1. Audit Check 1: Check active contract and completion status
+    const contractRes = await sql`
+      SELECT id, start_date, end_date, deposit_amount, status 
+      FROM contracts 
+      WHERE tenant_id = ${tenantId} AND status IN ('Active', 'Approved') 
+      ORDER BY id DESC 
+      LIMIT 1
+    `;
+    const contract = contractRes.length > 0 ? contractRes[0] : null;
+    const contractId = contract ? contract.id : null;
+    const depositAmount = contract ? Number(contract.deposit_amount || 0) : 0;
+
+    let isCompleted = true;
+    if (contract && contract.end_date) {
+      const moveDateObj = new Date(desiredDate);
+      const endDateObj = new Date(contract.end_date);
+      // Give a 1-day grace window for calendar comparisons
+      isCompleted = moveDateObj.getTime() >= (endDateObj.getTime() - (24 * 60 * 60 * 1000));
+    }
+
+    // 2. Audit Check 2: Check unpaid bills
+    const unpaidBills = await sql`
+      SELECT id, amount, title, status FROM bills 
+      WHERE tenant_id = ${tenantId} AND status != 'paid'
+    `;
+    const unpaidTotal = unpaidBills.reduce((sum: number, b: any) => sum + Number(b.amount || 0), 0);
+
+    // 3. Audit Check 3: Calculate net refund
+    const penaltyAmount = isCompleted ? 0 : 0; // Configurable penalty or 0
+    const netRefund = Math.max(0, depositAmount - unpaidTotal - penaltyAmount);
+
+    // 4. Audit Check 4: PromptPay Target & Exact-Amount QR payload
+    const promptpayTarget = (promptpayTargetInput || tenant.phone || tenant.id_card_number || '0829853519').replace(/[\s-]/g, '');
+    let qrPayload = '';
+    try {
+      if (promptpayTarget && netRefund > 0) {
+        qrPayload = generatePayload(promptpayTarget, { amount: netRefund });
+      }
+    } catch (e) {
+      console.warn('Could not generate promptpay payload:', e);
+    }
+
+    // Insert new move-out request
     await sql`
-      INSERT INTO move_out_requests (tenant_id, room_id, move_out_date, desired_date, reason, status)
-      VALUES (${tenantId}, ${roomId}, ${desiredDate}, ${desiredDate}, ${reason || null}, 'Pending')
+      INSERT INTO move_out_requests (
+        tenant_id, room_id, move_out_date, desired_date, reason, status,
+        promptpay_target, promptpay_name, bank_name, contract_id,
+        deposit_amount, unpaid_bills_total, penalty_amount, net_refund_amount,
+        is_contract_completed, refund_qr_payload
+      )
+      VALUES (
+        ${tenantId}, ${roomId}, ${desiredDate}, ${desiredDate}, ${reason || null}, 'Pending',
+        ${promptpayTarget}, ${promptpayName || tenant.name}, ${bankName || 'พร้อมเพย์'}, ${contractId},
+        ${depositAmount}, ${unpaidTotal}, ${penaltyAmount}, ${netRefund},
+        ${isCompleted ? 1 : 0}, ${qrPayload || null}
+      )
     `;
 
-    return NextResponse.json({ success: true, message: 'Move-out request submitted successfully.' });
+    return NextResponse.json({ 
+      success: true, 
+      message: 'ส่งเรื่องแจ้งย้ายออกเรียบร้อยแล้ว ระบบได้คำนวณเงินประกันเบื้องต้นให้ผู้ดูแลเรียบร้อย',
+      calculation: {
+        isCompleted,
+        depositAmount,
+        unpaidTotal,
+        penaltyAmount,
+        netRefund,
+        promptpayTarget
+      }
+    });
   } catch (error: any) {
     console.error('[POST /api/tenant/move-out]', error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
@@ -47,7 +193,7 @@ export async function DELETE(req: Request) {
     const { requestId } = await req.json();
     if (!requestId) return NextResponse.json({ success: false, message: 'Missing requestId' }, { status: 400 });
 
-    const sql = getDormDbFromSession(session);
+    const sql = getDb();
     
     // Find tenant by email
     const tenantRes = await sql`SELECT id FROM tenants WHERE email = ${session.user.email} LIMIT 1`;
@@ -60,11 +206,11 @@ export async function DELETE(req: Request) {
       WHERE id = ${requestId} AND tenant_id = ${tenantId} AND status = 'Pending'
     `;
 
-    if (delRes.length === 0) {
-      return NextResponse.json({ success: false, message: 'Cannot cancel this request. It might be approved already or not found.' }, { status: 400 });
+    if ((delRes as any).affectedRows === 0 && delRes.length === 0) {
+      return NextResponse.json({ success: false, message: 'ไม่สามารถยกเลิกคำร้องนี้ได้' }, { status: 400 });
     }
 
-    return NextResponse.json({ success: true, message: 'Request cancelled successfully.' });
+    return NextResponse.json({ success: true, message: 'ยกเลิกคำร้องขอย้ายออกเรียบร้อยแล้ว' });
   } catch (error: any) {
     console.error('[DELETE /api/tenant/move-out]', error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
