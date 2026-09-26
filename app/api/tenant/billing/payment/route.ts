@@ -51,10 +51,14 @@ export async function POST(req: Request) {
       const amount = Number(bill.amount || 0).toLocaleString('th-TH');
 
       const staff = await sql`
-        SELECT DISTINCT udr.user_id
-        FROM user_dorm_roles udr
-        WHERE udr.dorm_id = ${dormId}
-          AND udr.role IN ('owner', 'keeper')
+        SELECT DISTINCT u.id as user_id
+        FROM users u
+        WHERE (
+          u.id IN (SELECT owner_id FROM dormitory_registry WHERE id = ${dormId} AND owner_id IS NOT NULL)
+          OR LOWER(u.email) IN (SELECT LOWER(owner_email) FROM dormitory_registry WHERE id = ${dormId} AND owner_email IS NOT NULL)
+          OR u.id IN (SELECT user_id FROM user_dorm_roles WHERE dorm_id = ${dormId} AND role IN ('owner', 'keeper'))
+          OR u.role = 'owner'
+        )
       `;
 
       for (const person of staff as any[]) {

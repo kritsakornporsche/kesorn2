@@ -192,6 +192,66 @@ export async function PATCH(request: Request) {
           photo_url = ${photo_url || null}
         WHERE id = ${id}
       `;
+
+      // Notify tenant and owner about job completion
+      try {
+        const cleanObj = await sql`
+          SELECT c.id, c.task, c.job_type, r.room_number, t.user_id, t.email
+          FROM cleaning_jobs c
+          LEFT JOIN rooms r ON c.room_id = r.id
+          LEFT JOIN tenants t ON t.room_id = c.room_id AND t.status IN ('active', 'Active')
+          WHERE c.id = ${id}
+          LIMIT 1
+        `;
+        if (cleanObj.length > 0) {
+          const row = cleanObj[0];
+          let tenantUserId = row.user_id;
+          if (!tenantUserId && row.email) {
+            const u = await sql`SELECT id FROM users WHERE LOWER(email) = LOWER(${row.email}) LIMIT 1`;
+            if (u.length > 0) tenantUserId = u[0].id;
+          }
+
+          if (tenantUserId) {
+            const billNote = cost > 0 ? ` (มีค่าบริการ ฿${cost.toFixed(2)})` : '';
+            await sql`
+              INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+              VALUES (
+                ${tenantUserId},
+                'บริการทำความสะอาดเสร็จสิ้นแล้ว',
+                ${'แม่บ้านได้เข้าทำความสะอาดห้อง ' + (row.room_number || '-') + ' เรียบร้อยแล้ว' + billNote},
+                'maintenance',
+                0,
+                '/tenant',
+                NOW()
+              )
+            `;
+          }
+
+          // Notify owner
+          const dormOwners = await sql`
+            SELECT u.id FROM users u
+            JOIN dormitory_registry dr ON dr.owner_id = u.id OR LOWER(dr.owner_email) = LOWER(u.email)
+            WHERE dr.id = 1
+            LIMIT 1
+          `;
+          if (dormOwners.length > 0) {
+            await sql`
+              INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+              VALUES (
+                ${dormOwners[0].id},
+                'แม่บ้านทำความสะอาดเรียบร้อยแล้ว',
+                ${'งานทำความสะอาดห้อง ' + (row.room_number || '-') + ' เสร็จสิ้น ค่าใช้จ่าย: ฿' + cost.toFixed(2)},
+                'maintenance',
+                0,
+                '/owner/maintenance',
+                NOW()
+              )
+            `;
+          }
+        }
+      } catch (ne) {
+        console.warn('Maid job notify warn:', ne);
+      }
     } else {
       await sql`
         UPDATE cleaning_jobs 

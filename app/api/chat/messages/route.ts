@@ -118,7 +118,7 @@ export async function POST(request: Request) {
 
     // Security check: user is participant or owner of dorm
     const convCheck = await sql`
-      SELECT id FROM conversations 
+      SELECT id, guest_id, owner_id FROM conversations 
       WHERE id = ${conversationId} AND (
         guest_id = ${userId} 
         OR owner_id = ${userId}
@@ -144,6 +144,29 @@ export async function POST(request: Request) {
       SET last_message = ${message}, updated_at = CURRENT_TIMESTAMP
       WHERE id = ${conversationId}
     `;
+
+    // Notify recipient
+    try {
+      const conv = convCheck[0];
+      const recipientId = userId === conv.guest_id ? conv.owner_id : conv.guest_id;
+      if (recipientId) {
+        const isRecipientOwner = recipientId === conv.owner_id;
+        await sql`
+          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+          VALUES (
+            ${recipientId},
+            'ข้อความใหม่ในแชท',
+            ${'คุณได้รับข้อความใหม่: ' + (message.length > 50 ? message.slice(0, 47) + '...' : message)},
+            'chat',
+            0,
+            ${isRecipientOwner ? '/owner/chat' : '/tenant/chat'},
+            NOW()
+          )
+        `;
+      }
+    } catch (ne) {
+      console.warn('Chat notification warn:', ne);
+    }
 
     const messageRows = await sql`
       SELECT * FROM chat_messages WHERE id = ${messageId} LIMIT 1

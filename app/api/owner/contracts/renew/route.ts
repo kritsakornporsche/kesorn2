@@ -43,10 +43,10 @@ export async function POST(req: Request) {
 
     const newContractRes = await sql`
       INSERT INTO contracts (
-        tenant_id, room_id, start_date, end_date, deposit_amount, status, contract_file_url, parent_contract_id
+        tenant_id, room_id, start_date, end_date, deposit_amount, status, contract_file_url, parent_contract_id, id_card_number, tenant_address, id_card_image
       )
       VALUES (
-        ${oldContract.tenant_id}, ${oldContract.room_id}, ${startDate}, ${new_end_date}, ${finalDeposit}, 'Active', ${finalFileUrl}, ${contract_id}
+        ${oldContract.tenant_id}, ${oldContract.room_id}, ${startDate}, ${new_end_date}, ${finalDeposit}, 'Active', ${finalFileUrl}, ${contract_id}, ${oldContract.id_card_number || null}, ${oldContract.tenant_address || null}, ${oldContract.id_card_image || null}
       )
     `;
 
@@ -55,6 +55,33 @@ export async function POST(req: Request) {
     // 4. Ensure room remains Occupied
     if (oldContract.room_id) {
       await sql`UPDATE rooms SET status = 'Occupied' WHERE id = ${oldContract.room_id}`;
+    }
+
+    // 5. Notify tenant
+    try {
+      const tenantUser = await sql`
+        SELECT COALESCE(t.user_id, u.id) as user_id 
+        FROM tenants t 
+        LEFT JOIN users u ON LOWER(t.email) = LOWER(u.email)
+        WHERE t.id = ${oldContract.tenant_id} 
+        LIMIT 1
+      `;
+      if (tenantUser.length > 0 && tenantUser[0].user_id) {
+        await sql`
+          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+          VALUES (
+            ${tenantUser[0].user_id},
+            'การต่ออายุสัญญาเช่าสำเร็จแล้ว',
+            ${'สัญญาเช่าฉบับใหม่ได้รับการอนุมัติแล้ว ขยายระยะเวลาถึงวันที่ ' + new Date(new_end_date).toLocaleDateString('th-TH')},
+            'contract_renewal_approved',
+            0,
+            '/tenant/contract',
+            NOW()
+          )
+        `;
+      }
+    } catch (ne) {
+      console.warn('Renewal tenant notify warn:', ne);
     }
 
     return NextResponse.json({

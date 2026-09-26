@@ -23,11 +23,19 @@ export async function GET(request: Request) {
       WHERE user_email = ${session.user.email} AND room_id = ${parseInt(roomId)}
     `;
 
-    if (progress.length === 0) {
-      return NextResponse.json({ success: true, data: null });
+    const item = progress[0];
+    let parsedData = item.booking_data;
+    if (typeof parsedData === 'string') {
+      try { parsedData = JSON.parse(parsedData); } catch (e) {}
     }
 
-    return NextResponse.json({ success: true, data: progress[0] });
+    return NextResponse.json({ 
+      success: true, 
+      data: { 
+        ...item, 
+        booking_data: parsedData 
+      } 
+    });
   } catch (error: any) {
     console.error('[Get Progress Error]', error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

@@ -43,6 +43,36 @@ export async function POST(request: Request) {
       VALUES (${targetDormId}, ${title}, ${content}, ${category || 'general'}, ${is_important ? 1 : 0}, 1)
     `;
 
+    // Notify all active tenants of this dormitory
+    try {
+      const activeTenants = await sql`
+        SELECT DISTINCT COALESCE(t.user_id, u.id) as user_id
+        FROM tenants t
+        LEFT JOIN users u ON LOWER(t.email) = LOWER(u.email)
+        WHERE (t.dorm_id = ${targetDormId} OR t.dorm_id IS NULL)
+          AND t.status IN ('active', 'Active')
+      `;
+
+      for (const t of activeTenants as any[]) {
+        if (t.user_id) {
+          await sql`
+            INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+            VALUES (
+              ${t.user_id},
+              ${'ประกาศใหม่: ' + title},
+              ${content.length > 60 ? content.slice(0, 57) + '...' : content},
+              'announcement',
+              0,
+              '/tenant/announcements',
+              NOW()
+            )
+          `;
+        }
+      }
+    } catch (ne) {
+      console.warn('Announcement notify warn:', ne);
+    }
+
     return NextResponse.json({ success: true, data: { id: (result as any).insertId } });
   } catch (error: any) {
     console.error('Announcements POST Error:', error);

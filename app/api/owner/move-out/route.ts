@@ -210,6 +210,54 @@ export async function POST(req: Request) {
       WHERE tenant_id = ${moveReq.tenant_id} AND status NOT IN ('Paid', 'paid')
     `;
 
+    // 7. Sync refund to accounting_transactions
+    if (finalNet > 0) {
+      try {
+        await sql`
+          INSERT INTO accounting_transactions (dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date)
+          VALUES (
+            1,
+            'Expense',
+            'Deposit Refund',
+            ${finalNet},
+            ${'คืนเงินประกันห้อง ' + (moveReq.room_id || '-') + ' (คำร้อง #' + requestId + ')'},
+            ${requestId},
+            'move_out_refund',
+            ${new Date().toISOString().slice(0, 10)}
+          )
+        `;
+      } catch (txErr) {
+        console.warn('Accounting move-out sync warn:', txErr);
+      }
+    }
+
+    // 8. Notify tenant
+    try {
+      const tenantUser = await sql`
+        SELECT COALESCE(t.user_id, u.id) as user_id 
+        FROM tenants t 
+        LEFT JOIN users u ON LOWER(t.email) = LOWER(u.email)
+        WHERE t.id = ${moveReq.tenant_id}
+        LIMIT 1
+      `;
+      if (tenantUser.length > 0 && tenantUser[0].user_id) {
+        await sql`
+          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+          VALUES (
+            ${tenantUser[0].user_id},
+            'การคืนเงินประกันและการย้ายออกเสร็จสิ้น',
+            ${'คำร้องขอย้ายออกและการเคลียร์เงินประกันเสร็จสมบูรณ์ ยอดเงินคืนสุทธิ: ฿' + finalNet.toLocaleString('th-TH')},
+            'move_out_completed',
+            0,
+            '/tenant/move-out',
+            NOW()
+          )
+        `;
+      }
+    } catch (ne) {
+      console.warn('Move-out confirm notify warn:', ne);
+    }
+
     return NextResponse.json({
       success: true,
       message: 'ยืนยันการเคลียร์เงินประกันและปิดสัญญาเรียบร้อยแล้ว ห้องพักกลับมาเป็นสถานะว่างพร้อมปล่อยเช่า',

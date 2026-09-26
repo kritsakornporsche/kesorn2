@@ -52,6 +52,38 @@ export async function POST(request: Request) {
       }
     }
 
+    // Notify owner and keepers
+    try {
+      const staff = await sql`
+        SELECT DISTINCT u.id as user_id, u.role
+        FROM users u
+        WHERE (
+          u.id IN (SELECT owner_id FROM dormitory_registry WHERE id = 1 AND owner_id IS NOT NULL)
+          OR LOWER(u.email) IN (SELECT LOWER(owner_email) FROM dormitory_registry WHERE id = 1 AND owner_email IS NOT NULL)
+          OR u.role IN ('owner', 'keeper')
+        )
+      `;
+
+      for (const p of staff as any[]) {
+        const isOwner = p.role === 'owner';
+        const link = isOwner ? '/owner/maintenance' : (issue_type.includes('ทำความสะอาด') ? '/keeper/maid' : '/keeper/technician');
+        await sql`
+          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+          VALUES (
+            ${p.user_id},
+            'มีการแจ้งซ่อม/บริการใหม่',
+            ${'ห้อง ' + (roomNumber || '-') + ' แจ้งเรื่อง: ' + issue_type + ' - ' + (description.length > 50 ? description.slice(0, 47) + '...' : description)},
+            'maintenance',
+            0,
+            ${link},
+            NOW()
+          )
+        `;
+      }
+    } catch (ne) {
+      console.warn('Maintenance notify warn:', ne);
+    }
+
     return NextResponse.json({ 
       success: true, 
       data: { 

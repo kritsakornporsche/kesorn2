@@ -149,7 +149,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             const sql = getDb();
             try {
               const dbUsers = await sql`
-                SELECT role, sub_role 
+                SELECT COALESCE(role, primary_role, 'guest') as role, sub_role 
                 FROM users 
                 WHERE LOWER(email) = ${email} OR LOWER(name) = ${email} LIMIT 1
               `;

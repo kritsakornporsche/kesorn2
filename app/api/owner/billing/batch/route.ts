@@ -121,6 +121,33 @@ export async function POST(req: Request) {
           )
         `;
         createdCount++;
+
+        // Notify tenant about new bill
+        try {
+          const tenantUser = await sql`
+            SELECT COALESCE(t.user_id, u.id) as user_id
+            FROM tenants t
+            LEFT JOIN users u ON LOWER(t.email) = LOWER(u.email)
+            WHERE t.id = ${tenant.tenant_id}
+            LIMIT 1
+          `;
+          if (tenantUser.length > 0 && tenantUser[0].user_id) {
+            await sql`
+              INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+              VALUES (
+                ${tenantUser[0].user_id},
+                'ใบแจ้งหนี้ใหม่ประจำรอบบิล',
+                ${'มีใบแจ้งหนี้รอบบิล ' + billingCycle + ' จำนวน ฿' + totalAmount.toLocaleString('th-TH') + ' กำหนดชำระภายใน ' + new Date(dueDate).toLocaleDateString('th-TH')},
+                'billing',
+                0,
+                '/tenant/billing',
+                NOW()
+              )
+            `;
+          }
+        } catch (ne) {
+          console.warn('Batch bill notify warn:', ne);
+        }
       }
     }
 

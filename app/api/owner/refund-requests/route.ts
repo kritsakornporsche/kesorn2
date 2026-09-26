@@ -39,21 +39,21 @@ export async function GET(req: Request) {
     const sql = getDb();
     await ensureTable(sql);
 
-    // Resolve dormIds for this owner
-    let dormIds: number[] = [];
-    if (userEmail) {
+    // Resolve dormId
+    const dormIdParam = searchParams.get('dormId');
+    let targetDormId = dormIdParam ? parseInt(dormIdParam, 10) : 0;
+
+    if (!targetDormId && userEmail) {
       const dormRes = await sql`
         SELECT id FROM dormitory_registry
         WHERE (owner_email = ${userEmail} OR owner_id IN (
           SELECT id FROM users WHERE email = ${userEmail}
         )) AND status = 'Active'
+        LIMIT 1
       `;
-      dormIds = dormRes.map((d: any) => d.id);
+      if (dormRes.length > 0) targetDormId = dormRes[0].id;
     }
-
-    if (dormIds.length === 0) {
-      return NextResponse.json({ success: true, data: [] });
-    }
+    if (!targetDormId) targetDormId = 1;
 
     const requests = await sql`
       SELECT
@@ -74,11 +74,11 @@ export async function GET(req: Request) {
         r.room_number,
         r.room_type,
         r.floor,
-        dr.dorm_name
+        COALESCE(dr.dorm_name, 'หอพักเกษร 2') as dorm_name
       FROM deposit_refund_requests drr
-      JOIN rooms r ON drr.room_id = r.id
-      JOIN dormitory_registry dr ON drr.dorm_id = dr.id
-      WHERE drr.dorm_id IN (${dormIds})
+      LEFT JOIN rooms r ON drr.room_id = r.id
+      LEFT JOIN dormitory_registry dr ON drr.dorm_id = dr.id
+      WHERE drr.dorm_id = ${targetDormId} OR drr.dorm_id IS NULL OR drr.dorm_id = 0
       ORDER BY
         CASE WHEN drr.status = 'pending' THEN 0 ELSE 1 END,
         drr.created_at DESC
@@ -159,6 +159,33 @@ export async function POST(req: Request) {
         `.catch(() => {});
       }
 
+      // Notify tenant
+      try {
+        const userRes = await sql`
+          SELECT id FROM users 
+          WHERE email = ${refundReq.requester_email} 
+             OR id = (SELECT user_id FROM tenants WHERE id = ${refundReq.tenant_id} LIMIT 1)
+          LIMIT 1
+        `;
+        const tenantUserId = userRes.length > 0 ? userRes[0].id : null;
+        if (tenantUserId) {
+          await sql`
+            INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+            VALUES (
+              ${tenantUserId},
+              'อนุมัติการคืนเงินมัดจำแล้ว',
+              ${'คำร้องขอคืนเงินมัดจำจำนวน ฿' + Number(refundReq.deposit_amount || 0).toLocaleString('th-TH') + ' ได้รับการอนุมัติแล้ว ' + (ownerNote ? `(${ownerNote})` : '')},
+              'refund_approved',
+              0,
+              '/tenant/refund-request',
+              NOW()
+            )
+          `;
+        }
+      } catch (notifErr) {
+        console.warn('[Refund Notification] Warn:', notifErr);
+      }
+
       return NextResponse.json({
         success: true,
         message: 'อนุมัติคืนเงินมัดจำเรียบร้อยแล้ว สัญญาถูกยกเลิกและห้องพักกลับสู่สถานะว่าง'
@@ -176,7 +203,8 @@ export async function POST(req: Request) {
       if (reqRes.length === 0) {
         return NextResponse.json({ success: false, message: 'ไม่พบคำร้องดังกล่าว' }, { status: 404 });
       }
-      if (reqRes[0].status !== 'pending') {
+      const refundReq = reqRes[0];
+      if (refundReq.status !== 'pending') {
         return NextResponse.json({ success: false, message: 'คำร้องนี้ดำเนินการไปแล้ว' }, { status: 400 });
       }
 
@@ -187,6 +215,33 @@ export async function POST(req: Request) {
             updated_at = NOW()
         WHERE id = ${requestId}
       `;
+
+      // Notify tenant
+      try {
+        const userRes = await sql`
+          SELECT id FROM users 
+          WHERE email = ${refundReq.requester_email} 
+             OR id = (SELECT user_id FROM tenants WHERE id = ${refundReq.tenant_id} LIMIT 1)
+          LIMIT 1
+        `;
+        const tenantUserId = userRes.length > 0 ? userRes[0].id : null;
+        if (tenantUserId) {
+          await sql`
+            INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+            VALUES (
+              ${tenantUserId},
+              'คำร้องขอคืนเงินมัดจำถูกปฏิเสธ',
+              ${'คำร้องขอคืนเงินมัดจำไม่ได้รับการอนุมัติ เหตุผล: ' + (ownerNote || '-')},
+              'refund_rejected',
+              0,
+              '/tenant/refund-request',
+              NOW()
+            )
+          `;
+        }
+      } catch (notifErr) {
+        console.warn('[Refund Reject Notification] Warn:', notifErr);
+      }
 
       return NextResponse.json({
         success: true,

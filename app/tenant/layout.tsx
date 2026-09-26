@@ -14,23 +14,32 @@ export default async function TenantLayout({ children }: { children: ReactNode }
     redirect('/signin?callbackUrl=' + encodeURIComponent('/tenant'));
   }
 
-  // Must have tenant or owner role
+  // Allow tenant, owner, or users with tenant/booking contracts
   let role = (session.user as any)?.role;
-  if (role !== 'tenant' && role !== 'owner') {
-    if (session.user.email) {
-      try {
-        const sql = getDb();
-        const u = await sql`SELECT role FROM users WHERE LOWER(email) = ${session.user.email.toLowerCase()} LIMIT 1`;
-        if (u.length > 0 && (u[0].role === 'tenant' || u[0].role === 'owner')) {
-          role = u[0].role;
+  let isAllowed = role === 'tenant' || role === 'owner' || role === 'guest';
+
+  if (session.user.email) {
+    try {
+      const sql = getDb();
+      const u = await sql`
+        SELECT COALESCE(role, primary_role, 'guest') as effective_role,
+               (SELECT COUNT(*) FROM contracts c JOIN tenants t ON c.tenant_id = t.id WHERE t.email = ${session.user.email}) as contract_count,
+               (SELECT COUNT(*) FROM tenants WHERE email = ${session.user.email}) as tenant_count
+        FROM users 
+        WHERE LOWER(email) = ${session.user.email.toLowerCase()} 
+        LIMIT 1
+      `;
+      if (u.length > 0) {
+        if (u[0].effective_role === 'tenant' || u[0].effective_role === 'owner' || Number(u[0].contract_count) > 0 || Number(u[0].tenant_count) > 0) {
+          isAllowed = true;
         }
-      } catch (e) {
-        // ignore
       }
+    } catch (e) {
+      // ignore
     }
   }
 
-  if (role !== 'tenant' && role !== 'owner') {
+  if (!isAllowed && (role === 'keeper' || role === 'platform_admin')) {
     redirect('/signin?error=' + encodeURIComponent('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (เฉพาะลูกหอ)'));
   }
 

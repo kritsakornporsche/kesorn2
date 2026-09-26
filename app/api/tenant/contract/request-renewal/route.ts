@@ -34,6 +34,33 @@ export async function POST(req: Request) {
       WHERE id = ${contract_id}
     `;
 
+    // Notify owner
+    try {
+      const dormId = contracts[0].dorm_id || 1;
+      const ownerRes = await sql`
+        SELECT u.id FROM users u
+        JOIN dormitory_registry dr ON dr.owner_id = u.id OR dr.owner_email = u.email
+        WHERE dr.id = ${dormId}
+        LIMIT 1
+      `;
+      if (ownerRes.length > 0) {
+        await sql`
+          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+          VALUES (
+            ${ownerRes[0].id},
+            'มีคำขอต่อสัญญาเช่าใหม่',
+            ${'ผู้เช่าได้ส่งคำขอต่อสัญญาเช่า (สัญญา #' + contract_id + '): ' + (renewal_note || 'ขอต่อสัญญาเช่า')},
+            'contract_renewal',
+            0,
+            '/owner/contracts',
+            NOW()
+          )
+        `;
+      }
+    } catch (ne) {
+      console.warn('Renewal notify warn:', ne);
+    }
+
     return NextResponse.json({
       success: true,
       message: 'ส่งคำขอต่อสัญญาเช่าไปยังเจ้าของหอพักเรียบร้อยแล้ว'

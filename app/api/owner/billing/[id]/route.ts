@@ -56,9 +56,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
 
     const updatedBills = await sql`
-      SELECT b.*, t.name as tenant_name, t.user_id as tenant_user_id, COALESCE(b.room_number, r.room_number) as room_number
+      SELECT b.*, t.name as tenant_name, COALESCE(t.user_id, u.id) as tenant_user_id, COALESCE(b.room_number, r.room_number) as room_number
       FROM bills b
       LEFT JOIN tenants t ON b.tenant_id = t.id
+      LEFT JOIN users u ON LOWER(t.email) = LOWER(u.email)
       LEFT JOIN rooms r ON r.id = t.room_id
       WHERE b.id = ${billId}
       LIMIT 1
@@ -162,6 +163,11 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   }
 
   try {
+    // Nullify references in maintenance_jobs and cleaning_jobs to prevent orphaned keys
+    await sql`UPDATE maintenance_jobs SET bill_id = NULL WHERE bill_id = ${billId}`;
+    await sql`UPDATE cleaning_jobs SET bill_id = NULL WHERE bill_id = ${billId}`;
+    await sql`DELETE FROM accounting_transactions WHERE reference_type = 'bill' AND reference_id = ${billId}`;
+
     await sql`DELETE FROM bills WHERE id = ${billId}`;
     return NextResponse.json({ success: true, message: 'Bill deleted successfully' });
   } catch (err: any) {

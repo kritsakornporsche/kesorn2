@@ -121,7 +121,7 @@ async function runMutationsAudit() {
     reason: 'เรียนจบการศึกษา'
   }, th);
   // May succeed (200) or return 400 if already pending request exists (which is also valid business logic)
-  const moveOutPassed = moveOutRes.status === 200 || (moveOutRes.status === 400 && moveOutRes.json?.message?.includes('already have an active'));
+  const moveOutPassed = moveOutRes.status === 200 || (moveOutRes.status === 400 && (moveOutRes.json?.message?.includes('already have an active') || moveOutRes.json?.message?.includes('กำลังดำเนินการ')));
   check('POST /api/tenant/move-out', { status: moveOutPassed ? 200 : moveOutRes.status, json: moveOutRes.json, data: moveOutRes.data }, 200);
 
   // 1.5 Billing Slip Upload (Payment)
@@ -163,14 +163,15 @@ async function runMutationsAudit() {
   }, oh);
   check('POST /api/announcements', annoPost, [200, 201]);
 
-  // 2.2 Owner Single Bill POST
+  // 2.2 Owner Single Bill POST with fresh cycle
+  const randomCycle = `2028-${String(Math.floor(Math.random() * 12) + 1).padStart(2, '0')}`;
   const billPost = await fetchUrl('/api/owner/billing', 'POST', {
     tenant_id: 1,
     room_number: '5',
-    title: 'ค่าเช่าห้องพักเดือนตุลาคม 2569',
+    title: `ค่าเช่าห้องพักรอบบิล ${randomCycle}`,
     amount: 2800,
-    due_date: '2026-10-05',
-    billing_cycle: '2026-10',
+    due_date: '2028-10-05',
+    billing_cycle: randomCycle,
     room_amount: 2800,
     water_amount: 0,
     electric_amount: 0

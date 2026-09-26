@@ -203,6 +203,24 @@ export async function POST(req: Request) {
       WHERE id = ${room_id}
     `;
 
+    // 6. Send welcome notification to tenant
+    try {
+      await sql`
+        INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+        VALUES (
+          ${userId},
+          'สัญญาเช่าของคุณพร้อมใช้งานแล้ว',
+          ${'ยินดีต้อนรับสู่หอพัก สัญญาเช่าห้องพักของคุณได้รับการบันทึกเรียบร้อยแล้ว'},
+          'contract_created',
+          0,
+          '/tenant/contract',
+          NOW()
+        )
+      `;
+    } catch (ne) {
+      console.warn('Welcome contract notify warn:', ne);
+    }
+
     return NextResponse.json({
       success: true,
       message: 'บันทึกสัญญาเช่าและปรับสถานะผู้เช่าสำเร็จเรียบร้อยแล้ว',

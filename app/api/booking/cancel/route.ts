@@ -44,7 +44,11 @@ export async function POST(req: Request) {
       if (contractData.length > 0) {
         targetRoomId = targetRoomId || contractData[0].room_id;
       }
-      await sql`DELETE FROM contracts WHERE id = ${targetContractId} AND status = 'PendingOwnerSignature'`;
+      await sql`
+        UPDATE contracts 
+        SET status = 'Cancelled', renewal_note = 'ผู้เช่ายกเลิกการจองผ่านระบบ'
+        WHERE id = ${targetContractId} AND status = 'PendingOwnerSignature'
+      `;
     }
 
     // 3. Set room back to Available

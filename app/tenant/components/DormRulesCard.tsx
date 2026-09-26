@@ -16,6 +16,7 @@ export default function DormRulesCard({ dormId }: { dormId?: number }) {
   const [rules, setRules] = useState<Rule[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRule, setSelectedRule] = useState<Rule | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     const fetchRules = async () => {
@@ -56,7 +57,7 @@ export default function DormRulesCard({ dormId }: { dormId?: number }) {
       </div>
 
       <div className="space-y-4 sm:space-y-6">
-        {rules.slice(0, 4).map((rule, idx) => (
+        {(showAll ? rules : rules.slice(0, 4)).map((rule, idx) => (
           <div 
             key={rule.id || idx} 
             onClick={() => setSelectedRule(rule)}
@@ -91,10 +92,10 @@ export default function DormRulesCard({ dormId }: { dormId?: number }) {
 
       {rules.length > 4 && (
         <button 
-          onClick={() => setSelectedRule(rules[0])}
+          onClick={() => setShowAll(prev => !prev)}
           className="w-full mt-6 sm:mt-8 py-3 border border-primary/30 text-primary rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-primary hover:text-white transition-all cursor-pointer"
         >
-          ดูระเบียบทั้งหมด ({rules.length} ข้อ)
+          {showAll ? 'ย่อระเบียบ (แสดง 4 ข้อ)' : `ดูระเบียบทั้งหมด (${rules.length} ข้อ)`}
         </button>
       )}
 

@@ -196,6 +196,65 @@ export async function PATCH(request: Request) {
           photo_url = ${photo_url || null}
         WHERE id = ${id}
       `;
+
+      // Notify tenant and owner about job completion
+      try {
+        const maintObj = await sql`
+          SELECT m.id, m.room_number, m.tenant_id, m.issue_type, t.user_id, t.email
+          FROM maintenance_requests m
+          LEFT JOIN tenants t ON m.tenant_id = t.id
+          WHERE m.id = ${id}
+          LIMIT 1
+        `;
+        if (maintObj.length > 0) {
+          const row = maintObj[0];
+          let tenantUserId = row.user_id;
+          if (!tenantUserId && row.email) {
+            const u = await sql`SELECT id FROM users WHERE LOWER(email) = LOWER(${row.email}) LIMIT 1`;
+            if (u.length > 0) tenantUserId = u[0].id;
+          }
+
+          if (tenantUserId) {
+            const billNote = cost > 0 ? ` (มีค่าใช้จ่าย ฿${cost.toFixed(2)})` : '';
+            await sql`
+              INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+              VALUES (
+                ${tenantUserId},
+                'งานซ่อมแซมเสร็จสิ้นแล้ว',
+                ${'ช่างเทคนิคได้ทำการซ่อมแซมห้อง ' + (row.room_number || '-') + ' (' + (row.issue_type || 'ทั่วไป') + ') เรียบร้อยแล้ว' + billNote},
+                'maintenance',
+                0,
+                '/tenant/maintenance',
+                NOW()
+              )
+            `;
+          }
+
+          // Notify owner
+          const dormOwners = await sql`
+            SELECT u.id FROM users u
+            JOIN dormitory_registry dr ON dr.owner_id = u.id OR LOWER(dr.owner_email) = LOWER(u.email)
+            WHERE dr.id = 1
+            LIMIT 1
+          `;
+          if (dormOwners.length > 0) {
+            await sql`
+              INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+              VALUES (
+                ${dormOwners[0].id},
+                'ช่างซ่อมปิดงานแล้ว',
+                ${'งานซ่อมห้อง ' + (row.room_number || '-') + ' (' + (row.issue_type || '') + ') ปิดงานแล้ว ค่าใช้จ่าย: ฿' + cost.toFixed(2)},
+                'maintenance',
+                0,
+                '/owner/maintenance',
+                NOW()
+              )
+            `;
+          }
+        }
+      } catch (ne) {
+        console.warn('Tech job notify warn:', ne);
+      }
     } else {
       await sql`
         UPDATE maintenance_requests 

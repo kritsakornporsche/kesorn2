@@ -167,6 +167,37 @@ export async function POST(req: Request) {
       )
     `;
 
+    // Notify owner about move-out request
+    try {
+      const dormOwners = await sql`
+        SELECT u.id FROM users u
+        JOIN dormitory_registry dr ON dr.owner_id = u.id OR LOWER(dr.owner_email) = LOWER(u.email)
+        WHERE dr.id = 1
+        LIMIT 1
+      `;
+      if (dormOwners.length > 0) {
+        let roomLabel = '';
+        if (roomId) {
+          const rRes = await sql`SELECT room_number FROM rooms WHERE id = ${roomId} LIMIT 1`;
+          if (rRes.length > 0) roomLabel = `ห้อง ${rRes[0].room_number}`;
+        }
+        await sql`
+          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+          VALUES (
+            ${dormOwners[0].id},
+            'มีคำขอย้ายออกใหม่',
+            ${`ผู้เช่า ${tenant.name || ''} (${roomLabel || 'ไม่ระบุห้อง'}) ได้ส่งคำขอย้ายออกในวันที่ ` + new Date(desiredDate).toLocaleDateString('th-TH')},
+            'move_out_requested',
+            0,
+            '/owner/bookings',
+            NOW()
+          )
+        `;
+      }
+    } catch (ne) {
+      console.warn('Move-out owner notify warn:', ne);
+    }
+
     return NextResponse.json({ 
       success: true, 
       message: 'ส่งเรื่องแจ้งย้ายออกเรียบร้อยแล้ว ระบบได้คำนวณเงินประกันเบื้องต้นให้ผู้ดูแลเรียบร้อย',

@@ -56,12 +56,12 @@ export async function GET(req: Request) {
         r.room_type,
         r.floor,
         dr.id as dorm_id,
-        dr.dorm_name,
+        COALESCE(dr.dorm_name, 'หอพักเกษร 2') as dorm_name,
         dr.address as dorm_address
       FROM contracts c
       JOIN tenants t ON c.tenant_id = t.id
       JOIN rooms r ON c.room_id = r.id
-      JOIN dormitory_registry dr ON r.dorm_id = dr.id
+      LEFT JOIN dormitory_registry dr ON COALESCE(r.dorm_id, 1) = dr.id
       WHERE (t.email = ${userEmail}
          OR t.user_id = ${userId}
          OR t.user_id IN (SELECT id FROM users WHERE email = ${userEmail}))
@@ -77,10 +77,10 @@ export async function GET(req: Request) {
       SELECT
         drr.*,
         r.room_number,
-        dr.dorm_name
+        COALESCE(dr.dorm_name, 'หอพักเกษร 2') as dorm_name
       FROM deposit_refund_requests drr
       JOIN rooms r ON drr.room_id = r.id
-      JOIN dormitory_registry dr ON drr.dorm_id = dr.id
+      LEFT JOIN dormitory_registry dr ON COALESCE(drr.dorm_id, 1) = dr.id
       WHERE drr.requester_email = ${userEmail}
          OR drr.tenant_id IN (
            SELECT id FROM tenants WHERE email = ${userEmail}
@@ -204,7 +204,7 @@ export async function POST(req: Request) {
         ${contractId},
         ${contract.tenant_id},
         ${contract.room_id},
-        ${contract.dorm_id},
+        ${contract.dorm_id || 1},
         ${contract.tenant_name || userEmail},
         ${contract.tenant_email || userEmail},
         ${contract.deposit_amount},

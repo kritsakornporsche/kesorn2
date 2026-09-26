@@ -36,8 +36,12 @@ export async function GET(req: NextRequest) {
             ELSE r.status
           END as display_status
         FROM rooms r
-        LEFT JOIN tenants t ON t.room_id = r.id AND t.status = 'active'
-        LEFT JOIN move_out_requests mor ON (mor.room_id = r.id OR mor.tenant_id = t.id) AND mor.status IN ('Pending', 'Approved')
+        LEFT JOIN (
+          SELECT room_id, MAX(move_out_date) as move_out_date, MAX(status) as status, MAX(id) as id
+          FROM move_out_requests
+          WHERE status IN ('Pending', 'Approved')
+          GROUP BY room_id
+        ) mor ON mor.room_id = r.id
         WHERE (r.status IN ('Available', 'ว่าง', 'MovingOut', 'Moving Out', 'กำลังจะย้ายออก') OR mor.id IS NOT NULL)
           AND (r.dorm_id = ${targetDormId} OR r.dorm_id IS NULL)
         ORDER BY r.floor ASC, CAST(r.room_number AS UNSIGNED) ASC, r.room_number ASC
@@ -55,8 +59,12 @@ export async function GET(req: NextRequest) {
             ELSE r.status
           END as display_status
         FROM rooms r
-        LEFT JOIN tenants t ON t.room_id = r.id AND t.status = 'active'
-        LEFT JOIN move_out_requests mor ON (mor.room_id = r.id OR mor.tenant_id = t.id) AND mor.status IN ('Pending', 'Approved')
+        LEFT JOIN (
+          SELECT room_id, MAX(move_out_date) as move_out_date, MAX(status) as status, MAX(id) as id
+          FROM move_out_requests
+          WHERE status IN ('Pending', 'Approved')
+          GROUP BY room_id
+        ) mor ON mor.room_id = r.id
         WHERE (r.dorm_id = ${targetDormId} OR r.dorm_id IS NULL)
         ORDER BY r.floor ASC, CAST(r.room_number AS UNSIGNED) ASC, r.room_number ASC
       `;
