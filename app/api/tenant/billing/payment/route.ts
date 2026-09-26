@@ -6,7 +6,9 @@ export async function POST(req: Request) {
   try {
     const session = await auth();
     const body = await req.json();
-    const { billId, slipData, email } = body;
+    const billId = body.billId || body.bill_id;
+    const slipData = body.slipData || body.slip_url || body.slip;
+    const email = body.email;
     const userEmail = session?.user?.email || email;
 
     if (!billId || !slipData) {

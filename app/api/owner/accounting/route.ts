@@ -66,8 +66,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
     }
 
-    const { type, category, amount, description, transaction_date, dorm_id } = await req.json();
-    if (!type || !category || !amount || !transaction_date) {
+    const body = await req.json();
+    const { type, category, amount, description, dorm_id } = body;
+    const txDate = body.transaction_date || body.date || new Date().toISOString().slice(0, 10);
+
+    if (!type || !category || amount === undefined) {
       return NextResponse.json({ success: false, message: 'Missing fields' }, { status: 400 });
     }
 
@@ -75,7 +78,7 @@ export async function POST(req: Request) {
     const sql = getDb();
     const result = await sql`
       INSERT INTO accounting_transactions (dorm_id, type, category, amount, description, transaction_date)
-      VALUES (${dormId}, ${type}, ${category}, ${amount}, ${description || null}, ${transaction_date})
+      VALUES (${dormId}, ${type}, ${category}, ${amount}, ${description || null}, ${txDate})
     `;
 
     return NextResponse.json({ success: true, data: { id: (result as any).insertId } });

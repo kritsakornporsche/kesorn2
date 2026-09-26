@@ -24,14 +24,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ success: false, message: 'Missing new status' }, { status: 400 });
     }
 
-    const result = await sql`
+    await sql`
       UPDATE maintenance_requests
       SET status = ${status}
       WHERE id = ${id}
-      RETURNING *
     `;
 
-    return NextResponse.json({ success: true, data: result[0] });
+    const updated = await sql`SELECT * FROM maintenance_requests WHERE id = ${id} LIMIT 1`;
+
+    return NextResponse.json({ success: true, data: updated[0] || { id, status } });
   } catch (err: any) {
     console.error('[Maintenance API PUT]', err);
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });

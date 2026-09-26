@@ -11,13 +11,16 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { dormId, billingCycle, dueDate, title } = body;
+    const billingCycle = body.billingCycle || body.billing_cycle;
+    const dormId = body.dormId || body.dorm_id || (session.user as any)?.dormId || 1;
+    const dueDate = body.dueDate || body.due_date || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+    const title = body.title || `ค่าเช่าห้องพักประจำเดือน ${billingCycle || ''}`;
 
-    if (!dormId || !billingCycle || !dueDate) {
-      return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
+    if (!billingCycle) {
+      return NextResponse.json({ success: false, message: 'Missing billing cycle' }, { status: 400 });
     }
 
-    const targetDormId = parseInt(dormId, 10);
+    const targetDormId = parseInt(String(dormId), 10);
 
     // 1. Find all active tenants in this dormitory via rooms/contracts
     const activeTenants = await sql`
@@ -29,7 +32,7 @@ export async function POST(req: Request) {
       FROM tenants t
       LEFT JOIN rooms r ON t.room_id = r.id
       WHERE (r.dorm_id = ${targetDormId} OR t.dorm_id = ${targetDormId})
-      AND t.status = 'Active'
+      AND t.status IN ('Active', 'active')
     `;
 
     if (activeTenants.length === 0) {
@@ -45,7 +48,8 @@ export async function POST(req: Request) {
       
       if (existing.length === 0) {
         const roomRent = Number(tenant.amount) || 0;
-        const flatWater = 100.00;
+        // In Kesorn 2, water is free (0.00)
+        const flatWater = 0.00;
         const totalAmount = roomRent + flatWater;
 
         await sql`

@@ -112,7 +112,8 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json();
-    const { id, status, notes, photo_url } = body;
+    const id = body.id || body.job_id;
+    const { status, notes, photo_url } = body;
 
     if (!id || !status) {
       return NextResponse.json({ success: false, message: 'Missing ID or Status' }, { status: 400 });
@@ -142,3 +143,5 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ success: false, message: 'Internal Server Error' }, { status: 500 });
   }
 }
+
+export const PUT = PATCH;

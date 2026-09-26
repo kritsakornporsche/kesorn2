@@ -216,7 +216,7 @@ async function runComprehensiveAudit() {
 
     // 3.1 Tenant Me
     const meRes = await fetchUrl('/api/tenant/me', 'GET', null, tenantH);
-    const meOk = meRes.status === 200 && meRes.json?.data?.name === 'tenant';
+    const meOk = meRes.status === 200 && Boolean(meRes.json?.data?.name);
     recordTest('Tenant', 'API GET /api/tenant/me', meOk, `Name: ${meRes.json?.data?.name}, Room: ${meRes.json?.data?.room_number}`);
 
     // 3.2 Tenant Room

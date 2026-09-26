@@ -53,6 +53,55 @@ async function patchSchema() {
     console.error('Error patching contracts:', e.message);
   }
 
+  // 2.3 Patch maintenance_requests table
+  try {
+    const [cols] = await conn.query('DESCRIBE maintenance_requests');
+    const colNames = cols.map(c => c.Field);
+    console.log('Modifying status in maintenance_requests to VARCHAR(50)...');
+    await conn.query('ALTER TABLE maintenance_requests MODIFY COLUMN status VARCHAR(50) DEFAULT "Pending"');
+    if (!colNames.includes('notes')) {
+      console.log('Adding notes to maintenance_requests...');
+      await conn.query('ALTER TABLE maintenance_requests ADD COLUMN notes TEXT NULL AFTER description');
+    }
+    if (!colNames.includes('photo_url')) {
+      console.log('Adding photo_url to maintenance_requests...');
+      await conn.query('ALTER TABLE maintenance_requests ADD COLUMN photo_url LONGTEXT NULL AFTER image_url');
+    }
+    console.log('✅ maintenance_requests schema patched.');
+  } catch (e) {
+    console.error('Error patching maintenance_requests:', e.message);
+  }
+
+  // 2.4 Patch bills table
+  try {
+    const [cols] = await conn.query('DESCRIBE bills');
+    const colNames = cols.map(c => c.Field);
+    console.log('Modifying status in bills to VARCHAR(50)...');
+    await conn.query('ALTER TABLE bills MODIFY COLUMN status VARCHAR(50) DEFAULT "Unpaid"');
+    if (!colNames.includes('dorm_id')) {
+      console.log('Adding dorm_id to bills...');
+      await conn.query('ALTER TABLE bills ADD COLUMN dorm_id INT NOT NULL DEFAULT 1 AFTER tenant_id');
+    }
+    console.log('✅ bills schema patched.');
+  } catch (e) {
+    console.error('Error patching bills:', e.message);
+  }
+
+  // 2.5 Patch move_out_requests table (add desired_date if missing and relax status)
+  try {
+    const [cols] = await conn.query('DESCRIBE move_out_requests');
+    const colNames = cols.map(c => c.Field);
+    console.log('Modifying status in move_out_requests to VARCHAR(50)...');
+    await conn.query('ALTER TABLE move_out_requests MODIFY COLUMN status VARCHAR(50) DEFAULT "Pending"');
+    if (!colNames.includes('desired_date')) {
+      console.log('Adding desired_date to move_out_requests...');
+      await conn.query('ALTER TABLE move_out_requests ADD COLUMN desired_date DATE NULL AFTER move_out_date');
+    }
+    console.log('✅ move_out_requests schema patched.');
+  } catch (e) {
+    console.error('Error patching move_out_requests:', e.message);
+  }
+
   // 2.1 Patch dormitory_profile table (add dorm_id if missing)
   try {
     const [cols] = await conn.query('DESCRIBE dormitory_profile');

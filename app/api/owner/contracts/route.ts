@@ -80,25 +80,37 @@ export async function POST(req: Request) {
       contract_file_url 
     } = body;
 
-    if (!room_id || !start_date || !end_date || !tenant_name || !tenant_email) {
+    const sql = getDb();
+    let tenantName = tenant_name;
+    let tenantEmail = tenant_email;
+    let tenantPhone = tenant_phone;
+
+    if (body.tenant_id && (!tenantName || !tenantEmail)) {
+      const existingTenant = await sql`SELECT name, email, phone FROM tenants WHERE id = ${body.tenant_id} LIMIT 1`;
+      if (existingTenant.length > 0) {
+        tenantName = tenantName || existingTenant[0].name;
+        tenantEmail = tenantEmail || existingTenant[0].email;
+        tenantPhone = tenantPhone || existingTenant[0].phone;
+      }
+    }
+
+    if (!room_id || !start_date || !end_date || !tenantName || !tenantEmail) {
       return NextResponse.json({ 
         success: false, 
         message: 'กรุณากรอกข้อมูลสำคัญให้ครบถ้วน (ชื่อผู้เช่า, อีเมล, ห้องพัก, วันเริ่มสัญญา, วันสิ้นสุดสัญญา)' 
       }, { status: 400 });
     }
-
-    const sql = getDb();
     const bcrypt = require('bcryptjs');
 
     // 1. Check or create User account in `users` table
-    let users = await sql`SELECT id, primary_role FROM users WHERE email = ${tenant_email.trim()} LIMIT 1`;
+    let users = await sql`SELECT id, primary_role FROM users WHERE email = ${tenantEmail.trim()} LIMIT 1`;
     let userId: number;
 
     if (users.length === 0) {
       const defaultPasswordHash = await bcrypt.hash('smartdom', 12);
       const userInsert = await sql`
         INSERT INTO users (name, email, password, phone, primary_role)
-        VALUES (${tenant_name.trim()}, ${tenant_email.trim()}, ${defaultPasswordHash}, ${tenant_phone?.trim() || null}, 'tenant')
+        VALUES (${tenantName.trim()}, ${tenantEmail.trim()}, ${defaultPasswordHash}, ${tenantPhone?.trim() || null}, 'tenant')
       `;
       userId = (userInsert as any).insertId;
     } else {
@@ -107,20 +119,20 @@ export async function POST(req: Request) {
       await sql`
         UPDATE users 
         SET primary_role = 'tenant', 
-            name = COALESCE(${tenant_name.trim()}, name),
-            phone = COALESCE(${tenant_phone?.trim() || null}, phone)
+            name = COALESCE(${tenantName.trim()}, name),
+            phone = COALESCE(${tenantPhone?.trim() || null}, phone)
         WHERE id = ${userId}
       `;
     }
 
     // 2. Check or create Tenant record in `tenants` table
-    let tenants = await sql`SELECT id FROM tenants WHERE email = ${tenant_email.trim()} OR user_id = ${userId} LIMIT 1`;
+    let tenants = await sql`SELECT id FROM tenants WHERE email = ${tenantEmail.trim()} OR user_id = ${userId} LIMIT 1`;
     let tenantId: number;
 
     if (tenants.length === 0) {
       const tenantInsert = await sql`
         INSERT INTO tenants (name, email, phone, room_id, user_id)
-        VALUES (${tenant_name.trim()}, ${tenant_email.trim()}, ${tenant_phone?.trim() || null}, ${room_id}, ${userId})
+        VALUES (${tenantName.trim()}, ${tenantEmail.trim()}, ${tenantPhone?.trim() || null}, ${room_id}, ${userId})
       `;
       tenantId = (tenantInsert as any).insertId;
     } else {
@@ -128,8 +140,8 @@ export async function POST(req: Request) {
       await sql`
         UPDATE tenants 
         SET room_id = ${room_id}, 
-            name = ${tenant_name.trim()}, 
-            phone = ${tenant_phone?.trim() || null},
+            name = ${tenantName.trim()}, 
+            phone = ${tenantPhone?.trim() || null},
             user_id = ${userId}
         WHERE id = ${tenantId}
       `;

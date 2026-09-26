@@ -7,15 +7,18 @@ export async function POST(req: Request) {
   if (!session?.user?.email) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
   try {
-    const { desiredDate, reason } = await req.json();
+    const body = await req.json();
+    const desiredDate = body.desiredDate || body.desired_date || body.move_out_date || body.date;
+    const reason = body.reason;
     if (!desiredDate) return NextResponse.json({ success: false, message: 'Missing desired date' }, { status: 400 });
 
     const sql = getDormDbFromSession(session);
     
     // Find tenant by email
-    const tenantRes = await sql`SELECT id FROM tenants WHERE email = ${session.user.email} LIMIT 1`;
+    const tenantRes = await sql`SELECT id, room_id FROM tenants WHERE email = ${session.user.email} LIMIT 1`;
     if (tenantRes.length === 0) return NextResponse.json({ success: false, message: 'Tenant not found' }, { status: 404 });
     const tenantId = tenantRes[0].id;
+    const roomId = tenantRes[0].room_id || null;
 
     // Check if there is already a pending request
     const existingReq = await sql`SELECT id FROM move_out_requests WHERE tenant_id = ${tenantId} AND status IN ('Pending', 'Approved')`;
@@ -25,8 +28,8 @@ export async function POST(req: Request) {
 
     // Insert new request
     await sql`
-      INSERT INTO move_out_requests (tenant_id, desired_date, reason, status)
-      VALUES (${tenantId}, ${desiredDate}, ${reason || null}, 'Pending')
+      INSERT INTO move_out_requests (tenant_id, room_id, move_out_date, desired_date, reason, status)
+      VALUES (${tenantId}, ${roomId}, ${desiredDate}, ${desiredDate}, ${reason || null}, 'Pending')
     `;
 
     return NextResponse.json({ success: true, message: 'Move-out request submitted successfully.' });
@@ -55,7 +58,6 @@ export async function DELETE(req: Request) {
     const delRes = await sql`
       DELETE FROM move_out_requests 
       WHERE id = ${requestId} AND tenant_id = ${tenantId} AND status = 'Pending'
-      RETURNING id
     `;
 
     if (delRes.length === 0) {

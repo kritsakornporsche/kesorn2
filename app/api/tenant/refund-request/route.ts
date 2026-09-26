@@ -126,7 +126,8 @@ export async function POST(req: Request) {
     const userEmail = session.user.email;
     const userId = (session.user as any)?.id || 0;
     const body = await req.json();
-    const { contractId, reason } = body;
+    const contractId = body.contractId || body.contract_id;
+    const reason = body.reason;
 
     if (!contractId) {
       return NextResponse.json({ success: false, message: 'Missing contractId' }, { status: 400 });
