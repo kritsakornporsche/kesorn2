@@ -13,6 +13,8 @@ interface MaintenanceRequest {
   issue_type: string;
   description: string;
   status: string;
+  cost?: number;
+  bill_id?: number;
   created_at: string;
 }
 
@@ -143,17 +145,18 @@ export default function OwnerMaintenancePage() {
                       <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ห้อง</th>
                       <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ข้อมูลผู้แจ้ง</th>
                       <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">รายละเอียดปัญหา</th>
+                      <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ค่าบริการ/บิล</th>
                       <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest w-48">สถานะ / อัปเดต</th>
                    </tr>
                 </thead>
                 <tbody className="divide-y divide-[#F3EFE9] flex flex-col sm:table-row-group">
                    {loading ? (
                       <tr className="animate-pulse">
-                         <td colSpan={4} className="px-8 py-20 text-center text-muted-foreground">กำลังโหลด...</td>
+                         <td colSpan={5} className="px-8 py-20 text-center text-muted-foreground">กำลังโหลด...</td>
                       </tr>
                    ) : requests.length === 0 ? (
                       <tr>
-                         <td colSpan={4} className="px-8 py-20 text-center text-muted-foreground font-bold">ไม่มีการแจ้งซ่อมในขณะนี้</td>
+                         <td colSpan={5} className="px-8 py-20 text-center text-muted-foreground font-bold">ไม่มีการแจ้งซ่อมในขณะนี้</td>
                       </tr>
                    ) : requests.map((req) => (
                       <tr key={req.id} className="hover:bg-card transition-colors flex flex-col sm:table-row p-6 sm:p-0">
@@ -174,6 +177,25 @@ export default function OwnerMaintenancePage() {
                                {req.issue_type}
                             </div>
                             <p className="text-sm font-medium text-white/80 whitespace-pre-line leading-relaxed">{req.description}</p>
+                         </td>
+                         <td className="px-0 sm:px-8 py-3 sm:py-6 align-top">
+                            <span className="inline-flex sm:hidden text-[10px] font-black text-foreground/50 uppercase tracking-widest mb-1">ค่าบริการ/บิล</span>
+                            {req.cost && Number(req.cost) > 0 ? (
+                              <div className="space-y-1">
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  💰 ฿{Number(req.cost).toLocaleString()}
+                                </span>
+                                {req.bill_id && (
+                                  <p className="text-[11px] text-muted-foreground font-medium">
+                                    ออกบิล #{req.bill_id} แล้ว
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-semibold bg-white/5 text-muted-foreground border border-white/10">
+                                ✨ ไม่มีค่าใช้จ่าย
+                              </span>
+                            )}
                          </td>
                          <td className="px-0 sm:px-8 py-4 sm:py-6 align-top">
                             <span className="inline-flex sm:hidden text-[10px] font-black text-foreground/50 uppercase tracking-widest mb-3">สถานะ</span>

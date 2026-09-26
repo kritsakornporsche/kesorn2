@@ -149,10 +149,13 @@ async function run() {
     body: { 
       id: repairId, 
       status: 'Completed',
-      notes: 'เปลี่ยนบัลลาสต์และหลอดไฟ LED เรียบร้อย ใช้งานได้ปกติ'
+      cost: 250,
+      notes: 'เปลี่ยนบัลลาสต์และหลอดไฟ LED เรียบร้อย ใช้งานได้ปกติ (ค่าซ่อม/อะไหล่ 250 บาท)'
     }
   });
-  assert('Technician PATCH /api/keeper/technician/jobs (Completed)', completeJobRes.status === 200 && completeJobRes.json?.success);
+  assert('Technician PATCH /api/keeper/technician/jobs (Completed with Cost 250)', completeJobRes.status === 200 && completeJobRes.json?.success);
+  const repairBillId = completeJobRes.json?.bill_id;
+  assert('Technician Repair Generates Bill ID', Boolean(repairBillId), `Bill ID: ${repairBillId}`);
 
   // Owner verifies maintenance
   console.log('\n--- 3. Testing Owner Maintenance Verification ---');
@@ -165,6 +168,7 @@ async function run() {
   const ownerMaintList = ownerMaintRes.json?.data || [];
   const completedJob = ownerMaintList.find(j => j.id === repairId);
   assert('Owner GET /api/owner/maintenance', ownerMaintRes.status === 200 && completedJob?.status === 'Completed', `Status: ${completedJob?.status}`);
+  assert('Owner Sees Maintenance Cost and Bill ID', Number(completedJob?.cost) === 250 && Number(completedJob?.bill_id) === Number(repairBillId), `Cost: ${completedJob?.cost}, Bill: ${completedJob?.bill_id}`);
 
   // --- 4. Cleaning Workflow (Tenant Request) ---
   console.log('\n--- 4. Testing Tenant Cleaning Request Workflow ---');
@@ -199,17 +203,19 @@ async function run() {
     });
     assert('Maid PATCH /api/keeper/maid/jobs (in_progress)', maidStartRes.status === 200 && maidStartRes.json?.success);
 
-    // Maid completes cleaning job
+    // Maid completes cleaning job with cost = 0 (Free, no bill generated)
     const maidFinishRes = await request('/api/keeper/maid/jobs', {
       method: 'PATCH',
       headers: { Cookie: maidCookie },
       body: {
         id: foundCleanJob.id,
         status: 'completed',
-        notes: 'ทำความสะอาดห้องน้ำและถูพื้นเรียบร้อยแล้ว'
+        cost: 0,
+        notes: 'ทำความสะอาดห้องน้ำและถูพื้นเรียบร้อยแล้ว (บริการฟรี ไม่มีค่าใช้จ่าย)'
       }
     });
-    assert('Maid PATCH /api/keeper/maid/jobs (completed)', maidFinishRes.status === 200 && maidFinishRes.json?.success);
+    assert('Maid PATCH /api/keeper/maid/jobs (completed with Cost 0)', maidFinishRes.status === 200 && maidFinishRes.json?.success);
+    assert('Maid Free Job Generates No Bill (bill_id is null)', !maidFinishRes.json?.bill_id);
   }
 
   // --- 6. Owner Assigns Cleaning Task to Maid ---
@@ -249,21 +255,39 @@ async function run() {
   const maidDirectJobId = maidCreateRes.json?.data?.id;
   assert('Maid POST /api/keeper/maid/jobs (Room 20)', maidCreateRes.status === 200 && Boolean(maidDirectJobId), `Job ID: ${maidDirectJobId}`);
 
-  // Maid completes Room 20 job
+  // Maid completes Room 20 job with cost = 150
   const maidCompleteDirectRes = await request('/api/keeper/maid/jobs', {
     method: 'PATCH',
     headers: { Cookie: maidCookie },
     body: {
       id: maidDirectJobId,
       status: 'completed',
-      notes: 'เช็ดกระจกและล้างระเบียงเรียบร้อยแล้ว สะอาดเอี่ยม',
+      cost: 150,
+      notes: 'เช็ดกระจกและล้างระเบียงเรียบร้อยแล้ว สะอาดเอี่ยม (คิดค่าบริการพิเศษ 150 บาท)',
       photo_url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
     }
   });
-  assert('Maid Completes Room 20 with Photo & Notes', maidCompleteDirectRes.status === 200 && maidCompleteDirectRes.json?.success);
+  assert('Maid Completes Room 20 with Photo, Notes & Cost 150', maidCompleteDirectRes.status === 200 && maidCompleteDirectRes.json?.success);
+  const cleanBillId = maidCompleteDirectRes.json?.bill_id;
+  assert('Maid Paid Cleaning Generates Bill ID', Boolean(cleanBillId), `Bill ID: ${cleanBillId}`);
 
-  // --- 8. Testing Owner Updating Maintenance Status via API ---
-  console.log('\n--- 8. Testing Owner Updating Maintenance Status via API ---');
+  // --- 8. Testing Tenant Billing & Maintenance Cost Visibility ---
+  console.log('\n--- 8. Testing Tenant Billing & Cost Visibility ---');
+  const tenantBillsRes = await request('/api/tenant/billing/list', {
+    headers: { Cookie: tenantCookie }
+  });
+  const tenantBills = tenantBillsRes.json?.data || [];
+  const foundRepairBill = tenantBills.find(b => b.id === repairBillId || (b.title && b.title.includes('ค่าซ่อมแซม') && Number(b.amount) === 250));
+  assert('Tenant Billing List Contains Repair Bill', tenantBillsRes.status === 200 && Boolean(foundRepairBill), `Bill Found: ${foundRepairBill?.title} - ฿${foundRepairBill?.amount}`);
+
+  const tenantHistAfter = await request('/api/tenant/maintenance/list', {
+    headers: { Cookie: tenantCookie }
+  });
+  const updatedMaintInHist = (tenantHistAfter.json?.data || []).find(r => r.id === repairId);
+  assert('Tenant Maintenance History Shows Cost and Bill ID', updatedMaintInHist?.cost == 250 && Boolean(updatedMaintInHist?.bill_id), `Cost: ${updatedMaintInHist?.cost}, Bill: ${updatedMaintInHist?.bill_id}`);
+
+  // --- 9. Testing Owner Updating Maintenance Status via API ---
+  console.log('\n--- 9. Testing Owner Updating Maintenance Status via API ---');
   const ownerUpdateMaintRes = await request(`/api/owner/maintenance/${repairId}`, {
     method: 'PUT',
     headers: { Cookie: ownerCookie },
@@ -279,8 +303,8 @@ async function run() {
   });
   assert('Owner PUT /api/owner/maintenance/[id] (Completed)', ownerResetMaintRes.status === 200 && ownerResetMaintRes.json?.success);
 
-  // --- 9. Testing Maid & Tech Dashboard Stats ---
-  console.log('\n--- 9. Testing Dashboard Stats Accuracy ---');
+  // --- 10. Testing Maid & Tech Dashboard Stats ---
+  console.log('\n--- 10. Testing Dashboard Stats Accuracy ---');
   const finalMaidStats = await request('/api/keeper/maid/jobs?dormId=1', {
     headers: { Cookie: maidCookie }
   });
@@ -293,8 +317,8 @@ async function run() {
   const techStats = finalTechStats.json?.data?.stats;
   assert('Technician Stats Loaded and Accurate', Boolean(techStats && techStats.total >= 1 && techStats.completed >= 1), `Total: ${techStats?.total}, Completed: ${techStats?.completed}`);
 
-  // --- 10. Security & RBAC Checks ---
-  console.log('\n--- 10. Security & RBAC Checks ---');
+  // --- 11. Security & RBAC Checks ---
+  console.log('\n--- 11. Security & RBAC Checks ---');
   const unauthRes = await request('/api/keeper/maid/jobs', {
     method: 'POST',
     body: { room_number: '1', job_type: 'test' }

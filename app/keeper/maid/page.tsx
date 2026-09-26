@@ -12,6 +12,8 @@ interface MaidJob {
   dorm_name?: string;
   status: string;
   job_type: string;
+  cost?: number;
+  bill_id?: number;
   created_at: string;
   completed_at?: string;
   room_number: string;
@@ -57,6 +59,7 @@ export default function MaidDashboardPage() {
   const [isFinishing, setIsFinishing] = useState(false);
   const [finishNotes, setFinishNotes] = useState('');
   const [finishPhoto, setFinishPhoto] = useState('');
+  const [finishCost, setFinishCost] = useState('0');
 
   // Create Job Modal states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -144,12 +147,12 @@ export default function MaidDashboardPage() {
     reader.readAsDataURL(file);
   };
 
-  const updateStatus = async (id: number, newStatus: string, notes?: string, photo?: string) => {
+  const updateStatus = async (id: number, newStatus: string, notes?: string, photo?: string, cost?: number) => {
     try {
       const res = await fetch('/api/keeper/maid/jobs', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, status: newStatus, notes, photo_url: photo }),
+        body: JSON.stringify({ id, status: newStatus, notes, photo_url: photo, cost }),
       });
       const json = await res.json();
       if (json.success) {
@@ -159,6 +162,7 @@ export default function MaidDashboardPage() {
           setIsFinishing(false);
           setFinishNotes('');
           setFinishPhoto('');
+          setFinishCost('0');
           setSelectedJob(null);
         }
         fetchData(activeDormId, false); 
@@ -363,6 +367,15 @@ export default function MaidDashboardPage() {
                               สำเร็จเมื่อ {new Date(task.completed_at).toLocaleTimeString('th-TH')}
                             </span>
                           )}
+                          {(task.status === 'completed') && (
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                              Number(task.cost || 0) > 0 
+                                ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' 
+                                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            }`}>
+                              {Number(task.cost || 0) > 0 ? `💰 ค่าบริการ ฿${Number(task.cost).toLocaleString()} (ออกบิลแล้ว)` : '✨ ไม่มีค่าใช้จ่าย'}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-2" onClick={e => e.stopPropagation()}>
@@ -434,7 +447,7 @@ export default function MaidDashboardPage() {
 
                 {isFinishing ? (
                   <div className="space-y-6">
-                    <div>
+                      <div>
                       <label className="block text-xs font-bold uppercase tracking-wider text-white/50 mb-2">บันทึกเพิ่มเติม (ถ้ามี)</label>
                       <textarea 
                         value={finishNotes}
@@ -443,6 +456,48 @@ export default function MaidDashboardPage() {
                         className="w-full bg-[#1E293B] border border-white/20/10 rounded-2xl p-4 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 h-24"
                       />
                     </div>
+
+                    {/* Cost / Fee Input */}
+                    <div className="bg-[#0F172A] border border-orange-500/30 p-4 rounded-2xl space-y-2">
+                      <div className="flex justify-between items-center">
+                        <label className="block text-xs font-bold uppercase tracking-wider text-orange-300">
+                          🧹 ค่าบริการทำความสะอาด (บาท)
+                        </label>
+                        <span className="text-[11px] text-orange-400/80 font-medium">ใส่ 0 หากไม่มีค่าใช้จ่าย</span>
+                      </div>
+                      <div className="relative">
+                        <input 
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={finishCost}
+                          onChange={(e) => setFinishCost(e.target.value)}
+                          placeholder="0 (ไม่มีค่าใช้จ่าย)"
+                          className="w-full bg-[#1E293B] border border-white/20/20 rounded-xl px-4 py-3 text-base font-bold text-white focus:outline-none focus:ring-2 focus:ring-orange-500/40"
+                        />
+                        <span className="absolute right-4 top-3 text-xs font-bold text-white/40">บาท</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {['0', '100', '150', '200', '300'].map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setFinishCost(val)}
+                            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                              finishCost === val 
+                                ? 'bg-orange-500 text-slate-950 font-black shadow-md shadow-orange-500/20' 
+                                : 'bg-white/5 text-white/60 border border-white/10 hover:text-white'
+                            }`}
+                          >
+                            {val === '0' ? '✨ ฟรี (0 บาท)' : `฿${val}`}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-white/50 pt-1 leading-relaxed">
+                        💡 หากระบุยอดเงินมากกว่า 0 ระบบจะสร้างบิลเรียกเก็บเงินไปยังห้องพักของผู้เช่าโดยอัตโนมัติ (หากไม่มีค่าใช้จ่ายให้ใส่ 0)
+                      </p>
+                    </div>
+
                     <div>
                       <label className="block text-xs font-bold uppercase tracking-wider text-white/70 mb-2">
                         📸 อัปโหลดรูปภาพหลักฐานการทำงาน
@@ -484,10 +539,10 @@ export default function MaidDashboardPage() {
                          ยกเลิก
                        </button>
                        <button 
-                        onClick={() => updateStatus(selectedJob.id, 'completed', finishNotes, finishPhoto)}
-                        className="flex-1 px-4 py-3.5 rounded-2xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20"
+                        onClick={() => updateStatus(selectedJob.id, 'completed', finishNotes, finishPhoto, parseFloat(finishCost) || 0)}
+                        className="flex-1 px-4 py-3.5 rounded-2xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20 cursor-pointer"
                        >
-                         ส่งงานเสร็จสิ้น
+                         ส่งงานเสร็จสิ้น {Number(finishCost) > 0 ? `(ยอดเรียกเก็บ ฿${Number(finishCost).toLocaleString()})` : '(ไม่มีค่าใช้จ่าย)'}
                        </button>
                     </div>
                   </div>
@@ -520,6 +575,11 @@ export default function MaidDashboardPage() {
                                     <dd className="text-emerald-400 font-bold">{new Date(selectedJob.completed_at).toLocaleString('th-TH')}</dd>
                                 </>
                             )}
+
+                            <dt className="text-white/50 font-medium">ค่าบริการ:</dt>
+                            <dd className={Number(selectedJob.cost || 0) > 0 ? "font-bold text-orange-400" : "font-semibold text-emerald-400"}>
+                              {Number(selectedJob.cost || 0) > 0 ? `฿${Number(selectedJob.cost).toLocaleString()} (ออกบิลแล้ว)` : 'ไม่มีค่าใช้จ่าย (ฟรี)'}
+                            </dd>
                         </dl>
                     </div>
 

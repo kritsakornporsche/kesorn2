@@ -16,6 +16,8 @@ interface TechnicianJob {
   tenant_name?: string;
   tenant_phone?: string;
   status: string;
+  cost?: number;
+  bill_id?: number;
   created_at: string;
   notes?: string;
   photo_url?: string;
@@ -57,6 +59,7 @@ export default function TechnicianDashboardPage() {
   const [isFinishing, setIsFinishing] = useState(false);
   const [finishNotes, setFinishNotes] = useState('');
   const [finishPhoto, setFinishPhoto] = useState('');
+  const [finishCost, setFinishCost] = useState('0');
 
   const fetchData = useCallback(async (dormId = activeDormId, showLoading = true) => {
     if (showLoading) setLoadingData(true);
@@ -137,12 +140,12 @@ export default function TechnicianDashboardPage() {
     reader.readAsDataURL(file);
   };
 
-  const updateStatus = async (id: number, newStatus: string, notes?: string, photo?: string) => {
+  const updateStatus = async (id: number, newStatus: string, notes?: string, photo?: string, cost?: number) => {
     try {
       const res = await fetch('/api/keeper/technician/jobs', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, status: newStatus, notes, photo_url: photo }),
+        body: JSON.stringify({ id, status: newStatus, notes, photo_url: photo, cost }),
       });
       const json = await res.json();
       if (json.success) {
@@ -152,6 +155,7 @@ export default function TechnicianDashboardPage() {
           setIsFinishing(false);
           setFinishNotes('');
           setFinishPhoto('');
+          setFinishCost('0');
           setSelectedJob(null);
         }
         fetchData(activeDormId, false); 
@@ -344,6 +348,15 @@ export default function TechnicianDashboardPage() {
                             </svg>
                             ผู้แจ้ง: {task.tenant_name} ({task.tenant_phone}) • {new Date(task.created_at).toLocaleDateString('th-TH')}
                           </span>
+                          {(task.status === 'Completed' || task.status === 'completed') && (
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                              Number(task.cost || 0) > 0 
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' 
+                                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            }`}>
+                              {Number(task.cost || 0) > 0 ? `💰 ค่าซ่อม ฿${Number(task.cost).toLocaleString()} (ออกบิลแล้ว)` : '✨ ไม่มีค่าใช้จ่าย'}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-2" onClick={e => e.stopPropagation()}>
@@ -424,6 +437,48 @@ export default function TechnicianDashboardPage() {
                           className="w-full bg-[#1E293B] border border-white/20/10 rounded-2xl p-4 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 h-24"
                         />
                       </div>
+
+                      {/* Cost / Fee Input */}
+                      <div className="bg-[#0F172A] border border-amber-500/30 p-4 rounded-2xl space-y-2">
+                        <div className="flex justify-between items-center">
+                          <label className="block text-xs font-bold uppercase tracking-wider text-amber-300">
+                            💰 ค่าซ่อมแซม / อะไหล่ (บาท)
+                          </label>
+                          <span className="text-[11px] text-amber-400/80 font-medium">ใส่ 0 หากไม่มีค่าใช้จ่าย</span>
+                        </div>
+                        <div className="relative">
+                          <input 
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={finishCost}
+                            onChange={(e) => setFinishCost(e.target.value)}
+                            placeholder="0 (ไม่มีค่าใช้จ่าย)"
+                            className="w-full bg-[#1E293B] border border-white/20/20 rounded-xl px-4 py-3 text-base font-bold text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                          />
+                          <span className="absolute right-4 top-3 text-xs font-bold text-white/40">บาท</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {['0', '100', '200', '300', '500'].map((val) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => setFinishCost(val)}
+                              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                finishCost === val 
+                                  ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20' 
+                                  : 'bg-white/5 text-white/60 border border-white/10 hover:text-white'
+                              }`}
+                            >
+                              {val === '0' ? '✨ ไม่มีค่าใช้จ่าย (0)' : `฿${val}`}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-[11px] text-white/50 pt-1 leading-relaxed">
+                          💡 หากระบุยอดเงินมากกว่า 0 ระบบจะสร้างบิลเรียกเก็บเงินไปยังห้องพักของผู้เช่าโดยอัตโนมัติ (หากไม่มีค่าใช้จ่ายให้ใส่ 0)
+                        </p>
+                      </div>
+
                       <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-white/70 mb-2">
                           📸 อัปโหลดรูปภาพหลักฐานหลังซ่อมเสร็จ
@@ -465,10 +520,10 @@ export default function TechnicianDashboardPage() {
                           ยกเลิก
                         </button>
                         <button 
-                          onClick={() => updateStatus(selectedJob.id, 'Completed', finishNotes, finishPhoto)}
+                          onClick={() => updateStatus(selectedJob.id, 'Completed', finishNotes, finishPhoto, parseFloat(finishCost) || 0)}
                           className="flex-1 px-4 py-3.5 rounded-2xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20 cursor-pointer"
                         >
-                          บันทึกซ่อมเสร็จสิ้น
+                          บันทึกซ่อมเสร็จสิ้น {Number(finishCost) > 0 ? `(ยอดเรียกเก็บ ฿${Number(finishCost).toLocaleString()})` : '(ไม่มีค่าใช้จ่าย)'}
                         </button>
                       </div>
                     </div>
@@ -491,6 +546,11 @@ export default function TechnicianDashboardPage() {
 
                           <dt className="text-white/50">แจ้งเมื่อ:</dt>
                           <dd className="text-white">{new Date(selectedJob.created_at).toLocaleString('th-TH')}</dd>
+
+                          <dt className="text-white/50">ค่าใช้จ่าย:</dt>
+                          <dd className={Number(selectedJob.cost || 0) > 0 ? "font-bold text-amber-400" : "font-semibold text-emerald-400"}>
+                            {Number(selectedJob.cost || 0) > 0 ? `฿${Number(selectedJob.cost).toLocaleString()} (ออกบิลแล้ว)` : 'ไม่มีค่าใช้จ่าย (ฟรี)'}
+                          </dd>
                         </dl>
                         <div className="mt-4 pt-4 border-t border-white/10">
                           <span className="text-xs text-white/50 font-medium block mb-1">รายละเอียดปัญหา:</span>

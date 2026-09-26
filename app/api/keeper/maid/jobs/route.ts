@@ -30,6 +30,8 @@ export async function GET(req: Request) {
           c.id, 
           c.dorm_id,
           c.status, 
+          c.cost,
+          c.bill_id,
           COALESCE(c.job_type, c.task, 'ทำความสะอาดทั่วไป') as job_type, 
           c.created_at,
           c.completed_at,
@@ -64,6 +66,8 @@ export async function GET(req: Request) {
           c.id, 
           c.dorm_id,
           c.status, 
+          c.cost,
+          c.bill_id,
           COALESCE(c.job_type, c.task, 'ทำความสะอาดทั่วไป') as job_type, 
           c.created_at,
           c.completed_at,
@@ -115,19 +119,72 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const id = body.id || body.job_id;
     const { status, notes, photo_url } = body;
+    const cost = Math.max(0, parseFloat(body.cost !== undefined ? body.cost : 0) || 0);
 
     if (!id || !status) {
       return NextResponse.json({ success: false, message: 'Missing ID or Status' }, { status: 400 });
     }
 
     const sql = getDb();
+    let createdBillId: number | null = null;
     
     // Update status
     if (status === 'completed') {
+      // If cost > 0, generate an unpaid bill for tenant
+      if (cost > 0) {
+        const jobRows = await sql`
+          SELECT c.id, c.room_id, c.dorm_id, c.job_type, c.task, c.bill_id, r.room_number
+          FROM cleaning_jobs c
+          LEFT JOIN rooms r ON c.room_id = r.id
+          WHERE c.id = ${id}
+          LIMIT 1
+        `;
+
+        if (jobRows.length > 0) {
+          const j = jobRows[0];
+          // Find active tenant in this room
+          const tenantRows = await sql`
+            SELECT t.id, t.name, t.dorm_id
+            FROM tenants t
+            LEFT JOIN rooms r ON t.room_id = r.id
+            WHERE (t.room_id = ${j.room_id} OR r.room_number = ${String(j.room_number || '')})
+              AND (t.dorm_id = ${j.dorm_id || 1})
+            LIMIT 1
+          `;
+
+          if (tenantRows.length > 0) {
+            const tenantId = tenantRows[0].id;
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + 7);
+            const dueDateStr = dueDate.toISOString().slice(0, 10);
+            const cleanType = j.job_type === 'move_out' ? 'ย้ายออก' : j.job_type === 'weekly' ? 'รายสัปดาห์' : (j.task || 'ทั่วไป');
+            const title = `ค่าบริการทำความสะอาด (${cleanType}) ห้อง ${j.room_number || '-'}`;
+            const billingCycle = `บริการทำความสะอาด ${new Date().toLocaleDateString('th-TH')}`;
+
+            if (j.bill_id) {
+              await sql`
+                UPDATE bills 
+                SET amount = ${cost}, title = ${title}
+                WHERE id = ${j.bill_id}
+              `;
+              createdBillId = j.bill_id;
+            } else {
+              const billInsert: any = await sql`
+                INSERT INTO bills (tenant_id, dorm_id, room_number, title, amount, billing_cycle, due_date, status)
+                VALUES (${tenantId}, ${j.dorm_id || 1}, ${j.room_number || ''}, ${title}, ${cost}, ${billingCycle}, ${dueDateStr}, 'Unpaid')
+              `;
+              createdBillId = billInsert.insertId || null;
+            }
+          }
+        }
+      }
+
       await sql`
         UPDATE cleaning_jobs 
         SET 
           status = ${status}, 
+          cost = ${cost},
+          bill_id = ${createdBillId},
           completed_at = CURRENT_TIMESTAMP,
           notes = ${notes || null},
           photo_url = ${photo_url || null}
@@ -141,7 +198,7 @@ export async function PATCH(request: Request) {
       `;
     }
 
-    return NextResponse.json({ success: true, message: 'Job status updated' });
+    return NextResponse.json({ success: true, message: 'Job status updated', cost, bill_id: createdBillId });
   } catch (error: any) {
     console.error('[Maid Jobs PATCH Error]', error);
     return NextResponse.json({ success: false, message: 'Internal Server Error' }, { status: 500 });
@@ -163,6 +220,7 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const { room_id, room_number, dorm_id, task, job_type, notes } = body;
+    const cost = Math.max(0, parseFloat(body.cost !== undefined ? body.cost : 0) || 0);
 
     const sql = getDb();
     let targetRoomId = room_id;
@@ -182,8 +240,8 @@ export async function POST(request: Request) {
     );
 
     const result = await sql`
-      INSERT INTO cleaning_jobs (room_id, dorm_id, task, job_type, notes, status)
-      VALUES (${targetRoomId}, ${dorm_id || 1}, ${taskTitle}, ${job_type || 'requested'}, ${notes || null}, 'pending')
+      INSERT INTO cleaning_jobs (room_id, dorm_id, task, job_type, notes, cost, status)
+      VALUES (${targetRoomId}, ${dorm_id || 1}, ${taskTitle}, ${job_type || 'requested'}, ${notes || null}, ${cost}, 'pending')
     `;
 
     return NextResponse.json({ 

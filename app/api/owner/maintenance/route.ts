@@ -24,6 +24,8 @@ export async function GET(req: Request) {
         m.issue_type,
         m.description,
         m.status,
+        m.cost,
+        m.bill_id,
         m.created_at,
         COALESCE(t.name, u.name, 'ผู้เช่า') as tenant_name,
         COALESCE(t.phone, u.phone, '081-234-5678') as tenant_phone

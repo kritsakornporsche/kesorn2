@@ -3,12 +3,15 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 interface MaintenanceRequest {
   id: number;
   issue_type: string;
   description: string;
   status: string;
+  cost?: number;
+  bill_id?: number;
   created_at: string;
 }
 
@@ -174,6 +177,27 @@ export default function TenantMaintenancePage() {
                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                          {new Date(req.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                        </div>
+                       {(!isPending && !isInProgress) && (
+                         <div className="flex items-center gap-3 mt-3 flex-wrap">
+                           {Number(req.cost || 0) > 0 ? (
+                             <>
+                               <span className="px-3 py-1 bg-amber-500/15 border border-amber-500/30 text-amber-300 rounded-xl text-xs font-black">
+                                 💰 ค่าบริการ/ซ่อม: ฿{Number(req.cost).toLocaleString()}
+                               </span>
+                               <Link 
+                                 href="/tenant/billing" 
+                                 className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
+                               >
+                                 ดูและชำระในหน้าระบบบิล →
+                               </Link>
+                             </>
+                           ) : (
+                             <span className="px-3 py-1 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-black">
+                               ✨ ไม่มีค่าใช้จ่าย (ฟรี)
+                             </span>
+                           )}
+                         </div>
+                       )}
                      </div>
                      
                      <div className="shrink-0">
