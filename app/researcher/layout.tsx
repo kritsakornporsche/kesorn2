@@ -22,6 +22,20 @@ export default function ResearcherLayout({ children }: { children: React.ReactNo
       router.push(`/signin?callbackUrl=${encodeURIComponent(currentPath)}`);
       return;
     }
+
+    // Role guard: if logged in as other specific roles, send them to their proper home dashboard
+    if (userRole && userRole !== 'researcher' && userRole !== 'guest') {
+      if (userRole === 'owner') { router.replace('/owner'); return; }
+      if (userRole === 'tenant') { router.replace('/tenant'); return; }
+      if (userRole === 'platform_admin' || userRole === 'admin') { router.replace('/platform'); return; }
+      if (userRole === 'keeper') {
+        const subRole = (session?.user as any)?.sub_role || (typeof window !== 'undefined' ? localStorage.getItem('userSubRole') : null);
+        if (subRole === 'maid') router.replace('/keeper/maid');
+        else if (subRole === 'technician') router.replace('/keeper/technician');
+        else router.replace('/keeper');
+        return;
+      }
+    }
   }, [session, status, router]);
 
   return (

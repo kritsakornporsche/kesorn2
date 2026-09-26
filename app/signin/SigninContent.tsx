@@ -33,7 +33,7 @@ export default function SignInContent() {
     }
   }, []);
 
-  const loginWithCredentials = async (loginEmail: string, loginPass: string) => {
+  const loginWithCredentials = async (loginEmail: string, loginPass: string, forceDestination?: string) => {
     if (loading) return;
     setLoading(true);
     setError('');
@@ -55,9 +55,11 @@ export default function SignInContent() {
 
       // Store user metadata in localStorage
       let redirectUrl = data.redirectUrl || '/explore';
+      const userRole = data.user?.role || 'guest';
+
       if (typeof window !== 'undefined' && data.user) {
         localStorage.setItem('userEmail', loginEmail.toLowerCase().trim());
-        localStorage.setItem('userRole', data.user.role || 'guest');
+        localStorage.setItem('userRole', userRole);
         localStorage.setItem('userSubRole', data.user.sub_role || '');
         localStorage.setItem('userName', data.user.name || '');
         localStorage.setItem('userId', String(data.user.id || ''));
@@ -76,7 +78,34 @@ export default function SignInContent() {
         console.warn('NextAuth signIn non-fatal notice:', authErr);
       }
 
-      const targetPath = callbackUrl || redirectUrl;
+      // 3. Determine the correct destination:
+      // If a specific destination was forced (e.g. from 1-Click button), use it.
+      // Otherwise, only follow callbackUrl if it matches the authenticated role.
+      let targetPath = redirectUrl;
+      if (forceDestination) {
+        targetPath = forceDestination;
+      } else if (callbackUrl) {
+        const isResearcherPath = callbackUrl.startsWith('/researcher') || callbackUrl.startsWith('/sequence');
+        const isOwnerPath = callbackUrl.startsWith('/owner');
+        const isTenantPath = callbackUrl.startsWith('/tenant');
+        const isKeeperPath = callbackUrl.startsWith('/keeper');
+        const isPlatformPath = callbackUrl.startsWith('/platform');
+
+        if (isResearcherPath && userRole !== 'researcher') {
+          targetPath = redirectUrl; // Do NOT hijack tenant/owner to researcher
+        } else if (isOwnerPath && userRole !== 'owner') {
+          targetPath = redirectUrl;
+        } else if (isTenantPath && userRole !== 'tenant') {
+          targetPath = redirectUrl;
+        } else if (isKeeperPath && userRole !== 'keeper') {
+          targetPath = redirectUrl;
+        } else if (isPlatformPath && userRole !== 'platform_admin') {
+          targetPath = redirectUrl;
+        } else {
+          targetPath = callbackUrl;
+        }
+      }
+
       if (typeof window !== 'undefined') {
         window.location.href = targetPath;
       }
@@ -194,13 +223,13 @@ export default function SignInContent() {
             </p>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { label: '👑 เจ้าของหอ', user: 'owner' },
-                { label: '🏠 ลูกหอ', user: 'tenant' },
-                { label: '🔬 นักวิจัย', user: 'researcher' },
-                { label: '🧹 แม่บ้าน', user: 'maid' },
-                { label: '🔧 ช่างซ่อม', user: 'technician' },
-                { label: '🛡️ แอดมิน', user: 'admin' },
-                { label: '🌐 แขก (Guest)', user: 'guest' },
+                { label: '👑 เจ้าของหอ', user: 'owner', dest: '/owner' },
+                { label: '🏠 ลูกหอ', user: 'tenant', dest: '/tenant' },
+                { label: '🔬 นักวิจัย', user: 'researcher', dest: '/researcher' },
+                { label: '🧹 แม่บ้าน', user: 'maid', dest: '/keeper/maid' },
+                { label: '🔧 ช่างซ่อม', user: 'technician', dest: '/keeper/technician' },
+                { label: '🛡️ แอดมิน', user: 'admin', dest: '/platform' },
+                { label: '🌐 แขก (Guest)', user: 'guest', dest: '/explore' },
               ].map((roleItem) => (
                 <button
                   key={roleItem.user}
@@ -209,7 +238,7 @@ export default function SignInContent() {
                   onClick={() => {
                     setEmail(roleItem.user);
                     setPassword(roleItem.user);
-                    loginWithCredentials(roleItem.user, roleItem.user);
+                    loginWithCredentials(roleItem.user, roleItem.user, roleItem.dest);
                   }}
                   className={`px-2 py-2 text-[10px] font-bold rounded-xl border border-white/10 bg-slate-900/60 hover:bg-primary hover:text-white text-slate-300 transition-all text-center cursor-pointer select-none active:scale-95 disabled:opacity-50 ${
                     roleItem.user === 'guest' ? 'col-span-3 bg-cyan-950/40 border-cyan-500/30 text-cyan-300 hover:bg-cyan-900/60' : ''
