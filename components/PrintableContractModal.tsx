@@ -170,16 +170,16 @@ export default function PrintableContractModal({ isOpen, onClose, contract }: Pr
                 
                 <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-lg space-y-1 font-sans text-xs">
                   <p>
-                    <strong>ผู้เช่า:</strong> คุณ <span className="font-bold text-slate-900">{contract.tenant_name}</span>
+                    <strong>ผู้เช่า:</strong> คุณ <span className="font-bold text-slate-900">{contract.tenant_name || '............................................................'}</span>
                   </p>
                   <p>
-                    <strong>เลขประจำตัวประชาชน (13 หลัก):</strong> <span className="font-mono font-bold tracking-wider">{contract.id_card_number || '1-1002-01384-95-2'}</span>
+                    <strong>เลขประจำตัวประชาชน (13 หลัก):</strong> <span className="font-mono font-bold tracking-wider">{contract.id_card_number || '............................................................'}</span>
                   </p>
                   <p>
-                    <strong>ที่อยู่ตามบัตรประชาชน:</strong> {contract.tenant_address || '99/50 หมู่ 3 ซอยงามวงศ์วาน 54 แขวงลาดยาว เขตจตุจักร กรุงเทพมหานคร 10900'}
+                    <strong>ที่อยู่ตามบัตรประชาชน:</strong> {contract.tenant_address || '....................................................................................................................................................................................'}
                   </p>
                   <p>
-                    <strong>เบอร์โทรศัพท์ติดต่อ:</strong> <span className="font-mono">{contract.tenant_phone || '082-985-3519'}</span>
+                    <strong>เบอร์โทรศัพท์ติดต่อ:</strong> <span className="font-mono">{contract.tenant_phone || '................................................'}</span>
                     <span className="ml-6"><strong>อีเมล:</strong> <span className="font-mono">{contract.tenant_email || '-'}</span></span>
                   </p>
                 </div>
@@ -199,11 +199,11 @@ export default function PrintableContractModal({ isOpen, onClose, contract }: Pr
                   </p>
 
                   <p>
-                    <strong>ข้อ 3. อัตราค่าเช่าและการชำระเงิน:</strong> ผู้เช่าตกลงชำระค่าเช่าในอัตราเดือนละ <strong>{Number(contract.monthly_rent || 3800).toLocaleString()} บาท</strong> โดยต้องชำระล่วงหน้าภายในวันที่ 5 ของทุกเดือน ผ่านระบบบัญชีธนาคารหรือพร้อมเพย์ของหอพัก
+                    <strong>ข้อ 3. อัตราค่าเช่าและการชำระเงิน:</strong> ผู้เช่าตกลงชำระค่าเช่าในอัตราเดือนละ <strong>{Number(contract.monthly_rent || 0) > 0 ? `${Number(contract.monthly_rent).toLocaleString()} บาท` : '................................ บาท'}</strong> โดยต้องชำระล่วงหน้าภายในวันที่ 5 ของทุกเดือน ผ่านระบบบัญชีธนาคารหรือพร้อมเพย์ของหอพัก
                   </p>
 
                   <p>
-                    <strong>ข้อ 4. เงินประกันความเสียหาย (เงินมัดจำ):</strong> ในวันทำสัญญานี้ ผู้เช่าได้วางเงินประกันสัญญาเป็นจำนวน <strong>{Number(contract.deposit_amount).toLocaleString()} บาท</strong> ไว้แก่ผู้ให้เช่าแล้ว เพื่อเป็นหลักประกันการชำระหนี้และการปฏิบัติตามสัญญา
+                    <strong>ข้อ 4. เงินประกันความเสียหาย (เงินมัดจำ):</strong> ในวันทำสัญญานี้ ผู้เช่าได้วางเงินประกันสัญญาเป็นจำนวน <strong>{Number(contract.deposit_amount || 0) > 0 ? `${Number(contract.deposit_amount).toLocaleString()} บาท` : '................................ บาท'}</strong> ไว้แก่ผู้ให้เช่าแล้ว เพื่อเป็นหลักประกันการชำระหนี้และการปฏิบัติตามสัญญา
                   </p>
 
                   <p>

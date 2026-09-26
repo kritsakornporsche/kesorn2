@@ -175,8 +175,8 @@ export default function OwnerContractsPage() {
             id_card_image: base64Data,
             contract_file_url: prev.contract_file_url || base64Data,
             contract_file_name: prev.contract_file_name || `บัตรประชาชน_${file.name}`,
-            tenant_email: prev.tenant_email || 'tenant@kesorn.com',
-            tenant_phone: prev.tenant_phone || '082-985-3519',
+            tenant_email: prev.tenant_email || '',
+            tenant_phone: prev.tenant_phone || '',
           }));
           setOcrSuccessMsg(`✓ อ่านบัตรประชาชนสำเร็จ: ${d.full_name_th} (${d.id_card_number})`);
         } else {
@@ -635,25 +635,26 @@ export default function OwnerContractsPage() {
                 <table className="w-full text-left border-collapse">
                   <thead className="bg-secondary/60 border-b border-border">
                     <tr>
-                      <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ห้อง / ผู้เช่า</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">วันที่แจ้งย้ายออก</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">การตรวจสอบสัญญา</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">บิลค้างชำระ</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ยอดเงินประกันสุทธิที่ต้องคืน</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest text-center">การดำเนินการ</th>
+                      <th className="px-6 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ห้อง / ผู้เช่า</th>
+                      <th className="px-6 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">วันที่แจ้งย้ายออก</th>
+                      <th className="px-6 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">การตรวจสอบสัญญา</th>
+                      <th className="px-6 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">บิลค้างชำระ</th>
+                      <th className="px-6 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ยอดเงินประกันสุทธิที่ต้องคืน</th>
+                      <th className="px-6 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest text-center">สถานะ</th>
+                      <th className="px-6 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest text-center">การดำเนินการ</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5 text-sm font-medium">
                     {moveOutRequests.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-20 text-center text-muted-foreground font-bold">
+                        <td colSpan={7} className="py-20 text-center text-muted-foreground font-bold">
                           ยังไม่มีคำร้องขอย้ายออกในขณะนี้
                         </td>
                       </tr>
                     ) : (
                       moveOutRequests.map((m) => (
                         <tr key={m.id} className="hover:bg-white/5 transition-colors">
-                          <td className="px-8 py-6">
+                          <td className="px-6 py-6">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 bg-amber-500/20 text-amber-400 font-black rounded-xl flex items-center justify-center text-sm border border-amber-500/30">
                                 {m.room_number}
@@ -665,11 +666,11 @@ export default function OwnerContractsPage() {
                             </div>
                           </td>
 
-                          <td className="px-8 py-6 font-bold text-foreground">
+                          <td className="px-6 py-6 font-bold text-foreground">
                             {new Date(m.desired_date).toLocaleDateString('th-TH')}
                           </td>
 
-                          <td className="px-8 py-6">
+                          <td className="px-6 py-6">
                             <span className={`px-3 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1.5 ${
                               m.is_completed_calculated || m.is_contract_completed
                                 ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
@@ -679,7 +680,7 @@ export default function OwnerContractsPage() {
                             </span>
                           </td>
 
-                          <td className="px-8 py-6">
+                          <td className="px-6 py-6">
                             {m.live_unpaid_total > 0 ? (
                               <span className="font-mono font-bold text-rose-400">
                                 ฿{Number(m.live_unpaid_total).toLocaleString()}
@@ -689,20 +690,34 @@ export default function OwnerContractsPage() {
                             )}
                           </td>
 
-                          <td className="px-8 py-6 font-mono font-black text-emerald-400 text-lg">
+                          <td className="px-6 py-6 font-mono font-black text-emerald-400 text-lg">
                             ฿{Number(m.live_net_refund !== undefined ? m.live_net_refund : m.net_refund_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
 
-                          <td className="px-8 py-6 text-center">
+                          <td className="px-6 py-6 text-center">
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1.5 ${
+                              m.status === 'Completed'
+                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse'
+                            }`}>
+                              {m.status === 'Completed' ? '✓ เคลียร์เงินแล้ว' : '⏳ รอเคลียร์เงิน'}
+                            </span>
+                          </td>
+
+                          <td className="px-6 py-6 text-center">
                             <button
                               onClick={() => {
                                 setSelectedMoveOut(m);
                                 setIsRefundModalOpen(true);
                               }}
-                              className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-2 mx-auto cursor-pointer hover:scale-105 active:scale-95"
+                              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2 mx-auto cursor-pointer hover:scale-105 active:scale-95 ${
+                                m.status === 'Completed'
+                                  ? 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
+                                  : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black'
+                              }`}
                             >
-                              <span>💰</span>
-                              <span>สแกน QR คืนเงินประกัน</span>
+                              <span>{m.status === 'Completed' ? '🔍' : '💰'}</span>
+                              <span>{m.status === 'Completed' ? 'ดูรายละเอียด / สลิป' : 'สแกน QR คืนเงินประกัน'}</span>
                             </button>
                           </td>
                         </tr>

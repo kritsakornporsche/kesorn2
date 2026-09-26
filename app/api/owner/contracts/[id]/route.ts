@@ -20,10 +20,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const data = await sql`
       SELECT 
         c.*,
+        COALESCE(c.id_card_number, t.id_card_number, '') as id_card_number,
+        COALESCE(c.tenant_address, t.address, '') as tenant_address,
+        COALESCE(c.id_card_image, t.id_card_image, '') as id_card_image,
         t.name as tenant_name,
         t.email as tenant_email,
+        t.phone as tenant_phone,
         r.room_number,
-        r.price as room_price
+        r.room_type,
+        r.price as room_price,
+        r.price as monthly_rent
       FROM contracts c
       JOIN tenants t ON c.tenant_id = t.id
       JOIN rooms r ON c.room_id = r.id

@@ -58,6 +58,12 @@ export async function GET(req: Request) {
           c.renewal_note,
           c.parent_contract_id,
           c.created_at,
+          COALESCE(c.id_card_number, t.id_card_number, '') as id_card_number,
+          COALESCE(c.tenant_address, t.address, '') as tenant_address,
+          COALESCE(c.id_card_image, t.id_card_image, '') as id_card_image,
+          COALESCE(t.name, 'ผู้เช่า') as tenant_name,
+          COALESCE(t.phone, '') as tenant_phone,
+          COALESCE(t.email, '') as tenant_email,
           r.room_number,
           r.room_type,
           r.price as monthly_rent

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import PrintableContractModal from '@/components/PrintableContractModal';
 
 interface Contract {
   id: number;
@@ -19,6 +20,12 @@ interface Contract {
   renewal_note?: string | null;
   parent_contract_id?: number | null;
   created_at: string;
+  tenant_name?: string;
+  tenant_email?: string;
+  tenant_phone?: string;
+  id_card_number?: string;
+  tenant_address?: string;
+  id_card_image?: string;
 }
 
 export default function TenantContractPage() {
@@ -33,6 +40,9 @@ export default function TenantContractPage() {
   const [isRenewModalOpen, setIsRenewModalOpen] = useState(false);
   const [renewalNote, setRenewalNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Printable Contract Modal
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
 
   // Preview File Modal
   const [previewingFileUrl, setPreviewingFileUrl] = useState<string | null>(null);
@@ -232,6 +242,14 @@ export default function TenantContractPage() {
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-border">
                 <button
+                  onClick={() => setIsPrintModalOpen(true)}
+                  className="flex-1 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl shadow-xl hover:brightness-110 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span>🖨️</span>
+                  <span>ดูและพิมพ์เอกสารสัญญาเช่า (PDF)</span>
+                </button>
+
+                <button
                   onClick={() => setIsRenewModalOpen(true)}
                   disabled={activeContract.renewal_requested === 1}
                   className="flex-1 py-4 bg-amber-500 text-white font-black rounded-2xl shadow-xl hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 cursor-pointer flex items-center justify-center gap-2"
@@ -380,6 +398,13 @@ export default function TenantContractPage() {
           </div>
         </div>
       )}
+
+      {/* Printable Contract Modal */}
+      <PrintableContractModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+        contract={activeContract as any}
+      />
     </div>
   );
 }

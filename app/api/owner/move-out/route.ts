@@ -49,7 +49,7 @@ export async function GET(req: Request) {
       FROM move_out_requests mor
       LEFT JOIN tenants t ON mor.tenant_id = t.id
       LEFT JOIN rooms r ON mor.room_id = r.id
-      LEFT JOIN contracts c ON (mor.contract_id = c.id OR (c.tenant_id = t.id AND c.status IN ('Active', 'Approved', 'Terminated')))
+      LEFT JOIN contracts c ON c.id = COALESCE(mor.contract_id, (SELECT id FROM contracts WHERE tenant_id = mor.tenant_id ORDER BY id DESC LIMIT 1))
       WHERE (r.dorm_id = ${dormId} OR r.dorm_id IS NULL)
       ORDER BY mor.id DESC
     `;
@@ -121,7 +121,7 @@ export async function POST(req: Request) {
     // Allow owner or keeper
     const sql = getDb();
     const body = await req.json();
-    const { requestId, refundSlipUrl, note } = body;
+    const { requestId, refundSlipUrl, note, penaltyAmount } = body;
 
     if (!requestId) {
       return NextResponse.json({ success: false, message: 'Missing requestId' }, { status: 400 });
@@ -136,11 +136,36 @@ export async function POST(req: Request) {
     }
     const moveReq = reqRes[0];
 
-    // 2. Mark move_out_requests as Completed / Refunded
+    // Determine deposit from request or contract
+    let deposit = Number(moveReq.deposit_amount || 0);
+    if (!deposit && moveReq.contract_id) {
+      const cRes = await sql`SELECT deposit_amount FROM contracts WHERE id = ${moveReq.contract_id} LIMIT 1`;
+      if (cRes.length > 0) deposit = Number(cRes[0].deposit_amount || 0);
+    }
+
+    // Calculate live unpaid bills for this tenant at this moment
+    const liveUnpaidBills = await sql`
+      SELECT id, amount, title, status FROM bills 
+      WHERE tenant_id = ${moveReq.tenant_id} AND status != 'paid'
+      ORDER BY id ASC
+    `;
+    const liveUnpaidTotal = liveUnpaidBills.reduce((sum: number, b: any) => sum + Number(b.amount || 0), 0);
+
+    const finalPenalty = penaltyAmount !== undefined ? parseFloat(penaltyAmount) : Number(moveReq.penalty_amount || 0);
+    const finalNet = Math.max(0, deposit - liveUnpaidTotal - finalPenalty);
+    const isDeficit = deposit < (liveUnpaidTotal + finalPenalty);
+    const deficitAmount = isDeficit ? (liveUnpaidTotal + finalPenalty) - deposit : 0;
+
+    // 2. Mark move_out_requests as Completed / Refunded with live calculation & audit note
     await sql`
       UPDATE move_out_requests
       SET status = 'Completed',
           refund_slip_url = ${refundSlipUrl || null},
+          penalty_amount = ${finalPenalty},
+          unpaid_bills_total = ${liveUnpaidTotal},
+          deposit_amount = ${deposit},
+          net_refund_amount = ${finalNet},
+          inspection_notes = ${note || (isDeficit ? `ผู้เช่ามียอดค้างเกินเงินประกัน ฿${deficitAmount.toFixed(2)} ได้รับการตรวจสอบและเคลียร์แล้ว` : null)},
           refunded_at = NOW()
       WHERE id = ${requestId}
     `;
@@ -178,7 +203,7 @@ export async function POST(req: Request) {
       WHERE id = ${moveReq.tenant_id}
     `;
 
-    // 6. Mark all unpaid bills as 'paid' (deducted from deposit refund)
+    // 6. Mark unpaid bills as paid (settled through deposit and/or owner confirmation)
     await sql`
       UPDATE bills 
       SET status = 'paid' 
@@ -187,7 +212,15 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: 'ยืนยันการคืนเงินประกันและปิดสัญญาเรียบร้อยแล้ว ห้องพักกลับมาเป็นสถานะว่างพร้อมปล่อยเช่า'
+      message: 'ยืนยันการเคลียร์เงินประกันและปิดสัญญาเรียบร้อยแล้ว ห้องพักกลับมาเป็นสถานะว่างพร้อมปล่อยเช่า',
+      data: {
+        deposit,
+        liveUnpaidTotal,
+        finalPenalty,
+        finalNet,
+        isDeficit,
+        deficitAmount
+      }
     });
 
   } catch (error: any) {

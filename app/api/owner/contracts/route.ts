@@ -106,6 +106,15 @@ export async function POST(req: Request) {
         message: 'กรุณากรอกข้อมูลสำคัญให้ครบถ้วน (ชื่อผู้เช่า, อีเมล, ห้องพัก, วันเริ่มสัญญา, วันสิ้นสุดสัญญา)' 
       }, { status: 400 });
     }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(tenantEmail.trim())) {
+      return NextResponse.json({ 
+        success: false, 
+        message: 'รูปแบบอีเมลไม่ถูกต้อง กรุณาระบุอีเมลที่ใช้งานได้จริงของผู้เช่า' 
+      }, { status: 400 });
+    }
+
     const bcrypt = require('bcryptjs');
 
     // 1. Check or create User account in `users` table
@@ -131,14 +140,16 @@ export async function POST(req: Request) {
       `;
     }
 
+    const targetDormId = dormId || 1;
+
     // 2. Check or create Tenant record in `tenants` table
     let tenants = await sql`SELECT id FROM tenants WHERE email = ${tenantEmail.trim()} OR user_id = ${userId} LIMIT 1`;
     let tenantId: number;
 
     if (tenants.length === 0) {
       const tenantInsert = await sql`
-        INSERT INTO tenants (name, email, phone, room_id, user_id, id_card_number, id_card_image, address)
-        VALUES (${tenantName.trim()}, ${tenantEmail.trim()}, ${tenantPhone?.trim() || null}, ${room_id}, ${userId}, ${id_card_number?.trim() || null}, ${id_card_image || null}, ${tenant_address?.trim() || null})
+        INSERT INTO tenants (name, email, phone, room_id, user_id, id_card_number, id_card_image, address, status, move_in_date, dorm_id)
+        VALUES (${tenantName.trim()}, ${tenantEmail.trim()}, ${tenantPhone?.trim() || null}, ${room_id}, ${userId}, ${id_card_number?.trim() || null}, ${id_card_image || null}, ${tenant_address?.trim() || null}, 'active', ${start_date}, ${targetDormId})
       `;
       tenantId = (tenantInsert as any).insertId;
     } else {
@@ -149,6 +160,10 @@ export async function POST(req: Request) {
             name = ${tenantName.trim()}, 
             phone = ${tenantPhone?.trim() || null},
             user_id = ${userId},
+            status = 'active',
+            move_in_date = ${start_date},
+            move_out_date = NULL,
+            dorm_id = ${targetDormId},
             id_card_number = COALESCE(${id_card_number?.trim() || null}, id_card_number),
             id_card_image = COALESCE(${id_card_image || null}, id_card_image),
             address = COALESCE(${tenant_address?.trim() || null}, address)
@@ -157,7 +172,6 @@ export async function POST(req: Request) {
     }
 
     // 3. Assign role in `user_dorm_roles` table
-    const targetDormId = dormId || 1;
     const existingRoles = await sql`
       SELECT id FROM user_dorm_roles WHERE user_id = ${userId} AND dorm_id = ${targetDormId} LIMIT 1
     `;
