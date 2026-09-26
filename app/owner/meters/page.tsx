@@ -67,7 +67,7 @@ export default function MetersPage() {
   // Single Entry Form
   const [form, setForm] = useState({
     room_id: '',
-    type: 'Water' as 'Water' | 'Electricity',
+    type: 'Electricity' as 'Electricity',
     previous_reading: '',
     current_reading: '',
     billing_cycle: new Date().toISOString().substring(0, 7),
@@ -79,9 +79,6 @@ export default function MetersPage() {
   const [batchItems, setBatchItems] = useState<{
     room_id: number;
     room_number: string;
-    water_prev: number;
-    water_curr: string;
-    water_photo?: string;
     elec_prev: number;
     elec_curr: string;
     elec_photo?: string;
@@ -235,11 +232,11 @@ export default function MetersPage() {
   const handleOpenNewMonthSingle = (targetRoomId?: number) => {
     const nextCycle = getNextMonthCycle(latestCycle);
     const chosenRoomId = targetRoomId ? String(targetRoomId) : (rooms[0]?.id ? String(rooms[0].id) : '');
-    const lastRecord = readings.find(r => r.room_id === Number(chosenRoomId) && r.type === 'Water');
+    const lastRecord = readings.find(r => r.room_id === Number(chosenRoomId) && r.type === 'Electricity');
     
     setForm({
       room_id: chosenRoomId,
-      type: 'Water',
+      type: 'Electricity',
       previous_reading: lastRecord ? String(lastRecord.current_reading) : '0',
       current_reading: '',
       billing_cycle: nextCycle,
@@ -257,16 +254,13 @@ export default function MetersPage() {
       ? rooms.filter(r => selectedRoomIds.includes(r.id))
       : rooms;
 
-    // Build batch template prefilled with previous current readings
+    // Build batch template prefilled with previous electricity readings
     const items = targetRooms.map(room => {
-      const lastWater = readings.find(r => r.room_id === room.id && r.type === 'Water');
       const lastElec = readings.find(r => r.room_id === room.id && r.type === 'Electricity');
 
       return {
         room_id: room.id,
         room_number: room.room_number,
-        water_prev: lastWater ? Number(lastWater.current_reading) : 0,
-        water_curr: '',
         elec_prev: lastElec ? Number(lastElec.current_reading) : 0,
         elec_curr: '',
       };
@@ -365,16 +359,6 @@ export default function MetersPage() {
 
     const payloadItems: any[] = [];
     batchItems.forEach(item => {
-      if (item.water_curr !== '') {
-        payloadItems.push({
-          room_id: item.room_id,
-          type: 'Water',
-          previous_reading: item.water_prev,
-          current_reading: parseFloat(item.water_curr),
-          billing_cycle: batchCycle,
-          photo_url: item.water_photo || null,
-        });
-      }
       if (item.elec_curr !== '') {
         payloadItems.push({
           room_id: item.room_id,
@@ -432,12 +416,12 @@ export default function MetersPage() {
        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
          <div>
            <div className="flex items-center gap-3">
-             <h1 className="text-2xl lg:text-3xl font-display font-black tracking-tight text-foreground">ระบบจดมิเตอร์น้ำ-ไฟ</h1>
+             <h1 className="text-2xl lg:text-3xl font-display font-black tracking-tight text-foreground">ระบบจดมิเตอร์ไฟฟ้า</h1>
              <span className="px-3 py-1 rounded-full text-xs font-black bg-purple-500/20 text-purple-300 border border-purple-500/30">
                รอบล่าสุด: {latestCycle}
              </span>
            </div>
-           <p className="text-xs text-muted-foreground font-medium mt-1">บันทึกและตรวจสอบหน่วยการใช้น้ำประปาและไฟฟ้าประจำเดือน</p>
+           <p className="text-xs text-muted-foreground font-medium mt-1">บันทึกและตรวจสอบหน่วยการใช้ไฟฟ้า (หน่วยละ 7 บาท) · ค่าน้ำเหมาจ่าย 100 บาท/เดือน</p>
          </div>
          <div className="flex flex-wrap gap-3">
            <button 
@@ -481,14 +465,14 @@ export default function MetersPage() {
            </div>
          </div>
          <div className="bg-card border border-border p-6 rounded-3xl shadow-sm relative overflow-hidden group">
-           <div className="text-xs font-bold text-blue-400 uppercase tracking-wider">หน่วยน้ำประปารวม</div>
+           <div className="text-xs font-bold text-cyan-400 uppercase tracking-wider">ค่าน้ำประปา (เหมาจ่าย)</div>
            <div className="mt-3 flex items-baseline gap-2">
-             <span className="text-3xl font-display font-black text-blue-400">{stats.waterUnits.toLocaleString()}</span>
-             <span className="text-xs text-blue-400/60 font-medium">หน่วย (ยูนิต)</span>
+             <span className="text-3xl font-display font-black text-cyan-400">100</span>
+             <span className="text-xs text-cyan-400/60 font-medium">บาท / ห้อง / เดือน</span>
            </div>
          </div>
          <div className="bg-card border border-border p-6 rounded-3xl shadow-sm relative overflow-hidden group">
-           <div className="text-xs font-bold text-orange-400 uppercase tracking-wider">หน่วยไฟฟ้ารวม</div>
+           <div className="text-xs font-bold text-orange-400 uppercase tracking-wider">หน่วยไฟฟ้ารวม (หน่วยละ 7 บาท)</div>
            <div className="mt-3 flex items-baseline gap-2">
              <span className="text-3xl font-display font-black text-orange-400">{stats.elecUnits.toLocaleString()}</span>
              <span className="text-xs text-orange-400/60 font-medium">หน่วย (ยูนิต)</span>
@@ -592,23 +576,12 @@ export default function MetersPage() {
          <div className="mt-4 pt-4 border-t border-purple-500/20 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
            <div className="flex items-center gap-2">
              <span className="text-[11px] font-bold text-muted-foreground uppercase mr-1">ประเภทมิเตอร์:</span>
-             {(['all', 'Water', 'Electricity'] as const).map(t => (
-               <button
-                 key={t}
-                 onClick={() => setSelectedType(t)}
-                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                   selectedType === t
-                     ? t === 'Water'
-                       ? 'bg-blue-600 text-white shadow-sm'
-                       : t === 'Electricity'
-                       ? 'bg-orange-600 text-white shadow-sm'
-                       : 'bg-primary text-white shadow-sm'
-                     : 'bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
-                 }`}
-               >
-                 {t === 'all' ? 'ทั้งหมด' : t === 'Water' ? '💧 น้ำประปา' : '⚡ ไฟฟ้า'}
-               </button>
-             ))}
+             <span className="px-3 py-1.5 rounded-xl text-xs font-black bg-amber-500 text-slate-950 shadow-sm">
+               ⚡ ไฟฟ้า (หน่วยละ 7 บาท)
+             </span>
+             <span className="text-xs text-muted-foreground pl-2 font-medium">
+               (💧 ค่าน้ำเหมาจ่าย 100 บาท/เดือน ไม่ต้องจดมิเตอร์)
+             </span>
            </div>
 
            <div className="flex items-center gap-3">
@@ -934,29 +907,9 @@ export default function MetersPage() {
                 
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-purple-300/80 mb-1.5">ประเภทมิเตอร์</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleTypeSelectChange('Water')}
-                      className={`py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                        form.type === 'Water'
-                          ? 'bg-purple-600 text-white shadow-md'
-                          : 'bg-secondary text-muted-foreground hover:bg-secondary/80'
-                      }`}
-                    >
-                      💧 น้ำประปา
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleTypeSelectChange('Electricity')}
-                      className={`py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                        form.type === 'Electricity'
-                          ? 'bg-amber-500 text-slate-950 font-black shadow-md'
-                          : 'bg-secondary text-muted-foreground hover:bg-secondary/80'
-                      }`}
-                    >
-                      ⚡ ไฟฟ้า
-                    </button>
+                  <div className="p-3 bg-secondary/40 rounded-xl border border-border flex items-center justify-between">
+                    <span className="text-xs font-black text-amber-500">⚡ มิเตอร์ไฟฟ้า (หน่วยละ 7 บาท)</span>
+                    <span className="text-[11px] text-muted-foreground">💧 ค่าน้ำ 100฿ (เหมาจ่าย)</span>
                   </div>
                 </div>
 
@@ -1129,70 +1082,9 @@ export default function MetersPage() {
                         <span className="text-[10px] text-purple-300/60 font-mono">ห้องพัก</span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2">
-                        {/* Water Input Box */}
-                        <div className="p-2 rounded-xl bg-card border border-border space-y-1">
-                          <div className="flex items-center justify-between text-[10px]">
-                            <span className="font-bold text-purple-300">💧 น้ำ</span>
-                            <span className="text-purple-300/60 font-mono">เดิม {item.water_prev.toFixed(1)}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <input 
-                              type="number" 
-                              step="any" 
-                              placeholder={`${item.water_prev}`} 
-                              value={item.water_curr}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setBatchItems(prev => {
-                                  const copy = [...prev];
-                                  copy[idx].water_curr = val;
-                                  return copy;
-                                });
-                              }}
-                              className="w-full bg-background border border-purple-400/50 dark:border-purple-400/40 rounded-lg px-2 py-1 text-center font-mono font-bold text-amber-600 dark:text-amber-300 text-xs outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 shadow-inner"
-                            />
-                            {item.water_photo && (
-                              <button
-                                type="button"
-                                title="ดูภาพถ่ายมิเตอร์น้ำ"
-                                onClick={() => setViewingPhoto({
-                                  url: item.water_photo!,
-                                  roomNumber: item.room_number,
-                                  type: 'Water',
-                                  cycle: batchCycle,
-                                  reading: item.water_curr || item.water_prev,
-                                  prevReading: item.water_prev
-                                })}
-                                className="w-6 h-6 rounded-md overflow-hidden border border-emerald-400/50 shrink-0 cursor-pointer shadow-sm hover:scale-105 transition-transform"
-                              >
-                                <img src={item.water_photo} alt="Water meter" className="w-full h-full object-cover" />
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              title="ถ่ายรูปมิเตอร์น้ำ"
-                              onClick={() => setCameraModal({
-                                isOpen: true,
-                                roomNumber: item.room_number,
-                                roomId: item.room_id,
-                                meterType: 'Water',
-                                previousReading: item.water_prev,
-                                batchIndex: idx
-                              })}
-                              className={`p-1.5 rounded-lg border text-xs cursor-pointer shrink-0 transition-all ${
-                                item.water_photo 
-                                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' 
-                                  : 'bg-purple-500/10 hover:bg-purple-500/25 text-purple-300 border-purple-500/20'
-                              }`}
-                            >
-                              📸
-                            </button>
-                          </div>
-                        </div>
-
+                      <div>
                         {/* Electricity Input Box */}
-                        <div className="p-2 rounded-xl bg-card border border-border space-y-1">
+                        <div className="p-3 rounded-xl bg-card border border-border space-y-1">
                           <div className="flex items-center justify-between text-[10px]">
                             <span className="font-bold text-amber-400">⚡ ไฟ</span>
                             <span className="text-amber-300/60 font-mono">เดิม {item.elec_prev.toFixed(1)}</span>
@@ -1261,10 +1153,9 @@ export default function MetersPage() {
                   <thead className="bg-secondary/40 sticky top-0 z-10 text-purple-300/80">
                     <tr className="border-b border-purple-500/20">
                       <th className="py-2.5 px-4 font-bold">ห้อง</th>
-                      <th className="py-2.5 px-4 text-center font-bold">💧 เลขน้ำก่อนหน้า</th>
-                      <th className="py-2.5 px-4 text-center font-bold">💧 เลขน้ำครั้งนี้ (ใหม่)</th>
                       <th className="py-2.5 px-4 text-center font-bold">⚡ เลขไฟก่อนหน้า</th>
                       <th className="py-2.5 px-4 text-center font-bold">⚡ เลขไฟครั้งนี้ (ใหม่)</th>
+                      <th className="py-2.5 px-4 text-center font-bold">💧 ค่าน้ำประปา</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-purple-500/10 bg-card">
@@ -1272,64 +1163,6 @@ export default function MetersPage() {
                       <tr key={item.room_id} className="hover:bg-purple-500/5">
                         <td className="py-2.5 px-4 font-black text-foreground text-sm">
                           ห้อง {item.room_number}
-                        </td>
-                        <td className="py-2.5 px-4 text-center font-mono text-purple-300/60">
-                          {item.water_prev.toFixed(2)}
-                        </td>
-                        <td className="py-2.5 px-4 text-center">
-                          <div className="inline-flex items-center gap-1.5 justify-center">
-                            <input 
-                              type="number" 
-                              step="any" 
-                              placeholder={`${item.water_prev}`} 
-                              value={item.water_curr}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setBatchItems(prev => {
-                                  const copy = [...prev];
-                                  copy[idx].water_curr = val;
-                                  return copy;
-                                });
-                              }}
-                              className="w-24 bg-background border border-purple-400/50 dark:border-purple-400/40 rounded-lg px-2 py-1 text-center font-mono font-bold text-amber-600 dark:text-amber-300 text-xs outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 shadow-inner"
-                            />
-                            {item.water_photo && (
-                              <button
-                                type="button"
-                                title="ดูภาพถ่ายมิเตอร์น้ำ"
-                                onClick={() => setViewingPhoto({
-                                  url: item.water_photo!,
-                                  roomNumber: item.room_number,
-                                  type: 'Water',
-                                  cycle: batchCycle,
-                                  reading: item.water_curr || item.water_prev,
-                                  prevReading: item.water_prev
-                                })}
-                                className="w-6 h-6 rounded-md overflow-hidden border border-emerald-400/50 shrink-0 cursor-pointer shadow-sm hover:scale-105 transition-transform"
-                              >
-                                <img src={item.water_photo} alt="Water meter" className="w-full h-full object-cover" />
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              title="ถ่ายรูป/สแกนมิเตอร์น้ำ"
-                              onClick={() => setCameraModal({
-                                isOpen: true,
-                                roomNumber: item.room_number,
-                                roomId: item.room_id,
-                                meterType: 'Water',
-                                previousReading: item.water_prev,
-                                batchIndex: idx
-                              })}
-                              className={`p-1.5 rounded-lg border transition-all text-xs cursor-pointer ${
-                                item.water_photo 
-                                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' 
-                                  : 'bg-purple-500/10 hover:bg-purple-500/25 text-purple-300 border-purple-500/20'
-                              }`}
-                            >
-                              📸
-                            </button>
-                          </div>
                         </td>
                         <td className="py-2.5 px-4 text-center font-mono text-purple-300/60">
                           {item.elec_prev.toFixed(2)}
@@ -1349,7 +1182,7 @@ export default function MetersPage() {
                                   return copy;
                                 });
                               }}
-                              className="w-24 bg-secondary/40 border border-amber-500/40 rounded-lg px-2 py-1 text-center font-mono font-bold text-amber-300 text-xs outline-none focus:border-amber-400"
+                              className="w-28 bg-background border border-amber-500/40 rounded-lg px-2.5 py-1 text-center font-mono font-bold text-amber-500 dark:text-amber-300 text-xs outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 shadow-inner"
                             />
                             {item.elec_photo && (
                               <button
@@ -1388,6 +1221,11 @@ export default function MetersPage() {
                               📸
                             </button>
                           </div>
+                        </td>
+                        <td className="py-2.5 px-4 text-center">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                            💧 เหมาจ่าย 100฿
+                          </span>
                         </td>
                       </tr>
                     ))}

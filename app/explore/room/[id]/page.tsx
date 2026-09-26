@@ -33,7 +33,7 @@ function getGoogleMapsEmbedUrl(mapUrl?: string, address?: string, dormName?: str
       return `https://maps.google.com/maps?q=${encodeURIComponent(trimmed)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
     }
   }
-  const query = [dormName, address, 'มหาวิทยาลัยพะเยา'].filter(Boolean).join(' ');
+  const query = [dormName, address, 'พะเยา'].filter(Boolean).join(' ');
   return `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
 }
 
@@ -41,7 +41,7 @@ function getGoogleMapsDirectUrl(mapUrl?: string, address?: string, dormName?: st
   if (mapUrl && !mapUrl.includes('/embed') && mapUrl.startsWith('http')) {
     return mapUrl;
   }
-  const query = [dormName, address, 'มหาวิทยาลัยพะเยา'].filter(Boolean).join(' ');
+  const query = [dormName, address, 'พะเยา'].filter(Boolean).join(' ');
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
@@ -265,8 +265,8 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     return (
       <div className="p-8 max-w-4xl mx-auto text-center space-y-4">
         <h2 className="text-xl font-bold text-foreground">ไม่พบข้อมูลห้องพัก</h2>
-        <Link href="/explore" className="px-6 py-2 bg-primary text-white rounded-xl text-xs font-bold inline-block">
-          กลับไปหน้าค้นหา
+        <Link href="/" className="px-6 py-2 bg-primary text-white rounded-xl text-xs font-bold inline-block">
+          กลับไปหน้าแนะนำหอเกษร 2
         </Link>
       </div>
     );
@@ -282,11 +282,11 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
       {/* Top Bar */}
       <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link href="/explore" className="text-xs font-bold text-muted-foreground hover:text-foreground flex items-center gap-2 transition-colors">
-            ← กลับไปหน้าสำรวจหอพัก
+          <Link href="/" className="text-xs font-bold text-muted-foreground hover:text-foreground flex items-center gap-2 transition-colors">
+            ← กลับไปหน้าแนะนำหอเกษร 2
           </Link>
           <div className="flex items-center gap-2 text-xs font-bold">
-            <span className="text-primary">{room.dorm_name || 'SmartDom'}</span>
+            <span className="text-primary">{room.dorm_name || 'หอพักเกษร 2'}</span>
             <span className="text-muted-foreground">•</span>
             <span>ห้อง {room.room_number}</span>
           </div>
@@ -424,7 +424,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     </div>
                     <div>
                       <span className="text-[10px] uppercase font-bold text-muted-foreground block">ค่าน้ำ</span>
-                      <span className="text-lg font-black text-cyan-500">฿{Number(room.water_rate) || 18} <span className="text-xs font-bold text-muted-foreground">/ ยูนิต</span></span>
+                      <span className="text-lg font-black text-cyan-500">฿{Number(room.water_rate) || 100} <span className="text-xs font-bold text-muted-foreground">/ เดือน (เหมาจ่าย)</span></span>
                     </div>
                   </div>
 
@@ -434,7 +434,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     </div>
                     <div>
                       <span className="text-[10px] uppercase font-bold text-muted-foreground block">ค่าไฟ</span>
-                      <span className="text-lg font-black text-amber-500">฿{Number(room.electricity_rate) || 8} <span className="text-xs font-bold text-muted-foreground">/ ยูนิต</span></span>
+                      <span className="text-lg font-black text-amber-500">฿{Number(room.electricity_rate) || 7} <span className="text-xs font-bold text-muted-foreground">/ ยูนิต</span></span>
                     </div>
                   </div>
                 </div>

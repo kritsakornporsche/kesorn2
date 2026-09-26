@@ -4,16 +4,15 @@ import { NextResponse } from 'next/server';
 
 export async function GET(req: Request) {
   const session = await auth();
-  if (!session) {
+  if (!session || !session.user) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
+  if ((session.user as any)?.role !== 'owner') {
+    return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
   }
   const sql = getDb();
 
-  const { searchParams } = new URL(req.url);
-  const dormId = searchParams.get('dormId') || '1';
-
   try {
-    const targetDormId = parseInt(dormId, 10) || 1;
     const bills = await sql`
       SELECT 
         b.id, 
@@ -24,7 +23,6 @@ export async function GET(req: Request) {
         b.status, 
         b.slip_url,
         b.created_at,
-        b.dorm_id,
         COALESCE(b.room_number, r.room_number, '-') as room_number,
         COALESCE(b.water_units, 0) as water_units,
         COALESCE(b.electric_units, 0) as electric_units,
@@ -45,8 +43,7 @@ export async function GET(req: Request) {
       FROM bills b
       LEFT JOIN tenants t ON b.tenant_id = t.id
       LEFT JOIN rooms r ON r.id = t.room_id
-      LEFT JOIN dormitory_profile dp ON dp.dorm_id = ${targetDormId}
-      WHERE b.dorm_id = ${targetDormId} OR r.dorm_id = ${targetDormId}
+      LEFT JOIN dormitory_profile dp ON 1=1
       ORDER BY b.due_date DESC, b.created_at DESC
     `;
     
@@ -59,8 +56,11 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session) {
+  if (!session || !session.user) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
+  if ((session.user as any)?.role !== 'owner') {
+    return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
   }
   const sql = getDb();
 
@@ -72,7 +72,6 @@ export async function POST(req: Request) {
       amount, 
       billing_cycle, 
       due_date, 
-      dorm_id, 
       room_number, 
       water_units, 
       electric_units, 
@@ -93,7 +92,6 @@ export async function POST(req: Request) {
         billing_cycle, 
         due_date, 
         status, 
-        dorm_id, 
         room_number, 
         water_units, 
         electric_units, 
@@ -108,7 +106,6 @@ export async function POST(req: Request) {
         ${billing_cycle}, 
         ${due_date}, 
         'Unpaid', 
-        ${dorm_id || 1}, 
         ${room_number || null}, 
         ${water_units || 0}, 
         ${electric_units || 0}, 

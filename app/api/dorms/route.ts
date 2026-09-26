@@ -12,25 +12,22 @@ export async function GET(req: Request) {
   try {
     const sql = getDb();
 
-    // 1. Fetch all dorm profiles joined with registry and room aggregation in ONE query
-    const dorms = await sql`
+    // Query Kesorn 2 profile and rooms
+    const profiles = await sql`
       SELECT 
-        r.id as dorm_id, r.dorm_name as name, r.address, COALESCE(p.phone, r.phone) as phone,
+        p.id, p.name, p.address, p.phone,
         p.cover_image, p.description, p.pet_friendly, p.has_parking, p.has_air_con, p.has_wifi, p.has_lan,
         p.water_rate, p.electricity_rate, p.facilities, p.map_url,
         COALESCE(MIN(rm.price), 0) as min_price,
         COUNT(CASE WHEN rm.status IN ('Available', 'ว่าง', 'available') THEN 1 END) as available_rooms_count
-      FROM dormitory_registry r
-      LEFT JOIN dormitory_profile p ON r.id = p.dorm_id
-      LEFT JOIN rooms rm ON r.id = rm.dorm_id
-      WHERE r.status = 'Active'
-      GROUP BY r.id, r.dorm_name, r.address, r.phone, p.phone, p.cover_image, p.description, p.pet_friendly, p.has_parking, p.has_air_con, p.has_wifi, p.has_lan, p.water_rate, p.electricity_rate, p.facilities, p.map_url
+      FROM dormitory_profile p
+      LEFT JOIN rooms rm ON 1=1
+      GROUP BY p.id, p.name, p.address, p.phone, p.cover_image, p.description, p.pet_friendly, p.has_parking, p.has_air_con, p.has_wifi, p.has_lan, p.water_rate, p.electricity_rate, p.facilities, p.map_url
     `;
 
     const matchedDorms = [];
 
-    for (const dorm of dorms) {
-      // Apply filters on profile
+    for (const dorm of profiles) {
       if (petFriendly && !dorm.pet_friendly) continue;
       if (hasParking && !dorm.has_parking) continue;
       if (hasAirCon && !dorm.has_air_con) continue;
@@ -38,12 +35,12 @@ export async function GET(req: Request) {
       if (maxPrice !== null && Number(dorm.min_price) > maxPrice) continue;
 
       matchedDorms.push({
-        id: dorm.dorm_id,
-        name: dorm.name,
-        address: dorm.address,
-        phone: dorm.phone,
-        cover_image: dorm.cover_image || null,
-        description: dorm.description || null,
+        id: dorm.id || 1,
+        name: dorm.name || 'หอพักเกษร 2',
+        address: dorm.address || '123 หมู่ 6 ต.แม่กา อ.เมือง จ.พะเยา 56000',
+        phone: dorm.phone || '081-999-2222',
+        cover_image: dorm.cover_image || '/up-header.jpg',
+        description: dorm.description || 'หอพักเกษร 2 บรรยากาศเงียบสงบ สะอาด ปลอดภัย',
         pet_friendly: Boolean(dorm.pet_friendly),
         has_parking: Boolean(dorm.has_parking),
         has_air_con: Boolean(dorm.has_air_con),
@@ -53,9 +50,9 @@ export async function GET(req: Request) {
         electricity_rate: Number(dorm.electricity_rate) || 8,
         facilities: dorm.facilities || '',
         map_url: dorm.map_url || '',
-        min_price: Number(dorm.min_price),
+        min_price: Number(dorm.min_price) || 2800,
         available_rooms_count: Number(dorm.available_rooms_count),
-        available_rooms_summary: Number(dorm.available_rooms_count) > 0 ? `${dorm.available_rooms_count} ห้องว่าง` : null,
+        available_rooms_summary: Number(dorm.available_rooms_count) > 0 ? `${dorm.available_rooms_count} ห้องว่าง` : 'เต็มทุกห้อง',
       });
     }
 

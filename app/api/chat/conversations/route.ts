@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const targetDormIdParam = searchParams.get('dormId');
 
     const userResult = await sql`
-      SELECT id, role, primary_role, name, email 
+      SELECT id, role, name, email 
       FROM users 
       WHERE email = ${session.user.email} 
       LIMIT 1
@@ -25,8 +25,8 @@ export async function GET(request: Request) {
     }
     
     const user = userResult[0];
-    const isOwner = user.role === 'owner' || user.primary_role === 'owner';
-    const isKeeper = user.role === 'keeper' || user.primary_role === 'keeper';
+    const isOwner = user.role === 'owner';
+    const isKeeper = user.role === 'keeper';
 
     let conversations: any[] = [];
 
@@ -314,7 +314,7 @@ export async function POST(request: Request) {
     
     // Get initiating user
     const userResult = await sql`
-      SELECT id, role, primary_role 
+      SELECT id, role 
       FROM users 
       WHERE email = ${session.user.email} 
       LIMIT 1

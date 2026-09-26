@@ -182,12 +182,15 @@ export default function OwnerBillingPage() {
     const found = tenants.find((t) => String(t.id) === tenantId);
     if (found) {
       const roomPrice = found.price || 3500;
+      const defaultWater = 100;
       setFormData((prev) => ({
         ...prev,
         tenant_id: tenantId,
         room_number: found.room_number || '',
         room_amount: String(roomPrice),
-        amount: String(Number(roomPrice) + Number(prev.water_amount || 0) + Number(prev.electric_amount || 0)),
+        water_amount: String(defaultWater),
+        water_units: '1',
+        amount: String(Number(roomPrice) + defaultWater + Number(prev.electric_amount || 0)),
       }));
     } else {
       setFormData((prev) => ({ ...prev, tenant_id: tenantId, room_number: '' }));
@@ -1171,10 +1174,10 @@ export default function OwnerBillingPage() {
               <div className="flex justify-between items-start border-b border-border pb-6">
                 <div>
                   <h2 className="text-2xl font-black text-foreground">
-                    {receiptBill.dorm_name || dormProfile?.name || 'หอพัก SmartDom'}
+                    {receiptBill.dorm_name || dormProfile?.name || 'หอพักเกษร 2'}
                   </h2>
                   <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                    {receiptBill.dorm_address || dormProfile?.address || 'หน้ามหาวิทยาลัยพะเยา ต.แม่กา อ.เมือง จ.พะเยา'}
+                    {receiptBill.dorm_address || dormProfile?.address || '123 หมู่ 6 ต.แม่กา อ.เมือง จ.พะเยา 56000'}
                   </p>
                   <p className="text-xs text-slate-400 mt-0.5">
                     โทร: {receiptBill.dorm_phone || dormProfile?.phone || '081-234-5678'}

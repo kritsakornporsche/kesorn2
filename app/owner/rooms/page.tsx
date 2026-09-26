@@ -281,12 +281,17 @@ export default function RoomsManagement() {
     }
   };
 
-  const filteredRooms = rooms.filter(room => {
-    const matchesSearch = room.room_number.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          room.room_type.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = filterStatus === 'All' || room.status === filterStatus;
-    return matchesSearch && matchesFilter;
-  });
+  const filteredRooms = rooms
+    .filter(room => {
+      const matchesSearch = room.room_number.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            room.room_type.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesFilter = filterStatus === 'All' || room.status === filterStatus;
+      return matchesSearch && matchesFilter;
+    })
+    .sort((a, b) => {
+      if (a.floor !== b.floor) return a.floor - b.floor;
+      return a.room_number.localeCompare(b.room_number, undefined, { numeric: true });
+    });
 
   const stats = {
     total: rooms.length,
@@ -296,85 +301,86 @@ export default function RoomsManagement() {
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-background text-foreground overflow-hidden">
-      {/* Header */}
-      <header className="h-24 bg-card/80 backdrop-blur-xl border-b border-border flex items-center justify-between px-10 shrink-0 z-10 shadow-sm transition-all duration-300">
+    <div className="flex-1 overflow-y-auto bg-background text-foreground scroll-smooth custom-scrollbar">
+      {/* Header - Sticky with Backdrop Blur */}
+      <header className="sticky top-0 bg-card/90 backdrop-blur-xl border-b border-border flex items-center justify-between px-6 sm:px-10 py-4 shrink-0 z-20 shadow-sm transition-all duration-300">
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-6 bg-primary rounded-full" />
-            <h1 className="text-2xl font-black text-foreground tracking-tight">จัดการห้องพัก</h1>
+            <h1 className="text-xl sm:text-2xl font-black text-foreground tracking-tight">จัดการห้องพัก</h1>
           </div>
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] ml-3.5 mt-0.5 opacity-80">
             SmartDom Asset & Unit Management
           </p>
         </div>
         
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 sm:gap-4">
           <div className="relative group">
             <input 
               type="text" 
               placeholder="ค้นหาเลขห้อง หรือ ประเภท..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-12 pr-6 py-3 bg-secondary/80 border border-border rounded-2xl text-sm font-bold text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary focus:bg-card transition-all outline-none w-64 group-hover:w-80 duration-500 shadow-sm"
+              className="pl-11 pr-5 py-2.5 sm:py-3 bg-secondary/80 border border-border rounded-2xl text-xs sm:text-sm font-bold text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary focus:bg-card transition-all outline-none w-48 sm:w-64 group-hover:w-64 sm:group-hover:w-80 duration-500 shadow-sm"
             />
-            <svg className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 absolute left-3.5 sm:left-4 top-1/2 -translate-y-1/2 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           </div>
 
           <button 
             onClick={() => setIsBatchModalOpen(true)}
-            className="px-6 py-3.5 rounded-2xl font-black text-sm shadow-xl flex items-center gap-2.5 transition-all duration-300 group bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg hover:brightness-110 active:scale-95 cursor-pointer"
+            className="px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center gap-2 transition-all duration-300 group bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg hover:brightness-110 active:scale-95 cursor-pointer whitespace-nowrap"
           >
             <div className="p-1 bg-black/20 rounded-lg group-hover:scale-110 transition-transform">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
               </svg>
             </div>
-            เพิ่มหลายห้อง
+            <span className="hidden sm:inline">เพิ่มหลายห้อง</span>
+            <span className="sm:hidden">เพิ่มชุด</span>
           </button>
 
           <button 
             onClick={() => { setEditingRoom(null); setFormData({ room_number: '', room_type: 'Standard', price: 4500, floor: 1, status: 'Available', images: [] }); setIsModalOpen(true); }}
-            className="px-6 py-3.5 rounded-2xl font-black text-sm shadow-xl flex items-center gap-2.5 transition-all duration-300 group bg-primary text-white shadow-lg hover:brightness-110 active:scale-95 cursor-pointer"
+            className="px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center gap-2 transition-all duration-300 group bg-primary text-white shadow-lg hover:brightness-110 active:scale-95 cursor-pointer whitespace-nowrap"
           >
             <div className="p-1 bg-card/20 rounded-lg group-hover:rotate-90 transition-transform duration-500">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
             </div>
-            เพิ่มห้องพัก
+            <span>เพิ่มห้องพัก</span>
           </button>
         </div>
       </header>
 
       {/* Hero Stats */}
-      <div className="px-10 py-8 grid grid-cols-4 gap-6 shrink-0 bg-gradient-to-b from-white/40 to-transparent">
+      <div className="px-6 sm:px-10 py-5 sm:py-6 grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 bg-gradient-to-b from-white/40 to-transparent">
         {[
           { label: 'ยูนิตทั้งหมด', val: stats.total, color: 'bg-primary', icon: '🏢' },
           { label: 'ห้องว่าง', val: stats.available, color: 'bg-emerald-500', icon: '✨' },
           { label: 'มีผู้เช่าแล้ว', val: stats.occupied, color: 'bg-blue-500', icon: '🔑' },
           { label: 'รอตรวจสภาพ', val: stats.maintenance, color: 'bg-amber-500', icon: '🛠️' },
         ].map((s, i) => (
-          <div key={i} className="bg-card p-5 rounded-3xl border border-border shadow-sm shadow-sm flex items-center gap-5 hover:border-primary transition-colors group">
-            <div className={`w-14 h-14 ${s.color} rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-black/5 group-hover:scale-110 transition-transform duration-500`}>
+          <div key={i} className="bg-card p-4 sm:p-5 rounded-3xl border border-border shadow-sm flex items-center gap-4 sm:gap-5 hover:border-primary transition-colors group">
+            <div className={`w-12 h-12 sm:w-14 sm:h-14 ${s.color} rounded-2xl flex items-center justify-center text-2xl sm:text-3xl shadow-lg shadow-black/5 group-hover:scale-110 transition-transform duration-500 shrink-0`}>
               {s.icon}
             </div>
             <div>
               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{s.label}</p>
-              <h3 className="text-2xl font-black text-foreground">{s.val}</h3>
+              <h3 className="text-xl sm:text-2xl font-black text-foreground">{s.val}</h3>
             </div>
           </div>
         ))}
       </div>
 
       {/* Filter Section */}
-      <div className="px-10 mb-2 flex items-center gap-6 shrink-0">
+      <div className="px-6 sm:px-10 mb-4 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex bg-white/5 p-1 rounded-2xl border border-border">
           {['All', 'Available', 'Occupied', 'Maintenance'].map((s) => (
             <button
               key={s}
               onClick={() => setFilterStatus(s)}
-              className={`px-6 py-2 rounded-xl text-xs font-black transition-all ${
+              className={`px-4 sm:px-6 py-2 rounded-xl text-xs font-black transition-all ${
                 filterStatus === s 
                 ? 'bg-card text-white shadow-sm ring-1 ring-[#DCD3C6]' 
                 : 'text-white/50 hover:text-white/80'
@@ -384,14 +390,15 @@ export default function RoomsManagement() {
             </button>
           ))}
         </div>
-        <div className="h-4 w-px bg-white/10" />
-        <p className="text-xs font-bold text-white/50">
-          แสดง <span className="text-white">{filteredRooms.length}</span> จาก <span className="text-white">{rooms.length}</span> ห้อง
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-xs font-bold text-muted-foreground">
+            แสดง <span className="text-foreground font-black">{filteredRooms.length}</span> จาก <span className="text-foreground font-black">{rooms.length}</span> ห้อง
+          </p>
+        </div>
       </div>
 
       {/* Room Grid */}
-      <div className="flex-1 overflow-y-auto px-10 py-6 scroll-smooth custom-scrollbar">
+      <div className="px-6 sm:px-10 pb-16">
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
             {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
@@ -403,13 +410,13 @@ export default function RoomsManagement() {
             ))}
           </div>
         ) : filteredRooms.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center py-20">
+          <div className="flex flex-col items-center justify-center text-center py-20">
             <div className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center text-4xl mb-6">🔍</div>
             <h3 className="text-xl font-black text-foreground mb-2 text-balance">ไม่พบข้อมูลห้องพักที่คุณต้องการ</h3>
             <p className="text-muted-foreground text-sm font-medium">ลองเปลี่ยนเงื่อนไขการค้นหา หรือเพิ่มห้องพักใหม่ในระบบ</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 pb-12">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
             {filteredRooms.map((room) => {
               const firstImage = getFirstImage(room.image_url);
               const extraCount = getImageCount(room.image_url) - 1;

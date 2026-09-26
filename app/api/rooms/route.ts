@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     if (isExplore) {
       query = sql`
         SELECT 
-          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at, r.dorm_id,
+          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at,
           mor.move_out_date,
           mor.status as move_out_status,
           mor.id as move_out_request_id,
@@ -36,16 +36,15 @@ export async function GET(req: NextRequest) {
             ELSE r.status
           END as display_status
         FROM rooms r
-        LEFT JOIN tenants t ON t.room_id = r.id AND t.status = 'Active'
+        LEFT JOIN tenants t ON t.room_id = r.id AND t.status = 'active'
         LEFT JOIN move_out_requests mor ON (mor.room_id = r.id OR mor.tenant_id = t.id) AND mor.status IN ('Pending', 'Approved')
-        WHERE r.dorm_id = ${targetDormId}
-          AND (r.status IN ('Available', 'ว่าง', 'MovingOut', 'Moving Out', 'กำลังจะย้ายออก') OR mor.id IS NOT NULL)
-        ORDER BY r.floor ASC, r.room_number ASC
+        WHERE (r.status IN ('Available', 'ว่าง', 'MovingOut', 'Moving Out', 'กำลังจะย้ายออก') OR mor.id IS NOT NULL)
+        ORDER BY r.floor ASC, CAST(r.room_number AS UNSIGNED) ASC, r.room_number ASC
       `;
     } else {
       query = sql`
         SELECT 
-          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at, r.dorm_id,
+          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at,
           mor.move_out_date,
           mor.status as move_out_status,
           mor.id as move_out_request_id,
@@ -55,10 +54,9 @@ export async function GET(req: NextRequest) {
             ELSE r.status
           END as display_status
         FROM rooms r
-        LEFT JOIN tenants t ON t.room_id = r.id AND t.status = 'Active'
+        LEFT JOIN tenants t ON t.room_id = r.id AND t.status = 'active'
         LEFT JOIN move_out_requests mor ON (mor.room_id = r.id OR mor.tenant_id = t.id) AND mor.status IN ('Pending', 'Approved')
-        WHERE r.dorm_id = ${targetDormId}
-        ORDER BY r.floor ASC, r.room_number ASC
+        ORDER BY r.floor ASC, CAST(r.room_number AS UNSIGNED) ASC, r.room_number ASC
       `;
     }
 
@@ -79,34 +77,31 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { room_number, room_type, price, status, floor, image_url, dorm_id } = body;
+    const { room_number, room_type, price, status, floor, image_url } = body;
 
     if (!room_number || !room_type || price === undefined) {
       return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
     }
-    
-    const targetDormId = parseInt((session.user as any)?.dormId, 10) || parseInt(body.dorm_id, 10) || 1;
 
     const sql = getDb();
 
-    // Check if room number already exists IN THE SAME DORMITORY
-    const existing = await sql`SELECT id FROM rooms WHERE room_number = ${room_number} AND dorm_id = ${targetDormId}`;
+    // Check if room number already exists
+    const existing = await sql`SELECT id FROM rooms WHERE room_number = ${room_number}`;
     if (existing.length > 0) {
-      return NextResponse.json({ success: false, message: 'Room number already exists in this dormitory' }, { status: 409 });
+      return NextResponse.json({ success: false, message: 'หมายเลขห้องนี้มีอยู่ในระบบแล้ว' }, { status: 409 });
     }
 
     const result = await sql`
-      INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id)
-      VALUES (${room_number}, ${room_type}, ${price}, ${status || 'Available'}, ${floor || 1}, ${image_url || null}, ${targetDormId})
+      INSERT INTO rooms (room_number, room_type, price, status, floor, image_url)
+      VALUES (${room_number}, ${room_type}, ${price}, ${status || 'Available'}, ${floor || 1}, ${image_url || null})
     `;
     
-    // In raw MySQL2, insert returns an insertId property
     const newRoomId = (result as any).insertId;
 
     return NextResponse.json({ 
       success: true, 
       message: 'Room created successfully', 
-      data: { id: newRoomId, room_number, room_type, price, status, floor, dorm_id: targetDormId } 
+      data: { id: newRoomId, room_number, room_type, price, status, floor } 
     }, { status: 201 });
 
   } catch (error: any) {

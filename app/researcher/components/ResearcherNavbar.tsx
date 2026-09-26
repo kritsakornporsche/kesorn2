@@ -30,15 +30,15 @@ export default function ResearcherNavbar({ onToggleMobileMenu }: ResearcherNavba
           className="flex items-center gap-3 hover:opacity-95 transition-opacity cursor-pointer group"
           title="แดชบอร์ดงานวิจัย SmartDom"
         >
-          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-white p-1 flex items-center justify-center shadow-lg border border-purple-500/20 flex-shrink-0 group-hover:scale-105 transition-transform">
-            <img src="/up-logo.png" alt="ตรามหาวิทยาลัยพะเยา" className="w-full h-full object-contain" />
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-primary text-white flex items-center justify-center shadow-lg flex-shrink-0 group-hover:scale-105 transition-transform text-lg">
+            🏢
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="font-black text-white tracking-tight text-sm sm:text-base group-hover:text-purple-300 transition-colors">
-                SmartDom Research Hub
+              <h2 className="font-black text-white tracking-tight text-sm sm:text-base group-hover:text-primary-foreground transition-colors">
+                Kesorn 2 Research Hub
               </h2>
-              <span className="hidden sm:inline-block px-2 py-0.5 rounded-md text-[10px] font-black bg-purple-500/20 text-purple-300 border border-purple-500/30 tracking-wider">
+              <span className="hidden sm:inline-block px-2 py-0.5 rounded-md text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-500/30 tracking-wider">
                 THESIS / RESEARCH
               </span>
             </div>

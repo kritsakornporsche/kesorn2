@@ -1013,3 +1013,353 @@ export const dbTablesData: DbTableInfo[] = [
   }
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DATA FLOW DIAGRAMS (DFD) - Level 0 (Context Diagram), Level 1, Level 2
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface DfdLevel {
+  id: string;
+  level: string;
+  title: string;
+  badge: string;
+  description: string;
+  entities: string[];
+  processes: { id: string; name: string; desc: string }[];
+  dataStores: { id: string; name: string; table: string }[];
+  mermaidCode: string;
+  keyDataFlows: { from: string; to: string; flow: string }[];
+}
+
+export const dfdData: DfdLevel[] = [
+  {
+    id: 'dfd-context',
+    level: 'Level 0',
+    title: 'Context Diagram (แผนภาพบริบทระดับ 0)',
+    badge: 'Overview',
+    description: 'แสดงขอบเขตภาพรวมสูงสุดของระบบ SmartDom แพลตฟอร์มบริหารจัดการหอพัก ม.พะเยา การเชื่อมโยงกระแสข้อมูลระหว่างระบบหลักกับกลุ่มผู้ใช้งานภายนอก (External Entities) ทั้ง 5 กลุ่ม',
+    entities: [
+      'ผู้เยี่ยมชมทั่วไป (Guest / Public User)',
+      'ผู้เช่า (Tenant)',
+      'เจ้าของหอพัก (Owner)',
+      'ผู้ดูแลหอพัก: แม่บ้าน & ช่าง (Keeper)',
+      'ผู้ดูแลระบบส่วนกลาง (Platform Admin)'
+    ],
+    processes: [
+      { id: 'P0', name: 'ระบบบริหารจัดการหอพัก SmartDom SaaS Platform', desc: 'ศูนย์กลางประมวลผลธุรกรรม จัดเก็บข้อมูล และประสานงานระหว่างผู้ใช้งานทุกกลุ่ม' }
+    ],
+    dataStores: [
+      { id: 'DB', name: 'SmartDom Unified Database (kesorn_db)', table: 'All Tables (24 Tables)' }
+    ],
+    keyDataFlows: [
+      { from: 'ผู้เยี่ยมชม (Guest)', to: 'SmartDom', flow: 'ข้อมูลค้นหาหอพัก, ข้อมูลการจองห้องพัก, สลิปมัดจำ' },
+      { from: 'SmartDom', to: 'ผู้เยี่ยมชม (Guest)', flow: 'รายการหอพัก/ห้องพักว่าง, QR Code มัดจำ, ผลการอนุมัติการจอง' },
+      { from: 'ผู้เช่า (Tenant)', to: 'SmartDom', flow: 'สลิปชำระค่าเช่า, ใบแจ้งซ่อม, ข้อความแชท, คำร้องย้ายออก' },
+      { from: 'SmartDom', to: 'ผู้เช่า (Tenant)', flow: 'สัญญาเช่า, ใบแจ้งหนี้/ใบเสร็จ, สถานะงานซ่อม, ข่าวสารประกาศ' },
+      { from: 'เจ้าของหอพัก (Owner)', to: 'SmartDom', flow: 'ข้อมูลหอพัก/ห้อง, เลขมิเตอร์น้ำ-ไฟ, บัญชีรายรับ-จ่าย, การอนุมัติสัญญา' },
+      { from: 'SmartDom', to: 'เจ้าของหอพัก (Owner)', flow: 'สถิติภาพรวม, รายการจองค้างตรวจ, สลิปค่าเช่ารอตรวจ, สรุปบัญชีการเงิน' },
+      { from: 'ผู้ดูแล (Keeper)', to: 'SmartDom', flow: 'อัปเดตสถานะงานซ่อม/ทำความสะอาด, บันทึกค่าอะไหล่, รูปผลงาน' },
+      { from: 'SmartDom', to: 'ผู้ดูแล (Keeper)', flow: 'รายการใบงานที่มอบหมาย (Cleaning/Repair Jobs)' },
+      { from: 'แอดมินส่วนกลาง (Admin)', to: 'SmartDom', flow: 'การกำหนดสิทธิ์, ประกาศข่าวสารมหาวิทยาลัย' },
+      { from: 'SmartDom', to: 'แอดมินส่วนกลาง (Admin)', flow: 'สถิติหอพักรวม, รายงานสถานะระบบและผู้ใช้งาน' }
+    ],
+    mermaidCode: `flowchart TD
+    classDef entity fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#f8fafc,rx:8px;
+    classDef process fill:#0284c7,stroke:#0369a1,stroke-width:3px,color:#ffffff,rx:30px;
+
+    %% External Entities
+    E1["👤 ผู้เยี่ยมชมทั่วไป (Guest / Public)"]:::entity
+    E2["🏠 ผู้เช่าห้องพัก (Tenant)"]:::entity
+    E3["🏢 เจ้าของหอพัก (Dorm Owner)"]:::entity
+    E4["🔧 ทีมงานผู้ดูแล (Keeper: Maid/Tech)"]:::entity
+    E5["🛡️ แอดมินส่วนกลาง (Platform Admin)"]:::entity
+
+    %% Central Process
+    P0(["(0) ระบบบริหารจัดการหอพัก SmartDom SaaS Platform"]):::process
+
+    %% Data Flows
+    E1 -->|"1. ค้นหาหอพัก / ขอจองห้อง / สลิปมัดจำ"| P0
+    P0 -->|"2. ข้อมูลห้องว่าง / QR PromptPay / ผลอนุมัติ"| E1
+
+    E2 -->|"3. สลิปค่าเช่า / แจ้งซ่อม / แชท / ขอย้ายออก"| P0
+    P0 -->|"4. สัญญาเช่า / บิลรายเดือน / ใบเสร็จ / ผลซ่อม"| E2
+
+    E3 -->|"5. ข้อมูลห้อง / จดมิเตอร์ / อนุมัติจอง / รายจ่าย"| P0
+    P0 -->|"6. สถิติหอพัก / สลิปตรวจชำระ / สรุปบัญชี"| E3
+
+    E4 -->|"7. รายงานผลงาน / บันทึกอะไหล่ / ภาพถ่ายงานเสร็จ"| P0
+    P0 -->|"8. รายการงานซ่อม / ใบงานทำความสะอาดห้อง"| E4
+
+    E5 -->|"9. นโยบายสิทธิ์ / ข่าวสารประกาศส่วนกลาง"| P0
+    P0 -->|"10. สถิติแพลตฟอร์ม / รายงานการใช้งานรวม"| E5`
+  },
+  {
+    id: 'dfd-level-1',
+    level: 'Level 1',
+    title: 'DFD Level 1 (แผนภาพกระแสข้อมูลระดับ 1)',
+    badge: 'System Decomposition',
+    description: 'แตกกระบวนการหลักของระบบ SmartDom ออกเป็น 7 กระบวนการย่อย (Sub-processes: 1.0 - 7.0) พร้อมแสดงการจัดเก็บและดึงข้อมูลจาก Data Stores (D1 - D7) ภายในฐานข้อมูล kesorn_db',
+    entities: [
+      'ผู้เยี่ยมชม (Guest)',
+      'ผู้เช่า (Tenant)',
+      'เจ้าของหอพัก (Owner)',
+      'ผู้ดูแลหอพัก (Keeper)',
+      'แอดมินส่วนกลาง (Admin)'
+    ],
+    processes: [
+      { id: '1.0', name: 'ยืนยันตัวตนและจัดการสิทธิ์ (Authentication & RBAC)', desc: 'ตรวจสอบการล็อกอิน ออก JWT Session และจำแนกสิทธิ์ตามบทบาทผู้ใช้' },
+      { id: '2.0', name: 'สำรวจและจองห้องพัก (Explore & Booking)', desc: 'ค้นหาหอพัก จองห้องพัก คำนวณเงินมัดจำ และสร้าง QR Code ชำระเงิน' },
+      { id: '3.0', name: 'จัดการสัญญาและผู้เช่า (Contracts & Tenants)', desc: 'บันทึกสัญญาเช่า อนุมัติการเข้าพัก ยื่นต่ออายุสัญญา และคำร้องย้ายออก' },
+      { id: '4.0', name: 'คำนวณมิเตอร์และออกบิล (Meters & Billing)', desc: 'บันทึกมิเตอร์น้ำ-ไฟ (รองรับ AI OCR), คำนวณยอดเงินรวม และออกใบแจ้งหนี้' },
+      { id: '5.0', name: 'ชำระเงินและบัญชีการเงิน (Payments & Accounting)', desc: 'ตรวจสอบสลิปโอนเงิน อนุมัติใบเสร็จรับเงิน และสรุปบัญชีกำไรขาดทุน' },
+      { id: '6.0', name: 'บริการแจ้งซ่อมและดูแลห้อง (Maintenance & Keeper)', desc: 'รับเรื่องแจ้งซ่อม จ่ายงานให้ช่าง/แม่บ้าน บันทึกค่าอะไหล่ และปิดใบงาน' },
+      { id: '7.0', name: 'สื่อสารและแจ้งเตือน (Chat & Announcements)', desc: 'ส่งข้อความสนทนาแบบเรียลไทม์ และกระจายประกาศข่าวสารของหอพัก' }
+    ],
+    dataStores: [
+      { id: 'D1', name: 'Users & Roles Data', table: 'users, accounts' },
+      { id: 'D2', name: 'Dormitories & Rooms Data', table: 'dormitory_registry, rooms, room_types' },
+      { id: 'D3', name: 'Bookings & Contracts Data', table: 'bookings, contracts, tenants, move_out_requests' },
+      { id: 'D4', name: 'Meters & Tariffs Data', table: 'meter_readings, utility_rates' },
+      { id: 'D5', name: 'Billing & Accounting Data', table: 'bills, bill_items, accounting_transactions' },
+      { id: 'D6', name: 'Maintenance & Jobs Data', table: 'maintenance_requests, maintenance_updates, keepers' },
+      { id: 'D7', name: 'Communication Data', table: 'conversations, messages, announcements, notifications' }
+    ],
+    keyDataFlows: [
+      { from: 'ผู้เยี่ยมชม (Guest)', to: 'Process 2.0', flow: 'เลือกห้อง + ข้อมูลจอง + สลิปมัดจำ' },
+      { from: 'Process 2.0', to: 'D3 Bookings', flow: 'บันทึกคำขอจองห้อง (Status: Pending)' },
+      { from: 'Owner', to: 'Process 3.0', flow: 'อนุมัติการจอง + อัปโหลดสัญญาเช่า' },
+      { from: 'Process 3.0', to: 'D3 Contracts', flow: 'ผูกสัญญา + สร้างสถานะ Tenant' },
+      { from: 'Owner', to: 'Process 4.0', flow: 'บันทึกค่ามิเตอร์น้ำ-ไฟ' },
+      { from: 'Process 4.0', to: 'D5 Billing', flow: 'สร้างใบแจ้งหนี้ประจำงวด' },
+      { from: 'Tenant', to: 'Process 5.0', flow: 'สลิปโอนชำระเงินค่าเช่า' },
+      { from: 'Process 5.0', to: 'Owner', flow: 'รายการสลิปรอตรวจสอบยอดเงิน' },
+      { from: 'Tenant', to: 'Process 6.0', flow: 'แจ้งปัญหาชำรุด + แนบรูป' },
+      { from: 'Process 6.0', to: 'Keeper', flow: 'จ่ายงานซ่อมบำรุง / ทำความสะอาด' }
+    ],
+    mermaidCode: `flowchart TD
+    classDef entity fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#f8fafc,rx:8px;
+    classDef proc fill:#0369a1,stroke:#0284c7,stroke-width:2px,color:#ffffff,rx:20px;
+    classDef store fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#e0e7ff;
+
+    %% External Entities
+    Guest["👤 ผู้เยี่ยมชม (Guest)"]:::entity
+    Tenant["🏠 ผู้เช่า (Tenant)"]:::entity
+    Owner["🏢 เจ้าของหอพัก (Owner)"]:::entity
+    Keeper["🔧 ผู้ดูแล (Keeper)"]:::entity
+
+    %% Processes
+    P1(["(1.0) ยืนยันตัวตน (Auth & RBAC)"]):::proc
+    P2(["(2.0) สำรวจ & จองห้อง (Booking)"]):::proc
+    P3(["(3.0) จัดการสัญญา (Contracts)"]):::proc
+    P4(["(4.0) คำนวณมิเตอร์ & ออกบิล (Bills)"]):::proc
+    P5(["(5.0) ชำระเงิน & บัญชี (Payments)"]):::proc
+    P6(["(6.0) แจ้งซ่อม & ดูแลหอ (Maintenance)"]):::proc
+    P7(["(7.0) สื่อสาร & ข่าวสาร (Chat & News)"]):::proc
+
+    %% Data Stores
+    D1[("D1: Users & Roles")]:::store
+    D2[("D2: Dorms & Rooms")]:::store
+    D3[("D3: Contracts & Tenants")]:::store
+    D4[("D4: Utility Meters")]:::store
+    D5[("D5: Bills & Accounts")]:::store
+    D6[("D6: Maintenance Jobs")]:::store
+    D7[("D7: Communication")]:::store
+
+    %% Data Flows - Auth
+    Guest -.->|"สมัครสมาชิก / ล็อกอิน"| P1
+    Owner -.->|"ล็อกอินเข้าสู่ระบบ"| P1
+    P1 -->|"ตรวจสอบสิทธิ์ผู้ใช้"| D1
+    D1 -->|"ส่งคืนสถานะสิทธิ์และโปรไฟล์"| P1
+
+    %% Booking Flow
+    Guest -->|"1. ค้นหาห้อง & ยื่นคำขอจอง"| P2
+    D2 -->|"ดึงข้อมูลห้องว่างและอัตราค่าเช่า"| P2
+    P2 -->|"บันทึกคำขอจอง + สลิปมัดจำ"| D3
+
+    %% Contract Flow
+    Owner -->|"2. อนุมัติจอง & ทำสัญญาเช่า"| P3
+    P3 -->|"บันทึกสัญญา / เพิ่มสิทธิ์ผู้เช่า"| D3
+    P3 -->|"อัปเดตสถานะห้องเป็นไม่ว่าง"| D2
+
+    %% Meter & Billing Flow
+    Owner -->|"3. บันทึกเลขมิเตอร์น้ำ-ไฟ"| P4
+    D4 -->|"อ่านประวัติเลขงวดก่อนหน้า"| P4
+    P4 -->|"บันทึกเลขมิเตอร์งวดใหม่"| D4
+    P4 -->|"สร้างใบแจ้งหนี้ประจำเดือน"| D5
+    D5 -->|"ส่งใบแจ้งหนี้ให้ลูกหอ"| Tenant
+
+    %% Payment Flow
+    Tenant -->|"4. อัปโหลดสลิปโอนเงิน"| P5
+    P5 -->|"ปรับสถานะบิลเป็นรอตรวจสอบ"| D5
+    P5 -->|"แจ้งเตือนสลิปใหม่ให้เจ้าของตรวจ"| Owner
+    Owner -->|"อนุมัติการชำระเงิน"| P5
+    P5 -->|"บันทึกรายรับเข้าสมุดบัญชี"| D5
+    P5 -->|"ส่งใบเสร็จรับเงินดิจิทัล"| Tenant
+
+    %% Maintenance Flow
+    Tenant -->|"5. ยื่นเรื่องแจ้งซ่อม + รูปถ่าย"| P6
+    P6 -->|"บันทึกใบแจ้งซ่อมใหม่"| D6
+    Owner -->|"มอบหมายงานให้ช่าง/แม่บ้าน"| P6
+    P6 -->|"ส่งใบงานมอบหมาย"| Keeper
+    Keeper -->|"อัปเดตงานสำเร็จ + บันทึกค่าอะไหล่"| P6
+    P6 -->|"บันทึกประวัติความคืบหน้างาน"| D6
+    P6 -.->|"ลงบัญชีค่าใช้จ่ายซ่อมแซม"| D5
+
+    %% Communication Flow
+    Tenant -->|"6. ส่งข้อความแชท"| P7
+    Owner -->|"ตอบแชท / ออกประกาศข่าวสาร"| P7
+    P7 -->|"จัดเก็บข้อความและประวัติการอ่าน"| D7`
+  },
+  {
+    id: 'dfd-level-2-billing',
+    level: 'Level 2',
+    title: 'DFD Level 2: กระบวนการออกบิลและชำระเงิน (4.0 & 5.0)',
+    badge: 'Detailed Flow',
+    description: 'ขยายรายละเอียดการทำงานของกระบวนการด้านการเงิน (Core Financial & Utility Cycle) ตั้งแต่การบันทึกมิเตอร์น้ำ-ไฟ ด้วย Smart OCR, การคำนวณเงิน, การออกบิล, การตรวจสลิปโอนเงิน จนถึงการบันทึกบัญชีรายรับ-รายจ่าย',
+    entities: [
+      'เจ้าของหอพัก (Owner)',
+      'ผู้เช่าห้องพัก (Tenant)'
+    ],
+    processes: [
+      { id: '4.1', name: 'บันทึกหน่วยมิเตอร์ (Capture/Input Meters)', desc: 'กรอกตัวเลขโดยตรง หรือถ่ายรูปมิเตอร์เพื่อให้อัลกอริทึม OCR อ่านตัวเลขโดยอัตโนมัติ' },
+      { id: '4.2', name: 'คำนวณส่วนต่างและค่าสาธารณูปโภค (Calculate Utilities)', desc: 'นำเลขงวดล่าสุดลบเลขงวดก่อนหน้า แล้วคูณอัตราค่าน้ำ/ค่าไฟต่อหน่วยตามที่หอพักกำหนด' },
+      { id: '4.3', name: 'ประมวลผลออกใบแจ้งหนี้ (Generate Monthly Bills)', desc: 'รวมค่าเช่าห้อง ค่าสาธารณูปโภค ค่าบริการส่วนกลาง และสร้างรายการบิลประจำเดือน' },
+      { id: '5.1', name: 'สแกนจ่ายและส่งสลิป (Submit Payment Slip)', desc: 'ผู้เช่าเปิดดูบิล สแกน QR Code PromptPay ที่สร้างตามยอดจริง และอัปโหลดสลิปธนาคาร' },
+      { id: '5.2', name: 'ตรวจสอบและอนุมัติการชำระเงิน (Verify Payment)', desc: 'เจ้าของหอพักตรวจสอบหลักฐานสลิป ยอดเงิน และกดยืนยันชำระ (Approve Payment)' },
+      { id: '5.3', name: 'ออกใบเสร็จและลงบัญชี (Issue Receipt & Record Ledger)', desc: 'ระบบเปลี่ยนสถานะเป็น Paid, ออกใบเสร็จดิจิทัล และบันทึกลงบัญชีรายรับอัตโนมัติ' }
+    ],
+    dataStores: [
+      { id: 'D4', name: 'meter_readings (ประวัติมิเตอร์)', table: 'meter_readings' },
+      { id: 'D2', name: 'rooms & rates (ค่าห้องและอัตราหน่วย)', table: 'rooms, dormitory_registry' },
+      { id: 'D5.1', name: 'bills & bill_items (ใบแจ้งหนี้และรายการ)', table: 'bills, bill_items' },
+      { id: 'D5.2', name: 'accounting_transactions (สมุดบัญชีการเงิน)', table: 'accounting_transactions' }
+    ],
+    keyDataFlows: [
+      { from: 'Owner', to: 'Process 4.1', flow: 'ภาพถ่ายมิเตอร์ / ตัวเลขมิเตอร์' },
+      { from: 'Process 4.1', to: 'D4 meter_readings', flow: 'บันทึก current_reading' },
+      { from: 'D4 + D2', to: 'Process 4.2', flow: 'previous_reading, unit_rate' },
+      { from: 'Process 4.2', to: 'Process 4.3', flow: 'ยอดเงินค่าน้ำ, ยอดเงินค่าไฟ' },
+      { from: 'Process 4.3', to: 'D5.1 bills', flow: 'บันทึกสถานะบิล (Status: Pending)' },
+      { from: 'Tenant', to: 'Process 5.1', flow: 'สลิปโอนเงิน + เวลาที่โอน' },
+      { from: 'Process 5.1', to: 'Process 5.2', flow: 'ส่งรายการบิลพร้อมสลิปให้ตรวจสอบ' },
+      { from: 'Owner', to: 'Process 5.2', flow: 'ผลการยืนยันยอดเงิน (Approved)' },
+      { from: 'Process 5.3', to: 'D5.2 accounting', flow: 'บันทึกรายรับ (Income Transaction)' },
+      { from: 'Process 5.3', to: 'Tenant', flow: 'ใบเสร็จรับเงินดิจิทัล (Receipt)' }
+    ],
+    mermaidCode: `flowchart TD
+    classDef entity fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#f8fafc,rx:8px;
+    classDef proc fill:#0369a1,stroke:#0284c7,stroke-width:2px,color:#ffffff,rx:18px;
+    classDef store fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#e0e7ff;
+
+    Owner["🏢 เจ้าของหอพัก (Owner)"]:::entity
+    Tenant["🏠 ผู้เช่าห้องพัก (Tenant)"]:::entity
+
+    P41(["(4.1) บันทึกเลขมิเตอร์ (Input/OCR)"]):::proc
+    P42(["(4.2) คำนวณค่าน้ำ-ไฟ (Calculate)"]):::proc
+    P43(["(4.3) ประมวลผลออกบิล (Gen Bills)"]):::proc
+    P51(["(5.1) ชำระเงิน & ส่งสลิป (Pay & Slip)"]):::proc
+    P52(["(5.2) ตรวจสลิป & อนุมัติ (Verify)"]):::proc
+    P53(["(5.3) ออกใบเสร็จ & ลงบัญชี (Receipt)"]):::proc
+
+    D4[("D4: meter_readings")]:::store
+    D2[("D2: rooms & rates")]:::store
+    D51[("D5.1: bills & bill_items")]:::store
+    D52[("D5.2: accounting_transactions")]:::store
+
+    %% Sub-flows
+    Owner -->|"1. กรอกตัวเลข / ถ่ายรูปมิเตอร์"| P41
+    P41 -->|"บันทึกเลขมิเตอร์ล่าสุด"| D4
+
+    D4 -->|"ดึงเลขมิเตอร์งวดก่อนหน้า + งวดปัจจุบัน"| P42
+    D2 -->|"อัตราค่าน้ำและค่าไฟต่อหน่วย"| P42
+    P42 -->|"ยอดเงินค่าน้ำและค่าไฟ"| P43
+
+    D2 -->|"ค่าเช่าห้องรายเดือนตามสัญญา"| P43
+    P43 -->|"บันทึกใบแจ้งหนี้ประจำงวด"| D51
+
+    D51 -->|"2. แสดงใบแจ้งหนี้ + QR PromptPay"| Tenant
+    Tenant -->|"3. สแกนจ่าย + อัปโหลดสลิปธนาคาร"| P51
+    P51 -->|"อัปเดตสลิปและปรับสถานะบิล"| D51
+
+    D51 -->|"4. แจ้งเตือนสลิปรอตรวจสอบยอดเงิน"| Owner
+    Owner -->|"5. กดยืนยันยอดเงินถูกต้อง"| P52
+    P52 -->|"ปรับสถานะบิลเป็น Approved"| D51
+
+    P52 -->|"6. ส่งคำสั่งบันทึกบัญชีการเงิน"| P53
+    P53 -->|"บันทึกรายรับเข้าสมุดบัญชีหอพัก"| D52
+    P53 -->|"7. ออกใบเสร็จรับเงินดิจิทัล"| Tenant`
+  },
+  {
+    id: 'dfd-level-2-maintenance',
+    level: 'Level 2',
+    title: 'DFD Level 2: กระบวนการแจ้งซ่อมและงานแม่บ้าน (6.0)',
+    badge: 'Detailed Flow',
+    description: 'ขยายรายละเอียดการทำงานของระบบบริการลูกหอและการซ่อมบำรุง เชื่อมโยงความต้องการของผู้เช่า การบริหารจัดการของเจ้าของหอพัก และการปฏิบัติงานหน้างานของแม่บ้านและช่างประจำหอพัก',
+    entities: [
+      'ผู้เช่า (Tenant)',
+      'เจ้าของหอพัก (Owner)',
+      'ผู้ดูแลหอพัก (Keeper)'
+    ],
+    processes: [
+      { id: '6.1', name: 'ส่งเรื่องแจ้งซ่อม (Submit Request)', desc: 'ผู้เช่ากรอกรายละเอียดปัญหา เลือกหมวดหมู่ (น้ำ, ไฟ, แอร์, เฟอร์นิเจอร์) พร้อมถ่ายภาพแนบ' },
+      { id: '6.2', name: 'คัดกรองและมอบหมายงาน (Triage & Assign Task)', desc: 'เจ้าของหอพักตรวจสอบระดับความเร่งด่วน และมอบหมายงานให้ช่างหรือแม่บ้าน' },
+      { id: '6.3', name: 'เข้าดำเนินการและบันทึกผล (Execute & Update Progress)', desc: 'ผู้ดูแลรับงาน ติดต่อผู้เช่า ดำเนินการซ่อม/ทำความสะอาด บันทึกค่าอะไหล่ และถ่ายรูปผลงาน' },
+      { id: '6.4', name: 'ปิดงานและบันทึกค่าใช้จ่าย (Close Task & Expense)', desc: 'เจ้าของหอตรวจรับงาน ปิดใบแจ้งซ่อม และบันทึกค่าอะไหล่/ค่าจ้างเข้าสมุดบัญชีรายจ่าย' }
+    ],
+    dataStores: [
+      { id: 'D6.1', name: 'maintenance_requests (คำขอแจ้งซ่อม)', table: 'maintenance_requests' },
+      { id: 'D6.2', name: 'maintenance_updates (บันทึกความคืบหน้า)', table: 'maintenance_updates' },
+      { id: 'D6.3', name: 'keepers (ทะเบียนช่าง/แม่บ้าน)', table: 'keepers, keeper_dormitories' },
+      { id: 'D5.2', name: 'accounting_transactions (สมุดบัญชีรายจ่าย)', table: 'accounting_transactions' }
+    ],
+    keyDataFlows: [
+      { from: 'Tenant', to: 'Process 6.1', flow: 'ข้อมูลอาการชำรุด + ภาพถ่าย' },
+      { from: 'Process 6.1', to: 'D6.1 requests', flow: 'บันทึกคำขอ (Status: Pending)' },
+      { from: 'Owner', to: 'Process 6.2', flow: 'เลือกช่าง/แม่บ้านที่รับผิดชอบ' },
+      { from: 'Process 6.2', to: 'Keeper', flow: 'แจ้งเตือนใบงานใหม่ (Assigned)' },
+      { from: 'Keeper', to: 'Process 6.3', flow: 'อัปเดตสถานะ (In Progress / Completed) + รูปภาพ' },
+      { from: 'Process 6.3', to: 'D6.2 updates', flow: 'บันทึกประวัติการเข้าดำเนินการ' },
+      { from: 'Owner', to: 'Process 6.4', flow: 'อนุมัติปิดงาน' },
+      { from: 'Process 6.4', to: 'D5.2 accounting', flow: 'บันทึกค่าอะไหล่เป็นรายจ่าย (Expense)' },
+      { from: 'Process 6.4', to: 'Tenant', flow: 'แจ้งเตือนงานเสร็จสมบูรณ์' }
+    ],
+    mermaidCode: `flowchart TD
+    classDef entity fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#f8fafc,rx:8px;
+    classDef proc fill:#0369a1,stroke:#0284c7,stroke-width:2px,color:#ffffff,rx:18px;
+    classDef store fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#e0e7ff;
+
+    Tenant["🏠 ผู้เช่า (Tenant)"]:::entity
+    Owner["🏢 เจ้าของหอพัก (Owner)"]:::entity
+    Keeper["🔧 ผู้ดูแล (Keeper: Maid/Tech)"]:::entity
+
+    P61(["(6.1) ส่งเรื่องแจ้งซ่อม (Submit)"]):::proc
+    P62(["(6.2) คัดกรอง & มอบหมายงาน (Assign)"]):::proc
+    P63(["(6.3) ลงมือปฏิบัติงาน (Execute)"]):::proc
+    P64(["(6.4) ตรวจรับ & ปิดงาน (Close Task)"]):::proc
+
+    D61[("D6.1: maintenance_requests")]:::store
+    D62[("D6.2: maintenance_updates")]:::store
+    D63[("D6.3: keepers")]:::store
+    D52[("D5.2: accounting_transactions")]:::store
+
+    %% Sub-flows
+    Tenant -->|"1. ส่งคำขอแจ้งซ่อม + ภาพจุดชำรุด"| P61
+    P61 -->|"บันทึกคำขอใหม่ (Status: Pending)"| D61
+
+    D61 -->|"2. รายการคำขอค้างจัดสรรงาน"| Owner
+    D63 -->|"ดึงรายชื่อช่าง/แม่บ้านประจำหอพัก"| P62
+    Owner -->|"3. มอบหมายงานให้ผู้รับผิดชอบ"| P62
+    P62 -->|"อัปเดตผู้รับผิดชอบงาน"| D61
+
+    P62 -->|"4. แจ้งเตือนใบงานใหม่"| Keeper
+    Keeper -->|"5. อัปเดตสถานะงาน + รูปผลงาน"| P63
+    P63 -->|"บันทึกไทม์ไลน์ความคืบหน้า"| D62
+    P63 -->|"แจ้งเตือนสถานะงานซ่อม"| Tenant
+
+    Keeper -->|"6. ส่งรายการค่าอะไหล่และอุปกรณ์"| Owner
+    Owner -->|"7. ยืนยันตรวจรับและปิดงานซ่อม"| P64
+    P64 -->|"ปรับสถานะงานเป็น Resolved"| D61
+    P64 -->|"8. บันทึกค่าใช้จ่ายซ่อมแซม"| D52
+    P64 -->|"9. แจ้งเตือนผลการปิดงานสำเร็จ"| Tenant`
+  }
+];
+

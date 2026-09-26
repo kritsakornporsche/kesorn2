@@ -1,10 +1,10 @@
-import { neon } from '@/lib/mysql-adapter';
+import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import AcknowledgeButton from './components/AcknowledgeButton';
 
 async function getAnnouncements() {
   const session = await auth();
-  const sql = neon(process.env.DATABASE_URL || 'mysql://smartdom:smartdom@localhost:3306/smartdomdb');
+  const sql = getDb();
   
   let tenantId = 1;
   if (session?.user?.email) {

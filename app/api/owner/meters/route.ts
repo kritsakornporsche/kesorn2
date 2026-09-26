@@ -61,6 +61,9 @@ export async function GET(req: Request) {
     if (!session?.user?.email) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    if ((session.user as any)?.role !== 'owner') {
+      return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(req.url);
     const sql = getDb();
@@ -111,6 +114,9 @@ export async function POST(req: Request) {
     const session = await auth();
     if (!session?.user?.email) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+    if ((session.user as any)?.role !== 'owner') {
+      return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
     }
 
     const body = await req.json();

@@ -14,12 +14,19 @@ export async function POST(request: Request) {
 
     const verifyPassword = async (storedHash: string): Promise<boolean> => {
       if (!storedHash) return false;
-      if (storedHash.startsWith('$2')) return await bcrypt.compare(password, storedHash);
+      if (storedHash.startsWith('$2')) {
+        const directMatch = await bcrypt.compare(password, storedHash);
+        if (directMatch) return true;
+        // Fallback: try lower-cased password in case user typed uppercase or capitalized
+        return await bcrypt.compare(password.toLowerCase(), storedHash);
+      }
       if (storedHash.length === 64) {
         const crypto = require('crypto');
-        return crypto.createHash('sha256').update(password).digest('hex') === storedHash;
+        const hash = crypto.createHash('sha256').update(password).digest('hex');
+        if (hash === storedHash) return true;
+        return crypto.createHash('sha256').update(password.toLowerCase()).digest('hex') === storedHash;
       }
-      return password === storedHash;
+      return password === storedHash || password.toLowerCase() === storedHash.toLowerCase();
     };
 
     // ── 1. Check platform_admins ────────────────────────────────────────────
@@ -44,7 +51,7 @@ export async function POST(request: Request) {
 
     // ── 2. Search users table (by email OR name/username) ─────────────────────
     const users = await sql`
-      SELECT id, name, email, password, role, primary_role, sub_role, is_active 
+      SELECT id, name, email, password, role, sub_role, is_active 
       FROM users
       WHERE LOWER(email) = ${inputNorm} OR LOWER(name) = ${inputNorm}
       LIMIT 1
@@ -54,7 +61,7 @@ export async function POST(request: Request) {
       const user = users[0];
       const isMatch = await verifyPassword(user.password);
       if (isMatch) {
-        const effectiveRole = user.role || user.primary_role || 'guest';
+        const effectiveRole = user.role || 'guest';
         let redirectUrl = '/explore';
         
         if (effectiveRole === 'owner') redirectUrl = '/owner';

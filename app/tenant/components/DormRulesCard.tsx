@@ -29,7 +29,7 @@ export default function DormRulesCard({ dormId }: { dormId?: number }) {
           // Fallback defaults if not set in DB
           setRules([
             { id: 1, dorm_id: 1, title: 'การเข้า-ออกอาคาร', description: 'ประตูทางเข้าหลักปิดเวลา 23:00 น. หลังจากนั้นต้องใช้คีย์การ์ดสแกนเท่านั้น', category: 'การเข้า-ออก', fine_amount: 0, sort_order: 1 },
-            { id: 2, dorm_id: 1, title: 'การรักษาความสะอาด', description: 'ห้ามนำสัตว์เลี้ยงเข้ามาเลี้ยงในห้องพัก และห้ามทิ้งขยะบริเวณระเบียงหรือทางเดินส่วนกลาง', category: 'ความสะอาด', fine_amount: 500, sort_order: 2 },
+            { id: 2, dorm_id: 1, title: 'การรักษาความสะอาดและสัตว์เลี้ยง', description: 'อนุญาตให้เลี้ยงสัตว์เลี้ยงขนาดเล็กได้ (Pet-Friendly) โดยต้องดูแลไม่ให้ส่งเสียงรบกวนผู้อื่น และรักษาความสะอาดบริเวณทางเดินส่วนกลาง', category: 'สัตว์เลี้ยง', fine_amount: 0, sort_order: 2 },
             { id: 3, dorm_id: 1, title: 'ความปลอดภัยและอัคคีภัย', description: 'ห้ามสูบบุหรี่ภายในห้องพักและพื้นที่ส่วนกลาง ยกเว้นบริเวณที่จัดไว้ให้ภายนอกอาคาร', category: 'ความปลอดภัย', fine_amount: 1000, sort_order: 3 },
             { id: 4, dorm_id: 1, title: 'ผู้มาติดต่อและบุคคลภายนอก', description: 'ไม่อนุญาตให้บุคคลภายนอกพักค้างคืนโดยไม่ได้แจ้งเจ้าหน้าที่ล่วงหน้า', category: 'ทั่วไป', fine_amount: 500, sort_order: 4 },
           ]);

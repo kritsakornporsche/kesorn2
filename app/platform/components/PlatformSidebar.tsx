@@ -57,12 +57,12 @@ export default function PlatformSidebar() {
             className="flex items-center gap-3 hover:opacity-90 transition-opacity cursor-pointer group"
             title="กลับไปหน้าสำรวจหอพัก"
           >
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white p-1 flex items-center justify-center shadow-lg border border-border flex-shrink-0 group-hover:scale-105 transition-transform">
-              <img src="/up-logo.png" alt="ตรามหาวิทยาลัยพะเยา" className="w-full h-full object-contain" />
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-primary text-white flex items-center justify-center shadow-lg flex-shrink-0 group-hover:scale-105 transition-transform text-lg">
+              🏢
             </div>
             <div className="hidden sm:block">
-              <h2 className="font-black text-foreground tracking-tight text-sm sm:text-base group-hover:text-violet-500 transition-colors">แพลตฟอร์มหอพักหน้ามหาวิทยาลัยพะเยา</h2>
-              <p className="text-[9px] font-bold text-violet-500 uppercase tracking-[0.15em] leading-none">Platform Admin</p>
+              <h2 className="font-black text-foreground tracking-tight text-sm sm:text-base group-hover:text-primary transition-colors">ระบบบริหารจัดการหอพักเกษร 2</h2>
+              <p className="text-[9px] font-bold text-primary uppercase tracking-[0.15em] leading-none">Platform Admin</p>
             </div>
           </Link>
         </div>

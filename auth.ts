@@ -55,31 +55,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return password === storedHash;
         };
 
-        // ── 1. Check platform_admins ──────────────────────────────────────────
-        try {
-          const admins = await sql`
-            SELECT id, name, email, password, role FROM platform_admins
-            WHERE (LOWER(email) = ${email} OR LOWER(name) = ${email}) AND is_active = TRUE LIMIT 1
-          `;
-          if (admins.length > 0) {
-            const admin = admins[0];
-            if (await verifyPassword(admin.password)) {
-              return {
-                id: `platform_${admin.id}`,
-                name: admin.name,
-                email: admin.email,
-                role: 'platform_admin',
-                sub_role: null,
-                dormId: null,
-              } as any;
-            }
-          }
-        } catch (e) { console.error('[Auth: platform check]', e); }
-
-        // ── 2. Search users ─────────────────────────────────────────────────
+        // ── Direct User authentication for Kesorn 2 ─────────────────────────
         try {
           const users = await sql`
-            SELECT id, name, email, password, role, primary_role, sub_role 
+            SELECT id, name, email, password, role, sub_role, is_active
             FROM users
             WHERE (LOWER(email) = ${email} OR LOWER(name) = ${email}) 
             LIMIT 1
@@ -92,13 +71,32 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 id: String(user.id),
                 name: user.name,
                 email: user.email,
-                role: user.role || user.primary_role || 'guest',
+                role: user.role || 'guest',
                 sub_role: user.sub_role || null,
-                dormId: null,
               } as any;
             }
           }
         } catch (e) { console.error('[Auth: user check]', e); }
+
+        // ── Platform Admin fallback check ──────────────────────────────────
+        try {
+          const admins = await sql`
+            SELECT id, name, email, password, role FROM platform_admins
+            WHERE (LOWER(email) = ${email} OR LOWER(name) = ${email}) AND is_active = 1 LIMIT 1
+          `;
+          if (admins.length > 0) {
+            const admin = admins[0];
+            if (await verifyPassword(admin.password)) {
+              return {
+                id: String(admin.id),
+                name: admin.name,
+                email: admin.email,
+                role: 'platform_admin',
+                sub_role: null,
+              } as any;
+            }
+          }
+        } catch (e) { console.error('[Auth: platform_admin check]', e); }
 
         return null;
       }
@@ -106,7 +104,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   ],
 
   pages: { signIn: '/signin' },
-
 
   callbacks: {
     async signIn() { return true; },
@@ -116,36 +113,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         if ((user as any).role) {
           token.role = (user as any).role;
           token.sub_role = (user as any).sub_role || null;
-          token.dormId = (user as any).dormId || null;
         } else {
-          // OAuth Sign-in: lookup email in unified databases
+          // OAuth Sign-in: lookup email in users table
           const email = user.email?.toLowerCase().trim();
           if (email) {
             const sql = getDb();
             try {
-              const admins = await sql`
-                SELECT id FROM platform_admins WHERE email = ${email} AND is_active = TRUE LIMIT 1
+              const dbUsers = await sql`
+                SELECT role, sub_role 
+                FROM users 
+                WHERE LOWER(email) = ${email} OR LOWER(name) = ${email} LIMIT 1
               `;
-              if (admins.length > 0) {
-                token.role = 'platform_admin';
-                token.sub_role = null;
-                token.dormId = null;
+              if (dbUsers.length > 0) {
+                token.role = dbUsers[0].role || 'guest';
+                token.sub_role = dbUsers[0].sub_role || null;
               } else {
-                const dbUsers = await sql`
-                  SELECT u.role as user_role, u.primary_role, r.role as dorm_role, r.sub_role, r.dorm_id 
-                  FROM users u
-                  LEFT JOIN user_dorm_roles r ON u.id = r.user_id AND r.is_active = TRUE
-                  WHERE LOWER(u.email) = ${email} OR LOWER(u.name) = ${email} LIMIT 1
-                `;
-                if (dbUsers.length > 0) {
-                  token.role = dbUsers[0].user_role || dbUsers[0].dorm_role || dbUsers[0].primary_role || 'guest';
-                  token.sub_role = dbUsers[0].sub_role || null;
-                  token.dormId = dbUsers[0].dorm_id || null;
-                } else {
-                  token.role = 'guest';
-                  token.sub_role = null;
-                  token.dormId = null;
-                }
+                token.role = 'guest';
+                token.sub_role = null;
               }
             } catch (e) {
               console.error('[Auth JWT: OAuth lookup]', e);

@@ -14,13 +14,13 @@ export default function OwnerSettings() {
     address: '',
     phone: '',
     tax_id: '',
-    water_rate: 18,
-    electricity_rate: 8,
+    water_rate: 100,
+    electricity_rate: 7,
     promptpay_number: '',
     promptpay_name: '',
     has_wifi: false,
     has_parking: false,
-    pet_friendly: false,
+    pet_friendly: true,
     has_lan: false,
     has_air_con: false,
     facilities: '',
@@ -30,33 +30,9 @@ export default function OwnerSettings() {
   });
 
   const loadSettings = async () => {
-    if (!session?.user?.email) return;
     setLoading(true);
     try {
-      const email = session.user.email;
-      const savedDb = localStorage.getItem('selectedDormDbName');
-      if (!savedDb) {
-        // Fallback: load onboarding to get the primary db
-        const resOnb = await fetch(`/api/owner/onboarding?email=${email}`);
-        const dataOnb = await resOnb.json();
-        if (dataOnb.success && dataOnb.dormDbName) {
-          localStorage.setItem('selectedDormDbName', dataOnb.dormDbName);
-          await fetchSettings(email, dataOnb.dormDbName);
-        } else {
-          setLoading(false);
-        }
-      } else {
-        await fetchSettings(email, savedDb);
-      }
-    } catch (e) {
-      console.error(e);
-      setLoading(false);
-    }
-  };
-
-  const fetchSettings = async (email: string, dbName: string) => {
-    try {
-      const res = await fetch(`/api/owner/settings?email=${email}&dormDbName=${dbName}`);
+      const res = await fetch('/api/owner/settings');
       const data = await res.json();
       if (data.success && data.data) {
         const d = data.data;
@@ -65,8 +41,8 @@ export default function OwnerSettings() {
           address: d.address || '',
           phone: d.phone || '',
           tax_id: d.tax_id || '',
-          water_rate: Number(d.water_rate) || 18,
-          electricity_rate: Number(d.electricity_rate) || 8,
+          water_rate: Number(d.water_rate) || 100,
+          electricity_rate: Number(d.electricity_rate) || 7,
           promptpay_number: d.promptpay_number || '',
           promptpay_name: d.promptpay_name || '',
           has_wifi: Boolean(d.has_wifi),
@@ -251,7 +227,7 @@ export default function OwnerSettings() {
               <h2 className="text-lg font-black text-foreground border-b border-border pb-4">ค่าน้ำ/ค่าไฟ และข้อมูลกฎหมาย</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">ค่าน้ำ (บาท / ยูนิต)</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">ค่าน้ำ (บาท / เดือน เหมาจ่าย)</label>
                   <input
                     type="number"
                     value={formData.water_rate}

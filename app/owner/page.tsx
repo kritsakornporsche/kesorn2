@@ -52,14 +52,11 @@ export default function OwnerDashboard() {
         } else if (data.success) {
           setDormInfo(data.dorm);
           
-          // Fetch Real Stats
-          const dormDbName = data.dormDbName;
-          if (dormDbName) {
-            const statsRes = await fetch(`/api/owner/stats?dormDbName=${dormDbName}`);
-            const statsData = await statsRes.json();
-            if (statsData.success) {
-              setStats(statsData.data);
-            }
+          // Fetch Real Stats for Kesorn 2
+          const statsRes = await fetch('/api/owner/stats');
+          const statsData = await statsRes.json();
+          if (statsData.success) {
+            setStats(statsData.data);
           }
         }
       } catch (err) {

@@ -5,8 +5,11 @@ import { getDb } from '@/lib/db';
 export async function GET(req: Request) {
   try {
     const session = await auth();
-    if (!session) {
+    if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+    if ((session.user as any)?.role !== 'owner') {
+      return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
     }
 
     const { searchParams } = new URL(req.url);
@@ -46,8 +49,11 @@ export async function GET(req: Request) {
 export async function PUT(req: Request) {
   try {
     const session = await auth();
-    if (!session) {
+    if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+    if ((session.user as any)?.role !== 'owner') {
+      return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
     }
 
     const { id, status } = await req.json();

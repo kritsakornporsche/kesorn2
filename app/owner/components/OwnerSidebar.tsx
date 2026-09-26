@@ -38,7 +38,7 @@ const navSections = [
       { href: '/owner/chat', label: 'แชทลูกหอ', icon: '💬' },
       { href: '/owner/keepers', label: 'ทีมผู้ดูแล', icon: '🧹' },
       { href: '/owner/settings', label: 'ตั้งค่าหอพัก', icon: '⚙️' },
-      { href: '/explore', label: 'หน้าสำรวจหอพักทั่วไป', icon: '🌐' },
+      { href: '/', label: 'หน้าแนะนำหอเกษร 2', icon: '🏢' },
     ],
   },
 ];
@@ -86,39 +86,21 @@ export default function OwnerSidebar({ isOpen, onClose }: OwnerSidebarProps) {
 
   const NavContent = (
     <div className="flex flex-col h-full bg-card text-card-foreground">
-      {/* Dormitory Switcher & Add Dorm Button (Visible on all screen sizes, including Mobile) */}
-      <div className="p-3 border-b border-border bg-secondary/40 shrink-0">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-            <span>🏢</span> หอพักที่ดูแล
-          </span>
-          {canAddDorm && (
-            <Link
-              href="/owner/onboarding?force=true"
-              onClick={onClose}
-              className="text-[10px] text-amber-500 hover:text-amber-600 dark:text-amber-400 font-bold px-2 py-0.5 rounded-md bg-amber-500/10 hover:bg-amber-500/20 transition-colors"
-            >
-              + เพิ่มหอพัก
-            </Link>
-          )}
-        </div>
-        {dorms.length > 0 ? (
-          <select
-            value={selectedDb || ''}
-            onChange={(e) => handleDormChange(e.target.value)}
-            className="w-full bg-background text-foreground border border-border rounded-xl px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer shadow-sm"
-          >
-            {dorms.map((d: any) => (
-              <option key={d.db_name} value={d.db_name} className="bg-card text-foreground">
-                {d.dorm_name}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <div className="text-xs font-bold text-foreground px-1 py-0.5 truncate">
-            {dormName || 'กำลังโหลด...'}
+      {/* Dormitory Brand Card (Single Dorm: Kesorn 2) */}
+      <div className="p-3.5 border-b border-border bg-secondary/40 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0">
+            🏢
           </div>
-        )}
+          <div className="min-w-0 flex-1">
+            <h3 className="text-xs font-black text-foreground truncate">
+              หอพักเกษร 2
+            </h3>
+            <p className="text-[10px] text-muted-foreground truncate">
+              ระบบจัดการหอพักเดี่ยว
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Navigation Sections */}

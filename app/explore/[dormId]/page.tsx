@@ -43,7 +43,7 @@ function getGoogleMapsEmbedUrl(mapUrl?: string, address?: string, dormName?: str
       return `https://maps.google.com/maps?q=${encodeURIComponent(trimmed)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
     }
   }
-  const query = [dormName, address, 'มหาวิทยาลัยพะเยา'].filter(Boolean).join(' ');
+  const query = [dormName, address, 'พะเยา'].filter(Boolean).join(' ');
   return `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
 }
 
@@ -51,7 +51,7 @@ function getGoogleMapsDirectUrl(mapUrl?: string, address?: string, dormName?: st
   if (mapUrl && !mapUrl.includes('/embed') && mapUrl.startsWith('http')) {
     return mapUrl;
   }
-  const query = [dormName, address, 'มหาวิทยาลัยพะเยา'].filter(Boolean).join(' ');
+  const query = [dormName, address, 'พะเยา'].filter(Boolean).join(' ');
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
@@ -138,11 +138,16 @@ export default function GuestDormRoomsPage({ params }: { params: Promise<{ dormI
   // Filter only rooms that are either Available OR Moving Out
   const validRooms = rooms.filter(r => isAvailable(r) || isMovingOut(r));
 
-  const filteredRooms = validRooms.filter(r => {
-    if (filterTab === 'available') return isAvailable(r);
-    if (filterTab === 'moving_out') return isMovingOut(r);
-    return true;
-  });
+  const filteredRooms = validRooms
+    .filter(r => {
+      if (filterTab === 'available') return isAvailable(r);
+      if (filterTab === 'moving_out') return isMovingOut(r);
+      return true;
+    })
+    .sort((a, b) => {
+      if (a.floor !== b.floor) return a.floor - b.floor;
+      return a.room_number.localeCompare(b.room_number, undefined, { numeric: true });
+    });
 
   const availableCount = validRooms.filter(isAvailable).length;
   const movingOutCount = validRooms.filter(isMovingOut).length;
@@ -172,16 +177,16 @@ export default function GuestDormRoomsPage({ params }: { params: Promise<{ dormI
 
   return (
     <div className="min-h-screen bg-background px-4 sm:px-6 lg:px-8 py-8 sm:py-12 lg:py-16 max-w-7xl mx-auto space-y-10">
-      <Link href="/explore" className="inline-flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors group">
+      <Link href="/" className="inline-flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors group">
         <svg className="w-4 h-4 transition-transform group-hover:-translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M10 19l-7-7m0 0l-7 7m7-7H3" />
         </svg>
-        ย้อนกลับไปเลือกหอพัก
+        ย้อนกลับไปหน้าหลัก
       </Link>
 
       {/* 🏢 Dormitory Details & Overview Hero Card */}
       <div className="bg-card border border-border rounded-[2.5rem] sm:rounded-[3rem] p-6 sm:p-10 shadow-xl space-y-8 animate-reveal relative overflow-hidden">
-        {dormInfo?.cover_image && dormInfo.cover_image !== '/up-logo.png' && (
+        {dormInfo?.cover_image && (
           <div className="absolute top-0 right-0 w-1/3 h-full opacity-10 pointer-events-none hidden md:block">
             <Image src={dormInfo.cover_image} alt={dormName} fill className="object-cover" />
           </div>
@@ -191,7 +196,7 @@ export default function GuestDormRoomsPage({ params }: { params: Promise<{ dormI
           <div className="space-y-3 max-w-2xl">
             <span className="px-3.5 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/20 text-[10px] font-black uppercase tracking-widest inline-flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-              หอพักเครือข่าย SmartDom มหาวิทยาลัยพะเยา
+              หอพักเกษร 2 • Phayao
             </span>
             <h1 className="text-3xl sm:text-5xl font-display font-black tracking-tighter text-foreground italic break-words">
               {dormName}
@@ -246,7 +251,7 @@ export default function GuestDormRoomsPage({ params }: { params: Promise<{ dormI
             <div>
               <span className="text-[10px] font-bold text-muted-foreground uppercase block">ค่าน้ำประปา</span>
               <span className="text-base font-black text-cyan-500">
-                ฿{dormInfo?.water_rate || 18} <span className="text-xs font-medium text-muted-foreground">/ ยูนิต</span>
+                ฿{dormInfo?.water_rate || 100} <span className="text-xs font-medium text-muted-foreground">/ เดือน (เหมาจ่าย)</span>
               </span>
             </div>
           </div>
@@ -256,7 +261,7 @@ export default function GuestDormRoomsPage({ params }: { params: Promise<{ dormI
             <div>
               <span className="text-[10px] font-bold text-muted-foreground uppercase block">ค่าไฟฟ้า</span>
               <span className="text-base font-black text-amber-500">
-                ฿{dormInfo?.electricity_rate || 8} <span className="text-xs font-medium text-muted-foreground">/ ยูนิต</span>
+                ฿{dormInfo?.electricity_rate || 7} <span className="text-xs font-medium text-muted-foreground">/ ยูนิต</span>
               </span>
             </div>
           </div>
@@ -356,7 +361,7 @@ export default function GuestDormRoomsPage({ params }: { params: Promise<{ dormI
 
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
             <a
-              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent((dormName ? dormName + ' ' : '') + (dormInfo?.address || 'มหาวิทยาลัยพะเยา'))}`}
+              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent((dormName ? dormName + ' ' : '') + (dormInfo?.address || 'จ.พะเยา'))}`}
               target="_blank"
               rel="noopener noreferrer"
               className="px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all shadow-sm hover:scale-105 active:scale-95"

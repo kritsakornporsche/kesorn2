@@ -12,28 +12,20 @@ export async function GET(req: Request) {
 
     const sql = getDb();
 
-    let targetDormId = dormId ? parseInt(dormId) : null;
+    let targetDormId = dormId && dormId !== 'undefined' ? parseInt(dormId) : 1;
     let targetAmount = amountParam ? parseFloat(amountParam) : 0;
 
-    if (roomId && (!targetDormId || !targetAmount)) {
-      const roomRes = await sql`SELECT dorm_id, price FROM rooms WHERE id = ${parseInt(roomId)} LIMIT 1`;
+    if (roomId && !targetAmount) {
+      const roomRes = await sql`SELECT price FROM rooms WHERE id = ${parseInt(roomId)} LIMIT 1`;
       if (roomRes.length > 0) {
-        targetDormId = targetDormId || roomRes[0].dorm_id;
-        if (!targetAmount) {
-          targetAmount = Number(roomRes[0].price) * 1; // Default deposit (1 month)
-        }
+        targetAmount = Number(roomRes[0].price) * 1; // Default deposit (1 month)
       }
-    }
-
-    if (!targetDormId) {
-      return NextResponse.json({ success: false, message: 'Dormitory ID is required' }, { status: 400 });
     }
 
     // Get owner's PromptPay number from dormitory_profile
     const profileRes = await sql`
       SELECT promptpay_number, promptpay_name, name 
       FROM dormitory_profile 
-      WHERE dorm_id = ${targetDormId} 
       LIMIT 1
     `;
     

@@ -33,8 +33,7 @@ export default function SignInContent() {
     }
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const loginWithCredentials = async (loginEmail: string, loginPass: string) => {
     if (loading) return;
     setLoading(true);
     setError('');
@@ -44,7 +43,7 @@ export default function SignInContent() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({ email: loginEmail.trim(), password: loginPass }),
       });
       const data = await res.json();
 
@@ -57,7 +56,7 @@ export default function SignInContent() {
       // Store user metadata in localStorage
       let redirectUrl = data.redirectUrl || '/explore';
       if (typeof window !== 'undefined' && data.user) {
-        localStorage.setItem('userEmail', email.toLowerCase().trim());
+        localStorage.setItem('userEmail', loginEmail.toLowerCase().trim());
         localStorage.setItem('userRole', data.user.role || 'guest');
         localStorage.setItem('userSubRole', data.user.sub_role || '');
         localStorage.setItem('userName', data.user.name || '');
@@ -69,8 +68,8 @@ export default function SignInContent() {
         const origin = typeof window !== 'undefined' ? window.location.origin : '';
         await signIn('credentials', {
           redirect: false,
-          email: email.trim(),
-          password: password,
+          email: loginEmail.trim(),
+          password: loginPass,
           callbackUrl: origin || undefined,
         });
       } catch (authErr) {
@@ -86,6 +85,11 @@ export default function SignInContent() {
       setError(err?.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์ กรุณาลองใหม่อีกครั้ง');
       setLoading(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await loginWithCredentials(email, password);
   };
 
   return (
@@ -126,6 +130,8 @@ export default function SignInContent() {
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">อีเมล หรือ ชื่อผู้ใช้</label>
               <input
+                id="signin-email-input"
+                name="email"
                 type="text"
                 required
                 value={email}
@@ -142,6 +148,8 @@ export default function SignInContent() {
               </div>
               <div className="relative">
                 <input
+                  id="signin-password-input"
+                  name="password"
                   type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
@@ -180,7 +188,40 @@ export default function SignInContent() {
             </button>
           </form>
 
-          <div className="mt-10 text-center">
+          <div className="mt-8 pt-6 border-t border-border">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-center mb-3">
+              ⚡ เข้าสู่ระบบด่วน 1-Click (คลิกเพื่อเข้าใช้งานทันที)
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: '👑 เจ้าของหอ', user: 'owner' },
+                { label: '🏠 ลูกหอ', user: 'tenant' },
+                { label: '🔬 นักวิจัย', user: 'researcher' },
+                { label: '🧹 แม่บ้าน', user: 'maid' },
+                { label: '🔧 ช่างซ่อม', user: 'technician' },
+                { label: '🛡️ แอดมิน', user: 'admin' },
+                { label: '🌐 แขก (Guest)', user: 'guest' },
+              ].map((roleItem) => (
+                <button
+                  key={roleItem.user}
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+                    setEmail(roleItem.user);
+                    setPassword(roleItem.user);
+                    loginWithCredentials(roleItem.user, roleItem.user);
+                  }}
+                  className={`px-2 py-2 text-[10px] font-bold rounded-xl border border-white/10 bg-slate-900/60 hover:bg-primary hover:text-white text-slate-300 transition-all text-center cursor-pointer select-none active:scale-95 disabled:opacity-50 ${
+                    roleItem.user === 'guest' ? 'col-span-3 bg-cyan-950/40 border-cyan-500/30 text-cyan-300 hover:bg-cyan-900/60' : ''
+                  }`}
+                >
+                  {roleItem.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-6 text-center">
              <Link 
                href={`/signup${callbackUrl ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ''}`} 
                className="text-[10px] font-black text-muted-foreground hover:text-primary uppercase tracking-[0.2em]"

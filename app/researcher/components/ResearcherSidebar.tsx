@@ -14,6 +14,7 @@ const navItems = [
     group: 'สถาปัตยกรรม & งานวิจัย',
     items: [
       { href: '/researcher', label: 'ภาพรวมงานวิจัย (Overview)', icon: '📊', exact: true },
+      { href: '/researcher/dfd', label: 'DFD (แผนภาพกระแสข้อมูล)', icon: '🔄' },
       { href: '/researcher/er-diagram', label: 'ER Diagram (แผนภาพฐานข้อมูล)', icon: '🗄️' },
       { href: '/researcher/diagrams', label: 'Sequence Diagrams (7 แผนภาพ)', icon: '📐' },
       { href: '/researcher/use-cases', label: 'Use Case Analysis (26 เคส)', icon: '📑' },

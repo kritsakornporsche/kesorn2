@@ -5,8 +5,11 @@ import { auth } from '@/auth';
 export async function GET(req: Request) {
   try {
     const session = await auth();
-    if (!session) {
+    if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+    if ((session.user as any)?.role !== 'owner') {
+      return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
     }
 
     const { searchParams } = new URL(req.url);
@@ -56,8 +59,11 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    if (!session) {
+    if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+    if ((session.user as any)?.role !== 'owner') {
+      return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
     }
 
     const { type, category, amount, description, transaction_date, dorm_id } = await req.json();

@@ -24,12 +24,12 @@ const notoThaiLooped = Noto_Sans_Thai_Looped({
 
 export const metadata: Metadata = {
   title: {
-    default: "แพลตฟอร์มหอพักหน้ามหาวิทยาลัยพะเยา | Experience Modern Living",
-    template: "%s | แพลตฟอร์มหอพักหน้ามหาวิทยาลัยพะเยา",
+    default: "หอพักเกษร 2 | ระบบจัดการหอพัก",
+    template: "%s | หอพักเกษร 2",
   },
-  description: "ระบบบริหารจัดการหอพักสำหรับนักศึกษาและเจ้าของหอพัก หน้ามหาวิทยาลัยพะเยา",
-  keywords: ["Dormitory", "Management", "University of Phayao", "Smart Living", "Phayao"],
-  authors: [{ name: "ทีมงานแพลตฟอร์มหอพักหน้ามหาวิทยาลัยพะเยา" }],
+  description: "ระบบบริหารจัดการหอพักเกษร 2 สำหรับผู้เช่าและเจ้าของหอพัก บริการห้องพักคุณภาพ สะอาด ปลอดภัย",
+  keywords: ["หอพักเกษร 2", "Kesorn 2", "หอพักพะเยา", "ห้องเช่าพะเยา"],
+  authors: [{ name: "หอพักเกษร 2" }],
 };
 
 export const viewport: Viewport = {

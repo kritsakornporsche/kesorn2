@@ -11,67 +11,11 @@ export async function GET(req: Request) {
 
     const sql = getDb();
 
-    let dormIds: number[] = [];
+    // Single Dormitory (Kesorn 2) bookings query
+    const dorms = [
+      { id: 1, dorm_name: 'หอพักเกษร 2', db_name: 'kesorn_db' }
+    ];
 
-    if (dormIdParam) {
-      if (!isNaN(parseInt(dormIdParam))) {
-        dormIds = [parseInt(dormIdParam)];
-      } else {
-        const dormByDb = await sql`SELECT id FROM dormitory_registry WHERE db_name = ${dormIdParam} LIMIT 1`;
-        if (dormByDb.length > 0) {
-          dormIds = [dormByDb[0].id];
-        }
-      }
-    }
-    
-    if (dormIds.length === 0 && userEmail) {
-      const userRes = await sql`SELECT id, role FROM users WHERE email = ${userEmail} LIMIT 1`;
-      if (userRes.length > 0) {
-        const ownerId = userRes[0].id;
-        const dormRes = await sql`
-          SELECT id FROM dormitory_registry 
-          WHERE (owner_id = ${ownerId} OR owner_email = ${userEmail}) AND status = 'Active'
-        `;
-        if (dormRes.length > 0) {
-          dormIds = dormRes.map((d: any) => d.id);
-        }
-      }
-    }
-
-    // Fallback: If no dormIds found, load all active dorms
-    if (dormIds.length === 0) {
-      const allDorms = await sql`SELECT id FROM dormitory_registry WHERE status = 'Active'`;
-      dormIds = allDorms.map((d: any) => d.id);
-    }
-
-    if (dormIds.length === 0) {
-      const fallback = await sql`SELECT id FROM dormitory_registry LIMIT 10`;
-      dormIds = fallback.map((d: any) => d.id);
-    }
-
-    if (dormIds.length === 0) {
-      return NextResponse.json({ success: true, data: [], availableRooms: [], dorms: [] });
-    }
-
-    // Fetch all dorms info
-    let dorms = [];
-    if (userEmail) {
-      dorms = await sql`
-        SELECT dr.id, dr.dorm_name, dr.db_name 
-        FROM dormitory_registry dr
-        LEFT JOIN users u ON dr.owner_id = u.id OR dr.owner_email = u.email
-        WHERE (u.email = ${userEmail} OR dr.owner_email = ${userEmail}) AND dr.status = 'Active'
-      `.catch(() => []);
-    }
-    if (dorms.length === 0) {
-      dorms = await sql`
-        SELECT id, dorm_name, db_name 
-        FROM dormitory_registry 
-        WHERE id IN (${dormIds})
-      `;
-    }
-
-    // Fetch all bookings for these dormitories
     const bookings = await sql`
       SELECT 
         c.id as contract_id,
@@ -82,10 +26,8 @@ export async function GET(req: Request) {
         c.deposit_amount, 
         c.status as booking_status, 
         c.slip_url,
-        c.contract_file_url,
         c.signature_data,
         c.owner_signature_data,
-        c.renewal_note as booking_notes,
         c.created_at as booking_created_at,
         COALESCE(t.name, u.name, 'ไม่ระบุชื่อ') as guest_name,
         COALESCE(t.email, u.email, '') as guest_email,
@@ -95,14 +37,12 @@ export async function GET(req: Request) {
         r.floor,
         r.price as monthly_rent,
         r.status as room_status,
-        dr.id as dorm_id,
-        dr.dorm_name
+        1 as dorm_id,
+        'หอพักเกษร 2' as dorm_name
       FROM contracts c
       LEFT JOIN tenants t ON c.tenant_id = t.id
       LEFT JOIN users u ON t.user_id = u.id OR t.email = u.email
       JOIN rooms r ON c.room_id = r.id
-      JOIN dormitory_registry dr ON r.dorm_id = dr.id
-      WHERE r.dorm_id IN (${dormIds})
       ORDER BY 
         CASE 
           WHEN c.status = 'PendingOwnerSignature' THEN 1
@@ -114,9 +54,8 @@ export async function GET(req: Request) {
 
     // Fetch rooms for room reassignment or manual booking
     const availableRooms = await sql`
-      SELECT id, dorm_id, room_number, floor, room_type, price, status 
+      SELECT id, 1 as dorm_id, room_number, floor, room_type, price, status 
       FROM rooms 
-      WHERE dorm_id IN (${dormIds})
       ORDER BY room_number ASC
     `;
 
@@ -125,7 +64,7 @@ export async function GET(req: Request) {
       data: bookings,
       availableRooms: availableRooms,
       dorms: dorms,
-      selectedDormId: dormIds[0] || 1
+      selectedDormId: 1
     });
   } catch (error: any) {
     console.error('[API Owner Bookings GET Error]', error);

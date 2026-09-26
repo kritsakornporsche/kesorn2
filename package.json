@@ -1,13 +1,13 @@
 {
-  "name": "test-app",
+  "name": "kesorn2",
   "version": "2.6.1",
   "private": true,
   "scripts": {
     "version:bump": "node scripts/generate-version.js",
     "prebuild": "node scripts/generate-version.js",
-    "dev": "next dev -p 3000",
+    "dev": "next dev -p 3001",
     "build": "next build --webpack",
-    "start": "next start -p 3000",
+    "start": "next start -p 3001",
     "lint": "next lint",
     "db:local": "node scripts/switch-db.js local",
     "db:remote": "node scripts/switch-db.js remote",
@@ -52,5 +52,6 @@
     "lighthouse": "^13.4.1",
     "puppeteer-core": "^25.8.0",
     "typescript": "^5"
-  }
+  },
+  "description": "SmartDom - หอพักเกษร 2 (Kesorn 2)"
 }

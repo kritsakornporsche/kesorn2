@@ -4,8 +4,11 @@ import { NextResponse } from 'next/server';
 
 export async function GET(req: Request) {
   const session = await auth();
-  if (!session) {
+  if (!session || !session.user) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
+  if ((session.user as any)?.role !== 'owner') {
+    return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
   }
   const sql = getDb();
 
@@ -13,26 +16,14 @@ export async function GET(req: Request) {
   const dormId = searchParams.get('dormId');
 
   try {
-    let query;
-    if (dormId) {
-      const targetDormId = parseInt(dormId, 10) || 1;
-      query = await sql`
-        SELECT t.id, t.name, t.email, t.phone, t.status, r.room_number
-        FROM tenants t
-        LEFT JOIN rooms r ON r.id = t.room_id
-        WHERE t.dorm_id = ${targetDormId} OR r.dorm_id = ${targetDormId}
-        ORDER BY r.room_number ASC
-      `;
-    } else {
-      query = await sql`
-        SELECT t.id, t.name, t.email, t.phone, t.status, r.room_number
-        FROM tenants t
-        LEFT JOIN rooms r ON r.id = t.room_id
-        ORDER BY r.room_number ASC
-      `;
-    }
+    const tenants = await sql`
+      SELECT t.id, t.name, t.email, t.phone, t.status, r.room_number
+      FROM tenants t
+      LEFT JOIN rooms r ON r.id = t.room_id
+      ORDER BY r.room_number ASC
+    `;
     
-    return NextResponse.json({ success: true, data: query });
+    return NextResponse.json({ success: true, data: tenants });
   } catch (err: any) {
     console.error('[Tenants API] Error:', err);
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });

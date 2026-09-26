@@ -35,7 +35,7 @@ export default function AdminNewsPage() {
       router.push('/signin');
     } else if (status === 'authenticated') {
       const role = (session?.user as any)?.role;
-      if (role !== 'owner' && role !== 'admin') {
+      if (role !== 'owner' && role !== 'admin' && role !== 'platform_admin') {
         router.push('/');
       } else {
         fetchNews();

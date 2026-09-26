@@ -21,12 +21,18 @@ export async function POST(
     if (tenantRes.length === 0) return NextResponse.json({ success: false, message: 'Tenant not found' }, { status: 404 });
     const tenantId = tenantRes[0].id;
 
-    // Insert acknowledgment
-    await sql`
-      INSERT INTO announcement_reads (tenant_id, announcement_id)
-      VALUES (${tenantId}, ${announcementId})
-      ON CONFLICT (tenant_id, announcement_id) DO NOTHING
+    // Insert acknowledgment if not already read
+    const existing = await sql`
+      SELECT id FROM announcement_reads 
+      WHERE tenant_id = ${tenantId} AND announcement_id = ${announcementId} 
+      LIMIT 1
     `;
+    if (existing.length === 0) {
+      await sql`
+        INSERT INTO announcement_reads (tenant_id, announcement_id)
+        VALUES (${tenantId}, ${announcementId})
+      `;
+    }
 
     return NextResponse.json({ success: true, message: 'Acknowledged successfully' });
   } catch (error: any) {

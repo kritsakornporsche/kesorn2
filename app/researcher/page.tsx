@@ -89,7 +89,28 @@ export default function ResearcherDashboardPage() {
       </div>
 
       {/* Quick Navigation Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+        <Link
+          href="/researcher/dfd"
+          className="group p-6 rounded-2xl bg-slate-900/60 border border-white/10 hover:border-cyan-400/50 hover:bg-slate-900 transition-all flex flex-col justify-between shadow-lg"
+        >
+          <div className="space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+              🔄
+            </div>
+            <h3 className="text-lg font-bold text-white group-hover:text-cyan-300 transition-colors">
+              Data Flow Diagrams (DFD)
+            </h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              แผนภาพกระแสข้อมูลระบบครบ 3 ระดับ (Context Diagram Level 0, DFD Level 1 และ Level 2 ย่อย) พร้อมคำอธิบาย Process และ Data Store
+            </p>
+          </div>
+          <div className="mt-6 flex items-center gap-2 text-xs font-bold text-cyan-400 group-hover:translate-x-1 transition-transform">
+            <span>เข้าดู DFD Diagrams</span>
+            <span>→</span>
+          </div>
+        </Link>
+
         <Link
           href="/researcher/er-diagram"
           className="group p-6 rounded-2xl bg-slate-900/60 border border-white/10 hover:border-cyan-400/50 hover:bg-slate-900 transition-all flex flex-col justify-between shadow-lg"

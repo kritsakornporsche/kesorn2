@@ -44,6 +44,10 @@ export async function POST(req: Request) {
       `;
       
       if (existing.length === 0) {
+        const roomRent = Number(tenant.amount) || 0;
+        const flatWater = 100.00;
+        const totalAmount = roomRent + flatWater;
+
         await sql`
           INSERT INTO bills (
             tenant_id, 
@@ -63,16 +67,16 @@ export async function POST(req: Request) {
           VALUES (
             ${tenant.tenant_id}, 
             ${title}, 
-            ${tenant.amount}, 
+            ${totalAmount}, 
             ${billingCycle}, 
             ${dueDate}, 
             'Unpaid', 
             ${targetDormId}, 
             ${tenant.room_number || null}, 
-            ${tenant.amount},
+            ${roomRent},
+            1,
             0,
-            0,
-            0,
+            ${flatWater},
             0
           )
         `;

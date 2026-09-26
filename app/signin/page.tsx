@@ -7,6 +7,8 @@ export const metadata: Metadata = {
   description: 'เข้าสู่ระบบเพื่อจัดการหอพักและห้องพักของคุณกับ SmartDom ประสบการณ์ใหม่ของการอยู่อาศัยที่ง่ายและยั่งยืน',
 };
 
+export const dynamic = 'force-dynamic';
+
 export default function SignInPage() {
   return (
     <Suspense fallback={

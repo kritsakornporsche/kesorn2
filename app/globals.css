@@ -3,40 +3,40 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  /* UP Purple & Gold Light Theme - University of Phayao */
-  --background: #FAF5FF; /* Subtle purple lavender tint */
-  --foreground: #1A0D2E; /* Royal purple-black */
+  /* Clean Modern Slate & Indigo Light Theme */
+  --background: #F8FAFC; /* Clean slate-50 */
+  --foreground: #0F172A; /* Slate-900 */
   
   --card: #FFFFFF;
-  --card-foreground: #1A0D2E;
+  --card-foreground: #0F172A;
   
   --popover: #FFFFFF;
-  --popover-foreground: #1A0D2E;
+  --popover-foreground: #0F172A;
   
-  --primary: #7B1FA2; /* University of Phayao Royal Purple */
+  --primary: #2563EB; /* Premium Royal Blue */
   --primary-foreground: #FFFFFF;
   
-  --secondary: #F3E8FF; /* Light lavender purple */
-  --secondary-foreground: #581C87;
+  --secondary: #F1F5F9; /* Slate-100 */
+  --secondary-foreground: #1E293B;
   
-  --muted: #F5EEFD;
-  --muted-foreground: #7E659A;
+  --muted: #F1F5F9;
+  --muted-foreground: #64748B;
   
-  --accent: #FEF3C7; /* UP Gold tint */
-  --accent-foreground: #92400E;
+  --accent: #E2E8F0;
+  --accent-foreground: #0F172A;
   
-  --gold: #D97706; /* UP Gold */
+  --gold: #F59E0B;
   
   --destructive: #EF4444;
   --destructive-foreground: #FFFFFF;
   
-  --border: #E9D5FF; /* Subtle purple border */
-  --input: #E9D5FF;
-  --ring: #9333EA;
+  --border: #E2E8F0; /* Slate-200 border */
+  --input: #E2E8F0;
+  --ring: #2563EB;
   
   /* Selection colors */
-  --selection-bg: #E9D5FF;
-  --selection-text: #581C87;
+  --selection-bg: #DBEAFE;
+  --selection-text: #1E40AF;
 
   /* Typography */
   --font-sans: var(--font-noto-thai), var(--font-inter), "Segoe UI", Roboto, sans-serif;
@@ -51,39 +51,39 @@
 }
 
 .dark {
-  /* UP Purple & Gold Dark Theme - University of Phayao */
-  --background: #0E071D; /* Obsidian Royal Purple */
-  --foreground: #FAF5FF;
+  /* Dark Modern Obsidian Slate Theme */
+  --background: #0B0F19; /* Deep Obsidian Slate */
+  --foreground: #F8FAFC;
   
-  --card: #180D2F; /* Rich Dark Royal Purple Card */
-  --card-foreground: #FAF5FF;
+  --card: #111827; /* Rich Dark Slate Card */
+  --card-foreground: #F8FAFC;
   
-  --popover: #180D2F;
-  --popover-foreground: #FAF5FF;
+  --popover: #111827;
+  --popover-foreground: #F8FAFC;
   
-  --primary: #A855F7; /* Luminous UP Purple */
+  --primary: #3B82F6; /* Modern Vibrant Blue */
   --primary-foreground: #FFFFFF;
   
-  --secondary: #2A1647; /* Deep Purple Surface */
-  --secondary-foreground: #E9D5FF;
+  --secondary: #1E293B; /* Deep Slate Surface */
+  --secondary-foreground: #F8FAFC;
   
-  --muted: #140A26;
-  --muted-foreground: #A892C6;
+  --muted: #131C2E;
+  --muted-foreground: #94A3B8;
   
-  --accent: #3B1B61; /* Royal Purple Accent */
-  --accent-foreground: #FAF5FF;
+  --accent: #1E293B;
+  --accent-foreground: #F8FAFC;
   
-  --gold: #F59E0B; /* UP Gold */
+  --gold: #F59E0B;
   
   --destructive: #F87171;
   --destructive-foreground: #FFFFFF;
   
-  --border: #3B1F66; /* Elegant Purple Border */
-  --input: #261242;
-  --ring: #C084FC;
+  --border: #1E293B;
+  --input: #1E293B;
+  --ring: #3B82F6;
   
-  --selection-bg: #6B21A8;
-  --selection-text: #FAF5FF;
+  --selection-bg: #1D4ED8;
+  --selection-text: #F8FAFC;
 }
 
 @theme {

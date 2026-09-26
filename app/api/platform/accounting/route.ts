@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
-import { neon } from '@/lib/mysql-adapter';
-
-const MYSQL_BASE = process.env.DATABASE_URL 
-  ? process.env.DATABASE_URL.replace(/\/[^\/]+$/, '')
-  : 'mysql://smartdom:smartdom@localhost:3306';
-const platformSql = neon(`${MYSQL_BASE}/smartdom_platform`);
+import { getDb } from '@/lib/db';
+import { auth } from '@/auth';
 
 export async function GET() {
   try {
+    const session = await auth();
+    if (!session || ((session.user as any)?.role !== 'platform_admin' && (session.user as any)?.role !== 'admin')) {
+      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+
+    const platformSql = getDb();
     const transactions = await platformSql`
       SELECT a.*, d.dorm_name
       FROM platform_accounting a
@@ -49,16 +51,21 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const session = await auth();
+    if (!session || ((session.user as any)?.role !== 'platform_admin' && (session.user as any)?.role !== 'admin')) {
+      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+
     const { type, category, amount, description, dormitory_id, transaction_date } = await request.json();
     if (!type || !amount || !transaction_date) {
       return NextResponse.json({ success: false, message: 'Missing fields' }, { status: 400 });
     }
+    const platformSql = getDb();
     const result = await platformSql`
       INSERT INTO platform_accounting (type, category, amount, description, dormitory_id, transaction_date)
       VALUES (${type}, ${category || 'Service'}, ${amount}, ${description || ''}, ${dormitory_id || null}, ${transaction_date})
-      RETURNING id
     `;
-    return NextResponse.json({ success: true, data: result[0] }, { status: 201 });
+    return NextResponse.json({ success: true, message: 'บันทึกรายการสำเร็จ' }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }

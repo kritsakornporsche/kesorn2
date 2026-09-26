@@ -83,22 +83,20 @@ export async function POST(req: NextRequest) {
     // 4. Send Notification to Dorm Owner and staff
     try {
       const dormInfo = await sql`
-        SELECT dr.id as dorm_id, dr.dorm_name, dr.owner_id, dr.owner_email, r.room_number
+        SELECT 1 as dorm_id, dp.name as dorm_name, r.room_number
         FROM rooms r
-        JOIN dormitory_registry dr ON r.dorm_id = dr.id
+        CROSS JOIN dormitory_profile dp
         WHERE r.id = ${roomId}
         LIMIT 1
       `;
 
       if (dormInfo.length > 0) {
-        const { dorm_id, dorm_name, owner_id, owner_email, room_number } = dormInfo[0];
+        const { dorm_id, dorm_name, room_number } = dormInfo[0];
         const recipientUserIds = new Set<number>();
 
-        if (owner_id) recipientUserIds.add(owner_id);
-
-        if (owner_email) {
-          const ownerUsers = await sql`SELECT id FROM users WHERE email = ${owner_email} LIMIT 1`;
-          if (ownerUsers.length > 0) recipientUserIds.add(ownerUsers[0].id);
+        const ownerUsers = await sql`SELECT id FROM users WHERE role IN ('owner', 'keeper')`;
+        for (const u of ownerUsers) {
+          recipientUserIds.add(u.id);
         }
 
         // Also notify assigned staff/keepers for this dorm

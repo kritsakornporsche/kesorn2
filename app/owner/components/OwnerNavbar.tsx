@@ -90,75 +90,47 @@ export default function OwnerNavbar({ onToggleMobileMenu }: OwnerNavbarProps) {
           className="flex items-center gap-2 sm:gap-3 hover:opacity-90 transition-opacity cursor-pointer group"
           title="แดชบอร์ดเจ้าของหอพัก"
         >
-          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-white p-1 flex items-center justify-center shadow-md border border-border shrink-0 group-hover:scale-105 transition-transform">
-            <img src="/up-logo.png" alt="ตรามหาวิทยาลัยพะเยา" className="w-full h-full object-contain" />
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-primary text-white flex items-center justify-center shadow-md shrink-0 group-hover:scale-105 transition-transform text-lg">
+            🏢
           </div>
           <div className="hidden md:block">
             <h2 className="font-black text-foreground tracking-tight text-sm sm:text-base group-hover:text-primary transition-colors leading-none">
-              SmartDom
+              เกษร 2
             </h2>
             <div className="flex items-center gap-1.5 leading-none mt-1">
               <span className="text-[9px] font-black text-primary uppercase tracking-[0.15em]">
                 Owner Portal
               </span>
               <span className="hidden sm:inline text-muted-foreground text-[9px]">•</span>
-              <span className="hidden sm:inline text-[9px] text-muted-foreground">หอพักหน้า ม.พะเยา</span>
+              <span className="hidden sm:inline text-[9px] text-muted-foreground">ระบบจัดการหอพัก</span>
             </div>
           </div>
         </Link>
       </div>
 
-      {/* 2. Center: Centered Dormitory Quick Switcher (Mobile & Desktop) */}
+      {/* 2. Center: Dormitory Badge (Single Dorm: Kesorn 2) */}
       <div className="flex-1 flex items-center justify-center min-w-0 px-1">
-        <div className="flex items-center gap-1.5 bg-secondary/90 hover:bg-secondary border border-border px-3 py-1.5 rounded-2xl shadow-inner transition-all max-w-[210px] sm:max-w-xs">
+        <div className="flex items-center gap-2 bg-secondary/80 border border-border px-3.5 py-1.5 rounded-2xl shadow-inner max-w-[240px]">
           <span className="text-xs sm:text-sm shrink-0">🏢</span>
-          <span className="hidden lg:inline text-[11px] font-bold text-muted-foreground uppercase tracking-wider shrink-0">
-            หอพัก:
+          <span className="text-xs font-black text-foreground truncate">
+            หอพักเกษร 2
           </span>
-          {dorms.length > 0 ? (
-            <div className="relative flex items-center min-w-0">
-              <select
-                value={selectedDb || ''}
-                onChange={(e) => handleDormChange(e.target.value)}
-                className="bg-transparent text-xs font-black text-primary focus:outline-none cursor-pointer truncate pr-4 appearance-none text-center max-w-[125px] sm:max-w-[170px]"
-                title="คลิกเพื่อเปลี่ยนหอพัก"
-              >
-                {dorms.map((d: any) => (
-                  <option key={d.db_name} value={d.db_name} className="bg-card text-foreground">
-                    {d.dorm_name}
-                  </option>
-                ))}
-              </select>
-              <span className="pointer-events-none text-[8px] text-primary/70 absolute right-0">▼</span>
-            </div>
-          ) : (
-            <span className="text-xs font-bold text-foreground truncate max-w-[120px] sm:max-w-none">
-              {dormName || 'กำลังโหลด...'}
-            </span>
-          )}
-
-          {canAddDorm && (
-            <Link
-              href="/owner/onboarding?force=true"
-              className="hidden sm:inline text-[11px] text-amber-500 hover:text-amber-400 font-bold ml-1 pl-2 border-l border-border transition-colors shrink-0"
-              title="เพิ่มหอพักใหม่"
-            >
-              + เพิ่มหอ
-            </Link>
-          )}
+          <span className="text-[10px] bg-primary/10 text-primary font-bold px-1.5 py-0.5 rounded-md">
+            เดี่ยว
+          </span>
         </div>
       </div>
 
       {/* 3. Right side: Notifications, Theme Toggle, (Desktop: Explore, User Info, Sign Out) */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-        {/* Explore Button (Desktop only, available in Mobile Drawer) */}
+        {/* Public View Button */}
         <Link
-          href="/explore"
+          href="/"
           className="hidden md:flex px-3 py-1.5 rounded-xl bg-secondary hover:bg-secondary/80 text-foreground text-xs font-bold transition-all items-center gap-1.5 border border-border shadow-sm cursor-pointer hover:scale-105 active:scale-95"
-          title="หน้าสำรวจหอพักสำหรับบุคคลทั่วไป"
+          title="หน้าแนะนำหอเกษร 2 สำหรับผู้เช่าและบุคคลทั่วไป"
         >
-          <span>🌐</span>
-          <span>หน้าสำรวจ</span>
+          <span>🏢</span>
+          <span>แนะนำหอเกษร 2</span>
         </Link>
 
         {/* Chat / Direct Message Button (Top Navbar on Mobile & Desktop) */}
@@ -196,15 +168,15 @@ export default function OwnerNavbar({ onToggleMobileMenu }: OwnerNavbarProps) {
           </p>
         </div>
 
-        {/* Sign Out Button (Desktop only, available at bottom of Mobile Drawer) */}
+        {/* Sign Out Button (Visible on both Mobile and Desktop) */}
         <button
           type="button"
           onClick={() => signOut({ callbackUrl: '/signin' })}
-          className="hidden md:flex h-9 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-500 hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-100 border border-rose-500/30 transition-all items-center gap-1.5 text-xs font-bold shadow-sm cursor-pointer active:scale-95 shrink-0"
+          className="flex h-9 px-2.5 sm:px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-500 hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-100 border border-rose-500/30 transition-all items-center gap-1.5 text-xs font-bold shadow-sm cursor-pointer active:scale-95 shrink-0"
           title="ออกจากระบบ"
         >
           <span>🚪</span>
-          <span className="hidden lg:inline">ออกจากระบบ</span>
+          <span className="hidden sm:inline">ออกจากระบบ</span>
         </button>
       </div>
     </header>

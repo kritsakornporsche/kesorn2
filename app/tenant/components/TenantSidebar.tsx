@@ -16,7 +16,7 @@ const navItems = [
   { href: '/tenant/announcements', label: 'ประกาศข่าวสาร', icon: '📢', sublabel: 'ข่าวสารจากหอพัก' },
   { href: '/tenant/refund-request', label: 'ขอคืนเงินมัดจำ', icon: '💰', sublabel: 'คำร้องคืนเงินประกัน' },
   { href: '/tenant/move-out', label: 'แจ้งย้ายออก', icon: '🚪', sublabel: 'คำขอย้ายออกล่วงหน้า' },
-  { href: '/explore', label: 'สำรวจหอพัก', icon: '🌐', sublabel: 'ดูหอพักอื่นในระบบ' },
+  { href: '/', label: 'แนะนำหอเกษร 2', icon: '🏢', sublabel: 'ข้อมูลหอพักและสิ่งอำนวยความสะดวก' },
 ];
 
 
@@ -65,12 +65,12 @@ export default function TenantSidebar({
             {/* Sidebar Header */}
             <div className="h-16 flex items-center justify-between px-5 border-b border-border/60 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-2xl bg-white p-1 flex items-center justify-center shadow-md border border-border shrink-0">
-                  <img src="/up-logo.png" alt="โลโก้" className="w-full h-full object-contain" />
+                <div className="h-9 w-9 rounded-2xl bg-primary text-white flex items-center justify-center shadow-md shrink-0 text-base">
+                  🏢
                 </div>
                 <div>
-                  <p className="text-sm font-black text-foreground leading-none">SmartDom</p>
-                  <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-[0.15em] mt-0.5">
+                  <p className="text-sm font-black text-foreground leading-none">เกษร 2</p>
+                  <p className="text-[9px] font-bold text-primary uppercase tracking-[0.15em] mt-0.5">
                     Tenant Portal
                   </p>
                 </div>
@@ -196,15 +196,15 @@ export default function TenantSidebar({
             className="flex items-center gap-2.5 hover:opacity-90 transition-opacity cursor-pointer group"
             title="หน้าหลักผู้เช่า"
           >
-            <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-2xl bg-white p-1 flex items-center justify-center shadow-md border border-border group-hover:scale-105 transition-transform shrink-0">
-              <img src="/up-logo.png" alt="ตรามหาวิทยาลัยพะเยา" className="w-full h-full object-contain" />
+            <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-2xl bg-primary text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform shrink-0 text-base sm:text-lg">
+              🏢
             </div>
             <div>
-              <h2 className="font-bold text-sm sm:text-base tracking-tight text-foreground group-hover:text-emerald-500 transition-colors leading-none">
-                SmartDom
+              <h2 className="font-bold text-sm sm:text-base tracking-tight text-foreground group-hover:text-primary transition-colors leading-none">
+                เกษร 2
               </h2>
               <div className="hidden sm:flex items-center gap-1.5 leading-none mt-1">
-                <p className="text-[9px] font-black text-emerald-500 uppercase tracking-[0.15em]">Tenant Portal</p>
+                <p className="text-[9px] font-black text-primary uppercase tracking-[0.15em]">Tenant Portal</p>
                 <span className="text-muted-foreground text-[9px]">•</span>
                 <span className="text-[9px] text-muted-foreground">{roomInfo}</span>
               </div>
@@ -247,15 +247,15 @@ export default function TenantSidebar({
             <p className="text-xs text-muted-foreground truncate max-w-[150px]">ลูกหอ / ผู้เช่า</p>
           </div>
 
-          {/* Sign Out (desktop) */}
+          {/* Sign Out (Visible on both Mobile and Desktop) */}
           <button
             type="button"
             onClick={() => signOut({ callbackUrl: '/signin' })}
-            className="hidden md:flex h-9 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-500 hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-100 border border-rose-500/30 transition-all items-center gap-1.5 text-xs font-bold shadow-sm cursor-pointer active:scale-95 shrink-0"
+            className="flex h-9 px-2.5 sm:px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-500 hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-100 border border-rose-500/30 transition-all items-center gap-1.5 text-xs font-bold shadow-sm cursor-pointer active:scale-95 shrink-0"
             title="ออกจากระบบ"
           >
             <span>🚪</span>
-            <span>ออกจากระบบ</span>
+            <span className="hidden sm:inline">ออกจากระบบ</span>
           </button>
         </div>
       </header>

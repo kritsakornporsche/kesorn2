@@ -20,41 +20,31 @@ export async function GET(req: Request) {
     }
     const ownerId = users[0].id;
 
-    // Get all active dormitories registered to this owner (via owner_id, owner_email, or user_dorm_roles)
-    // We map id to db_name so the frontend OwnerSidebar doesn't break
-    const ownedDorms = await sql`
-      SELECT DISTINCT dr.id, dr.dorm_name, CAST(dr.id AS CHAR) as db_name 
-      FROM dormitory_registry dr
-      LEFT JOIN user_dorm_roles udr ON dr.id = udr.dorm_id AND udr.user_id = ${ownerId} AND udr.role = 'owner'
-      WHERE (dr.owner_id = ${ownerId} OR dr.owner_email = ${email} OR udr.id IS NOT NULL) 
-        AND dr.status = 'Active'
-      ORDER BY dr.id ASC
-    `;
+    // Kesorn 2 single dormitory response
+    const dormProfiles = await sql`SELECT * FROM dormitory_profile LIMIT 1`;
+    const dorm = dormProfiles[0] || {
+      id: 1,
+      name: 'หอพักเกษร 2',
+      address: '123 หมู่ 6 ต.แม่กา อ.เมือง จ.พะเยา 56000',
+      phone: '081-999-2222',
+      water_rate: 18,
+      electricity_rate: 8
+    };
 
-    const canAddDorm = true;
-    const maxAllowedDorms = 99;
-
-    if (ownedDorms.length === 0) {
-      return NextResponse.json({ success: true, hasDorm: false, canAddDorm: true, dorms: [], maxAllowedDorms });
-    }
-
-    // Determine which dorm_id to load details for
-    let selectedDormId = dormDbName ? parseInt(dormDbName) : ownedDorms[0].id;
-    if (isNaN(selectedDormId)) selectedDormId = ownedDorms[0].id;
-
-    const dormProfiles = await sql`SELECT * FROM dormitory_profile WHERE dorm_id = ${selectedDormId} LIMIT 1`;
-    const dorm = dormProfiles[0] ? { ...dormProfiles[0], id: dormProfiles[0].dorm_id } : null;
+    const ownedDorms = [
+      { id: 1, dorm_name: dorm.name || 'หอพักเกษร 2', db_name: 'kesorn_db' }
+    ];
 
     return NextResponse.json({
       success: true,
       hasDorm: true,
       dorms: ownedDorms,
-      canAddDorm,
-      maxAllowedDorms,
-      dorm: dorm || null,
+      canAddDorm: false,
+      maxAllowedDorms: 1,
+      dorm: dorm,
       subscription: null,
-      dormDbName: selectedDormId.toString(),
-      selectedDormId,
+      dormDbName: 'kesorn_db',
+      selectedDormId: 1,
     });
   } catch (err: any) {
     console.error('GET Onboarding Error:', err);

@@ -3,7 +3,6 @@ import { auth } from '@/auth';
 import Link from 'next/link';
 import AnnouncementsSection from '../components/AnnouncementsSection';
 import MoveOutTestButton from './components/MoveOutTestButton';
-import ResetAllTestButton from './components/ResetAllTestButton';
 import DormRulesCard from './components/DormRulesCard';
 import CancelBookingButton from './components/CancelBookingButton';
 
@@ -33,16 +32,15 @@ async function getDashboardData() {
       c.deposit_amount,
       c.status as contract_status,
       c.created_at as contract_created_at,
-      dr.id as dorm_id,
-      dr.dorm_name,
-      dr.address as dorm_address,
-      u_owner.name as owner_name,
-      u_owner.phone as owner_phone
+      dp.id as dorm_id,
+      dp.name as dorm_name,
+      dp.address as dorm_address,
+      dp.phone as owner_phone,
+      'เจ้าของหอพักเกษร 2' as owner_name
     FROM tenants t
     LEFT JOIN contracts c ON t.id = c.tenant_id
     LEFT JOIN rooms r ON r.id = COALESCE(t.room_id, c.room_id)
-    LEFT JOIN dormitory_registry dr ON r.dorm_id = dr.id
-    LEFT JOIN users u_owner ON dr.owner_id = u_owner.id
+    LEFT JOIN dormitory_profile dp ON 1=1
     WHERE (t.email = ${userEmail} OR t.user_id = ${userId} OR t.user_id IN (SELECT id FROM users WHERE email = ${userEmail}))
     ORDER BY c.id DESC
     LIMIT 1
@@ -276,7 +274,7 @@ export default async function TenantDashboard() {
             <div className="space-y-2 max-w-md mx-auto">
               <h2 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">คุณยังไม่มีรายการห้องพักหรือการจอง</h2>
               <p className="text-sm text-slate-300">
-                เลือกชมหอพักและห้องพักที่ว่างพร้อมเข้าอยู่หน้ามหาวิทยาลัยพะเยา แล้วเริ่มต้นจองห้องพักออนไลน์ได้ทันที
+                เลือกชมห้องพักที่ว่างพร้อมเข้าอยู่ของหอพักเกษร 2 แล้วเริ่มต้นจองห้องพักออนไลน์ได้ทันที
               </p>
             </div>
             <div className="pt-2">
@@ -425,7 +423,6 @@ export default async function TenantDashboard() {
                 </p>
                 <div className="flex flex-col gap-3">
                     <MoveOutTestButton />
-                    <ResetAllTestButton />
                 </div>
               </div>
           </div>

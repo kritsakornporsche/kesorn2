@@ -9,13 +9,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     
     const sql = getDb();
     
-    // Fetch room with dorm, owner, keeper, and move-out info
+    // Fetch room with dorm info from dormitory_profile and owner from users
     const result = await sql`
       SELECT 
         r.*, 
-        dr.dorm_name as dorm_name, 
-        dr.address as dorm_address, 
-        COALESCE(dp.phone, dr.phone) as dorm_phone,
+        COALESCE(dp.name, 'หอพักเกษร 2') as dorm_name, 
+        dp.address as dorm_address, 
+        dp.phone as dorm_phone,
         u.name as owner_name,
         ku.name as keeper_name, 
         ku.phone as keeper_phone, 
@@ -33,18 +33,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         dp.map_url as dorm_map_url,
         dp.description as dorm_description,
         dp.cover_image as dorm_cover_image,
+        dp.promptpay_number,
+        dp.promptpay_name,
+        1 as dorm_id,
         CASE 
           WHEN r.status IN ('Available', 'ว่าง') THEN 'Available'
           WHEN r.status IN ('MovingOut', 'Moving Out', 'กำลังจะย้ายออก') OR mor.id IS NOT NULL THEN 'MovingOut'
           ELSE r.status
         END as display_status
       FROM rooms r
-      JOIN dormitory_registry dr ON r.dorm_id = dr.id
-      LEFT JOIN dormitory_profile dp ON dr.id = dp.dorm_id
-      JOIN users u ON dr.owner_id = u.id
-      LEFT JOIN keepers k ON dr.id = k.dorm_id
+      LEFT JOIN dormitory_profile dp ON 1=1
+      LEFT JOIN users u ON u.role = 'owner'
+      LEFT JOIN keepers k ON 1=1
       LEFT JOIN users ku ON k.user_id = ku.id
-      LEFT JOIN tenants t ON t.room_id = r.id AND t.status = 'Active'
+      LEFT JOIN tenants t ON t.room_id = r.id AND t.status = 'active'
       LEFT JOIN move_out_requests mor ON (mor.room_id = r.id OR mor.tenant_id = t.id) AND mor.status IN ('Pending', 'Approved')
       WHERE r.id = ${id}
       LIMIT 1

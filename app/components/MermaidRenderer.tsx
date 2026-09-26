@@ -7,9 +7,17 @@ interface MermaidRendererProps {
   chart: string;
   id: string;
   className?: string;
+  title?: string;
+  subtitle?: string;
 }
 
-export default function MermaidRenderer({ chart, id, className = '' }: MermaidRendererProps) {
+export default function MermaidRenderer({
+  chart,
+  id,
+  className = '',
+  title = 'Visual Diagram (Rendered)',
+  subtitle = 'Vector SVG Representation',
+}: MermaidRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [svgContent, setSvgContent] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -18,12 +26,20 @@ export default function MermaidRenderer({ chart, id, className = '' }: MermaidRe
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
   useEffect(() => {
-    // Initialize Mermaid with clean UML Sequence Diagram styling
+    // Initialize Mermaid with clean multi-diagram settings
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: 'loose',
       theme: 'neutral',
       fontFamily: 'system-ui, -apple-system, sans-serif',
+      flowchart: {
+        htmlLabels: true,
+        curve: 'basis',
+        useMaxWidth: true,
+      },
+      er: {
+        useMaxWidth: true,
+      },
       sequence: {
         diagramMarginX: 40,
         diagramMarginY: 30,
@@ -51,7 +67,7 @@ export default function MermaidRenderer({ chart, id, className = '' }: MermaidRe
 
     const render = async () => {
       try {
-        const uniqueId = `mermaid-uml-${id.replace(/[^a-zA-Z0-9]/g, '_')}-${Math.random().toString(36).slice(2, 7)}`;
+        const uniqueId = `mermaid-${id.replace(/[^a-zA-Z0-9]/g, '_')}-${Math.random().toString(36).slice(2, 7)}`;
         const { svg } = await mermaid.render(uniqueId, chart);
         if (isMounted) {
           setSvgContent(svg);
@@ -59,6 +75,14 @@ export default function MermaidRenderer({ chart, id, className = '' }: MermaidRe
         }
       } catch (err: any) {
         console.error('Mermaid render error:', err);
+        // Remove rogue error SVGs that Mermaid v10+ appends to document.body
+        const rogueSvgs = document.querySelectorAll('svg[id^="dmermaid"], svg[id^="mermaid-"]');
+        rogueSvgs.forEach((svg) => {
+          if (!containerRef.current?.contains(svg)) {
+            svg.remove();
+          }
+        });
+
         if (isMounted) {
           setError(err?.message || 'เกิดข้อผิดพลาดในการวาดแผนภาพ');
           setIsRendering(false);
@@ -113,8 +137,8 @@ export default function MermaidRenderer({ chart, id, className = '' }: MermaidRe
         <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="font-bold text-slate-700">UML Sequence Diagram (Visual Render)</span>
-            <span className="text-[11px] text-slate-400">มาตรฐาน Lifelines & Activation Bars</span>
+            <span className="font-bold text-slate-700">{title}</span>
+            <span className="text-[11px] text-slate-400">{subtitle}</span>
           </div>
 
           <div className="flex items-center gap-1.5 flex-wrap">

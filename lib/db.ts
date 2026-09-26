@@ -15,10 +15,10 @@ const MYSQL_BASE = process.env.DATABASE_URL
 // Use a singleton pool to prevent MySQL max_connections exhaustion
 let globalDbPool: any = null;
 
-// ── Unified Database ─────────────────────────────────────────────────────────
+// ── Unified Single Dormitory Database (kesorn_db) ───────────────────────────
 export function getDb() {
   if (!globalDbPool) {
-    const pool = new Pool({ connectionString: `${MYSQL_BASE}/smartdomdb` });
+    const pool = new Pool({ connectionString: `${MYSQL_BASE}/kesorn_db` });
     globalDbPool = async function(strings: any, ...values: any[]) {
       if (Array.isArray(strings) && (strings as any).raw) {
         let queryText = '';
