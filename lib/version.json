@@ -1,9 +1,9 @@
 {
   "baseVersion": "v2.7.0",
-  "buildNumber": 252,
-  "gitHash": "c69114c",
-  "timestamp": "20261002.1326",
-  "updatedAt": "2 ต.ค. 2569 13:26",
-  "fullDisplay": "v2.7.0.252 (c69114c)",
-  "shortDisplay": "v2.7.0-b252"
+  "buildNumber": 253,
+  "gitHash": "a9be49a",
+  "timestamp": "20261002.1332",
+  "updatedAt": "2 ต.ค. 2569 13:32",
+  "fullDisplay": "v2.7.0.253 (a9be49a)",
+  "shortDisplay": "v2.7.0-b253"
 }

@@ -327,7 +327,7 @@ export default function Home() {
               <div>
                 <span className="text-[10px] font-bold text-muted-foreground uppercase block">ค่าไฟฟ้า</span>
                 <span className="text-sm font-black text-amber-500">
-                  ฿8 <span className="text-[11px] font-medium text-muted-foreground">/ หน่วย</span>
+                  ฿4.88 <span className="text-[11px] font-medium text-muted-foreground">/ หน่วย</span>
                 </span>
               </div>
             </div>
@@ -394,7 +394,7 @@ export default function Home() {
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center font-bold text-xs shrink-0">✓</span>
-                  <span><strong>ค่าน้ำประปา:</strong> 100 บาท/คน/เดือน • ค่าไฟหน่วยละ 8 บาท</span>
+                  <span><strong>อัตราค่าใช้จ่าย:</strong> ค่าน้ำประปา 100 บาท/คน/เดือน • ค่าไฟหน่วยละ 4.88 บาท • ค่าส่วนกลาง 150 บาท/เดือน</span>
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center font-bold text-xs shrink-0">✕</span>
@@ -402,7 +402,7 @@ export default function Home() {
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center font-bold text-xs shrink-0">ℹ</span>
-                  <span><strong>เงื่อนไขเข้าพัก:</strong> ค่าจอง 1,000 บาท • ค่ามัดจำรวม 3,000 บาท (ส่วนที่เหลือ 2,000 บาท ชำระวันเข้าพัก)</span>
+                  <span><strong>เงื่อนไขเข้าพัก:</strong> ค่าจอง 1,000 บาท • ค่ามัดจำรวม 3,000 บาท (ส่วนที่เหลือ 2,000 บาท ชำระวันทำสัญญาเข้าพัก)</span>
                 </li>
               </ul>
             </div>
