@@ -31,7 +31,7 @@ export async function GET(req: Request) {
         phone: '081-999-2222',
         address: '123 หมู่ 6 ต.แม่กา อ.เมือง จ.พะเยา 56000',
         water_rate: 100,
-        electricity_rate: 7,
+        electricity_rate: 8,
         promptpay_number: '0812345678',
         promptpay_name: 'หอพักเกษร 2 (ม.พะเยา)'
       }
@@ -89,7 +89,7 @@ export async function POST(req: Request) {
           ocr_api_key, ocr_provider
         ) VALUES (
           ${name || 'หอพักเกษร 2'}, ${address || ''}, ${phone || ''}, ${tax_id || ''}, 
-          ${water_rate !== undefined ? water_rate : 100.00}, ${electricity_rate || 7.00},
+          ${water_rate !== undefined ? water_rate : 100.00}, ${electricity_rate !== undefined ? electricity_rate : 8.00},
           ${has_wifi ? 1 : 0}, ${has_parking ? 1 : 0}, ${pet_friendly ? 1 : 0}, ${has_lan ? 1 : 0}, 
           ${facilities || ''}, ${map_url || ''}, ${description || ''}, 
           ${has_air_con ? 1 : 0}, ${cover_image || ''},
@@ -106,7 +106,7 @@ export async function POST(req: Request) {
           phone = ${phone || ''},
           tax_id = ${tax_id || ''},
           water_rate = ${water_rate !== undefined ? water_rate : 100.00},
-          electricity_rate = ${electricity_rate || 7.00},
+          electricity_rate = ${electricity_rate !== undefined ? electricity_rate : 8.00},
           has_wifi = ${has_wifi ? 1 : 0},
           has_parking = ${has_parking ? 1 : 0},
           pet_friendly = ${pet_friendly ? 1 : 0},

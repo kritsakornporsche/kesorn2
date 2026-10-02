@@ -103,9 +103,10 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { conversationId, message } = await request.json();
-    if (!conversationId || !message) {
-      return NextResponse.json({ success: false, message: 'conversationId and message are required' }, { status: 400 });
+    const body = await request.json();
+    const { conversationId, message, image } = body;
+    if (!conversationId || (!message && !image)) {
+      return NextResponse.json({ success: false, message: 'conversationId and message or image are required' }, { status: 400 });
     }
 
     const sql = getDormDbFromSession(session);
@@ -131,17 +132,47 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
     }
 
+    let savedImageUrl: string | null = null;
+    if (image && typeof image === 'string') {
+      if (image.startsWith('data:image/')) {
+        try {
+          const fs = await import('fs');
+          const path = await import('path');
+          const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'chat');
+          if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+          }
+          const matches = image.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+          if (matches) {
+            const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
+            const base64Data = matches[2];
+            const filename = `chat_${conversationId}_${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+            const filePath = path.join(uploadDir, filename);
+            fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+            savedImageUrl = `/uploads/chat/${filename}`;
+          }
+        } catch (imgErr) {
+          console.error('[POST /api/chat/messages] Failed to save chat image:', imgErr);
+        }
+      } else if (image.startsWith('/') || image.startsWith('http')) {
+        savedImageUrl = image;
+      }
+    }
+
+    const textMessage = message || (savedImageUrl ? '📷 รูปภาพ' : '');
+
     // Insert message (MySQL syntax)
     const insertRes = await sql`
-      INSERT INTO chat_messages (conversation_id, sender_id, message)
-      VALUES (${conversationId}, ${userId}, ${message})
+      INSERT INTO chat_messages (conversation_id, sender_id, message, image_url)
+      VALUES (${conversationId}, ${userId}, ${textMessage}, ${savedImageUrl})
     `;
     const messageId = (insertRes as any)?.insertId;
 
     // Update last_message and updated_at in conversations
+    const displayLastMessage = savedImageUrl && !message ? '📷 รูปภาพ' : textMessage;
     await sql`
       UPDATE conversations 
-      SET last_message = ${message}, updated_at = CURRENT_TIMESTAMP
+      SET last_message = ${displayLastMessage}, updated_at = CURRENT_TIMESTAMP
       WHERE id = ${conversationId}
     `;
 
@@ -156,7 +187,7 @@ export async function POST(request: Request) {
           VALUES (
             ${recipientId},
             'ข้อความใหม่ในแชท',
-            ${'คุณได้รับข้อความใหม่: ' + (message.length > 50 ? message.slice(0, 47) + '...' : message)},
+            ${'คุณได้รับข้อความใหม่: ' + (displayLastMessage.length > 50 ? displayLastMessage.slice(0, 47) + '...' : displayLastMessage)},
             'chat',
             0,
             ${isRecipientOwner ? '/owner/chat' : '/tenant/chat'},
@@ -178,7 +209,8 @@ export async function POST(request: Request) {
         id: messageId, 
         conversation_id: conversationId, 
         sender_id: userId, 
-        message, 
+        message: textMessage,
+        image_url: savedImageUrl, 
         created_at: new Date().toISOString() 
       } 
     });

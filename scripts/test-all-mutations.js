@@ -126,7 +126,8 @@ async function runMutationsAudit() {
 
   // 1.5 Billing Slip Upload (Payment)
   const billListRes = await fetchUrl('/api/tenant/billing/list', 'GET', null, th);
-  const existingBillId = billListRes.json?.data?.[0]?.id || billListRes.json?.bills?.[0]?.id || 3;
+  const unpaidBill = (billListRes.json?.data || []).find(b => b.status === 'Unpaid' || b.status === 'Pending') || billListRes.json?.data?.[0];
+  const existingBillId = unpaidBill?.id || 3;
   const slipRes = await fetchUrl('/api/tenant/billing/payment', 'POST', {
     bill_id: existingBillId,
     slip_url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
@@ -164,7 +165,7 @@ async function runMutationsAudit() {
   check('POST /api/announcements', annoPost, [200, 201]);
 
   // 2.2 Owner Single Bill POST with fresh cycle
-  const randomCycle = `2028-${String(Math.floor(Math.random() * 12) + 1).padStart(2, '0')}`;
+  const randomCycle = `2029-${Date.now().toString().slice(-4)}`;
   const billPost = await fetchUrl('/api/owner/billing', 'POST', {
     tenant_id: 1,
     room_number: '5',

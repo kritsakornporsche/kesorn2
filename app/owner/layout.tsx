@@ -24,7 +24,7 @@ export default async function OwnerLayout({
   if (role !== 'owner' && session.user.email) {
     try {
       const sql = getDb();
-      const u = await sql`SELECT role FROM users WHERE LOWER(email) = ${session.user.email.toLowerCase()} LIMIT 1`;
+      const u = await sql`SELECT COALESCE(role, primary_role) as role FROM users WHERE LOWER(email) = ${session.user.email.toLowerCase()} LIMIT 1`;
       if (u.length > 0 && u[0].role === 'owner') {
         role = 'owner';
       }
@@ -45,9 +45,9 @@ export default async function OwnerLayout({
       {/* 2. Below Navbar: Persistent Desktop Sidebar (hidden on mobile) + Main Content Area */}
       <div className="flex flex-1 overflow-hidden relative">
         <OwnerSidebar />
-        <div className="flex-1 flex flex-col overflow-hidden relative bg-background text-foreground pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">
+        <main className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden relative bg-background text-foreground pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
           {children}
-        </div>
+        </main>
       </div>
 
       {/* 3. Mobile Bottom Navigation Bar (md:hidden) */}

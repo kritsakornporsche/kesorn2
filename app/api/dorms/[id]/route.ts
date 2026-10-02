@@ -44,7 +44,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         has_wifi: Boolean(dorm.has_wifi),
         has_lan: Boolean(dorm.has_lan),
         water_rate: dorm.water_rate !== null && dorm.water_rate !== undefined ? Number(dorm.water_rate) : 100,
-        electricity_rate: dorm.electricity_rate !== null && dorm.electricity_rate !== undefined ? Number(dorm.electricity_rate) : 7,
+        electricity_rate: dorm.electricity_rate !== null && dorm.electricity_rate !== undefined ? Number(dorm.electricity_rate) : 8,
         facilities: dorm.facilities || '',
         map_url: dorm.map_url || '',
         min_price: Number(dorm.min_price),

@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { signOut, useSession } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
+import { handleSignOut } from '@/lib/auth-client';
 import versionData from '@/lib/version.json';
 
 interface SubAction {
@@ -401,12 +402,8 @@ export default function OwnerBottomNav() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (typeof window !== 'undefined') {
-                        localStorage.removeItem('userRole');
-                        localStorage.removeItem('userEmail');
-                        localStorage.removeItem('userName');
-                      }
-                      signOut({ callbackUrl: '/' });
+                      setActiveSheet(null);
+                      handleSignOut('/');
                     }}
                     className="w-full p-3.5 rounded-2xl bg-rose-500/10 hover:bg-rose-500/15 border border-rose-500/25 text-rose-600 dark:text-rose-400 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer"
                   >

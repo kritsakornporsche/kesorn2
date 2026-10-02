@@ -28,6 +28,7 @@ interface Contract {
   id_card_number?: string;
   tenant_address?: string;
   id_card_image?: string;
+  slip_url?: string | null;
 }
 
 interface Room {
@@ -62,6 +63,11 @@ export default function OwnerContractsPage() {
   // Deposit Refund Modal
   const [selectedMoveOut, setSelectedMoveOut] = useState<any | null>(null);
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
+
+  // Upload Signed Paper Contract Modal State
+  const [uploadingContract, setUploadingContract] = useState<Contract | null>(null);
+  const [signedContractFile, setSignedContractFile] = useState<string | null>(null);
+  const [isUploadingSigned, setIsUploadingSigned] = useState(false);
 
   // ID Card OCR state
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
@@ -180,7 +186,7 @@ export default function OwnerContractsPage() {
           }));
           setOcrSuccessMsg(`✓ อ่านบัตรประชาชนสำเร็จ: ${d.full_name_th} (${d.id_card_number})`);
         } else {
-          alert('ไม่สามารถอ่านข้อมูลจากบัตรได้ กรุณากรอกข้อมูลเพิ่มเติม');
+          alert(ocrJson.message || 'ไม่สามารถอ่านข้อมูลบัตรได้ กรุณากรอกด้วยตนเอง');
         }
       } catch (err) {
         console.error('OCR Error:', err);
@@ -343,6 +349,57 @@ export default function OwnerContractsPage() {
     }
   };
 
+  const handleOpenUploadSignedModal = (c: Contract) => {
+    setUploadingContract(c);
+    setSignedContractFile(c.contract_file_url || null);
+  };
+
+  const handleSignedFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert('ขนาดไฟล์ต้องไม่เกิน 10MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setSignedContractFile(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveSignedContract = async () => {
+    if (!uploadingContract || !signedContractFile) {
+      alert('กรุณาเลือกหรือถ่ายภาพสัญญาเช่าที่ลงนามแล้ว');
+      return;
+    }
+    setIsUploadingSigned(true);
+    try {
+      const res = await fetch('/api/owner/contracts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contractId: uploadingContract.id,
+          contract_file_url: signedContractFile,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('🎉 บันทึกรูปภาพสัญญาเช่าฉบับลงนามจริงเรียบร้อยแล้ว!');
+        setUploadingContract(null);
+        setSignedContractFile(null);
+        if (ownerDormId) fetchData(ownerDormId);
+      } else {
+        alert(data.message || 'เกิดข้อผิดพลาดในการบันทึก');
+      }
+    } catch (e: any) {
+      console.error(e);
+      alert('เกิดข้อผิดพลาด: ' + e.message);
+    } finally {
+      setIsUploadingSigned(false);
+    }
+  };
+
   const activeContracts = contracts.filter(c => c.status === 'Active');
   const historyContracts = contracts.filter(c => c.status !== 'Active');
   const renewalRequestedCount = activeContracts.filter(c => c.renewal_requested === 1).length;
@@ -358,11 +415,11 @@ export default function OwnerContractsPage() {
             <div className="flex items-center gap-3">
               <div className="w-1.5 h-8 bg-primary rounded-full" />
               <h1 className="text-3xl font-black text-foreground tracking-tight">
-                สัญญาเช่า & คืนเงินประกันห้องพัก
+                สัญญาเช่า & คืนค่ามัดจำห้องพัก
               </h1>
             </div>
             <p className="text-muted-foreground text-sm font-medium ml-4 mt-1">
-              ทำสัญญาเช่าอัตโนมัติด้วยการถ่ายรูปบัตรประชาชน (Smart OCR) พิมพ์สัญญา A4 และคืนเงินประกันด้วย Dynamic PromptPay QR
+              ทำสัญญาเช่าอัตโนมัติด้วยการถ่ายรูปบัตรประชาชน (Smart OCR) พิมพ์สัญญา A4 และคืนค่ามัดจำด้วย Dynamic PromptPay QR
             </p>
           </div>
 
@@ -414,7 +471,7 @@ export default function OwnerContractsPage() {
             }`}
           >
             <div className="flex justify-between items-start mb-2">
-              <h3 className="text-xs font-black text-amber-400 uppercase tracking-widest">คำร้องย้ายออก & คืนเงินประกัน</h3>
+              <h3 className="text-xs font-black text-amber-400 uppercase tracking-widest">คำร้องย้ายออก & คืนค่ามัดจำ</h3>
               <span className="text-xl">💰</span>
             </div>
             <p className="text-4xl font-black text-amber-400">{pendingMoveOutCount} <span className="text-xs text-amber-300/60 font-medium">รอคืนเงิน</span></p>
@@ -472,7 +529,7 @@ export default function OwnerContractsPage() {
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            <span>💰 คำขอย้ายออก & คืนเงินประกัน ({moveOutRequests.length})</span>
+            <span>💰 คำขอย้ายออก & คืนค่ามัดจำ ({moveOutRequests.length})</span>
             {pendingMoveOutCount > 0 && (
               <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500 text-slate-950 font-black animate-pulse">
                 {pendingMoveOutCount}
@@ -502,7 +559,7 @@ export default function OwnerContractsPage() {
                     <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ห้อง / ลูกหอ</th>
                     <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">เลขประจำตัวประชาชน & ที่อยู่</th>
                     <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ระยะเวลาสัญญา</th>
-                    <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">เงินประกัน</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ค่ามัดจำ</th>
                     <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">สถานะ</th>
                     <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest text-center">พิมพ์สัญญา / จัดการ</th>
                   </tr>
@@ -561,8 +618,24 @@ export default function OwnerContractsPage() {
                           )}
                         </td>
 
-                        <td className="px-8 py-6 font-bold text-emerald-400">
-                          ฿{Number(c.deposit_amount || 0).toLocaleString()}
+                        <td className="px-8 py-6">
+                          <span className="font-bold text-emerald-400 block">
+                            ฿{Number(c.deposit_amount || 0).toLocaleString()}
+                          </span>
+                          {c.slip_url ? (
+                            <button
+                              onClick={() => {
+                                setPreviewingFileUrl(c.slip_url || null);
+                                setPreviewingTitle(`สลิปเงินมัดจำ/จอง ห้อง ${c.room_number} (${c.tenant_name})`);
+                              }}
+                              className="mt-1 px-2.5 py-0.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                              title="คลิกเพื่อดูสลิปเงินมัดจำ/จอง"
+                            >
+                              <span>📸</span> ดูสลิป
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground/60 italic block mt-0.5">ไม่มีสลิป</span>
+                          )}
                         </td>
 
                         <td className="px-8 py-6">
@@ -576,25 +649,58 @@ export default function OwnerContractsPage() {
                         </td>
 
                         <td className="px-8 py-6 text-center">
-                          <div className="flex items-center justify-center gap-2">
+                          <div className="flex flex-wrap items-center justify-center gap-2">
                             {/* Print / Download Contract Button */}
                             <button
                               onClick={() => {
                                 setPrintingContract(c);
                                 setIsPrintModalOpen(true);
                               }}
-                              className="px-3.5 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
-                              title="พิมพ์สัญญาเช่าฉบับเต็ม / ดาวน์โหลด PDF"
+                              className="px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
+                              title="พิมพ์สัญญาเช่าฉบับเต็ม / ดาวน์โหลด Word หรือ PDF"
                             >
                               <span>🖨️</span>
-                              <span>พิมพ์สัญญา (PDF)</span>
+                              <span>พิมพ์ / PDF</span>
                             </button>
+
+                            {/* View or Upload Signed Paper Contract */}
+                            {c.contract_file_url ? (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => {
+                                    setPreviewingFileUrl(c.contract_file_url || null);
+                                    setPreviewingTitle(`สัญญาเช่าฉบับลงนามจริง ห้อง ${c.room_number} (${c.tenant_name})`);
+                                  }}
+                                  className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
+                                  title="ดูรูปภาพสัญญาที่ทั้งสองฝ่ายลงชื่อแล้ว"
+                                >
+                                  <span>✓</span>
+                                  <span>ดูสัญญาที่เซ็น</span>
+                                </button>
+                                <button
+                                  onClick={() => handleOpenUploadSignedModal(c)}
+                                  className="p-1.5 bg-white/10 hover:bg-white/20 text-muted-foreground hover:text-white rounded-lg text-xs transition-colors cursor-pointer"
+                                  title="เปลี่ยนรูปสัญญาที่เซ็นแล้ว"
+                                >
+                                  📷
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleOpenUploadSignedModal(c)}
+                                className="px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
+                                title="ถ่ายรูปสัญญาที่ทั้งสองฝ่ายลงชื่อแล้วบันทึกเข้าระบบ"
+                              >
+                                <span>📷</span>
+                                <span>แนบรูปสัญญาที่เซ็น</span>
+                              </button>
+                            )}
 
                             {/* Renew Button if active */}
                             {c.status === 'Active' && (
                               <button
                                 onClick={() => handleOpenRenewModal(c)}
-                                className="px-3.5 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
+                                className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
                               >
                                 <span>🔄</span>
                                 <span>ต่อสัญญา</span>
@@ -911,7 +1017,7 @@ export default function OwnerContractsPage() {
                     />
                     <div className="space-y-2">
                       <label className="block text-[10px] font-black text-foreground/50 uppercase tracking-widest">
-                        เงินประกัน (Deposit)
+                        ค่ามัดจำ (Deposit)
                       </label>
                       <input
                         type="number"
@@ -974,7 +1080,7 @@ export default function OwnerContractsPage() {
                 />
 
                 <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-foreground/50 uppercase tracking-widest">เงินประกันใหม่ (ถ้ามี)</label>
+                  <label className="block text-[10px] font-black text-foreground/50 uppercase tracking-widest">ค่ามัดจำใหม่ (ถ้ามี)</label>
                   <input
                     type="number"
                     value={renewData.deposit_amount}
@@ -1020,6 +1126,155 @@ export default function OwnerContractsPage() {
             if (ownerDormId) fetchData(ownerDormId);
           }}
         />
+
+        {/* Upload Signed Paper Contract Modal */}
+        {uploadingContract && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
+            <div className="bg-card rounded-[36px] w-full max-w-xl border border-border shadow-2xl overflow-hidden my-auto">
+              <div className="bg-[#0B0F19] border-b border-border p-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-black text-foreground flex items-center gap-2">
+                    <span>📷</span> บันทึกรูปสัญญาเช่าฉบับลงนามจริง
+                  </h2>
+                  <p className="text-xs text-muted-foreground font-medium mt-1">
+                    ห้อง {uploadingContract.room_number} • ผู้เช่า: {uploadingContract.tenant_name}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setUploadingContract(null);
+                    setSignedContractFile(null);
+                  }}
+                  className="w-9 h-9 bg-white/5 hover:bg-white/10 rounded-xl text-muted-foreground hover:text-foreground flex items-center justify-center transition-all cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-2xl text-purple-300 text-xs leading-relaxed space-y-1">
+                  <p className="font-bold">📝 ขั้นตอนบันทึกสัญญาฉบับจริง:</p>
+                  <p>1. พิมพ์สัญญาเช่าฉบับสมบูรณ์ (A4) หรือดาวน์โหลด Word จากระบบ</p>
+                  <p>2. ผู้เช่าและเจ้าของหอพักลงลายมือชื่อจริงร่วมกันในวันเข้าหอพัก</p>
+                  <p>3. ถ่ายรูปหรือสแกนหน้าที่เซ็นชื่อแล้ว อัปโหลดบันทึกลงในระบบเพื่อเป็นหลักฐานอ้างอิงถาวร</p>
+                </div>
+
+                {/* File Upload / Camera Input */}
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                    รูปภาพสัญญาเช่าที่ลงนามแล้ว (Photo / Scan) <span className="text-rose-500">*</span>
+                  </label>
+
+                  {signedContractFile ? (
+                    <div className="space-y-3">
+                      <div className="relative rounded-2xl overflow-hidden border border-border bg-black/40 flex items-center justify-center max-h-72">
+                        <img
+                          src={signedContractFile}
+                          alt="Signed Contract Preview"
+                          className="max-w-full max-h-72 object-contain p-2"
+                        />
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-bold text-emerald-400">✓ เลือกรูปภาพเรียบร้อยแล้ว</span>
+                        <label className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold cursor-pointer transition-all">
+                          เปลี่ยนรูป
+                          <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleSignedFileChange} />
+                        </label>
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center p-8 bg-secondary/60 hover:bg-secondary border-2 border-dashed border-primary/40 rounded-2xl cursor-pointer transition-all hover:border-primary group">
+                      <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center text-2xl mb-2 group-hover:scale-110 transition-transform">
+                        📷
+                      </div>
+                      <span className="text-sm font-bold text-foreground">คลิกเพื่อถ่ายภาพ หรือเลือกรูปสัญญาที่เซ็นแล้ว</span>
+                      <span className="text-[11px] text-muted-foreground mt-1">รองรับกล้องมือถือ, ไฟล์ JPG, PNG (ไม่เกิน 10MB)</span>
+                      <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleSignedFileChange} />
+                    </label>
+                  )}
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUploadingContract(null);
+                      setSignedContractFile(null);
+                    }}
+                    className="flex-1 py-3.5 text-muted-foreground font-bold hover:bg-white/5 rounded-2xl transition-all cursor-pointer text-xs"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveSignedContract}
+                    disabled={!signedContractFile || isUploadingSigned}
+                    className="flex-[2] py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl shadow-xl hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 cursor-pointer text-xs flex items-center justify-center gap-2"
+                  >
+                    {isUploadingSigned ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                        <span>กำลังบันทึก...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>💾</span>
+                        <span>บันทึกรูปสัญญาเข้าระบบ</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Preview Signed Contract Modal */}
+        {previewingFileUrl && (
+          <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
+            <div className="bg-card rounded-3xl w-full max-w-3xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] my-auto">
+              <div className="bg-[#0B0F19] border-b border-border p-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">📄</span>
+                  <h3 className="text-sm font-black text-foreground">{previewingTitle || 'รูปภาพสัญญาเช่าฉบับลงนามจริง'}</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={previewingFileUrl}
+                    download="signed-contract"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3 py-1.5 bg-primary/20 hover:bg-primary/30 text-primary rounded-xl text-xs font-bold transition-all"
+                  >
+                    ดาวน์โหลด
+                  </a>
+                  <button
+                    onClick={() => setPreviewingFileUrl(null)}
+                    className="w-8 h-8 bg-white/5 hover:bg-white/10 rounded-xl text-muted-foreground hover:text-foreground flex items-center justify-center transition-all cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 overflow-y-auto flex items-center justify-center bg-black/50 flex-1 min-h-[500px]">
+                {previewingFileUrl.toLowerCase().endsWith('.pdf') || previewingFileUrl.startsWith('data:application/pdf') ? (
+                  <iframe
+                    src={previewingFileUrl}
+                    title="PDF Contract Preview"
+                    className="w-full h-[75vh] rounded-xl border border-white/10 shadow-lg bg-white"
+                  />
+                ) : (
+                  <img
+                    src={previewingFileUrl}
+                    alt="Signed Contract"
+                    className="max-w-full max-h-[75vh] object-contain rounded-xl shadow-lg"
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

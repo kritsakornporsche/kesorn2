@@ -17,8 +17,14 @@ async function getSharedOcrWorker() {
       const path = await import('path');
       const localDir = path.resolve(process.cwd());
       
+      let workerPath: string | undefined;
+      try {
+        workerPath = require.resolve('tesseract.js/src/worker-script/node/index.js');
+      } catch (e) {}
+
       // Load local eng.traineddata directly to ensure instant offline recognition and avoid CDN timeout
       const worker = await createWorker('eng', 1, {
+        workerPath,
         langPath: localDir,
         cachePath: localDir,
         gzip: false,
@@ -174,42 +180,52 @@ export async function POST(req: Request) {
         }
 
         const base64Data = targetImageForVision.replace(/^data:image\/\w+;base64,/, '');
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const models = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+        let geminiRes: Response | null = null;
 
-        // Try gemini-2.0-flash / gemini-3.6-flash (multimodal dial reader)
-        const geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
-          {
-            method: 'POST',
-            signal: controller.signal,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [
-                {
-                  parts: [
+        for (const model of models) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+            geminiRes = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+              {
+                method: 'POST',
+                signal: controller.signal,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  contents: [
                     {
-                      text: `Read the utility meter dial counter display (${type || 'utility'} meter, e.g. Mitsubishi / Sanwa).
+                      parts: [
+                        {
+                          text: `Read the utility meter dial counter display (${type || 'utility'} meter, e.g. Mitsubishi / Sanwa).
 Look closely at the rotating number wheels (including black wheels with white digits, and any rightmost decimal wheel).
 Return ONLY valid JSON:
 { "reading": 2419, "digits": "2419.0", "confidence": 0.99 }
 without markdown formatting. Previous reading was ${previous_reading || 0}. If completely unreadable, return { "reading": null, "confidence": 0 }`,
-                    },
-                    {
-                      inline_data: {
-                        mime_type: mimeType,
-                        data: base64Data,
-                      },
+                        },
+                        {
+                          inline_data: {
+                            mime_type: mimeType,
+                            data: base64Data,
+                          },
+                        },
+                      ],
                     },
                   ],
-                },
-              ],
-            }),
-          }
-        );
-        clearTimeout(timeoutId);
+                }),
+              }
+            );
+            clearTimeout(timeoutId);
 
-        if (geminiRes.ok) {
+            if (geminiRes.ok) break;
+          } catch (mErr) {
+            console.warn(`Gemini model ${model} failed, trying next:`, mErr);
+          }
+        }
+
+        if (geminiRes && geminiRes.ok) {
           const geminiData = await geminiRes.json();
           const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
           const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();

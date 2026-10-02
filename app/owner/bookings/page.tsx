@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
-import { cn } from '@/lib/utils';
+import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 interface Booking {
   contract_id: number;
@@ -16,9 +15,10 @@ interface Booking {
   booking_status: string;
   slip_url: string | null;
   contract_file_url?: string | null;
-  signature_data: string | null;
-  owner_signature_data: string | null;
-  booking_notes?: string | null;
+  id_card_number?: string | null;
+  tenant_address?: string | null;
+  id_card_image?: string | null;
+  parent_phone?: string | null;
   booking_created_at: string;
   guest_name: string;
   guest_email: string;
@@ -28,1791 +28,761 @@ interface Booking {
   floor: number;
   monthly_rent: number;
   room_status: string;
-  dorm_id?: number;
-  dorm_name?: string;
-}
-
-interface RoomOption {
-  id: number;
-  dorm_id: number;
-  room_number: string;
-  floor: number;
-  room_type: string;
-  price: number;
-  status: string;
+  first_bill_id?: number | null;
+  first_bill_title?: string | null;
+  first_bill_amount?: number | null;
+  first_bill_status?: string | null;
+  first_bill_due_date?: string | null;
+  first_bill_created_at?: string | null;
 }
 
 export default function OwnerBookingsPage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [availableRooms, setAvailableRooms] = useState<RoomOption[]>([]);
-  const [dormsList, setDormsList] = useState<{ id: number; dorm_name: string }[]>([]);
-  const [selectedDormFilter, setSelectedDormFilter] = useState<string>('ALL');
-  const [dormId, setDormId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'Pending' | 'Active' | 'Cancelled' | 'All' | 'Refund'>('Pending');
-
-  // Refund Requests state
-  const [refundRequests, setRefundRequests] = useState<any[]>([]);
-  const [refundLoading, setRefundLoading] = useState(false);
-  const [approvingRefund, setApprovingRefund] = useState<any | null>(null);
-  const [rejectingRefund, setRejectingRefund] = useState<any | null>(null);
-  const [refundOwnerNote, setRefundOwnerNote] = useState('');
-  const [refundSlipUrl, setRefundSlipUrl] = useState('');
-  const [rejectRefundNote, setRejectRefundNote] = useState('');
+  
+  // Filter tabs: 8.1 PendingContract, 8.2 PendingFirstBill, 8.3 Active, 8.4 Cancelled, All
+  const [activeTab, setActiveTab] = useState<'8.1' | '8.2' | '8.3' | '8.4' | 'ALL'>('8.1');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFloor, setSelectedFloor] = useState<string>('ALL');
 
   // Modals state
   const [previewSlipUrl, setPreviewSlipUrl] = useState<string | null>(null);
-  const [previewSlipTitle, setPreviewSlipTitle] = useState<string>('');
+  const [previewContractModal, setPreviewContractModal] = useState<Booking | null>(null);
+  const [previewBillModal, setPreviewBillModal] = useState<Booking | null>(null);
+  const [uploadContractBooking, setUploadContractBooking] = useState<Booking | null>(null);
+  const [contractFile, setContractFile] = useState<string | null>(null);
+  const [initialMeterReading, setInitialMeterReading] = useState<string>('');
+  const [uploading, setUploading] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  // Preview & Upload Contract Document Modal
-  const [contractDocBooking, setContractDocBooking] = useState<Booking | null>(null);
-  const [contractDocFile, setContractDocFile] = useState<{ dataUrl: string; name: string } | null>(null);
-  const [previewingContractDocUrl, setPreviewingContractDocUrl] = useState<string | null>(null);
-  const [previewingContractDocTitle, setPreviewingContractDocTitle] = useState<string>('');
-
-  // 1. Approval Modal
-  const [approvingBooking, setApprovingBooking] = useState<Booking | null>(null);
-  const [approveForm, setApproveForm] = useState({
-    createInitialBill: true,
-    initialBillAmount: 0,
-    customStartDate: '',
-    customRoomId: 0,
-    contractFileUrl: '',
-    contractFileName: ''
-  });
-
-  // 2. Reject Modal
-  const [rejectingBooking, setRejectingBooking] = useState<Booking | null>(null);
-  const [rejectReason, setRejectReason] = useState('สลิปไม่ถูกต้อง / ยอดเงินไม่ตรงตามที่กำหนด');
-  const [customRejectNote, setCustomRejectNote] = useState('');
-
-  // 3. Edit Modal
-  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
-  const [editForm, setEditForm] = useState({
-    roomId: 0,
-    startDate: '',
-    endDate: '',
-    depositAmount: 0,
-    guestName: '',
-    guestPhone: '',
-    note: ''
-  });
-
-  // 4. Create Walk-in Booking Modal
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [createForm, setCreateForm] = useState({
-    roomId: '',
-    guestName: '',
-    guestEmail: '',
-    guestPhone: '',
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
-    depositAmount: 0,
-    slipUrl: '',
-    notes: '',
-    autoApprove: true
-  });
-
-  // 5. Printable Receipt Modal
-  const [printingBooking, setPrintingBooking] = useState<Booking | null>(null);
-
-  const [submitting, setSubmitting] = useState(false);
-
-  // Fetch refund requests
-  const fetchRefundRequests = async () => {
-    setRefundLoading(true);
-    try {
-      const email = session?.user?.email || (typeof window !== 'undefined' ? localStorage.getItem('userEmail') : null);
-      const params = new URLSearchParams();
-      if (email) params.append('email', email);
-      const res = await fetch(`/api/owner/refund-requests?${params.toString()}`);
-      const data = await res.json();
-      if (data.success) setRefundRequests(data.data || []);
-    } catch (err) {
-      console.error('Fetch refund requests error:', err);
-    } finally {
-      setRefundLoading(false);
-    }
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4500);
   };
 
-  const fetchBookings = async (dormParam?: string) => {
-    setLoading(true);
+  const fetchBookings = async () => {
     try {
-      const email = session?.user?.email || (typeof window !== 'undefined' ? localStorage.getItem('userEmail') : null);
-      const urlDormId = searchParams.get('dormId');
-      const savedDb = typeof window !== 'undefined' ? localStorage.getItem('selectedDormDbName') : null;
-      const targetDorm = dormParam !== undefined ? dormParam : (selectedDormFilter !== 'ALL' ? selectedDormFilter : (urlDormId || savedDb || ''));
-
-      const params = new URLSearchParams();
-      if (email) params.append('email', email);
-      if (targetDorm && targetDorm !== 'ALL') params.append('dormId', targetDorm);
-
-      const qs = params.toString();
-      const res = await fetch(`/api/owner/bookings${qs ? `?${qs}` : ''}`);
+      setLoading(true);
+      const res = await fetch('/api/owner/bookings');
       const data = await res.json();
       if (data.success) {
         setBookings(data.data || []);
-        setAvailableRooms(data.availableRooms || []);
-        setDormsList(data.dorms || []);
-        setDormId(data.selectedDormId || null);
-        if (targetDorm && targetDorm !== 'ALL') {
-          setSelectedDormFilter(targetDorm);
-        }
       }
-    } catch (err) {
-      console.error('Fetch bookings error:', err);
+    } catch (e) {
+      console.error('Fetch bookings error:', e);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    const urlTab = searchParams.get('tab');
-    if (urlTab && ['Pending', 'Active', 'Cancelled', 'All', 'Refund'].includes(urlTab)) {
-      setActiveTab(urlTab as any);
-    }
-    fetchBookings();
-    fetchRefundRequests();
-  }, [authStatus, session, searchParams]);
-
-  const handleDormChange = (newDormVal: string) => {
-    setSelectedDormFilter(newDormVal);
-    fetchBookings(newDormVal);
-  };
-
-  // Handle Approve Submit
-  const handleApproveSubmit = async () => {
-    if (!approvingBooking) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/owner/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'approve',
-          contractId: approvingBooking.contract_id,
-          createInitialBill: approveForm.createInitialBill,
-          initialBillAmount: approveForm.initialBillAmount || approvingBooking.monthly_rent,
-          customStartDate: approveForm.customStartDate || approvingBooking.start_date,
-          customRoomId: approveForm.customRoomId || approvingBooking.room_id,
-          contractFileUrl: approveForm.contractFileUrl || undefined
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert('✓ อนุมัติการจองห้องพักและบันทึกเอกสารสัญญาเรียบร้อยแล้ว!');
-        setApprovingBooking(null);
-        fetchBookings();
-      } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการอนุมัติ');
-      }
-    } catch (e: any) {
-      alert('เกิดข้อผิดพลาดในการส่งข้อมูล');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Handle direct contract document upload / update
-  const handleSaveContractDoc = async () => {
-    if (!contractDocBooking || !contractDocFile) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/owner/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'upload_contract',
-          contractId: contractDocBooking.contract_id,
-          contractFileUrl: contractDocFile.dataUrl
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert('✓ แนบไฟล์สัญญาเรียบร้อยแล้ว');
-        setContractDocBooking(null);
-        setContractDocFile(null);
-        fetchBookings();
-      } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการบันทึกสัญญา');
-      }
-    } catch (e: any) {
-      alert('เกิดข้อผิดพลาดในการส่งข้อมูล');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Handle Reject Submit
-  const handleRejectSubmit = async () => {
-    if (!rejectingBooking) return;
-    setSubmitting(true);
-    try {
-      const reasonText = customRejectNote ? `${rejectReason}: ${customRejectNote}` : rejectReason;
-      const res = await fetch('/api/owner/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'reject',
-          contractId: rejectingBooking.contract_id,
-          reason: reasonText
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert('✕ ปฏิเสธการจองและคืนสถานะห้องว่างเรียบร้อยแล้ว');
-        setRejectingBooking(null);
-        fetchBookings();
-      } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการปฏิเสธ');
-      }
-    } catch (e: any) {
-      alert('เกิดข้อผิดพลาดในการส่งข้อมูล');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Handle Edit Submit
-  const handleEditSubmit = async () => {
-    if (!editingBooking) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/owner/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'update',
-          contractId: editingBooking.contract_id,
-          ...editForm
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert('✓ บันทึกการแก้ไขข้อมูลเรียบร้อยแล้ว');
-        setEditingBooking(null);
-        fetchBookings();
-      } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการแก้ไข');
-      }
-    } catch (e: any) {
-      alert('เกิดข้อผิดพลาดในการส่งข้อมูล');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Handle Create Walk-in Booking Submit
-  const handleCreateSubmit = async () => {
-    if (!createForm.roomId || !createForm.guestName || !createForm.startDate) {
-      alert('กรุณาเลือกห้องพัก ระบุชื่อผู้จอง และวันที่เริ่มสัญญา');
+    if (authStatus === 'unauthenticated') {
+      router.push('/signin?callbackUrl=/owner/bookings');
       return;
     }
-    setSubmitting(true);
+    fetchBookings();
+  }, [authStatus, router]);
+
+  // Handle Owner Upload Contract & Create First Bill
+  const handleUploadContract = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uploadContractBooking || !contractFile) {
+      alert('กรุณาเลือกไฟล์สัญญาเช่า');
+      return;
+    }
+
+    setUploading(true);
     try {
-      const res = await fetch('/api/owner/bookings', {
-        method: 'POST',
+      const isTestBooking = (uploadContractBooking.room_number || '').toUpperCase() === 'T01';
+      const totalDeposit = isTestBooking ? 20 : 3000;
+      const paidBooking = isTestBooking ? 1 : Number(uploadContractBooking.deposit_amount || 1000);
+      const extraDeposit = Math.max(0, totalDeposit - paidBooking);
+
+      const res = await fetch('/api/owner/contracts', {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'create',
-          dormId: dormId || 1,
-          ...createForm
-        })
+          contract_id: uploadContractBooking.contract_id,
+          contract_file_url: contractFile,
+          status: 'PendingFirstBill', // Move to 8.2 / 2.1.2
+          create_first_bill: true,
+          monthly_rent: uploadContractBooking.monthly_rent || (isTestBooking ? 10 : 3400),
+          deposit_extra: extraDeposit,
+          initial_meter_reading: initialMeterReading ? parseFloat(initialMeterReading) : null,
+        }),
       });
+
       const data = await res.json();
       if (data.success) {
-        alert(data.message);
-        setIsCreateModalOpen(false);
-        setCreateForm({
-          roomId: '',
-          guestName: '',
-          guestEmail: '',
-          guestPhone: '',
-          startDate: new Date().toISOString().split('T')[0],
-          endDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
-          depositAmount: 0,
-          slipUrl: '',
-          notes: '',
-          autoApprove: true
-        });
+        showToast('✅ อัปโหลดสัญญาและส่งบิลค่าแรกเข้าพร้อมบันทึกมิเตอร์เริ่มต้นเรียบร้อยแล้ว!', 'success');
+        setUploadContractBooking(null);
+        setContractFile(null);
+        setInitialMeterReading('');
         fetchBookings();
       } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการสร้างรายการจอง');
+        showToast(data.message || 'เกิดข้อผิดพลาดในการบันทึกสัญญา', 'error');
       }
-    } catch (e: any) {
-      alert('เกิดข้อผิดพลาดในการส่งข้อมูล');
+    } catch (err: any) {
+      showToast('เกิดข้อผิดพลาด: ' + err.message, 'error');
     } finally {
-      setSubmitting(false);
+      setUploading(false);
     }
   };
 
-  // Open Edit Modal Helper
-  const openEditModal = (booking: Booking) => {
-    setEditingBooking(booking);
-    setEditForm({
-      roomId: booking.room_id,
-      startDate: booking.start_date ? new Date(booking.start_date).toISOString().split('T')[0] : '',
-      endDate: booking.end_date ? new Date(booking.end_date).toISOString().split('T')[0] : '',
-      depositAmount: Number(booking.deposit_amount || 0),
-      guestName: booking.guest_name,
-      guestPhone: booking.guest_phone || '',
-      note: booking.booking_notes || ''
-    });
-  };
+  const filteredBookings = bookings.filter((b) => {
+    // Tab filter
+    if (activeTab === '8.1') {
+      if (b.booking_status !== 'PendingContract' && b.booking_status !== 'PendingOwnerSignature') return false;
+    } else if (activeTab === '8.2') {
+      if (b.booking_status !== 'PendingFirstBill') return false;
+    } else if (activeTab === '8.3') {
+      if (b.booking_status !== 'Active') return false;
+    } else if (activeTab === '8.4') {
+      if (b.booking_status !== 'Cancelled') return false;
+    }
 
-  // Open Approve Modal Helper
-  const openApproveModal = (booking: Booking) => {
-    setApprovingBooking(booking);
-    setApproveForm({
-      createInitialBill: true,
-      initialBillAmount: Number(booking.monthly_rent || 0),
-      customStartDate: booking.start_date ? new Date(booking.start_date).toISOString().split('T')[0] : '',
-      customRoomId: booking.room_id,
-      contractFileUrl: booking.contract_file_url || '',
-      contractFileName: booking.contract_file_url ? 'เอกสารสัญญาเดิม' : ''
-    });
-  };
-
-  // Refund approve/reject handlers
-  const handleApproveRefund = async () => {
-    if (!approvingRefund) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/owner/refund-requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'approve_refund',
-          requestId: approvingRefund.id,
-          ownerNote: refundOwnerNote || 'อนุมัติคืนเงินมัดจำ',
-          refundSlipUrl: refundSlipUrl || null,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert('✓ ' + data.message);
-        setApprovingRefund(null);
-        setRefundOwnerNote('');
-        setRefundSlipUrl('');
-        fetchRefundRequests();
-        fetchBookings();
-      } else {
-        alert(data.message || 'เกิดข้อผิดพลาด');
-      }
-    } catch { alert('เกิดข้อผิดพลาดในการส่งข้อมูล'); }
-    finally { setSubmitting(false); }
-  };
-
-  const handleRejectRefund = async () => {
-    if (!rejectingRefund) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/owner/refund-requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'reject_refund',
-          requestId: rejectingRefund.id,
-          ownerNote: rejectRefundNote || 'ปฏิเสธคำร้องคืนเงินมัดจำ',
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert('✕ ' + data.message);
-        setRejectingRefund(null);
-        setRejectRefundNote('');
-        fetchRefundRequests();
-      } else {
-        alert(data.message || 'เกิดข้อผิดพลาด');
-      }
-    } catch { alert('เกิดข้อผิดพลาดในการส่งข้อมูล'); }
-    finally { setSubmitting(false); }
-  };
-
-  // Stats Calculations
-  const pendingCount = bookings.filter(b => b.booking_status === 'PendingOwnerSignature').length;
-  const approvedCount = bookings.filter(b => b.booking_status === 'Active').length;
-  const pendingDepositTotal = bookings
-    .filter(b => b.booking_status === 'PendingOwnerSignature')
-    .reduce((sum, b) => sum + Number(b.deposit_amount || 0), 0);
-  const totalBookingsCount = bookings.length;
-  const pendingRefundCount = refundRequests.filter(r => r.status === 'pending').length;
-
-  // Filter Bookings
-  const filteredBookings = bookings.filter(b => {
-    if (activeTab === 'Pending' && b.booking_status !== 'PendingOwnerSignature') return false;
-    if (activeTab === 'Active' && b.booking_status !== 'Active') return false;
-    if (activeTab === 'Cancelled' && b.booking_status !== 'Cancelled') return false;
-
-    if (selectedFloor !== 'ALL' && String(b.floor) !== selectedFloor) return false;
-
+    // Search query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      const matchName = b.guest_name.toLowerCase().includes(q);
-      const matchRoom = b.room_number.toLowerCase().includes(q);
-      const matchPhone = (b.guest_phone || '').includes(q);
-      const matchEmail = (b.guest_email || '').toLowerCase().includes(q);
-      return matchName || matchRoom || matchPhone || matchEmail;
+      const matchRoom = b.room_number?.toLowerCase().includes(q);
+      const matchName = b.guest_name?.toLowerCase().includes(q);
+      const matchPhone = b.guest_phone?.toLowerCase().includes(q);
+      if (!matchRoom && !matchName && !matchPhone) return false;
     }
 
     return true;
   });
 
-  const floors = Array.from(new Set(bookings.map(b => String(b.floor)).filter(Boolean))).sort();
+  const count81 = bookings.filter((b) => b.booking_status === 'PendingContract' || b.booking_status === 'PendingOwnerSignature').length;
+  const count82 = bookings.filter((b) => b.booking_status === 'PendingFirstBill').length;
+  const count83 = bookings.filter((b) => b.booking_status === 'Active').length;
+  const count84 = bookings.filter((b) => b.booking_status === 'Cancelled').length;
 
   return (
-    <div className="flex-1 w-full overflow-y-auto bg-background min-h-0 pb-32 sm:pb-16 -webkit-overflow-scrolling-touch">
-      <div className="p-4 sm:p-8 max-w-7xl mx-auto space-y-6 sm:space-y-8 font-sans">
-        
-        {/* Header - iOS Compact layout on mobile */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pt-2 sm:pt-0">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full text-[11px] font-bold mb-2">
-              <span>🛎️</span>
-              <span>Guest Bookings Hub</span>
-            </div>
-            <h1 className="text-2xl sm:text-4xl font-black text-foreground tracking-tight">ศูนย์จัดการการจองห้องพัก</h1>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-              ตรวจสอบสลิปเงินประกัน อนุมัติสัญญาเช่า ปรับเปลี่ยนห้องพัก และสร้างการจอง
-            </p>
-          </div>
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 lg:p-10 space-y-8">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-6 right-6 z-50 px-6 py-4 rounded-2xl shadow-2xl font-bold text-sm border flex items-center gap-3 ${
+          toast.type === 'success' ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200' : 'bg-rose-950/90 border-rose-500/50 text-rose-200'
+        }`}>
+          <span>{toast.type === 'success' ? '✅' : '⚠️'}</span>
+          <span>{toast.message}</span>
+        </div>
+      )}
 
-          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto flex-wrap sm:flex-nowrap">
-            
-            {/* Dorm Selector Dropdown */}
-            {dormsList.length > 1 && (
-              <select
-                value={selectedDormFilter}
-                onChange={(e) => handleDormChange(e.target.value)}
-                className="w-full sm:w-auto min-h-[44px] px-3.5 py-2.5 bg-slate-900 border border-white/20 text-amber-300 font-bold rounded-2xl text-xs focus:outline-none focus:border-amber-400 cursor-pointer"
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/10">
+        <div>
+          <div className="flex items-center gap-3">
+            <span className="text-3xl">🔔</span>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">รายการจองห้องพัก (Booking Pipeline)</h1>
+              <p className="text-xs sm:text-sm text-slate-400 mt-0.5">จัดการกระบวนการจอง 3 ระดับ: ชำระมัดจำ ➔ ทำสัญญา/บิลแรกเข้า ➔ เข้าพักสมบูรณ์</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={fetchBookings}
+            className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white font-bold text-xs rounded-xl border border-white/10 transition-all flex items-center gap-2"
+          >
+            <span>🔄</span>
+            <span>รีเฟรช</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Search & Filter Bar */}
+      <div className="flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center bg-slate-900/80 p-4 rounded-2xl border border-white/10 shadow-xl">
+        {/* Horizontal Filter Tabs */}
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 md:pb-0">
+          <button
+            onClick={() => setActiveTab('8.1')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 ${
+              activeTab === '8.1' ? 'bg-amber-500 text-white shadow-lg' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
+            }`}
+          >
+            <span>🟡 8.1 ชำระมัดจำแล้ว รอทำสัญญา</span>
+            <span className="px-2 py-0.5 rounded-full bg-black/30 text-[10px] font-mono">{count81}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('8.2')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 ${
+              activeTab === '8.2' ? 'bg-blue-500 text-white shadow-lg' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
+            }`}
+          >
+            <span>🔵 8.2 ทำสัญญาแล้ว รอค่าแรกเข้า</span>
+            <span className="px-2 py-0.5 rounded-full bg-black/30 text-[10px] font-mono">{count82}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('8.3')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 ${
+              activeTab === '8.3' ? 'bg-emerald-500 text-white shadow-lg' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
+            }`}
+          >
+            <span>🟢 8.3 เสร็จสิ้น/เข้าพักแล้ว</span>
+            <span className="px-2 py-0.5 rounded-full bg-black/30 text-[10px] font-mono">{count83}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('8.4')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 ${
+              activeTab === '8.4' ? 'bg-rose-500 text-white shadow-lg' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
+            }`}
+          >
+            <span>🔴 8.4 ยกเลิกการจอง</span>
+            <span className="px-2 py-0.5 rounded-full bg-black/30 text-[10px] font-mono">{count84}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('ALL')}
+            className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap ${
+              activeTab === 'ALL' ? 'bg-white/20 text-white' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
+            }`}
+          >
+            ทั้งหมด ({bookings.length})
+          </button>
+        </div>
+
+        {/* Search Input */}
+        <div className="relative min-w-[240px]">
+          <input
+            type="text"
+            placeholder="ค้นหาเลขห้อง, ชื่อ, เบอร์โทร..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-primary"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-2.5 text-xs text-slate-400 hover:text-white"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Bookings List (Horizontal Row Cards) */}
+      <div className="space-y-4">
+        {loading ? (
+          <div className="p-16 text-center text-slate-400 font-bold bg-slate-900/50 rounded-3xl border border-white/10 animate-pulse">
+            กำลังโหลดรายการจองห้องพัก...
+          </div>
+        ) : filteredBookings.length === 0 ? (
+          <div className="p-16 text-center text-slate-400 font-bold bg-slate-900/50 rounded-3xl border border-white/10 space-y-2">
+            <span className="text-4xl block">📭</span>
+            <p className="text-base text-white">ไม่พบรายการจองในหมวดหมู่นี้</p>
+            <p className="text-xs text-slate-400">เลือกแท็บสถานะอื่นหรือล้างคำค้นหา</p>
+          </div>
+        ) : (
+          filteredBookings.map((item) => {
+            const is81 = item.booking_status === 'PendingContract' || item.booking_status === 'PendingOwnerSignature';
+            const is82 = item.booking_status === 'PendingFirstBill';
+            const is83 = item.booking_status === 'Active';
+            const is84 = item.booking_status === 'Cancelled';
+
+            return (
+              <div
+                key={item.contract_id}
+                className="bg-slate-900/90 border border-white/10 rounded-3xl p-6 shadow-2xl space-y-5 transition-all hover:border-white/20"
               >
-                <option value="ALL">🏢 แสดงทุกหอพัก (All Dorms)</option>
-                {dormsList.map(d => (
-                  <option key={d.id} value={d.id}>🏢 {d.dorm_name}</option>
-                ))}
-              </select>
-            )}
+                {/* Card Top Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-center text-xl">
+                      🚪
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-white">
+                        ห้อง {item.room_number}{' '}
+                        <span className="text-xs font-normal text-slate-400">({item.room_type || 'ห้องพัก'} • ชั้น {item.floor || 1})</span>
+                      </h3>
+                      <p className="text-[11px] text-slate-400">
+                        จองเมื่อ: {item.booking_created_at ? new Date(item.booking_created_at).toLocaleDateString('th-TH') : '-'}
+                      </p>
+                    </div>
+                  </div>
 
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="flex-1 sm:flex-none min-h-[44px] px-4 sm:px-5 py-2.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-2xl text-xs shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <span>➕</span>
-              <span>เพิ่มจอง Walk-in</span>
-            </button>
-            <button
-              onClick={() => fetchBookings()}
-              className="min-h-[44px] px-3.5 py-2.5 bg-white/5 hover:bg-white/10 text-white font-bold rounded-2xl text-xs border border-border transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-              title="รีเฟรชข้อมูล"
-            >
-              <span>🔄</span>
-              <span className="hidden sm:inline">รีเฟรช</span>
-            </button>
-          </div>
-        </div>
+                  {/* Status Badge */}
+                  <div>
+                    <span className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider border ${
+                      is81 ? 'bg-amber-500/10 border-amber-500/40 text-amber-400' :
+                      is82 ? 'bg-blue-500/10 border-blue-500/40 text-blue-400' :
+                      is83 ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400' :
+                      'bg-rose-500/10 border-rose-500/40 text-rose-400'
+                    }`}>
+                      {is81 ? '🟡 8.1 รอทำสัญญา' :
+                       is82 ? '🔵 8.2 รอชำระค่าแรกเข้า' :
+                       is83 ? '🟢 8.3 เข้าพักเรียบร้อย' : '🔴 8.4 ยกเลิกการจอง'}
+                    </span>
+                  </div>
+                </div>
 
-        {/* Stats Cards - Touch friendly Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
-          <div 
-            onClick={() => setActiveTab('Pending')}
-            className={cn(
-              "p-4 sm:p-6 rounded-[1.75rem] sm:rounded-[2rem] border shadow-lg relative overflow-hidden cursor-pointer transition-all active:scale-98 group",
-              activeTab === 'Pending' ? "bg-amber-950/40 border-amber-500 ring-2 ring-amber-500/20" : "bg-card border-amber-500/30 hover:border-amber-500"
-            )}
-          >
-            <div className="absolute top-0 right-0 w-20 h-20 bg-amber-500/10 rounded-full blur-2xl group-hover:bg-amber-500/20 transition-all" />
-            <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-amber-400 block mb-1">รอดำเนินการ</span>
-            <div className="flex items-baseline gap-1.5 sm:gap-2">
-              <span className="text-2xl sm:text-4xl font-black text-amber-300">{pendingCount}</span>
-              <span className="text-[10px] sm:text-xs text-muted-foreground">รายการ</span>
-            </div>
-            <p className="text-[9px] sm:text-[10px] text-amber-400/80 mt-1 sm:mt-2 font-medium truncate">คลิกเพื่อตรวจสลิป →</p>
-          </div>
+                {/* Card Body (3 Sub-cards Layout) */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Box 1: Guest Info */}
+                  <div className="bg-slate-950/60 p-4 rounded-2xl border border-white/5 space-y-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">ข้อมูลผู้จอง</p>
+                    <p className="text-sm font-black text-white">{item.guest_name || 'ไม่ระบุชื่อ'}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-300 font-mono">📞 {item.guest_phone || '-'}</span>
+                      {item.guest_phone && (
+                        <a
+                          href={`tel:${item.guest_phone}`}
+                          className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500 text-emerald-400 hover:text-white rounded-lg text-[10px] font-bold transition-colors"
+                        >
+                          โทรออก
+                        </a>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400 truncate">✉️ {item.guest_email || '-'}</p>
+                  </div>
 
-          <div className="bg-card p-4 sm:p-6 rounded-[1.75rem] sm:rounded-[2rem] border border-emerald-500/30 shadow-lg relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/10 rounded-full blur-2xl" />
-            <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-emerald-400 block mb-1">เงินประกันรอตรวจ</span>
-            <div className="flex items-baseline gap-1">
-              <span className="text-lg sm:text-3xl font-black text-emerald-400 truncate">฿{pendingDepositTotal.toLocaleString()}</span>
-            </div>
-            <p className="text-[9px] sm:text-[10px] text-muted-foreground mt-1 sm:mt-2 font-medium truncate">1 เดือน (PromptPay)</p>
-          </div>
+                  {/* Box 2: Financial & Contract */}
+                  <div className="bg-slate-950/60 p-4 rounded-2xl border border-white/5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">ข้อมูลสัญญาที่แขกกรอก</p>
+                      <button
+                        onClick={() => setPreviewContractModal(item)}
+                        className="px-2 py-0.5 bg-blue-500/20 hover:bg-blue-500 text-blue-300 hover:text-white rounded-lg text-[10px] font-bold transition-all flex items-center gap-1"
+                      >
+                        <span>🔍</span>
+                        <span>ดูข้อมูลสัญญา</span>
+                      </button>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400">เงินมัดจำการจอง:</span>
+                      <span className="font-mono font-black text-emerald-400">฿{Number(item.deposit_amount || 1000).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400">ค่าเช่ารายเดือน:</span>
+                      <span className="font-mono font-black text-white">฿{Number(item.monthly_rent || 3400).toLocaleString()} /ด.</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 truncate">
+                      บัตร ปชช: {item.id_card_number || '-'}
+                    </p>
+                    <div className="pt-1 flex items-center gap-2">
+                      <a
+                        href={`/api/contracts/export-pdf?contractId=${item.contract_id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="w-full py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white text-[11px] font-bold rounded-lg border border-rose-500/30 transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <span>📄</span>
+                        <span>ดู / บันทึกสัญญา (PDF)</span>
+                      </a>
+                    </div>
+                  </div>
 
-          <div 
-            onClick={() => setActiveTab('Active')}
-            className={cn(
-              "p-4 sm:p-6 rounded-[1.75rem] sm:rounded-[2rem] border shadow-lg cursor-pointer transition-all active:scale-98",
-              activeTab === 'Active' ? "bg-emerald-950/30 border-emerald-500 ring-2 ring-emerald-500/20" : "bg-card border-border hover:border-emerald-500/40"
-            )}
-          >
-            <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-1">อนุมัติแล้ว</span>
-            <div className="flex items-baseline gap-1.5 sm:gap-2">
-              <span className="text-2xl sm:text-4xl font-black text-foreground">{approvedCount}</span>
-              <span className="text-[10px] sm:text-xs text-muted-foreground">สัญญา</span>
-            </div>
-            <p className="text-[9px] sm:text-[10px] text-muted-foreground mt-1 sm:mt-2 font-medium truncate">สัญญาใช้งานอยู่</p>
-          </div>
+                  {/* Box 3: Slip Evidence */}
+                  <div className="bg-slate-950/60 p-4 rounded-2xl border border-white/5 space-y-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">สลิปโอนเงินมัดจำ (1,000 บ.)</p>
+                    {item.slip_url ? (
+                      <div className="space-y-2">
+                        <button
+                          onClick={() => setPreviewSlipUrl(item.slip_url)}
+                          className="w-full py-2 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold rounded-xl border border-white/10 transition-all flex items-center justify-center gap-2"
+                        >
+                          <span>🖼️</span>
+                          <span>ดูภาพสลิปมัดจำ</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-500 italic py-2">ไม่มีสลิปแนบ</p>
+                    )}
+                  </div>
+                </div>
 
-          <div 
-            onClick={() => setActiveTab('All')}
-            className={cn(
-              "p-4 sm:p-6 rounded-[1.75rem] sm:rounded-[2rem] border shadow-lg cursor-pointer transition-all active:scale-98",
-              activeTab === 'All' ? "bg-slate-800/80 border-white/40 ring-2 ring-white/10" : "bg-card border-border hover:border-white/30"
-            )}
-          >
-            <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-1">ทั้งหมด</span>
-            <div className="flex items-baseline gap-1.5 sm:gap-2">
-              <span className="text-2xl sm:text-4xl font-black text-foreground">{totalBookingsCount}</span>
-              <span className="text-[10px] sm:text-xs text-muted-foreground">รายการ</span>
-            </div>
-            <p className="text-[9px] sm:text-[10px] text-muted-foreground mt-1 sm:mt-2 font-medium truncate">ประวัติทั้งหมด</p>
-          </div>
-        </div>
+                {/* Footer Action Bar */}
+                <div className="pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    {item.contract_file_url && (
+                      <a
+                        href={item.contract_file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3.5 py-2 bg-white/5 hover:bg-white/10 text-white text-xs font-bold rounded-xl border border-white/10 transition-all flex items-center gap-1.5"
+                      >
+                        <span>📄</span>
+                        <span>สัญญาฉบับเต็ม</span>
+                      </a>
+                    )}
 
-        {/* Segmented Control & Filter Bar (iOS Style) */}
-        <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3 bg-card p-2.5 sm:p-4 rounded-2xl sm:rounded-3xl border border-border">
-          
-          {/* iOS Segmented Tabs with horizontal scrolling */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
-            <button
-              onClick={() => setActiveTab('Pending')}
-              className={cn(
-                "min-h-[40px] px-3.5 sm:px-5 py-2 rounded-xl sm:rounded-2xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
-                activeTab === 'Pending'
-                  ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20"
-                  : "text-muted-foreground hover:text-white hover:bg-white/5"
-              )}
-            >
-              ⏳ รอดำเนินการ ({pendingCount})
-            </button>
-            <button
-              onClick={() => setActiveTab('Active')}
-              className={cn(
-                "min-h-[40px] px-3.5 sm:px-5 py-2 rounded-xl sm:rounded-2xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
-                activeTab === 'Active'
-                  ? "bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20"
-                  : "text-muted-foreground hover:text-white hover:bg-white/5"
-              )}
-            >
-              ✓ อนุมัติแล้ว ({approvedCount})
-            </button>
-            <button
-              onClick={() => setActiveTab('Cancelled')}
-              className={cn(
-                "min-h-[40px] px-3.5 sm:px-5 py-2 rounded-xl sm:rounded-2xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
-                activeTab === 'Cancelled'
-                  ? "bg-rose-500 text-white shadow-md shadow-rose-500/20"
-                  : "text-muted-foreground hover:text-white hover:bg-white/5"
-              )}
-            >
-              ✕ ยกเลิก
-            </button>
-            <button
-              onClick={() => { setActiveTab('Refund'); fetchRefundRequests(); }}
-              className={cn(
-                "min-h-[40px] px-3.5 sm:px-5 py-2 rounded-xl sm:rounded-2xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer relative",
-                activeTab === 'Refund'
-                  ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
-                  : "text-muted-foreground hover:text-white hover:bg-white/5"
-              )}
-            >
-              💰 คำร้องคืนมัดจำ
-              {pendingRefundCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center min-w-[18px] px-1">
-                  {pendingRefundCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('All')}
-              className={cn(
-                "min-h-[40px] px-3.5 sm:px-5 py-2 rounded-xl sm:rounded-2xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
-                activeTab === 'All'
-                  ? "bg-white/20 text-white"
-                  : "text-muted-foreground hover:text-white hover:bg-white/5"
-              )}
-            >
-              ทั้งหมด ({totalBookingsCount})
-            </button>
-          </div>
+                    <button
+                      onClick={() => setPreviewBillModal(item)}
+                      className="px-3.5 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 text-xs font-bold rounded-xl border border-blue-500/30 transition-all flex items-center gap-1.5 hover:scale-105 active:scale-95 cursor-pointer"
+                    >
+                      <span>🧾</span>
+                      <span>ดูบิลแรกเข้า</span>
+                    </button>
+                  </div>
 
-          {/* Floor Filter & Search */}
-          <div className="flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
-            {floors.length > 0 && (
-              <select
-                value={selectedFloor}
-                onChange={(e) => setSelectedFloor(e.target.value)}
-                className="min-h-[42px] px-3 py-2 bg-slate-900 border border-border rounded-xl sm:rounded-2xl text-xs text-white focus:outline-none focus:border-primary cursor-pointer"
-              >
-                <option value="ALL">ทุกชั้น</option>
-                {floors.map(f => (
-                  <option key={f} value={f}>ชั้น {f}</option>
-                ))}
-              </select>
-            )}
+                  {/* Primary Actions based on stage */}
+                  <div className="flex items-center gap-2">
+                    {is81 && (
+                      <button
+                        onClick={() => setUploadContractBooking(item)}
+                        className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs rounded-xl shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
+                      >
+                        <span>✍️</span>
+                        <span>อัปโหลดสัญญา & ออกบิลแรกเข้า</span>
+                      </button>
+                    )}
 
-            <div className="relative flex-1 min-w-[180px]">
-              <input
-                type="text"
-                placeholder="ค้นหาชื่อ, ห้อง, เบอร์โทร..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full min-h-[42px] pl-8 pr-3 py-2 bg-slate-900 border border-border rounded-xl sm:rounded-2xl text-xs text-white placeholder-white/40 focus:outline-none focus:border-primary"
-              />
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">🔍</span>
-            </div>
-          </div>
+                    {is82 && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-blue-400 font-bold">
+                          รอ Guest ชำระค่าแรกเข้า (฿{Number((item.first_bill_amount) || (item.monthly_rent + 2000)).toLocaleString()})
+                        </span>
+                      </div>
+                    )}
 
-        </div>
+                    {is83 && (
+                      <span className="px-4 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-bold rounded-xl flex items-center gap-1.5">
+                        <span>✓</span>
+                        <span>สัญญาใช้งานอยู่ (ลูกหอปัจจุบัน)</span>
+                      </span>
+                    )}
 
-        {/* ── Refund Requests Tab ── */}
-        {activeTab === 'Refund' ? (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-black text-foreground flex items-center gap-2">
-                <span>💰</span>
-                <span>คำร้องขอคืนเงินมัดจำ</span>
-                {pendingRefundCount > 0 && (
-                  <span className="px-2 py-0.5 bg-rose-500 text-white text-[10px] font-black rounded-full">
-                    {pendingRefundCount} รอดำเนินการ
-                  </span>
-                )}
-              </h2>
+                    {is84 && (
+                      <span className="px-4 py-2 bg-rose-500/10 text-rose-400 border border-rose-500/30 text-xs font-bold rounded-xl">
+                        ยกเลิกแล้ว (ไม่คืนเงินมัดจำ)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Slip Preview Modal */}
+      {previewSlipUrl && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center pb-3 border-b border-white/10">
+              <h3 className="text-base font-black text-white">หลักฐานสลิปโอนเงิน</h3>
               <button
-                onClick={() => fetchRefundRequests()}
-                className="text-xs text-muted-foreground hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
+                onClick={() => setPreviewSlipUrl(null)}
+                className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold"
               >
-                🔄 รีเฟรช
+                ✕
+              </button>
+            </div>
+            <div className="relative min-h-[350px] max-h-[70vh] bg-black/40 rounded-2xl overflow-hidden border border-white/5 flex flex-col items-center justify-center p-2">
+              <img
+                src={previewSlipUrl}
+                alt="Slip Preview"
+                className="max-h-[60vh] max-w-full object-contain rounded-xl shadow-lg"
+                onError={(e) => {
+                  console.error('Image load error for:', previewSlipUrl);
+                }}
+              />
+              <div className="mt-3 flex items-center gap-3">
+                <a
+                  href={previewSlipUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-4 py-2 bg-primary hover:bg-primary/90 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-1.5"
+                >
+                  <span>🔍</span>
+                  <span>เปิดดูภาพขนาดเต็ม</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Guest Contract Details Modal */}
+      {previewContractModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center pb-4 border-b border-white/10">
+              <div>
+                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                  <span>📄</span>
+                  <span>รายละเอียดสัญญาที่ผู้จองกรอก (ห้อง {previewContractModal.room_number})</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">ผู้จอง: {previewContractModal.guest_name}</p>
+              </div>
+              <button
+                onClick={() => setPreviewContractModal(null)}
+                className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold"
+              >
+                ✕
               </button>
             </div>
 
-            {refundLoading ? (
-              <div className="flex items-center justify-center min-h-[20vh]">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500" />
-              </div>
-            ) : refundRequests.length === 0 ? (
-              <div className="bg-card border-2 border-dashed border-border rounded-[2rem] p-12 text-center space-y-3">
-                <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-2xl mx-auto">💰</div>
-                <h3 className="text-base font-bold text-foreground">ไม่มีคำร้องขอคืนเงินมัดจำ</h3>
-                <p className="text-xs text-muted-foreground">เมื่อผู้จองยื่นคำร้องขอคืนเงิน รายการจะปรากฏที่นี่</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-4">
-                {refundRequests.map((req: any) => {
-                  const isPending = req.status === 'pending';
-                  const isApproved = req.status === 'approved';
-                  return (
-                    <div
-                      key={req.id}
-                      className={`bg-card rounded-[1.75rem] border p-5 sm:p-6 space-y-4 transition-all ${
-                        isPending ? 'border-amber-500/40 shadow-lg shadow-amber-500/5' : 'border-border opacity-75'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3 flex-wrap">
-                        <div>
-                          <p className="font-black text-foreground text-base">
-                            {req.requester_name || 'ไม่ระบุชื่อ'}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {req.requester_email} • ห้อง {req.room_number} ({req.dorm_name})
-                          </p>
-                          <p className="text-[10px] text-muted-foreground mt-0.5">
-                            ยื่นเมื่อ {new Date(req.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-bold shrink-0 ${
-                          isPending ? 'bg-amber-500/15 border-amber-500/30 text-amber-400'
-                          : isApproved ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
-                          : 'bg-rose-500/15 border-rose-500/30 text-rose-400'
-                        }`}>
-                          <span className={`w-2 h-2 rounded-full ${
-                            isPending ? 'bg-amber-400 animate-pulse' : isApproved ? 'bg-emerald-400' : 'bg-rose-400'
-                          }`} />
-                          {isPending ? 'รอดำเนินการ' : isApproved ? 'อนุมัติแล้ว' : 'ไม่อนุมัติ'}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between text-sm bg-secondary/50 rounded-2xl px-4 py-3">
-                        <span className="text-muted-foreground">จำนวนเงินที่ขอคืน</span>
-                        <span className="font-black text-amber-400 text-lg">฿{Number(req.deposit_amount).toLocaleString()}</span>
-                      </div>
-
-                      {req.reason && (
-                        <div className="text-xs text-muted-foreground bg-secondary/30 rounded-xl px-3 py-2">
-                          <span className="font-semibold text-foreground">เหตุผล: </span>{req.reason}
-                        </div>
-                      )}
-
-                      {req.owner_note && (
-                        <div className={`text-xs rounded-xl px-3 py-2 ${
-                          isApproved ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'
-                        }`}>
-                          <span className="font-semibold">หมายเหตุของคุณ: </span>{req.owner_note}
-                        </div>
-                      )}
-
-                      {isPending && (
-                        <div className="flex gap-3 pt-1">
-                          <button
-                            onClick={() => { setApprovingRefund(req); setRefundOwnerNote(''); setRefundSlipUrl(''); }}
-                            className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-2xl text-xs transition-all active:scale-[0.98] cursor-pointer shadow-sm"
-                          >
-                            ✓ อนุมัติคืนเงิน
-                          </button>
-                          <button
-                            onClick={() => { setRejectingRefund(req); setRejectRefundNote(''); }}
-                            className="flex-1 py-2.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 font-bold rounded-2xl text-xs transition-all border border-rose-500/30 active:scale-[0.98] cursor-pointer"
-                          >
-                            ✕ ปฏิเสธคำร้อง
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        ) : null}
-
-        {/* Bookings List */}
-        {activeTab !== 'Refund' && loading ? (
-          <div className="flex items-center justify-center min-h-[30vh]">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />
-          </div>
-        ) : activeTab !== 'Refund' && filteredBookings.length === 0 ? (
-          <div className="bg-card border-2 border-dashed border-border rounded-[2rem] sm:rounded-[3rem] p-10 sm:p-16 text-center space-y-3">
-            <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-2xl mx-auto text-muted-foreground">
-              🛎️
-            </div>
-            <h3 className="text-base sm:text-lg font-bold text-foreground">ไม่พบรายการจองห้องพักในหมวดนี้</h3>
-            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-              {activeTab === 'Pending' 
-                ? 'ขณะนี้ไม่มีคำขอจองห้องพักที่รอดำเนินการ (ลองเลือกแท็บ "ทั้งหมด" เพื่อดูประวัติการจอง)' 
-                : 'ลองเปลี่ยนตัวกรองเพื่อตรวจสอบประวัติการจองอื่นๆ'}
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:gap-6">
-            {filteredBookings.map((booking) => {
-              const isPending = booking.booking_status === 'PendingOwnerSignature';
-              const isActive = booking.booking_status === 'Active';
-              const isCancelled = booking.booking_status === 'Cancelled';
-
-              return (
-                <div 
-                  key={booking.contract_id}
-                  className={cn(
-                    "bg-card rounded-[2rem] border p-5 sm:p-8 transition-all space-y-5 shadow-xl",
-                    isPending ? "border-amber-500/40 bg-gradient-to-br from-[#0F172A] via-slate-900 to-amber-950/20" :
-                    isActive ? "border-emerald-500/20" :
-                    "border-border opacity-75"
-                  )}
-                >
-                  {/* Header Row */}
-                  <div className="flex justify-between items-start sm:items-center gap-3 pb-3 sm:pb-4 border-b border-border">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center text-lg sm:text-xl font-bold shrink-0">
-                        🚪
-                      </div>
-                      <div>
-                        <div className="flex items-baseline gap-2 flex-wrap">
-                          <h3 className="text-xl sm:text-2xl font-black text-foreground">ห้อง {booking.room_number}</h3>
-                          <span className="text-[11px] sm:text-xs text-muted-foreground font-normal">({booking.room_type || 'Standard'} • ชั้น {booking.floor || 1})</span>
-                        </div>
-                        <p className="text-[11px] sm:text-xs text-muted-foreground">
-                          {booking.dorm_name ? `${booking.dorm_name} • ` : ''}จองเมื่อ: {booking.booking_created_at ? new Date(booking.booking_created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className={cn(
-                        "px-3 py-1 sm:px-4 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-bold border flex items-center gap-1.5",
-                        isPending ? "bg-amber-500/15 border-amber-500/30 text-amber-300" :
-                        isActive ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400" :
-                        "bg-rose-500/15 border-rose-500/30 text-rose-400"
-                      )}>
-                        <span className={cn(
-                          "w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full",
-                          isPending ? "bg-amber-400 animate-pulse" :
-                          isActive ? "bg-emerald-400" :
-                          "bg-rose-400"
-                        )} />
-                        {isPending ? 'รอตรวจสลิป' :
-                         isActive ? 'อนุมัติแล้ว' :
-                         'ยกเลิก'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Details Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-                    
-                    {/* Guest Info */}
-                    <div className="space-y-1.5 bg-slate-900/60 p-4 sm:p-5 rounded-2xl border border-border">
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-primary">ข้อมูลผู้จอง</span>
-                        <button
-                          onClick={() => openEditModal(booking)}
-                          className="text-[10px] text-muted-foreground hover:text-white underline cursor-pointer p-1"
-                        >
-                          ✏️ แก้ไข
-                        </button>
-                      </div>
-                      <p className="text-base sm:text-lg font-bold text-foreground">คุณ{booking.guest_name}</p>
-                      <div className="flex items-center gap-2">
-                        <p className="text-xs text-white/70 font-mono">📱 {booking.guest_phone || '-'}</p>
-                        {booking.guest_phone && (
-                          <a 
-                            href={`tel:${booking.guest_phone}`} 
-                            className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-md text-[10px] font-bold"
-                          >
-                            📞 โทรออก
-                          </a>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground font-mono truncate">✉️ {booking.guest_email || '-'}</p>
-                      {booking.booking_notes && (
-                        <p className="text-[11px] text-amber-300/80 italic pt-1 border-t border-border">
-                          📝 {booking.booking_notes}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Financial & Contract Info */}
-                    <div className="space-y-1 bg-slate-900/60 p-4 sm:p-5 rounded-2xl border border-border">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-primary">ยอดเงินและสัญญา</span>
-                      <div className="flex justify-between items-baseline pt-1">
-                        <span className="text-xs text-muted-foreground">เงินประกัน (1 เดือน):</span>
-                        <span className="text-lg sm:text-xl font-black text-emerald-400">฿{Number(booking.deposit_amount || 0).toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between items-baseline text-xs text-muted-foreground">
-                        <span>ค่าเช่ารายเดือน:</span>
-                        <span className="text-white font-bold">฿{Number(booking.monthly_rent || 0).toLocaleString()} /ด.</span>
-                      </div>
-                      <p className="text-[10px] sm:text-[11px] text-muted-foreground pt-1">
-                        เริ่ม: {new Date(booking.start_date).toLocaleDateString('th-TH')} — {new Date(booking.end_date).toLocaleDateString('th-TH')}
-                      </p>
-                    </div>
-
-                    {/* Slip Preview Box */}
-                    <div className="bg-slate-900/60 p-4 sm:p-5 rounded-2xl border border-border flex items-center justify-between gap-3">
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-primary">สลิปโอนเงิน PromptPay</span>
-                        {booking.slip_url ? (
-                          <div>
-                            <p className="text-xs font-bold text-emerald-400">✓ แนบสลิปแล้ว</p>
-                            <p className="text-[10px] text-muted-foreground">แตะรูปเพื่อขยายตรวจสอบ</p>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">ไม่มีสลิปแนบ</p>
-                        )}
-                      </div>
-
-                      {booking.slip_url && (
-                        <div 
-                          onClick={() => {
-                            setPreviewSlipUrl(booking.slip_url);
-                            setPreviewSlipTitle(`สลิปห้อง ${booking.room_number} (คุณ${booking.guest_name})`);
-                          }}
-                          className="w-14 h-18 sm:w-16 sm:h-20 rounded-xl overflow-hidden bg-black border border-white/20 relative cursor-pointer group shadow-lg shrink-0 active:scale-95 transition-transform"
-                        >
-                          <img src={booking.slip_url} alt="Slip" className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-[9px] font-bold">
-                            🔍 ขยาย
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                  </div>
-
-                  {/* Management Action Bar */}
-                  <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 pt-3 border-t border-border">
-                    
-                    {/* Quick Links */}
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <Link
-                        href={`/owner/contracts/${booking.contract_id}`}
-                        className="text-xs font-bold text-primary hover:underline flex items-center gap-1 py-1"
-                      >
-                        <span>📄 สัญญาฉบับเต็ม</span>
-                        <span>→</span>
-                      </Link>
-
-                      {/* View / Upload Contract Document Button */}
-                      <button
-                        onClick={() => {
-                          setContractDocBooking(booking);
-                          setContractDocFile(null);
-                        }}
-                        className={cn(
-                          "text-xs font-bold flex items-center gap-1.5 cursor-pointer py-1 px-2.5 rounded-lg border transition-all",
-                          booking.contract_file_url 
-                            ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25" 
-                            : "bg-white/5 border-white/10 text-foreground/70 hover:text-white hover:bg-white/10"
-                        )}
-                      >
-                        <span>{booking.contract_file_url ? '📄 ดูไฟล์สัญญา' : '📎 แนบไฟล์สัญญา'}</span>
-                      </button>
-
-                      <button
-                        onClick={() => setPrintingBooking(booking)}
-                        className="text-xs font-bold text-foreground/70 hover:text-white flex items-center gap-1 cursor-pointer py-1"
-                      >
-                        <span>🖨️</span>
-                        <span>พิมพ์ใบรับเงิน</span>
-                      </button>
-
-                      <Link
-                        href="/owner/chat"
-                        className="text-xs font-bold text-foreground/70 hover:text-white flex items-center gap-1 py-1"
-                      >
-                        <span>💬 แชท</span>
-                      </Link>
-
-                      <button
-                        onClick={() => openEditModal(booking)}
-                        className="text-xs font-bold text-foreground/50 hover:text-white flex items-center gap-1 cursor-pointer py-1"
-                      >
-                        <span>⚙️ จัดการ</span>
-                      </button>
-                    </div>
-
-                    {/* Primary Action Buttons (Mobile Full Width Stack) */}
-                    <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto pt-2 sm:pt-0">
-                      {isPending && (
-                        <>
-                          <button
-                            onClick={() => {
-                              setRejectingBooking(booking);
-                              setRejectReason('สลิปไม่ถูกต้อง / ยอดเงินไม่ตรงตามที่กำหนด');
-                              setCustomRejectNote('');
-                            }}
-                            className="flex-1 sm:flex-none min-h-[44px] px-3.5 py-2.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer"
-                          >
-                            ✕ ปฏิเสธ
-                          </button>
-                          <button
-                            onClick={() => openApproveModal(booking)}
-                            className="flex-[2] sm:flex-none min-h-[44px] px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all shadow-lg active:scale-95 cursor-pointer"
-                          >
-                            ✓ ตรวจสอบ & อนุมัติ
-                          </button>
-                        </>
-                      )}
-
-                      {isActive && (
-                        <span className="w-full sm:w-auto text-center text-xs font-bold text-emerald-400 bg-emerald-500/10 px-4 py-2.5 rounded-xl border border-emerald-500/20">
-                          ✓ สัญญาใช้งานอยู่
-                        </span>
-                      )}
-
-                      {isCancelled && (
-                        <span className="w-full sm:w-auto text-center text-xs font-bold text-rose-400 bg-rose-500/10 px-4 py-2.5 rounded-xl border border-rose-500/20">
-                          ยกเลิกแล้ว
-                        </span>
-                      )}
-                    </div>
-
-                  </div>
-
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* 1. APPROVAL MODAL (อนุมัติการจองพร้อมตัวเลือกออกบิล) */}
-        {/* ========================================================================= */}
-        {approvingBooking && (
-          <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
-            <div className="max-w-xl w-full bg-slate-900 rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-8 border border-emerald-500/40 space-y-5 shadow-2xl my-auto max-h-[92dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              
-              <div className="flex justify-between items-start border-b border-border pb-3">
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">อนุมัติการจองห้องพัก</span>
-                  <h3 className="text-xl sm:text-2xl font-black text-foreground">ห้อง {approvingBooking.room_number}</h3>
-                  <p className="text-xs text-muted-foreground">ผู้จอง: คุณ{approvingBooking.guest_name}</p>
-                </div>
-                <button onClick={() => setApprovingBooking(null)} className="text-muted-foreground hover:text-white text-2xl p-2 -mr-2">✕</button>
-              </div>
-
-              {/* Slip Quick Preview in Approval */}
-              {approvingBooking.slip_url && (
-                <div className="p-3.5 bg-slate-950 rounded-2xl border border-border flex items-center justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <span className="text-[10px] font-bold text-foreground/50 uppercase">สลิปเงินประกัน</span>
-                    <p className="text-sm font-bold text-emerald-400">฿{Number(approvingBooking.deposit_amount).toLocaleString()} (1 เดือน)</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPreviewSlipUrl(approvingBooking.slip_url);
-                      setPreviewSlipTitle(`สลิปห้อง ${approvingBooking.room_number}`);
-                    }}
-                    className="min-h-[38px] px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl transition-all cursor-pointer"
-                  >
-                    🔍 ดูรูปสลิป
-                  </button>
-                </div>
-              )}
-
-              {/* Options */}
-              <div className="space-y-4 text-xs">
-                
-                {/* Change Room if needed */}
-                <div className="space-y-1.5">
-                  <label className="text-white/70 font-bold uppercase tracking-wider block">กำหนดห้องพัก</label>
-                  <select
-                    value={approveForm.customRoomId}
-                    onChange={(e) => setApproveForm({ ...approveForm, customRoomId: Number(e.target.value) })}
-                    className="w-full min-h-[46px] px-4 py-2.5 bg-slate-950 border border-border rounded-xl text-white font-bold text-sm"
-                  >
-                    <option value={approvingBooking.room_id}>ห้อง {approvingBooking.room_number} (ห้องเดิมที่จอง)</option>
-                    {availableRooms
-                      .filter(r => r.id !== approvingBooking.room_id && r.status === 'Available')
-                      .map(r => (
-                        <option key={r.id} value={r.id}>ย้ายไปห้อง {r.room_number} (ชั้น {r.floor} • ฿{Number(r.price).toLocaleString()})</option>
-                      ))}
-                  </select>
-                </div>
-
-                {/* Start Date */}
-                <div className="space-y-1.5">
-                  <label className="text-white/70 font-bold uppercase tracking-wider block">วันที่เริ่มสัญญา / วันที่เข้าพัก</label>
-                  <input
-                    type="date"
-                    value={approveForm.customStartDate}
-                    onChange={(e) => setApproveForm({ ...approveForm, customStartDate: e.target.value })}
-                    className="w-full min-h-[46px] px-4 py-2.5 bg-slate-950 border border-border rounded-xl text-white font-bold text-sm"
-                  />
-                </div>
-
-                {/* Initial Invoice Option */}
-                <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-border space-y-2">
-                  <label className="flex items-center gap-3 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={approveForm.createInitialBill}
-                      onChange={(e) => setApproveForm({ ...approveForm, createInitialBill: e.target.checked })}
-                      className="w-5 h-5 rounded accent-primary cursor-pointer shrink-0"
-                    />
-                    <span className="font-bold text-foreground text-xs">
-                      ออกใบแจ้งหนี้ค่าเช่าเดือนแรกทันที (฿{Number(approvingBooking.monthly_rent).toLocaleString()})
-                    </span>
-                  </label>
-                  <p className="text-[11px] text-muted-foreground pl-8 leading-relaxed">
-                    ระบบจะสร้างบิลค่าเช่าเดือนแรกให้ผู้เช่าอัตโนมัติ โดยผู้เช่าสามารถชำระเมื่อเข้าพักจริง
-                  </p>
-                </div>
-
-                {/* Upload Contract Document (Image or PDF) */}
-                <div className="p-4 bg-slate-950/90 rounded-2xl border border-emerald-500/30 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <span>📄 แนบไฟล์สัญญาเป็นหลักฐาน (รูปภาพ หรือ PDF)</span>
-                    </label>
-                    <span className="text-[10px] text-muted-foreground font-normal">(ไม่บังคับ/แนบภายหลังได้)</span>
-                  </div>
-                  <input
-                    type="file"
-                    accept="image/*,application/pdf"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      const reader = new FileReader();
-                      reader.onloadend = () => {
-                        setApproveForm(prev => ({
-                          ...prev,
-                          contractFileUrl: reader.result as string,
-                          contractFileName: file.name
-                        }));
-                      };
-                      reader.readAsDataURL(file);
-                    }}
-                    className="w-full text-xs text-white/80 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-500 file:text-slate-950 hover:file:bg-emerald-400 cursor-pointer bg-slate-900 p-2 rounded-xl border border-white/10"
-                  />
-                  {approveForm.contractFileName && (
-                    <div className="flex items-center justify-between text-xs text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
-                      <span className="truncate">✓ เลือกไฟล์: {approveForm.contractFileName}</span>
-                      <button
-                        type="button"
-                        onClick={() => setApproveForm(prev => ({ ...prev, contractFileUrl: '', contractFileName: '' }))}
-                        className="text-rose-400 hover:text-rose-300 ml-2 font-bold cursor-pointer"
-                      >
-                        ✕ ลบ
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setApprovingBooking(null)}
-                  className="flex-1 min-h-[46px] py-3 bg-white/5 hover:bg-white/10 text-white rounded-2xl text-xs font-bold transition-all active:scale-95"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="button"
-                  onClick={handleApproveSubmit}
-                  disabled={submitting}
-                  className="flex-[2] min-h-[46px] py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-2xl text-xs font-black transition-all shadow-lg active:scale-95 disabled:opacity-50 cursor-pointer"
-                >
-                  {submitting ? 'กำลังดำเนินการ...' : '✓ ยืนยันการอนุมัติ'}
-                </button>
-              </div>
-
-            </div>
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* 2. REJECTION MODAL (ปฏิเสธคำขอจอง) */}
-        {/* ========================================================================= */}
-        {rejectingBooking && (
-          <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
-            <div className="max-w-md w-full bg-slate-900 rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-8 border border-rose-500/40 space-y-5 shadow-2xl my-auto max-h-[92dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              
-              <div className="flex justify-between items-start border-b border-border pb-3">
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-rose-400">ปฏิเสธคำขอจองห้องพัก</span>
-                  <h3 className="text-xl sm:text-2xl font-black text-foreground">ห้อง {rejectingBooking.room_number}</h3>
-                </div>
-                <button onClick={() => setRejectingBooking(null)} className="text-muted-foreground hover:text-white text-2xl p-2 -mr-2">✕</button>
-              </div>
-
-              <div className="space-y-4 text-xs">
-                <div className="space-y-1.5">
-                  <label className="text-white/70 font-bold uppercase tracking-wider block">เหตุผลการปฏิเสธ</label>
-                  <select
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                    className="w-full min-h-[46px] px-4 py-2.5 bg-slate-950 border border-border rounded-xl text-white font-bold text-sm"
-                  >
-                    <option value="สลิปไม่ถูกต้อง / ยอดเงินไม่ตรงตามที่กำหนด">สลิปไม่ถูกต้อง / ยอดเงินไม่ตรงตามที่กำหนด</option>
-                    <option value="ห้องพักปิดปรับปรุง / จองซ้อน">ห้องพักปิดปรับปรุง / จองซ้อน</option>
-                    <option value="ข้อมูลผู้จองไม่ชัดเจนหรือไม่สามารถติดต่อได้">ข้อมูลผู้จองไม่ชัดเจนหรือไม่สามารถติดต่อได้</option>
-                    <option value="ผู้จองขอยกเลิกเอง">ผู้จองขอยกเลิกเอง</option>
-                    <option value="อื่นๆ">อื่นๆ</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-white/70 font-bold uppercase tracking-wider block">หมายเหตุเพิ่มเติม / ข้อความถึงผู้จอง</label>
-                  <textarea
-                    rows={3}
-                    value={customRejectNote}
-                    onChange={(e) => setCustomRejectNote(e.target.value)}
-                    placeholder="เช่น กรุณาติดต่อ 08X-XXX-XXXX เพื่อรับเงินคืน..."
-                    className="w-full px-4 py-2.5 bg-slate-950 border border-border rounded-xl text-white text-sm resize-none"
-                  />
-                </div>
-
-                <p className="text-[11px] text-amber-300/80 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
-                  ⚠️ เมื่อกดยืนยัน ห้อง {rejectingBooking.room_number} จะกลับสู่สถานะ "ว่าง (Available)" ทันที
-                </p>
-              </div>
-
-              <div className="flex gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setRejectingBooking(null)}
-                  className="flex-1 min-h-[46px] py-3 bg-white/5 hover:bg-white/10 text-white rounded-2xl text-xs font-bold transition-all active:scale-95"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRejectSubmit}
-                  disabled={submitting}
-                  className="flex-1 min-h-[46px] py-3 bg-rose-500 hover:bg-rose-600 text-white rounded-2xl text-xs font-bold transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
-                >
-                  {submitting ? 'กำลังส่ง...' : '✕ ยืนยันปฏิเสธ'}
-                </button>
-              </div>
-
-            </div>
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* 3. EDIT BOOKING MODAL (แก้ไขข้อมูลการจอง) */}
-        {/* ========================================================================= */}
-        {editingBooking && (
-          <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
-            <div className="max-w-lg w-full bg-slate-900 rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-8 border border-white/20 space-y-5 shadow-2xl my-auto max-h-[92dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              
-              <div className="flex justify-between items-start border-b border-border pb-3">
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">แก้ไขข้อมูลการจอง</span>
-                  <h3 className="text-xl sm:text-2xl font-black text-foreground">ห้อง {editingBooking.room_number}</h3>
-                </div>
-                <button onClick={() => setEditingBooking(null)} className="text-muted-foreground hover:text-white text-2xl p-2 -mr-2">✕</button>
-              </div>
-
-              <div className="space-y-3.5 text-xs">
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-muted-foreground font-bold block">ชื่อผู้จอง</label>
-                    <input
-                      type="text"
-                      value={editForm.guestName}
-                      onChange={(e) => setEditForm({ ...editForm, guestName: e.target.value })}
-                      className="w-full min-h-[44px] px-4 py-2 bg-slate-950 border border-border rounded-xl text-white font-bold text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-muted-foreground font-bold block">เบอร์โทรศัพท์</label>
-                    <input
-                      type="text"
-                      value={editForm.guestPhone}
-                      onChange={(e) => setEditForm({ ...editForm, guestPhone: e.target.value })}
-                      className="w-full min-h-[44px] px-4 py-2 bg-slate-950 border border-border rounded-xl text-white font-bold text-sm"
-                    />
-                  </div>
-                </div>
-
-                {/* Room Assignment */}
-                <div className="space-y-1">
-                  <label className="text-muted-foreground font-bold block">ย้ายห้องพัก</label>
-                  <select
-                    value={editForm.roomId}
-                    onChange={(e) => setEditForm({ ...editForm, roomId: Number(e.target.value) })}
-                    className="w-full min-h-[44px] px-4 py-2 bg-slate-950 border border-border rounded-xl text-white font-bold text-sm"
-                  >
-                    <option value={editingBooking.room_id}>ห้อง {editingBooking.room_number} (ห้องเดิม)</option>
-                    {availableRooms
-                      .filter(r => r.id !== editingBooking.room_id && r.status === 'Available')
-                      .map(r => (
-                        <option key={r.id} value={r.id}>ห้อง {r.room_number} (ชั้น {r.floor} • ฿{Number(r.price).toLocaleString()})</option>
-                      ))}
-                  </select>
-                </div>
-
-                {/* Contract Dates */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-muted-foreground font-bold block">วันเริ่มสัญญา</label>
-                    <input
-                      type="date"
-                      value={editForm.startDate}
-                      onChange={(e) => setEditForm({ ...editForm, startDate: e.target.value })}
-                      className="w-full min-h-[44px] px-4 py-2 bg-slate-950 border border-border rounded-xl text-white text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-muted-foreground font-bold block">วันสิ้นสุดสัญญา</label>
-                    <input
-                      type="date"
-                      value={editForm.endDate}
-                      onChange={(e) => setEditForm({ ...editForm, endDate: e.target.value })}
-                      className="w-full min-h-[44px] px-4 py-2 bg-slate-950 border border-border rounded-xl text-white text-sm"
-                    />
-                  </div>
-                </div>
-
-                {/* Deposit */}
-                <div className="space-y-1">
-                  <label className="text-muted-foreground font-bold block">ยอดเงินประกัน (฿)</label>
-                  <input
-                    type="number"
-                    value={editForm.depositAmount}
-                    onChange={(e) => setEditForm({ ...editForm, depositAmount: Number(e.target.value) })}
-                    className="w-full min-h-[44px] px-4 py-2 bg-slate-950 border border-border rounded-xl text-white font-bold text-sm"
-                  />
-                </div>
-
-                {/* Notes */}
-                <div className="space-y-1">
-                  <label className="text-muted-foreground font-bold block">บันทึกช่วยจำ (Owner Note)</label>
-                  <textarea
-                    rows={2}
-                    value={editForm.note}
-                    onChange={(e) => setEditForm({ ...editForm, note: e.target.value })}
-                    placeholder="บันทึกข้อความพิเศษ..."
-                    className="w-full px-4 py-2 bg-slate-950 border border-border rounded-xl text-white text-sm resize-none"
-                  />
-                </div>
-
-              </div>
-
-              <div className="flex gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingBooking(null)}
-                  className="flex-1 min-h-[46px] py-3 bg-white/5 hover:bg-white/10 text-white rounded-2xl text-xs font-bold transition-all active:scale-95"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="button"
-                  onClick={handleEditSubmit}
-                  disabled={submitting}
-                  className="flex-1 min-h-[46px] py-3 bg-primary text-white rounded-2xl text-xs font-bold transition-all shadow-lg active:scale-95 disabled:opacity-50 cursor-pointer"
-                >
-                  {submitting ? 'กำลังบันทึก...' : '✓ บันทึก'}
-                </button>
-              </div>
-
-            </div>
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* 4. CREATE WALK-IN BOOKING MODAL (เพิ่มการจองด้วยตนเอง) */}
-        {/* ========================================================================= */}
-        {isCreateModalOpen && (
-          <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
-            <div className="max-w-lg w-full bg-slate-900 rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-8 border border-primary/40 space-y-5 shadow-2xl my-auto max-h-[92dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              
-              <div className="flex justify-between items-start border-b border-border pb-3">
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">เพิ่มการจองใหม่</span>
-                  <h3 className="text-xl sm:text-2xl font-black text-foreground">บันทึกการจอง Walk-in</h3>
-                </div>
-                <button onClick={() => setIsCreateModalOpen(false)} className="text-muted-foreground hover:text-white text-2xl p-2 -mr-2">✕</button>
-              </div>
-
-              <div className="space-y-3.5 text-xs">
-                
-                {/* Room Selection */}
-                <div className="space-y-1">
-                  <label className="text-white/70 font-bold block">เลือกห้องพัก <span className="text-rose-500">*</span></label>
-                  <select
-                    value={createForm.roomId}
-                    onChange={(e) => {
-                      const rId = e.target.value;
-                      const found = availableRooms.find(r => String(r.id) === rId);
-                      setCreateForm({
-                        ...createForm,
-                        roomId: rId,
-                        depositAmount: found ? Number(found.price) : 0
-                      });
-                    }}
-                    className="w-full min-h-[46px] px-4 py-2 bg-slate-950 border border-border rounded-xl text-white font-bold text-sm"
-                  >
-                    <option value="">-- เลือกห้องพักที่ว่าง --</option>
-                    {availableRooms
-                      .filter(r => r.status === 'Available')
-                      .map(r => (
-                        <option key={r.id} value={r.id}>
-                          ห้อง {r.room_number} (ชั้น {r.floor} • ฿{Number(r.price).toLocaleString()} /ด.)
-                        </option>
-                      ))}
-                  </select>
-                </div>
-
-                {/* Guest Info */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-white/70 font-bold block">ชื่อผู้จอง <span className="text-rose-500">*</span></label>
-                    <input
-                      type="text"
-                      placeholder="เช่น สมชาย ใจดี"
-                      value={createForm.guestName}
-                      onChange={(e) => setCreateForm({ ...createForm, guestName: e.target.value })}
-                      className="w-full min-h-[44px] px-4 py-2 bg-slate-950 border border-border rounded-xl text-white font-bold text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-white/70 font-bold block">เบอร์โทรศัพท์</label>
-                    <input
-                      type="tel"
-                      placeholder="08X-XXX-XXXX"
-                      value={createForm.guestPhone}
-                      onChange={(e) => setCreateForm({ ...createForm, guestPhone: e.target.value })}
-                      className="w-full min-h-[44px] px-4 py-2 bg-slate-950 border border-border rounded-xl text-white font-bold text-sm"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-white/70 font-bold block">อีเมล (ถ้ามี)</label>
-                  <input
-                    type="email"
-                    placeholder="student@example.com"
-                    value={createForm.guestEmail}
-                    onChange={(e) => setCreateForm({ ...createForm, guestEmail: e.target.value })}
-                    className="w-full min-h-[44px] px-4 py-2 bg-slate-950 border border-border rounded-xl text-white font-mono text-sm"
-                  />
-                </div>
-
-                {/* Contract Date & Deposit */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-white/70 font-bold block">วันที่เริ่มสัญญา</label>
-                    <input
-                      type="date"
-                      value={createForm.startDate}
-                      onChange={(e) => setCreateForm({ ...createForm, startDate: e.target.value })}
-                      className="w-full min-h-[44px] px-4 py-2 bg-slate-950 border border-border rounded-xl text-white text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-white/70 font-bold block">เงินประกัน 1 เดือน (฿)</label>
-                    <input
-                      type="number"
-                      value={createForm.depositAmount}
-                      onChange={(e) => setCreateForm({ ...createForm, depositAmount: Number(e.target.value) })}
-                      className="w-full min-h-[44px] px-4 py-2 bg-slate-950 border border-border rounded-xl text-white font-bold text-sm"
-                    />
-                  </div>
-                </div>
-
-                {/* Auto Approve Option */}
-                <div className="p-3.5 bg-slate-950 rounded-2xl border border-border space-y-2">
-                  <label className="flex items-center gap-3 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={createForm.autoApprove}
-                      onChange={(e) => setCreateForm({ ...createForm, autoApprove: e.target.checked })}
-                      className="w-5 h-5 rounded accent-primary cursor-pointer shrink-0"
-                    />
-                    <span className="font-bold text-foreground text-xs">
-                      อนุมัติสัญญาและเปิดให้เข้าพักทันที (Active)
-                    </span>
-                  </label>
-                  <p className="text-[11px] text-muted-foreground pl-8">
-                    {createForm.autoApprove 
-                      ? 'ห้องพักจะเปลี่ยนเป็น "ไม่ว่าง (Occupied)" ทันที' 
-                      : 'ห้องพักจะถูกล็อกเป็น "จองแล้ว (Reserved)" รอการอนุมัติ'}
-                  </p>
-                </div>
-
-              </div>
-
-              <div className="flex gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="flex-1 min-h-[46px] py-3 bg-white/5 hover:bg-white/10 text-white rounded-2xl text-xs font-bold transition-all active:scale-95"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCreateSubmit}
-                  disabled={submitting}
-                  className="flex-1 min-h-[46px] py-3 bg-primary hover:bg-primary/90 text-white rounded-2xl text-xs font-black transition-all shadow-lg active:scale-95 disabled:opacity-50 cursor-pointer"
-                >
-                  {submitting ? 'กำลังบันทึก...' : '✓ บันทึกการจอง'}
-                </button>
-              </div>
-
-            </div>
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* 5. PRINTABLE RECEIPT MODAL (พิมพ์ใบรับเงินจอง / สัญญาจอง) */}
-        {/* ========================================================================= */}
-        {printingBooking && (
-          <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
-            <div className="max-w-2xl w-full bg-white text-slate-900 rounded-[1.75rem] sm:rounded-[2rem] p-6 sm:p-10 space-y-5 shadow-2xl my-auto max-h-[92dvh] overflow-y-auto print:m-0 print:p-6" onClick={(e) => e.stopPropagation()}>
-              
-              {/* Printable Header */}
-              <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4 sm:pb-6">
-                <div>
-                  <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
-                    {printingBooking.dorm_name || 'SmartDom Dormitory'}
-                  </h2>
-                  <p className="text-xs text-slate-600 font-medium">ใบรับเงินมัดจำการจองห้องพัก (Booking Deposit Receipt)</p>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] font-black uppercase text-slate-500 block">เลขที่เอกสาร</span>
-                  <span className="text-xs sm:text-sm font-mono font-bold text-slate-900">BK-{String(printingBooking.contract_id).padStart(5, '0')}</span>
-                  <p className="text-[10px] text-slate-500 mt-0.5">
-                    วันที่: {new Date().toLocaleDateString('th-TH')}
-                  </p>
-                </div>
-              </div>
-
-              {/* Receipt Content */}
-              <div className="space-y-4 text-xs">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 bg-slate-50 p-3.5 sm:p-4 rounded-xl border border-slate-200">
+            <div className="space-y-4">
+              {/* Personal Info */}
+              <div className="p-4 bg-slate-950/80 rounded-2xl border border-white/5 space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-widest text-primary">ข้อมูลผู้เช่าและบัตรประชาชน</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div>
-                    <span className="text-[10px] font-bold uppercase text-slate-500 block">ชื่อผู้จองห้องพัก</span>
-                    <span className="text-sm font-bold text-slate-900">คุณ{printingBooking.guest_name}</span>
-                    <p className="text-[11px] text-slate-600 mt-0.5">เบอร์โทร: {printingBooking.guest_phone || '-'}</p>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">ชื่อ-นามสกุล:</span>
+                    <span className="text-white font-bold text-sm">{previewContractModal.guest_name}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] font-bold uppercase text-slate-500 block">ห้องพักที่จอง</span>
-                    <span className="text-sm font-bold text-slate-900">ห้อง {printingBooking.room_number} (ชั้น {printingBooking.floor})</span>
-                    <p className="text-[11px] text-slate-600 mt-0.5">ประเภท: {printingBooking.room_type || 'Standard'}</p>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">เลขประจำตัวประชาชน:</span>
+                    <span className="text-white font-bold font-mono text-sm">{previewContractModal.id_card_number || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">เบอร์โทรศัพท์ผู้เช่า:</span>
+                    <span className="text-white font-bold font-mono">{previewContractModal.guest_phone || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">เบอร์โทรศัพท์ผู้ปกครอง:</span>
+                    <span className="text-white font-bold font-mono">{previewContractModal.parent_phone || '-'}</span>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">ที่อยู่ตามบัตรประชาชน:</span>
+                    <span className="text-slate-200">{previewContractModal.tenant_address || '-'}</span>
                   </div>
                 </div>
-
-                {/* Table */}
-                <table className="w-full text-left border border-slate-200 rounded-lg overflow-hidden">
-                  <thead className="bg-slate-100 text-[10px] font-bold uppercase text-slate-700">
-                    <tr>
-                      <th className="p-2.5 sm:p-3">รายการ</th>
-                      <th className="p-2.5 sm:p-3 text-right">จำนวนเงิน</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    <tr>
-                      <td className="p-2.5 sm:p-3">
-                        <p className="font-bold">เงินประกันสัญญาเช่าห้องพัก (1 เดือน)</p>
-                        <p className="text-[10px] text-slate-500">
-                          สำหรับห้องพัก {printingBooking.room_number} (เริ่มสัญญา: {new Date(printingBooking.start_date).toLocaleDateString('th-TH')})
-                        </p>
-                      </td>
-                      <td className="p-2.5 sm:p-3 text-right font-bold text-sm">
-                        ฿{Number(printingBooking.deposit_amount).toLocaleString()}
-                      </td>
-                    </tr>
-                    <tr className="bg-slate-50 font-bold text-xs sm:text-sm">
-                      <td className="p-2.5 sm:p-3 text-right">ยอดรวมทั้งสิ้น (ชำระแล้ว):</td>
-                      <td className="p-2.5 sm:p-3 text-right text-emerald-700">
-                        ฿{Number(printingBooking.deposit_amount).toLocaleString()}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
-                  💡 <strong>เงื่อนไข:</strong> ใบรับเงินนี้ใช้เป็นหลักฐานการชำระเงินประกันสัญญา 1 เดือน เพื่อยืนยันสิทธิ์การเข้าพัก สำหรับค่าเช่ารายเดือนจะคิดคำนวณและเรียกเก็บเมื่อเข้าพักจริง
-                </div>
-
-                {/* Signatures */}
-                <div className="grid grid-cols-2 gap-4 sm:gap-8 pt-6 sm:pt-8 text-center text-xs">
-                  <div className="space-y-6 sm:space-y-8">
-                    <div className="border-b border-slate-300 w-full sm:w-3/4 mx-auto pb-1 font-bold text-xs sm:text-sm">
-                      คุณ{printingBooking.guest_name}
-                    </div>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase">ผู้จองห้องพัก</p>
-                  </div>
-                  <div className="space-y-6 sm:space-y-8">
-                    <div className="border-b border-slate-300 w-full sm:w-3/4 mx-auto pb-1 font-bold text-emerald-700 text-xs sm:text-sm">
-                      SmartDom Management
-                    </div>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase">ผู้รับเงิน / ผู้จัดการหอพัก</p>
-                  </div>
-                </div>
-
               </div>
 
-              {/* Modal Actions */}
-              <div className="flex gap-2.5 pt-4 border-t border-slate-200 print:hidden">
-                <button
-                  onClick={() => setPrintingBooking(null)}
-                  className="flex-1 min-h-[44px] py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all active:scale-95"
-                >
-                  ปิด
-                </button>
-                <button
-                  onClick={() => window.print()}
-                  className="flex-1 min-h-[44px] py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-lg active:scale-95 cursor-pointer"
-                >
-                  🖨️ พิมพ์ / บันทึก PDF
-                </button>
+              {/* Contract Terms */}
+              <div className="p-4 bg-slate-950/80 rounded-2xl border border-white/5 space-y-2 text-xs">
+                <h4 className="text-xs font-black uppercase tracking-widest text-primary">เงื่อนไขสัญญาเช่า</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex justify-between py-1 border-b border-white/5">
+                    <span className="text-slate-400">ห้องพัก:</span>
+                    <span className="text-white font-bold">ห้อง {previewContractModal.room_number} (ชั้น {previewContractModal.floor})</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-white/5">
+                    <span className="text-slate-400">ค่าเช่ารายเดือน:</span>
+                    <span className="text-white font-bold font-mono">฿{Number(previewContractModal.monthly_rent).toLocaleString()} /ด.</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-white/5">
+                    <span className="text-slate-400">เงินมัดจำการจอง:</span>
+                    <span className="text-emerald-400 font-bold font-mono">฿{Number(previewContractModal.deposit_amount || 1000).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-white/5">
+                    <span className="text-slate-400">ระยะเวลาสัญญา:</span>
+                    <span className="text-white font-bold">{new Date(previewContractModal.start_date).toLocaleDateString('th-TH')} — {new Date(previewContractModal.end_date).toLocaleDateString('th-TH')}</span>
+                  </div>
+                </div>
               </div>
-
             </div>
-          </div>
-        )}
 
-        {/* Slip Modal Preview */}
-        {previewSlipUrl && (
-          <div 
-            onClick={() => setPreviewSlipUrl(null)}
-            className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 cursor-pointer animate-in fade-in duration-200"
-          >
-            <div className="max-w-md w-full bg-slate-900 rounded-3xl p-5 sm:p-6 border border-white/20 space-y-4 my-auto max-h-[92dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              <div className="flex justify-between items-center pb-2 border-b border-border">
-                <span className="font-bold text-foreground text-sm truncate">{previewSlipTitle || 'สลิปการโอนเงิน'}</span>
-                <button onClick={() => setPreviewSlipUrl(null)} className="text-muted-foreground hover:text-white text-xl font-bold p-1">✕</button>
-              </div>
-              <div className="rounded-2xl overflow-hidden max-h-[60vh] flex items-center justify-center bg-black">
-                <img src={previewSlipUrl} alt="Full Slip" className="max-h-[58vh] w-auto object-contain rounded-xl" />
-              </div>
-              <button 
-                onClick={() => setPreviewSlipUrl(null)} 
-                className="w-full min-h-[44px] py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all active:scale-95"
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-white/10">
+              <a
+                href={`/api/contracts/export-pdf?contractId=${previewContractModal.contract_id}&autoPrint=true`}
+                target="_blank"
+                rel="noreferrer"
+                className="w-full sm:w-auto px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
+              >
+                <span>📄</span>
+                <span>พิมพ์ / ดาวน์โหลดเป็น PDF</span>
+              </a>
+
+              <button
+                type="button"
+                onClick={() => setPreviewContractModal(null)}
+                className="w-full sm:w-auto px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl transition-all"
               >
                 ปิดหน้าต่าง
               </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Modal: View & Upload Contract Document (รูปภาพ หรือ PDF) */}
-        {contractDocBooking && (
-          <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
-            <div className="max-w-xl w-full bg-slate-900 rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-8 border border-primary/30 space-y-5 shadow-2xl my-auto max-h-[92dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              <div className="flex justify-between items-start border-b border-border pb-3">
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">เอกสารสัญญาเช่า</span>
-                  <h3 className="text-xl sm:text-2xl font-black text-foreground">ห้อง {contractDocBooking.room_number}</h3>
-                  <p className="text-xs text-muted-foreground">ผู้เช่า: คุณ{contractDocBooking.guest_name} ({contractDocBooking.booking_status === 'Active' ? 'สัญญาใช้งานอยู่' : 'รอตรวจสอบ'})</p>
-                </div>
-                <button onClick={() => { setContractDocBooking(null); setContractDocFile(null); }} className="text-muted-foreground hover:text-white text-2xl p-2 -mr-2">✕</button>
+      {/* Upload Contract & Generate First Bill Modal */}
+      {uploadContractBooking && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-xl w-full p-6 sm:p-8 space-y-6 shadow-2xl">
+            <div className="flex justify-between items-center pb-4 border-b border-white/10">
+              <div>
+                <h3 className="text-lg font-black text-white">อัปโหลดสัญญา & ออกบิลแรกเข้า</h3>
+                <p className="text-xs text-slate-400 mt-0.5">ห้อง {uploadContractBooking.room_number} • ผู้จอง: {uploadContractBooking.guest_name}</p>
               </div>
+              <button
+                onClick={() => setUploadContractBooking(null)}
+                className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold"
+              >
+                ✕
+              </button>
+            </div>
 
-              {/* Current Contract File Status */}
-              <div className="p-4 bg-slate-950 rounded-2xl border border-border space-y-3">
-                <span className="text-[10px] font-bold text-foreground/60 uppercase">สถานะเอกสารปัจจุบัน</span>
-                {contractDocBooking.contract_file_url ? (
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">📄</span>
-                      <div>
-                        <p className="text-xs font-bold text-emerald-400">✓ มีไฟล์สัญญาในระบบแล้ว</p>
-                        <p className="text-[10px] text-muted-foreground">สามารถเปิดดูหรือดาวน์โหลดได้</p>
-                      </div>
+            <form onSubmit={handleUploadContract} className="space-y-5">
+              {(() => {
+                const isTestBooking = (uploadContractBooking.room_number || '').toUpperCase() === 'T01';
+                const roomRent = Number(uploadContractBooking.monthly_rent || (isTestBooking ? 10 : 3400));
+                const totalDep = isTestBooking ? 20 : 3000;
+                const paidDep = isTestBooking ? 1 : Number(uploadContractBooking.deposit_amount || 1000);
+                const extraDep = Math.max(0, totalDep - paidDep);
+                const totalFirstBill = roomRent + extraDep;
+
+                return (
+                  <div className="p-4 bg-slate-950 rounded-2xl border border-white/5 space-y-3">
+                    <p className="text-xs font-bold text-slate-300">บิลค่าแรกเข้าที่จะส่งไปยัง Guest:</p>
+                    <div className="flex justify-between text-xs text-slate-400">
+                      <span>ค่าห้องเดือนแรก:</span>
+                      <span className="text-white font-mono">฿{roomRent.toLocaleString()}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPreviewingContractDocUrl(contractDocBooking.contract_file_url!);
-                          setPreviewingContractDocTitle(`สัญญาห้อง ${contractDocBooking.room_number} (คุณ${contractDocBooking.guest_name})`);
-                        }}
-                        className="px-3.5 py-2 bg-primary/20 hover:bg-primary/30 text-primary text-xs font-bold rounded-xl transition-all cursor-pointer"
-                      >
-                        🔍 ดูเอกสาร
-                      </button>
-                      <a
-                        href={contractDocBooking.contract_file_url}
-                        download={`contract_room_${contractDocBooking.room_number}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl transition-all cursor-pointer"
-                      >
-                        📥 โหลด
-                      </a>
+                    <div className="flex justify-between text-xs text-slate-400">
+                      <span>เงินประกันหอพักเพิ่ม:</span>
+                      <span className="text-white font-mono">฿{extraDep.toLocaleString('th-TH', { minimumFractionDigits: 2 })} (รวมมัดจำเดิม = {totalDep.toLocaleString()} บาท)</span>
+                    </div>
+                    <div className="pt-2 border-t border-white/10 flex justify-between text-sm font-black text-emerald-400">
+                      <span>ยอดบิลแรกเข้ารวม:</span>
+                      <span className="font-mono">฿{totalFirstBill.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
                     </div>
                   </div>
-                ) : (
-                  <p className="text-xs text-amber-400 italic">⚠️ ยังไม่มีการแนบไฟล์สัญญาสำหรับห้องนี้</p>
-                )}
-              </div>
+                );
+              })()}
 
-              {/* Upload or Replace Contract File Input */}
-              <div className="p-4 bg-slate-950/80 rounded-2xl border border-white/10 space-y-3">
-                <label className="block text-xs font-bold text-white">
-                  📤 {contractDocBooking.contract_file_url ? 'อัพโหลดไฟล์สัญญาใหม่เพื่อแทนที่' : 'อัพโหลดไฟล์สัญญาใหม่ (รูปภาพ หรือ PDF)'}
-                </label>
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-2">เลือกไฟล์เอกสารสัญญาเช่า (รูปภาพหรือ PDF):</label>
                 <input
                   type="file"
                   accept="image/*,application/pdf"
+                  required
                   onChange={(e) => {
                     const file = e.target.files?.[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                      setContractDocFile({
-                        dataUrl: reader.result as string,
-                        name: file.name
-                      });
-                    };
-                    reader.readAsDataURL(file);
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        if (reader.result) {
+                          setContractFile(reader.result as string);
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    } else {
+                      setContractFile(null);
+                    }
                   }}
-                  className="w-full text-xs text-white/80 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-primary file:text-white hover:file:brightness-110 cursor-pointer bg-slate-900 p-2.5 rounded-xl border border-white/10"
+                  className="w-full text-xs text-slate-400 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-primary/20 file:text-primary hover:file:bg-primary/30 cursor-pointer bg-slate-950 p-2 rounded-xl border border-white/10"
                 />
-                {contractDocFile && (
-                  <div className="flex items-center justify-between text-xs text-emerald-400 bg-emerald-500/10 px-3 py-2 rounded-xl border border-emerald-500/20">
-                    <span className="truncate">✓ พร้อมบันทึก: {contractDocFile.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => setContractDocFile(null)}
-                      className="text-rose-400 hover:text-rose-300 ml-2 font-bold cursor-pointer"
-                    >
-                      ✕ ยกเลิก
-                    </button>
-                  </div>
+                {contractFile && (
+                  <p className="text-[11px] text-emerald-400 font-bold mt-2">✓ แนบไฟล์สัญญาเรียบร้อยแล้ว</p>
                 )}
               </div>
 
-              {/* Modal Buttons */}
-              <div className="flex gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => { setContractDocBooking(null); setContractDocFile(null); }}
-                  className="flex-1 min-h-[46px] py-3 bg-white/5 hover:bg-white/10 text-white rounded-2xl text-xs font-bold transition-all active:scale-95 cursor-pointer"
-                >
-                  ปิด
-                </button>
-                {contractDocFile && (
-                  <button
-                    type="button"
-                    onClick={handleSaveContractDoc}
-                    disabled={submitting}
-                    className="flex-[2] min-h-[46px] py-3 bg-primary hover:brightness-110 text-white rounded-2xl text-xs font-black transition-all shadow-lg active:scale-95 disabled:opacity-50 cursor-pointer"
-                  >
-                    {submitting ? 'กำลังบันทึก...' : '💾 บันทึกไฟล์สัญญาเข้าสู่ระบบ'}
-                  </button>
-                )}
-              </div>
-
-            </div>
-          </div>
-        )}
-
-        {/* Modal: Contract Document Full Preview (PDF iframe or Image) */}
-        {previewingContractDocUrl && (
-          <div 
-            onClick={() => setPreviewingContractDocUrl(null)}
-            className="fixed inset-0 z-[250] bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 cursor-pointer animate-in fade-in duration-200"
-          >
-            <div className="bg-slate-900 rounded-[2rem] w-full max-w-4xl max-h-[90vh] border border-border shadow-2xl flex flex-col overflow-hidden my-auto" onClick={(e) => e.stopPropagation()}>
-              <div className="bg-slate-950 border-b border-border p-4 sm:p-5 flex items-center justify-between shrink-0">
-                <h3 className="text-sm sm:text-base font-black text-foreground truncate">{previewingContractDocTitle || 'เอกสารสัญญา'}</h3>
+              {/* Initial Meter Reading Input */}
+              <div className="p-4 bg-slate-950 rounded-2xl border border-amber-500/20 space-y-2">
                 <div className="flex items-center gap-2">
-                  <a
-                    href={previewingContractDocUrl}
-                    download="contract_document"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-3.5 py-1.5 bg-primary text-white text-xs font-bold rounded-xl shadow-lg hover:brightness-110 transition-all cursor-pointer"
-                  >
-                    📥 ดาวน์โหลด
-                  </a>
-                  <button
-                    onClick={() => setPreviewingContractDocUrl(null)}
-                    className="w-9 h-9 bg-white/5 hover:bg-white/10 rounded-xl text-muted-foreground hover:text-white flex items-center justify-center transition-all cursor-pointer text-lg font-bold"
-                  >
-                    ✕
-                  </button>
+                  <span className="text-base">⚡</span>
+                  <label className="block text-xs font-black text-amber-300">
+                    เลขมิเตอร์ไฟฟ้าเริ่มต้นของห้อง {uploadContractBooking.room_number}:
+                  </label>
+                </div>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  placeholder="กรอกเลขมิเตอร์หน้าปัด ณ วันส่งมอบห้อง (เช่น 0, 100)"
+                  value={initialMeterReading}
+                  onChange={(e) => setInitialMeterReading(e.target.value)}
+                  className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 text-sm font-mono font-bold text-white focus:outline-none focus:border-amber-400"
+                />
+                <p className="text-[10px] text-slate-400">
+                  🔒 กำหนดค่ามิเตอร์เริ่มต้นเพื่อใช้เป็นฐานคำนวณหน่วยไฟในรอบบิลถัดไป และป้องกันการโกงหน่วยไฟ
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                disabled={uploading || !contractFile}
+                className="w-full py-4 bg-amber-500 hover:bg-amber-400 text-white font-black text-sm rounded-xl shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {uploading ? 'กำลังบันทึกสัญญา...' : '🚀 บันทึกสัญญา & ส่งบิลแรกเข้า'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Preview First Bill Modal */}
+      {previewBillModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-6 shadow-2xl">
+            <div className="flex justify-between items-center pb-4 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-xl">
+                  🧾
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-white">รายละเอียดบิลแรกเข้า</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">ห้อง {previewBillModal.room_number} • ผู้เช่า: {previewBillModal.guest_name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setPreviewBillModal(null)}
+                className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-4 bg-slate-950/80 rounded-2xl border border-white/5 space-y-3">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-400">สถานะบิล:</span>
+                  <span className={`px-3 py-1 rounded-full text-xs font-black ${
+                    previewBillModal.first_bill_status === 'Paid'
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                  }`}>
+                    {previewBillModal.first_bill_status === 'Paid' ? '✓ ชำระแล้ว' : '⏳ รอ Guest ชำระเงิน'}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-400">กำหนดชำระภายใน:</span>
+                  <span className="text-white font-bold">
+                    {previewBillModal.first_bill_due_date ? new Date(previewBillModal.first_bill_due_date).toLocaleDateString('th-TH') : '-'}
+                  </span>
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex items-center justify-center bg-black/40">
-                {previewingContractDocUrl.startsWith('data:image') || previewingContractDocUrl.startsWith('http') && !previewingContractDocUrl.endsWith('.pdf') ? (
-                  <img
-                    src={previewingContractDocUrl}
-                    alt="Contract Document"
-                    className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-2xl"
-                  />
-                ) : (
-                  <iframe
-                    src={previewingContractDocUrl}
-                    className="w-full h-[70vh] rounded-xl border border-border bg-white"
-                    title="Document Preview"
-                  />
-                )}
+              <div className="p-5 bg-slate-950/80 rounded-2xl border border-white/5 space-y-3 text-xs">
+                <h4 className="text-[11px] font-black uppercase tracking-widest text-primary">รายการค่าใช้จ่าย</h4>
+                
+                <div className="flex justify-between py-1 border-b border-white/5">
+                  <span className="text-slate-300">1. ค่าเช่าห้องพักเดือนแรก:</span>
+                  <span className="text-white font-mono font-bold">฿{Number(previewBillModal.monthly_rent || 2800).toLocaleString()}</span>
+                </div>
+
+                <div className="flex justify-between py-1 border-b border-white/5">
+                  <div>
+                    <span className="text-slate-300">2. เงินประกันหอพักส่วนที่เหลือ:</span>
+                    <p className="text-[10px] text-slate-500">(รวมเงินมัดจำเดิม 1,000 = ประกันรวม 3,000 บาท)</p>
+                  </div>
+                  <span className="text-white font-mono font-bold">฿2,000.00</span>
+                </div>
+
+                <div className="pt-2 flex justify-between items-center text-base font-black">
+                  <span className="text-emerald-400">ยอดชำระรวม:</span>
+                  <span className="text-emerald-400 font-mono text-xl">
+                    ฿{Number(previewBillModal.first_bill_amount || (Number(previewBillModal.monthly_rent || 2800) + 2000)).toLocaleString()}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        )}
 
-      </div>
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setPreviewBillModal(null)}
+                className="w-full sm:w-auto px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl transition-all"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

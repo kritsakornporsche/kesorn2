@@ -9,7 +9,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { issue_type, description, photo_url } = await request.json();
+    const body = await request.json();
+    const { issue_type, description, photo_url, photos } = body;
     if (!description) {
       return NextResponse.json({ success: false, message: 'Description is required' }, { status: 400 });
     }
@@ -33,9 +34,52 @@ export async function POST(request: Request) {
     const roomNumber = tenantRes[0].room_number;
     const dormId = tenantRes[0].dorm_id || 1;
 
+    // Process multiple photos if provided
+    let rawPhotos: string[] = [];
+    if (Array.isArray(photos) && photos.length > 0) {
+      rawPhotos = photos;
+    } else if (photo_url) {
+      rawPhotos = [photo_url];
+    }
+
+    const savedPhotoUrls: string[] = [];
+    if (rawPhotos.length > 0) {
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+        const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'maintenance');
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+
+        for (let i = 0; i < rawPhotos.length; i++) {
+          const item = rawPhotos[i];
+          if (typeof item === 'string' && item.startsWith('data:image/')) {
+            const matches = item.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+            if (matches) {
+              const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
+              const base64Data = matches[2];
+              const filename = `maint_${tenantId}_${Date.now()}_${i}_${Math.random().toString(36).substring(7)}.${ext}`;
+              const filePath = path.join(uploadDir, filename);
+              fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+              savedPhotoUrls.push(`/uploads/maintenance/${filename}`);
+            }
+          } else if (typeof item === 'string' && (item.startsWith('/') || item.startsWith('http'))) {
+            savedPhotoUrls.push(item);
+          }
+        }
+      } catch (saveErr) {
+        console.error('[POST /api/tenant/maintenance] Error saving images:', saveErr);
+      }
+    }
+
+    const finalPhotoUrl = savedPhotoUrls.length > 1 
+      ? JSON.stringify(savedPhotoUrls) 
+      : (savedPhotoUrls[0] || null);
+
     const insertResult: any = await sql`
       INSERT INTO maintenance_requests (tenant_id, room_number, issue_type, description, status, photo_url, image_url, dorm_id)
-      VALUES (${tenantId}, ${roomNumber}, ${issue_type}, ${description}, 'Pending', ${photo_url || null}, ${photo_url || null}, ${dormId})
+      VALUES (${tenantId}, ${roomNumber}, ${issue_type}, ${description}, 'Pending', ${finalPhotoUrl}, ${finalPhotoUrl}, ${dormId})
     `;
 
     const newId = insertResult.insertId;

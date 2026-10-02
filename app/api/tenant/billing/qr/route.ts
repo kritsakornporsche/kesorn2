@@ -35,7 +35,20 @@ export async function GET(req: Request) {
       }
 
       const bill = billRes[0];
-      amount = Number(bill.amount);
+      let billAmount = Number(bill.amount);
+      if (bill.status === 'Unpaid' && bill.due_date) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const due = new Date(bill.due_date);
+        due.setHours(0, 0, 0, 0);
+        const diffTime = today.getTime() - due.getTime();
+        if (diffTime > 0) {
+          const daysOverdue = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+          const lateFee = daysOverdue * 100;
+          billAmount += lateFee;
+        }
+      }
+      amount = billAmount;
       dormId = bill.dorm_id || bill.tenant_dorm_id || 1;
       billTitle = bill.title;
     } else {

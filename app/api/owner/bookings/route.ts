@@ -28,6 +28,11 @@ export async function GET(req: Request) {
         c.slip_url,
         c.signature_data,
         c.owner_signature_data,
+        c.contract_file_url,
+        c.id_card_number,
+        c.tenant_address,
+        c.id_card_image,
+        c.parent_phone,
         c.created_at as booking_created_at,
         COALESCE(t.name, u.name, 'ไม่ระบุชื่อ') as guest_name,
         COALESCE(t.email, u.email, '') as guest_email,
@@ -37,17 +42,25 @@ export async function GET(req: Request) {
         r.floor,
         r.price as monthly_rent,
         r.status as room_status,
+        b.id as first_bill_id,
+        b.title as first_bill_title,
+        b.amount as first_bill_amount,
+        b.status as first_bill_status,
+        b.due_date as first_bill_due_date,
+        b.created_at as first_bill_created_at,
         1 as dorm_id,
         'หอพักเกษร 2' as dorm_name
       FROM contracts c
       LEFT JOIN tenants t ON c.tenant_id = t.id
       LEFT JOIN users u ON t.user_id = u.id OR t.email = u.email
       JOIN rooms r ON c.room_id = r.id
+      LEFT JOIN bills b ON (b.tenant_id = c.tenant_id AND (b.is_first_bill = 1 OR b.bill_type = 'booking') AND b.status != 'Cancelled')
       ORDER BY 
         CASE 
           WHEN c.status = 'PendingOwnerSignature' THEN 1
-          WHEN c.status = 'Active' THEN 2
-          ELSE 3
+          WHEN c.status = 'PendingFirstBill' THEN 2
+          WHEN c.status = 'Active' THEN 3
+          ELSE 4
         END ASC,
         c.id DESC
     `;
@@ -170,6 +183,17 @@ export async function POST(req: Request) {
         }
       }
 
+      // 4.1 Mark booking fee bill as Paid
+      if (tenantId) {
+        await sql`
+          UPDATE bills 
+          SET status = 'Paid', slip_verified = 1, slip_verified_at = NOW() 
+          WHERE tenant_id = ${tenantId} 
+            AND bill_type = 'booking' 
+            AND status IN ('Pending', 'Unpaid')
+        `;
+      }
+
       // 5. Optionally create first month rent invoice (ใบแจ้งหนี้ค่าเช่าเดือนแรก)
       if (createInitialBill) {
         const billAmount = initialBillAmount || contract.room_price || 0;
@@ -285,6 +309,17 @@ export async function POST(req: Request) {
 
       // 2. Set room back to Available
       await sql`UPDATE rooms SET status = 'Available' WHERE id = ${roomId}`;
+
+      // 2.1 Update booking fee bill to Cancelled
+      if (contract.tenant_id) {
+        await sql`
+          UPDATE bills 
+          SET status = 'Cancelled' 
+          WHERE tenant_id = ${contract.tenant_id} 
+            AND bill_type = 'booking' 
+            AND status IN ('Pending', 'Unpaid')
+        `;
+      }
 
       // 3. Remove booking progress
       if (tenantEmail) {
@@ -453,6 +488,51 @@ export async function POST(req: Request) {
         UPDATE rooms 
         SET status = ${autoApprove ? 'Occupied' : 'Reserved'} 
         WHERE id = ${roomId}
+      `;
+
+      // 3.1 Create booking fee bill in bills table
+      const roomRes = await sql`SELECT room_number, COALESCE(dorm_id, 1) as dorm_id FROM rooms WHERE id = ${roomId} LIMIT 1`;
+      const roomNumber = roomRes[0]?.room_number || String(roomId);
+      const targetDormId = dormId || roomRes[0]?.dorm_id || 1;
+      const dueDate = startDate ? new Date(startDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+      const billStatus = autoApprove ? 'Paid' : 'Unpaid'; // SlipOK handles auto-approval; no 'Pending' status needed
+
+      await sql`
+        INSERT INTO bills (
+          tenant_id,
+          dorm_id,
+          room_number,
+          title,
+          amount,
+          room_amount,
+          water_amount,
+          electric_amount,
+          water_units,
+          electric_units,
+          billing_cycle,
+          due_date,
+          status,
+          slip_url,
+          bill_type,
+          slip_verified
+        ) VALUES (
+          ${tenantId},
+          ${targetDormId},
+          ${roomNumber},
+          ${'ค่าจองห้องพัก (ห้อง ' + roomNumber + ')'},
+          ${depositAmount || 1000},
+          ${depositAmount || 1000},
+          0,
+          0,
+          0,
+          0,
+          'ค่าจองห้องพักเพื่อยืนยันสิทธิ์',
+          ${dueDate},
+          ${billStatus},
+          ${slipUrl || null},
+          'booking',
+          ${autoApprove ? 1 : 0}
+        )
       `;
 
       return NextResponse.json({ 

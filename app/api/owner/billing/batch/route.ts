@@ -4,33 +4,45 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session || !session.user) {
-    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  const role = (session?.user as any)?.role;
+  if (!session?.user || (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin')) {
+    return NextResponse.json({ success: false, message: 'Unauthorized: เฉพาะเจ้าของหอพักหรือผู้ดูแล' }, { status: 401 });
   }
   const sql = getDb();
 
   try {
     const body = await req.json();
-    const billingCycle = body.billingCycle || body.billing_cycle;
-    const dormId = body.dormId || body.dorm_id || (session.user as any)?.dormId || 1;
-    const dueDate = body.dueDate || body.due_date || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
-    const title = body.title || `ค่าเช่าห้องพักประจำเดือน ${billingCycle || ''}`;
-
-    if (!billingCycle) {
+    let rawCycle = body.billingCycle || body.billing_cycle;
+    if (!rawCycle) {
       return NextResponse.json({ success: false, message: 'Missing billing cycle' }, { status: 400 });
     }
 
+    let billingCycle = rawCycle;
+    const match = String(rawCycle).match(/^(\d{4})-(\d{1,2})/);
+    if (match) {
+      billingCycle = `${match[1]}-${match[2].padStart(2, '0')}`;
+    }
+
+    const dormId = body.dormId || body.dorm_id || (session.user as any)?.dormId || 1;
+    let defaultDueDate = new Date().toISOString().slice(0, 10);
+    if (/^\d{4}-\d{2}$/.test(billingCycle)) {
+      defaultDueDate = `${billingCycle}-05`;
+    }
+    const dueDate = body.dueDate || body.due_date || defaultDueDate;
+    const title = body.title || `ค่าเช่าห้องพักประจำเดือน ${billingCycle || ''}`;
+
     const targetDormId = parseInt(String(dormId), 10);
 
-    // Fetch dormitory utility rates (default water: 100 THB, electricity: 7 THB)
+    // Fetch dormitory utility rates (default water: 100 THB, electricity: 8 THB)
     const profileRes = await sql`
       SELECT water_rate, electricity_rate 
       FROM dormitory_profile 
       WHERE dorm_id = ${targetDormId} OR id = ${targetDormId}
       LIMIT 1
     `;
-    const flatWaterRate = profileRes.length > 0 ? Number(profileRes[0].water_rate || 100) : 100.00;
-    const electricUnitPrice = profileRes.length > 0 ? Number(profileRes[0].electricity_rate || 7) : 7.00;
+    // Strict water fee rule: Flat 100 THB per room every billing cycle
+    const flatWaterRate = 100.00;
+    const electricUnitPrice = profileRes.length > 0 ? Number(profileRes[0].electricity_rate || 8) : 8.00;
 
     // 1. Find all active tenants in this dormitory via rooms/contracts
     const activeTenants = await sql`
@@ -59,9 +71,12 @@ export async function POST(req: Request) {
       `;
       
       if (existing.length === 0) {
-        const roomRent = Number(tenant.amount) || 2800;
-        const flatWater = flatWaterRate;
+        const isT01 = (tenant.room_number || '').toUpperCase() === 'T01';
+        const roomRent = isT01 ? 10 : (Number(tenant.amount) || 2800);
+        const flatWater = isT01 ? 5 : flatWaterRate;
         const waterUnits = 1.00;
+        const activeElectricPrice = isT01 ? 1 : electricUnitPrice;
+        const commonFeeAmount = isT01 ? 5 : (Number(profile.common_fee) || 0);
 
         // Auto-fetch electricity meter reading for this room
         let electricUnits = 0.00;
@@ -81,12 +96,12 @@ export async function POST(req: Request) {
             const units = Math.max(0, Number(m.units_used) || (Number(m.current_reading) - Number(m.previous_reading)) || 0);
             if (units > 0) {
               electricUnits = units;
-              electricAmount = parseFloat((units * electricUnitPrice).toFixed(2));
+              electricAmount = parseFloat((units * activeElectricPrice).toFixed(2));
             }
           }
         }
 
-        const totalAmount = parseFloat((roomRent + flatWater + electricAmount).toFixed(2));
+        const totalAmount = parseFloat((roomRent + flatWater + electricAmount + commonFeeAmount).toFixed(2));
 
         await sql`
           INSERT INTO bills (

@@ -276,12 +276,18 @@ export default async function TenantDashboard() {
                 เลือกชมห้องพักที่ว่างพร้อมเข้าอยู่ของหอพักเกษร 2 แล้วเริ่มต้นจองห้องพักออนไลน์ได้ทันที
               </p>
             </div>
-            <div className="pt-2">
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
               <Link
                 href="/explore"
                 className="inline-flex items-center gap-2 px-8 py-4 bg-primary hover:bg-primary/90 text-white font-bold rounded-full text-sm shadow-xl shadow-primary/20 transition-all hover:scale-105 active:scale-95"
               >
-                <span>🔍 สำรวจหอพักและห้องว่างทันที</span>
+                <span>🔍 สำรวจหอพักและห้องว่าง</span>
+              </Link>
+              <Link
+                href="/explore/booking-status"
+                className="inline-flex items-center gap-2 px-8 py-4 bg-secondary hover:bg-secondary/80 text-foreground font-bold rounded-full text-sm border border-border transition-all hover:scale-105 active:scale-95"
+              >
+                <span>📋 ตรวจสอบสถานะการจอง</span>
               </Link>
             </div>
           </section>
@@ -298,7 +304,9 @@ export default async function TenantDashboard() {
                 <h2 className="text-xl font-black text-primary mb-1.5">คุณมียอดค้างชำระ ({unpaidBills.length} รายการ)</h2>
                 <p className="text-primary/80 font-medium max-w-xl">
                     กรุณาชำระยอดรวม ฿{unpaidBills.reduce((acc: number, curr: any) => acc + Number(curr.amount), 0).toLocaleString()} 
-                    ภายในวันที่ {new Date(unpaidBills[0].due_date).toLocaleDateString('th-TH')}
+                    {new Date(unpaidBills[0].due_date) < new Date() 
+                      ? ' (เกินกำหนดชำระแล้ว - คิดค่าปรับวันละ 100 บาท)' 
+                      : ` (ภายในวันที่ ${new Date(unpaidBills[0].due_date).toLocaleDateString('th-TH')})`}
                 </p>
               </div>
             </div>

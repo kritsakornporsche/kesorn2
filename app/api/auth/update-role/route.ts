@@ -15,6 +15,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: 'Invalid role' }, { status: 400 });
     }
 
+    // SEC-01: Prevent unauthorized privilege escalation to owner or platform_admin
+    if (newRole === 'owner' || newRole === 'platform_admin') {
+      const userRow = await sql`SELECT role, primary_role FROM users WHERE email = ${session.user.email} LIMIT 1`;
+      const currentPrimary = userRow[0]?.primary_role;
+      const currentRole = userRow[0]?.role;
+      if (currentPrimary !== newRole && currentRole !== newRole) {
+        return NextResponse.json({ success: false, message: 'ไม่อนุญาตให้เปลี่ยนสิทธิ์เป็นเจ้าของหอพักหรือผู้ดูแลระบบ' }, { status: 403 });
+      }
+    }
+
     await sql`
       UPDATE users 
       SET role = ${newRole} 

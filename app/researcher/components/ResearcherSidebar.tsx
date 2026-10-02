@@ -23,6 +23,8 @@ const navItems = [
   {
     group: 'ระบบและบันทึกการพัฒนา',
     items: [
+      { href: '/researcher/slip-test', label: 'ทดสอบ SlipOK (Bank Slip Sandbox)', icon: '🧾' },
+      { href: '/researcher/id-scan-test', label: 'ทดสอบสแกนบัตร ปชช. & สัญญา PDF', icon: '🪪' },
       { href: '/researcher/updates', label: 'บันทึกการอัปเดต (Release Notes)', icon: '🚀' },
       { href: '/explore', label: 'หน้าสำรวจหอพัก (Public Portal)', icon: '🌐' },
     ],

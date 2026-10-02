@@ -154,30 +154,30 @@ export async function PATCH(request: Request) {
             LIMIT 1
           `;
 
-          if (tenantRows.length > 0) {
-            const tenantId = tenantRows[0].id;
-            const dueDate = new Date();
-            dueDate.setDate(dueDate.getDate() + 7);
-            const dueDateStr = dueDate.toISOString().slice(0, 10);
-            const cleanType = j.job_type === 'move_out' ? 'ย้ายออก' : j.job_type === 'weekly' ? 'รายสัปดาห์' : (j.task || 'ทั่วไป');
-            const title = `ค่าบริการทำความสะอาด (${cleanType}) ห้อง ${j.room_number || '-'}`;
-            const billingCycle = `บริการทำความสะอาด ${new Date().toLocaleDateString('th-TH')}`;
+            if (tenantRows.length > 0) {
+              const tenantId = tenantRows[0].id;
+              const dueDate = new Date();
+              dueDate.setDate(dueDate.getDate() + 7);
+              const dueDateStr = dueDate.toISOString().slice(0, 10);
+              const cleanType = j.job_type === 'move_out' ? 'ย้ายออก' : j.job_type === 'weekly' ? 'รายสัปดาห์' : (j.task || 'ทั่วไป');
+              const title = `ค่าบริการทำความสะอาด (${cleanType}) ห้อง ${j.room_number || '-'}`;
+              const billingCycle = new Date().toISOString().slice(0, 7);
 
-            if (j.bill_id) {
-              await sql`
-                UPDATE bills 
-                SET amount = ${cost}, title = ${title}
-                WHERE id = ${j.bill_id}
-              `;
-              createdBillId = j.bill_id;
-            } else {
-              const billInsert: any = await sql`
-                INSERT INTO bills (tenant_id, dorm_id, room_number, title, amount, billing_cycle, due_date, status)
-                VALUES (${tenantId}, ${j.dorm_id || 1}, ${j.room_number || ''}, ${title}, ${cost}, ${billingCycle}, ${dueDateStr}, 'Unpaid')
-              `;
-              createdBillId = billInsert.insertId || null;
+              if (j.bill_id) {
+                await sql`
+                  UPDATE bills 
+                  SET amount = ${cost}, title = ${title}, bill_type = 'service', billing_cycle = ${billingCycle}
+                  WHERE id = ${j.bill_id}
+                `;
+                createdBillId = j.bill_id;
+              } else {
+                const billInsert: any = await sql`
+                  INSERT INTO bills (tenant_id, dorm_id, room_number, title, amount, billing_cycle, due_date, status, bill_type)
+                  VALUES (${tenantId}, ${j.dorm_id || 1}, ${j.room_number || ''}, ${title}, ${cost}, ${billingCycle}, ${dueDateStr}, 'Unpaid', 'service')
+                `;
+                createdBillId = billInsert.insertId || null;
+              }
             }
-          }
         }
       }
 

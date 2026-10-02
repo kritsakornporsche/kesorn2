@@ -1,16 +1,45 @@
 import { NextResponse } from 'next/server';
 
-function clearSessionAndRedirect(req: Request) {
+async function clearSessionAndRespond(req: Request) {
   const url = new URL(req.url);
-  const target = url.searchParams.get('callbackUrl') || '/';
+  let target = url.searchParams.get('callbackUrl') || '';
+
+  const contentType = req.headers.get('content-type') || '';
+  const acceptHeader = req.headers.get('accept') || '';
+  const isReturnRedirect = req.headers.get('x-auth-return-redirect') === '1';
+
+  // Read callbackUrl from body if POST
+  if (req.method === 'POST') {
+    try {
+      if (contentType.includes('application/x-www-form-urlencoded')) {
+        const bodyText = await req.text();
+        const params = new URLSearchParams(bodyText);
+        target = params.get('callbackUrl') || target;
+      } else if (contentType.includes('application/json')) {
+        const bodyJson = await req.json();
+        target = bodyJson?.callbackUrl || target;
+      }
+    } catch {
+      // Ignore body parse errors
+    }
+  }
+
+  if (!target) target = '/signin';
+
   const redirectUrl = new URL(target, req.url);
 
-  // Check if client expects JSON (e.g. client fetch call)
-  const isJsonExpected = req.headers.get('accept')?.includes('application/json') || 
-                         req.headers.get('content-type')?.includes('application/json');
+  // NextAuth signOut() sends POST with X-Auth-Return-Redirect: 1 and expects JSON { url: "..." }
+  const isJsonExpected = isReturnRedirect ||
+                         req.method === 'POST' ||
+                         acceptHeader.includes('application/json') ||
+                         contentType.includes('application/json');
 
-  const response = isJsonExpected 
-    ? NextResponse.json({ success: true, redirectUrl: redirectUrl.toString() })
+  const response = isJsonExpected
+    ? NextResponse.json({
+        url: redirectUrl.toString(),
+        redirectUrl: redirectUrl.toString(),
+        success: true
+      }, { status: 200 })
     : NextResponse.redirect(redirectUrl);
 
   const baseCookiesToClear = [
@@ -71,9 +100,9 @@ function clearSessionAndRedirect(req: Request) {
 }
 
 export async function GET(req: Request) {
-  return clearSessionAndRedirect(req);
+  return clearSessionAndRespond(req);
 }
 
 export async function POST(req: Request) {
-  return clearSessionAndRedirect(req);
+  return clearSessionAndRespond(req);
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
+import { handleSignOut } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
 import Image from 'next/image';
@@ -97,14 +98,7 @@ export default function TechnicianJobsPage() {
                     </div>
                     <div className="flex items-center gap-4">
                         <button
-                            onClick={() => {
-                                if (typeof window !== 'undefined') {
-                                    localStorage.removeItem('userRole');
-                                    localStorage.removeItem('userEmail');
-                                    localStorage.removeItem('userName');
-                                }
-                                signOut({ callbackUrl: '/' });
-                            }}
+                            onClick={() => handleSignOut('/')}
                             className="text-xs font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 border border-rose-100 hover:bg-rose-100 transition-colors px-4 py-2 rounded-xl"
                         >
                             ออกจากระบบ

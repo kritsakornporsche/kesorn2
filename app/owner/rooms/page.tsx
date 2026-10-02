@@ -489,18 +489,18 @@ export default function RoomsManagement() {
 
       {/* CRUD Modal - Premium Redesign */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-card rounded-[48px] w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in slide-in-from-bottom duration-500 border border-border max-h-[90vh] flex flex-col">
-             <div className="bg-card border-b border-border px-10 py-8 text-white relative overflow-hidden shrink-0">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-300">
+          <div className="bg-card rounded-3xl sm:rounded-[48px] w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in slide-in-from-bottom duration-500 border border-border max-h-[92vh] flex flex-col">
+             <div className="bg-card border-b border-border px-6 py-6 sm:px-10 sm:py-8 text-white relative overflow-hidden shrink-0">
                 <div className="relative z-10 text-center">
-                  <h2 className="text-3xl font-black mb-1 tracking-tight">{editingRoom ? 'แก้ไขข้อมูลยูนิต' : 'เพิ่มยูนิตใหม่'}</h2>
+                  <h2 className="text-2xl sm:text-3xl font-black mb-1 tracking-tight">{editingRoom ? 'แก้ไขข้อมูลยูนิต' : 'เพิ่มยูนิตใหม่'}</h2>
                   <p className="text-white/40 text-[9px] font-black uppercase tracking-[0.3em] font-display font-medium">SMARTDOM PREMIUM REAL ESTATE</p>
                 </div>
              </div>
              
-             <div className="overflow-y-auto p-10 custom-scrollbar">
-               <form onSubmit={handleSubmit} className="space-y-8">
-                  <div className="grid grid-cols-2 gap-8">
+             <div className="overflow-y-auto p-5 sm:p-10 custom-scrollbar">
+               <form onSubmit={handleSubmit} className="space-y-6 sm:space-y-8">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">หมายเลขห้อง</label>
                         <input 
@@ -527,7 +527,7 @@ export default function RoomsManagement() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-8">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">ชั้น (Floor)</label>
                         <input 
@@ -600,17 +600,17 @@ export default function RoomsManagement() {
                     </div>
                   </div>
 
-                  <div className="flex gap-6 pt-6 sr-only-btn-container shrink-0">
+                  <div className="flex gap-4 sm:gap-6 pt-4 sm:pt-6 sr-only-btn-container shrink-0">
                     <button 
                       type="button" 
                       onClick={() => setIsModalOpen(false)} 
-                      className="flex-1 py-5 text-muted-foreground font-black hover:bg-secondary rounded-[28px] transition-all"
+                      className="flex-1 py-4 sm:py-5 text-muted-foreground font-black hover:bg-secondary rounded-[24px] sm:rounded-[28px] transition-all text-sm"
                     >
                       ยกเลิก
                     </button>
                     <button 
                       type="submit" 
-                      className="flex-[2] py-5 bg-primary text-white font-black rounded-[28px] shadow-xl hover:brightness-110 active:scale-95 transition-all"
+                      className="flex-[2] py-4 sm:py-5 bg-primary text-white font-black rounded-[24px] sm:rounded-[28px] shadow-xl hover:brightness-110 active:scale-95 transition-all text-sm"
                     >
                         {editingRoom ? 'อัปเดตข้อมูล' : 'บันทึกลงฐานข้อมูล'}
                     </button>
@@ -623,18 +623,18 @@ export default function RoomsManagement() {
 
       {/* Batch Create Modal */}
       {isBatchModalOpen && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-card rounded-[48px] w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in slide-in-from-bottom duration-500 border border-border max-h-[90vh] flex flex-col">
-             <div className="bg-gradient-to-r from-emerald-600 to-teal-700 border-b border-border px-10 py-8 text-white relative overflow-hidden shrink-0">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-300">
+          <div className="bg-card rounded-3xl sm:rounded-[48px] w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in slide-in-from-bottom duration-500 border border-border max-h-[92vh] flex flex-col">
+             <div className="bg-gradient-to-r from-emerald-600 to-teal-700 border-b border-border px-6 py-6 sm:px-10 sm:py-8 text-white relative overflow-hidden shrink-0">
                 <div className="relative z-10 text-center">
-                  <h2 className="text-3xl font-black mb-1 tracking-tight">เพิ่มข้อมูลหลายห้อง (Batch)</h2>
+                  <h2 className="text-2xl sm:text-3xl font-black mb-1 tracking-tight">เพิ่มข้อมูลหลายห้อง (Batch)</h2>
                   <p className="text-white/80 text-[10px] font-black uppercase tracking-[0.25em]">สร้างยูนิตหลายห้องพร้อมกัน เช่น ตึก A ชั้น 1 ห้อง 1-10</p>
                 </div>
              </div>
              
-             <div className="overflow-y-auto p-10 custom-scrollbar space-y-8">
-               <form onSubmit={handleBatchSubmit} className="space-y-8">
-                  <div className="grid grid-cols-2 gap-6">
+             <div className="overflow-y-auto p-5 sm:p-10 custom-scrollbar space-y-6 sm:space-y-8">
+               <form onSubmit={handleBatchSubmit} className="space-y-6 sm:space-y-8">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">ตึก / คำนำหน้า (Building / Prefix)</label>
                         <input 
@@ -658,7 +658,7 @@ export default function RoomsManagement() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">เลขห้องเริ่มต้น (Start)</label>
                         <input 
@@ -687,7 +687,7 @@ export default function RoomsManagement() {
 
                   <div className="space-y-2">
                     <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">รูปแบบการสร้างเลขห้อง (Format Pattern)</label>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
                       {[
                         { id: 'prefix_floor_num', label: 'ตึก + ชั้น + เลขห้อง', example: `${batchForm.prefix}${batchForm.floor}01` },
                         { id: 'prefix_num', label: 'ตึก + เลขห้องตรงๆ', example: `${batchForm.prefix}${batchForm.startRoom}` },
@@ -697,7 +697,7 @@ export default function RoomsManagement() {
                           key={p.id}
                           type="button"
                           onClick={() => setBatchForm({...batchForm, pattern: p.id})}
-                          className={`p-4 rounded-2xl border text-left flex flex-col gap-1 transition-all ${
+                          className={`p-3.5 sm:p-4 rounded-2xl border text-left flex flex-col gap-1 transition-all ${
                             batchForm.pattern === p.id 
                             ? 'bg-emerald-500/10 border-emerald-500 text-white' 
                             : 'bg-secondary border-border text-muted-foreground hover:text-foreground hover:bg-secondary/80'
@@ -710,7 +710,7 @@ export default function RoomsManagement() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">ประเภท (Type)</label>
                         <select 

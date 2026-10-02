@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { signOut, useSession } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
+import { handleSignOut } from '@/lib/auth-client';
 import versionData from '@/lib/version.json';
 
 interface KeeperBottomNavProps {
@@ -182,14 +183,7 @@ export default function KeeperBottomNav({ dorms = [], selectedDormId = 'all', on
 
                   <button
                     type="button"
-                    onClick={() => {
-                      if (typeof window !== 'undefined') {
-                        localStorage.removeItem('userRole');
-                        localStorage.removeItem('userEmail');
-                        localStorage.removeItem('userName');
-                      }
-                      signOut({ callbackUrl: '/' });
-                    }}
+                    onClick={() => handleSignOut('/')}
                     className="w-full p-3.5 rounded-2xl bg-rose-500/10 hover:bg-rose-500/15 border border-rose-500/25 text-rose-600 dark:text-rose-400 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer"
                   >
                     <span>🚪</span>
@@ -249,25 +243,27 @@ export default function KeeperBottomNav({ dorms = [], selectedDormId = 'all', on
             </span>
           </Link>
 
-          {/* 2. งานซ่อมบำรุง */}
-          <Link
-            href="/keeper/technician"
-            className={`relative flex flex-col items-center justify-center py-1 px-2 rounded-2xl transition-all select-none active:scale-90 cursor-pointer min-w-[62px] ${
-              isTechActive ? 'text-orange-600 dark:text-orange-400 font-black' : 'text-muted-foreground/80 hover:text-foreground font-semibold'
-            }`}
-          >
-            {isTechActive && (
-              <span className="absolute -top-1.5 w-6 h-1 rounded-full bg-gradient-to-r from-orange-500 to-amber-500 shadow-sm" />
-            )}
-            <span className={`text-xl transition-transform block ${isTechActive ? 'scale-115 -translate-y-0.5' : 'grayscale-25 opacity-85'}`}>
-              🔧
-            </span>
-            <span className={`text-[10px] tracking-tight mt-0.5 truncate max-w-[68px] text-center leading-tight ${
-              isTechActive ? 'text-orange-600 dark:text-orange-400 font-black' : 'text-muted-foreground font-medium'
-            }`}>
-              งานซ่อม
-            </span>
-          </Link>
+          {/* 2. งานซ่อมบำรุง (ซ่อนสำหรับแม่บ้าน) */}
+          {userSubRole !== 'maid' && (
+            <Link
+              href="/keeper/technician"
+              className={`relative flex flex-col items-center justify-center py-1 px-2 rounded-2xl transition-all select-none active:scale-90 cursor-pointer min-w-[62px] ${
+                isTechActive ? 'text-orange-600 dark:text-orange-400 font-black' : 'text-muted-foreground/80 hover:text-foreground font-semibold'
+              }`}
+            >
+              {isTechActive && (
+                <span className="absolute -top-1.5 w-6 h-1 rounded-full bg-gradient-to-r from-orange-500 to-amber-500 shadow-sm" />
+              )}
+              <span className={`text-xl transition-transform block ${isTechActive ? 'scale-115 -translate-y-0.5' : 'grayscale-25 opacity-85'}`}>
+                🔧
+              </span>
+              <span className={`text-[10px] tracking-tight mt-0.5 truncate max-w-[68px] text-center leading-tight ${
+                isTechActive ? 'text-orange-600 dark:text-orange-400 font-black' : 'text-muted-foreground font-medium'
+              }`}>
+                งานซ่อม
+              </span>
+            </Link>
+          )}
 
           {/* 3. สลับหอพัก */}
           <button

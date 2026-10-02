@@ -74,6 +74,21 @@ export default function OwnerMaintenancePage() {
     }
   };
 
+  const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
+
+  const parsePhotos = (photoUrl?: string): string[] => {
+    if (!photoUrl) return [];
+    if (photoUrl.startsWith('[') && photoUrl.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(photoUrl);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        // fallback
+      }
+    }
+    return [photoUrl];
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Pending':
@@ -176,7 +191,22 @@ export default function OwnerMaintenancePage() {
                             <div className="bg-rose-50 border border-rose-100 text-rose-800 px-3 py-1 rounded-lg text-xs font-bold inline-block mb-2">
                                {req.issue_type}
                             </div>
-                            <p className="text-sm font-medium text-white/80 whitespace-pre-line leading-relaxed">{req.description}</p>
+                            <p className="text-sm font-medium text-white/80 whitespace-pre-line leading-relaxed mb-3">{req.description}</p>
+                            
+                            {/* Attached Photos (if any) */}
+                            {parsePhotos((req as any).photo_url).length > 0 && (
+                              <div className="flex flex-wrap gap-2 pt-1">
+                                {parsePhotos((req as any).photo_url).map((url, pIdx) => (
+                                  <img 
+                                    key={pIdx} 
+                                    src={url} 
+                                    alt={`รูปประกอบ ${pIdx + 1}`} 
+                                    onClick={() => setPreviewModalUrl(url)}
+                                    className="w-12 h-12 object-cover rounded-xl border border-white/20 hover:border-primary cursor-pointer hover:scale-110 transition-all shadow-sm"
+                                  />
+                                ))}
+                              </div>
+                            )}
                          </td>
                          <td className="px-0 sm:px-8 py-3 sm:py-6 align-top">
                             <span className="inline-flex sm:hidden text-[10px] font-black text-foreground/50 uppercase tracking-widest mb-1">ค่าบริการ/บิล</span>
@@ -223,6 +253,29 @@ export default function OwnerMaintenancePage() {
            </div>
         </div>
       </div>
+
+      {/* Lightbox / Image Preview Modal */}
+      {previewModalUrl && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setPreviewModalUrl(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
+            <button
+              onClick={() => setPreviewModalUrl(null)}
+              className="absolute -top-10 right-0 text-white text-sm font-bold bg-white/20 hover:bg-white/40 px-3 py-1 rounded-full cursor-pointer"
+            >
+              ปิด (✕)
+            </button>
+            <img 
+              src={previewModalUrl} 
+              alt="Expanded Preview" 
+              className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl border border-white/20"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

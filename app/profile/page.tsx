@@ -1,6 +1,7 @@
 'use client';
 
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
+import { handleSignOut } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
@@ -227,14 +228,7 @@ export default function ProfilePage() {
                 </button>
                 <button 
                   type="button" 
-                  onClick={() => {
-                    if (typeof window !== 'undefined') {
-                      localStorage.removeItem('userRole');
-                      localStorage.removeItem('userEmail');
-                      localStorage.removeItem('userName');
-                    }
-                    signOut({ callbackUrl: '/' });
-                  }}
+                  onClick={() => handleSignOut('/')}
                   className="px-6 border border-rose-100 bg-rose-50 text-rose-600 rounded-2xl font-bold text-sm hover:bg-rose-100 transition-all"
                 >
                   ออกจากระบบ

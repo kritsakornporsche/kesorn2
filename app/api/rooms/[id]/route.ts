@@ -22,8 +22,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         ku.email as keeper_email,
         mor.move_out_date,
         mor.status as move_out_status,
-        dp.water_rate,
-        dp.electricity_rate,
+        CASE WHEN UPPER(r.room_number) = 'T01' THEN 5.00 ELSE dp.water_rate END as water_rate,
+        CASE WHEN UPPER(r.room_number) = 'T01' THEN 1.00 ELSE dp.electricity_rate END as electricity_rate,
+        CASE WHEN UPPER(r.room_number) = 'T01' THEN 5.00 ELSE dp.common_fee END as common_fee,
         dp.pet_friendly,
         dp.has_parking,
         dp.has_air_con,
@@ -125,6 +126,16 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 
     const sql = getDormDbFromSession(session);
     
+    // Check if room has active contracts, bills, or readings
+    const relatedContracts = await sql`SELECT id FROM contracts WHERE room_id = ${id} LIMIT 1`;
+    const relatedTenants = await sql`SELECT id FROM tenants WHERE room_id = ${id} LIMIT 1`;
+    if (relatedContracts.length > 0 || relatedTenants.length > 0) {
+      return NextResponse.json({
+        success: false,
+        message: 'ไม่สามารถลบห้องพักนี้ได้เนื่องจากมีข้อมูลสัญญาเช่าหรือผู้เช่าผูกอยู่ กรุณาปรับสถานะห้องเป็นปิดปรับปรุง (Maintenance) แทน'
+      }, { status: 400 });
+    }
+
     await sql`DELETE FROM rooms WHERE id = ${id}`;
 
     return NextResponse.json({ success: true, message: 'Room deleted successfully' }, { status: 200 });

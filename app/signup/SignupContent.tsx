@@ -319,10 +319,13 @@ export default function SignupContent() {
 
       <Link
         href="/"
-        className="absolute top-4 left-4 sm:top-8 sm:left-8 flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors group z-20"
+        className="absolute top-4 left-4 sm:top-8 sm:left-8 z-30 inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-card/90 sm:bg-transparent backdrop-blur-md sm:backdrop-blur-none border border-border/70 sm:border-transparent text-xs sm:text-[11px] font-bold text-muted-foreground hover:text-primary hover:border-primary/40 transition-all shadow-sm sm:shadow-none active:scale-95 group cursor-pointer"
+        aria-label="กลับหน้าหลัก"
       >
-        <span className="h-px w-8 bg-border group-hover:bg-primary transition-colors" />
-        กลับหน้าหลัก
+        <svg className="w-4 h-4 transition-transform group-hover:-translate-x-0.5 text-muted-foreground group-hover:text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+        </svg>
+        <span>กลับหน้าหลัก</span>
       </Link>
 
       <div className="relative z-10 w-full max-w-lg mx-auto my-auto animate-reveal pt-12 sm:pt-4 pb-8">

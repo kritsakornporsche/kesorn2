@@ -1,7 +1,9 @@
 'use client';
 
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
+import { handleSignOut } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import Image from 'next/image';
 import KeeperSidebar from '../components/KeeperSidebar';
@@ -81,17 +83,30 @@ export default function MaidDashboardPage() {
     }
   }, [activeDormId]);
 
+  const [accessDenied, setAccessDenied] = useState<string | null>(null);
+
   useEffect(() => {
     const localEmail = typeof window !== 'undefined' ? localStorage.getItem('userEmail') : null;
     
     if (status === 'authenticated') {
       const user = session?.user as any;
-      if (user?.role !== 'keeper' || user?.sub_role !== 'maid') {
-        router.push('/');
-      } else {
+      const role = user?.role;
+      const subRole = user?.sub_role;
+
+      if (role === 'owner') {
+        setAccessDenied(null);
         const savedDorm = typeof window !== 'undefined' ? localStorage.getItem('selectedKeeperDormId') || 'all' : 'all';
         setActiveDormId(savedDorm);
         fetchData(savedDorm);
+      } else if (role === 'keeper' && (subRole === 'maid' || !subRole)) {
+        setAccessDenied(null);
+        const savedDorm = typeof window !== 'undefined' ? localStorage.getItem('selectedKeeperDormId') || 'all' : 'all';
+        setActiveDormId(savedDorm);
+        fetchData(savedDorm);
+      } else if (subRole === 'technician') {
+        setAccessDenied('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (หน้านี้สำหรับฝ่ายแม่บ้าน/ทำความสะอาด)');
+      } else {
+        setAccessDenied('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (เฉพาะฝ่ายแม่บ้านหรือผู้ดูแลหอพัก)');
       }
     } else if (status === 'unauthenticated') {
       if (localEmail) {
@@ -190,6 +205,35 @@ export default function MaidDashboardPage() {
     return <div className="flex h-screen items-center justify-center bg-[#080F1E] font-display text-white/50 tracking-wider">กำลังโหลดระบบ...</div>;
   }
 
+  if (accessDenied) {
+    return (
+      <div className="flex h-screen bg-[#080F1E] text-white">
+        <KeeperSidebar />
+        <main className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+          <div className="p-8 max-w-md w-full rounded-3xl bg-[#0F172A] border border-white/10 shadow-2xl space-y-4">
+            <span className="text-5xl block">🚫</span>
+            <h2 className="text-lg font-bold text-white">ไม่มีสิทธิ์เข้าถึงหน้านี้</h2>
+            <p className="text-xs text-slate-300 leading-relaxed">{accessDenied}</p>
+            <div className="pt-3 flex flex-wrap justify-center gap-3">
+              <Link
+                href="/keeper/technician"
+                className="px-4 py-2.5 rounded-xl text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-all shadow-md"
+              >
+                ไปยังหน้าช่างซ่อมบำรุง
+              </Link>
+              <Link
+                href="/"
+                className="px-4 py-2.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-white transition-all"
+              >
+                กลับหน้าหลัก
+              </Link>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen bg-[#080F1E]">
       <KeeperSidebar onDormChange={(id) => { setActiveDormId(id); fetchData(id); }} />
@@ -201,7 +245,7 @@ export default function MaidDashboardPage() {
             <div className="flex items-center gap-3">
               <h1 className="font-display text-xl font-bold tracking-tight text-white">ภาพรวมงานแม่บ้าน</h1>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30">
-                Multi-Dormitory
+                หอพักเกษร 2
               </span>
             </div>
             <p className="text-xs text-white/50 font-medium mt-0.5">ยินดีต้อนรับคุณ {session?.user?.name}</p>
@@ -209,14 +253,7 @@ export default function MaidDashboardPage() {
           <div className="flex items-center gap-4">
             <div className="text-xs font-medium text-white/50 hidden sm:block">เวลาปัจจุบัน: {currentTime}</div>
             <button
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  localStorage.removeItem('userRole');
-                  localStorage.removeItem('userEmail');
-                  localStorage.removeItem('userName');
-                }
-                signOut({ callbackUrl: '/' });
-              }}
+              onClick={() => handleSignOut('/')}
               className="text-xs font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 border border-rose-100 hover:bg-rose-100 transition-colors px-4 py-2 rounded-xl"
             >
               ออกจากระบบ
@@ -238,7 +275,7 @@ export default function MaidDashboardPage() {
                 <span className="text-sm font-semibold text-white">งานทั้งหมดในระบบ</span>
                 <div className="mt-4 flex items-baseline gap-2">
                   <span className="text-4xl font-display font-semibold text-muted-foreground">{loadingData ? '-' : data?.stats?.total || 0}</span>
-                  <span className="text-sm text-white/50 font-medium">ห้อง</span>
+                  <span className="text-sm text-white/50 font-medium">งาน</span>
                 </div>
               </div>
               <div className="bg-[#0F172A] border border-white/20/10 shadow-sm p-6 rounded-3xl flex flex-col relative overflow-hidden group">
@@ -246,7 +283,7 @@ export default function MaidDashboardPage() {
                 <span className="text-sm font-semibold text-white">กำลังทำความสะอาด</span>
                 <div className="mt-4 flex items-baseline gap-2">
                   <span className="text-4xl font-display font-semibold text-amber-500">{loadingData ? '-' : data?.stats?.inProgress || 0}</span>
-                  <span className="text-sm text-amber-500/70 font-medium">ห้อง</span>
+                  <span className="text-sm text-amber-500/70 font-medium">งาน</span>
                 </div>
               </div>
               <div className="bg-[#0F172A] border border-white/20/10 shadow-sm p-6 rounded-3xl flex flex-col relative overflow-hidden group">
@@ -254,7 +291,7 @@ export default function MaidDashboardPage() {
                 <span className="text-sm font-semibold text-white">เสร็จสมบูรณ์แล้ว</span>
                 <div className="mt-4 flex items-baseline gap-2">
                   <span className="text-4xl font-display font-semibold text-emerald-500">{loadingData ? '-' : data?.stats?.completed || 0}</span>
-                  <span className="text-sm text-emerald-500/70 font-medium">ห้อง</span>
+                  <span className="text-sm text-emerald-500/70 font-medium">งาน</span>
                 </div>
               </div>
             </div>

@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { signOut, useSession } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
+import { handleSignOut } from '@/lib/auth-client';
 import ThemeToggle from '@/app/components/ThemeToggle';
 
 interface ResearcherNavbarProps {
@@ -69,14 +70,7 @@ export default function ResearcherNavbar({ onToggleMobileMenu }: ResearcherNavba
         </Link>
 
         <button
-          onClick={() => {
-            if (typeof window !== 'undefined') {
-              localStorage.removeItem('userRole');
-              localStorage.removeItem('userEmail');
-              localStorage.removeItem('userName');
-            }
-            signOut({ callbackUrl: '/' });
-          }}
+          onClick={() => handleSignOut('/')}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold transition-colors border border-rose-500/20 cursor-pointer"
           title="ออกจากระบบ"
         >

@@ -44,3 +44,12 @@ next-env.d.ts
 
 .env.local
 .env*.local
+
+# test artifacts & scratch
+cookie_tenant.txt
+scratch/
+*.traineddata
+*.pdf
+*.zip
+scripts/*.json
+

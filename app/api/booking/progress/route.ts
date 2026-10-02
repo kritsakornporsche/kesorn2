@@ -23,6 +23,10 @@ export async function GET(request: Request) {
       WHERE user_email = ${session.user.email} AND room_id = ${parseInt(roomId)}
     `;
 
+    if (!progress || progress.length === 0) {
+      return NextResponse.json({ success: true, data: null });
+    }
+
     const item = progress[0];
     let parsedData = item.booking_data;
     if (typeof parsedData === 'string') {

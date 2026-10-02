@@ -138,7 +138,7 @@ export default function TenantEvaluationPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground pb-44 md:pb-24">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-card/80 backdrop-blur-xl border-b border-border px-4 py-4">
         <div className="max-w-2xl mx-auto">
@@ -483,7 +483,7 @@ export default function TenantEvaluationPage() {
       </div>
 
       {/* Fixed bottom navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-card/90 backdrop-blur-xl border-t border-border p-4 safe-area-bottom">
+      <div className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] md:bottom-0 left-0 right-0 bg-card/95 backdrop-blur-xl border-t border-border p-3.5 sm:p-4 z-40 safe-area-bottom">
         <div className="max-w-2xl mx-auto flex gap-3">
           {step > 1 && (
             <button

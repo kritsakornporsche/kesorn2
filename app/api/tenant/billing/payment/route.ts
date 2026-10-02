@@ -5,11 +5,13 @@ import { auth } from '@/auth';
 export async function POST(req: Request) {
   try {
     const session = await auth();
+    if (!session?.user?.email) {
+      return NextResponse.json({ success: false, message: 'Unauthorized: กรุณาเข้าสู่ระบบก่อนทำรายการ' }, { status: 401 });
+    }
+
     const body = await req.json();
     const billId = body.billId || body.bill_id;
     const slipData = body.slipData || body.slip_url || body.slip;
-    const email = body.email;
-    const userEmail = session?.user?.email || email;
 
     if (!billId || !slipData) {
       return NextResponse.json({ success: false, message: 'Missing billId or slipData' }, { status: 400 });
@@ -19,7 +21,7 @@ export async function POST(req: Request) {
     
     // 1. Verify bill exists
     const billRes = await sql`
-      SELECT b.*, t.email as tenant_email 
+      SELECT b.*, t.email as tenant_email, t.user_id as tenant_user_id
       FROM bills b 
       LEFT JOIN tenants t ON b.tenant_id = t.id 
       WHERE b.id = ${billId} 
@@ -32,23 +34,171 @@ export async function POST(req: Request) {
 
     const bill = billRes[0];
 
+    // SEC-07: Verify bill belongs to this user/tenant unless staff
+    const userRole = (session.user as any)?.role;
+    const isStaff = userRole === 'owner' || userRole === 'keeper' || userRole === 'platform_admin';
+    if (!isStaff) {
+      const isOwnerOfBill = 
+        (bill.tenant_email && bill.tenant_email.toLowerCase() === session.user.email.toLowerCase()) ||
+        (bill.tenant_user_id && bill.tenant_user_id === (session.user as any)?.id);
+
+      if (!isOwnerOfBill) {
+        // Also check if any tenant record with this email matches bill.tenant_id
+        const tMatch = await sql`
+          SELECT id FROM tenants 
+          WHERE id = ${bill.tenant_id} AND (LOWER(email) = ${session.user.email.toLowerCase()} OR user_id = ${(session.user as any)?.id || 0})
+          LIMIT 1
+        `;
+        if (tMatch.length === 0) {
+          return NextResponse.json({ success: false, message: 'Forbidden: คุณไม่มีสิทธิ์ชำระบิลนี้' }, { status: 403 });
+        }
+      }
+    }
+
     if (bill.status && bill.status.toLowerCase() === 'paid') {
       return NextResponse.json({ success: false, message: 'บิลนี้ได้รับการชำระเงินเรียบร้อยแล้ว' }, { status: 400 });
     }
 
-    // 2. Update bill status to Pending with slip
+    // 2. Automated Verification with SlipOK
+    const { verifySlipWithSlipOK } = await import('@/lib/slipok');
+    const dormProfileRes = await sql`
+      SELECT name, promptpay_name, promptpay_number 
+      FROM dormitory_profile 
+      LIMIT 1
+    `;
+    const expectedDorm = dormProfileRes[0] || {};
+
+    const baseAmount = Number(bill.amount);
+    let lateFee = 0;
+    if (bill.due_date) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const due = new Date(bill.due_date);
+      due.setHours(0, 0, 0, 0);
+      const diffTime = today.getTime() - due.getTime();
+      if (diffTime > 0) {
+        const daysOverdue = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        lateFee = daysOverdue * 100;
+      }
+    }
+
+    const dormConfig = {
+      name: expectedDorm.promptpay_name || expectedDorm.name || 'หอพักเกษร 2',
+      promptpay: expectedDorm.promptpay_number || '0636040550',
+      dormName: expectedDorm.name || 'หอพักเกษร 2'
+    };
+
+    // Try total amount (including late fee if any)
+    let verifyRes = await verifySlipWithSlipOK(slipData, {
+      expectedAmount: baseAmount + lateFee,
+      expectedReceiver: dormConfig,
+      billCreatedAt: bill.created_at,
+    });
+
+    // If verification failed and late fee > 0, also check if tenant transferred exact base amount
+    if (!verifyRes.success && lateFee > 0 && verifyRes.reason !== 'เวลาที่ทำรายการในสลิปเกิดขึ้นก่อนวันที่ออกบิล') {
+      const baseVerifyRes = await verifySlipWithSlipOK(slipData, {
+        expectedAmount: baseAmount,
+        expectedReceiver: dormConfig,
+        billCreatedAt: bill.created_at,
+      });
+      if (baseVerifyRes.success) {
+        verifyRes = baseVerifyRes;
+      }
+    }
+
+    // "แต่ถ้าไม่ตรง ไม่ว่าชื่อหรือยอดเงินให้ปฎิเสธ"
+    if (!verifyRes.success) {
+      try {
+        const { saveBase64Image } = await import('@/lib/file-storage');
+        const storedSlipUrl = saveBase64Image(slipData, 'slips', `bill_${billId}_failed_${Date.now()}`) || slipData;
+        await sql`
+          UPDATE bills 
+          SET slip_url = ${storedSlipUrl},
+              slip_verified = 0,
+              slip_data = ${JSON.stringify(verifyRes)}
+          WHERE id = ${billId}
+        `;
+      } catch (err) {
+        console.warn('Failed to save rejected slip record:', err);
+      }
+
+      return NextResponse.json({
+        success: false,
+        message: `สลิปไม่ผ่านการตรวจสอบ: ${verifyRes.message || 'ข้อมูลชื่อผู้รับเงินหรือยอดเงินไม่ถูกต้อง กรุณาตรวจสอบสลิปแล้วลองใหม่อีกครั้ง'}`,
+        data: verifyRes
+      }, { status: 400 });
+    }
+
+    // "ถ้าโอนถูกยอดตรง ให้อนุมัติไปเลย ทั้งการจอง ค่าหอ ค่าซ่อมทำความสะอาด"
+    const slipokRef = verifyRes.transRef || null;
+    const slipRaw = JSON.stringify(verifyRes.rawData || {});
+
+    // Save slip image to disk if Base64 to prevent large DB payloads
+    const { saveBase64Image } = await import('@/lib/file-storage');
+    const storedSlipUrl = saveBase64Image(slipData, 'slips', `bill_${billId}_${Date.now()}`) || slipData;
+
+    // Update bill status directly to 'Paid' (Auto-Approved)
     await sql`
       UPDATE bills 
-      SET status = 'Pending', slip_url = ${slipData} 
+      SET status = 'Paid', 
+          slip_url = ${storedSlipUrl},
+          slip_verified = 1,
+          slip_verified_at = NOW(),
+          slipok_trans_ref = ${slipokRef},
+          slip_data = ${slipRaw}
       WHERE id = ${billId}
     `;
 
-    // 3. Create notifications for owner and staff (keeper) of this dorm
+    const dormId = bill.dorm_id || 1;
+    const roomNumber = bill.room_number || '-';
+    const billTitle = bill.title || bill.billing_cycle || 'ค่าเช่าและบริการ';
+    const amountNum = Number(bill.amount || 0);
+
+    // Sync to accounting_transactions
     try {
-      const dormId = bill.dorm_id || 1;
-      const roomNumber = bill.room_number || '-';
-      const billMonth = bill.billing_cycle || 'ล่าสุด';
-      const amount = Number(bill.amount || 0).toLocaleString('th-TH');
+      const existingTx = await sql`
+        SELECT id FROM accounting_transactions 
+        WHERE reference_id = ${billId} AND reference_type = 'bill' 
+        LIMIT 1
+      `;
+      if (existingTx.length === 0) {
+        await sql`
+          INSERT INTO accounting_transactions (
+            dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date
+          ) VALUES (
+            ${dormId},
+            'Income',
+            ${bill.bill_type === 'service' ? 'Service' : (bill.bill_type === 'booking' ? 'Deposit' : 'Rent')},
+            ${amountNum},
+            ${'ชำระบิลห้อง ' + roomNumber + ' (' + billTitle + ') (Ref: ' + (slipokRef || '-') + ') [SlipOK อนุมัติอัตโนมัติ]'},
+            ${billId},
+            'bill',
+            ${new Date().toISOString().slice(0, 10)}
+          )
+        `;
+      }
+    } catch (txErr) {
+      console.warn('[Billing Accounting Sync] Warn:', txErr);
+    }
+
+    // 3. Create notifications for tenant and owner
+    try {
+      const tenantUserId = bill.tenant_user_id || (session.user as any)?.id;
+      if (tenantUserId) {
+        await sql`
+          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+          VALUES (
+            ${tenantUserId},
+            '✅ การชำระเงินได้รับการอนุมัติแล้ว',
+            ${'บิล ' + billTitle + ' จำนวน ฿' + amountNum.toLocaleString('th-TH') + ' ได้รับการตรวจสอบและอนุมัติอัตโนมัติผ่าน SlipOK เรียบร้อยแล้ว'},
+            'payment_approved',
+            0,
+            '/tenant/billing',
+            NOW()
+          )
+        `;
+      }
 
       const staff = await sql`
         SELECT DISTINCT u.id as user_id
@@ -66,8 +216,8 @@ export async function POST(req: Request) {
           INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
           VALUES (
             ${person.user_id},
-            'มีการแจ้งชำระเงินใหม่',
-            ${'ผู้เช่าห้อง ' + roomNumber + ' แจ้งชำระเงินบิลประจำเดือน ' + billMonth + ' จำนวน ' + amount + ' บาท กรุณาตรวจสอบสลิป'},
+            '💰 ผู้เช่าชำระเงินสำเร็จ (SlipOK อนุมัติ)',
+            ${'ผู้เช่าห้อง ' + roomNumber + ' ชำระบิล ' + billTitle + ' จำนวน ฿' + amountNum.toLocaleString('th-TH') + ' (SlipOK ยืนยันยอดเงินและบัญชีถูกต้อง)'},
             'payment',
             0,
             '/owner/billing',
@@ -77,12 +227,17 @@ export async function POST(req: Request) {
       }
     } catch (notifErr) {
       console.error('[POST /api/tenant/billing/payment] Notification Error:', notifErr);
-      // Do not block the payment response even if notification insert fails
     }
 
     return NextResponse.json({ 
       success: true, 
-      message: 'ส่งหลักฐานการชำระเงินเรียบร้อยแล้ว รอเจ้าของหอพักตรวจสอบ' 
+      verified: true,
+      message: 'การชำระเงินได้รับการอนุมัติอัตโนมัติเรียบร้อยแล้ว (SlipOK ตรวจสอบยอดเงินและบัญชีถูกต้อง)',
+      data: {
+        billId,
+        status: 'Paid',
+        transRef: slipokRef
+      }
     });
 
   } catch (error: any) {

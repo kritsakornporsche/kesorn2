@@ -6,6 +6,10 @@ export async function POST(req: Request) {
   const session = await auth();
   const sql = getDb();
 
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: 'Unauthorized: กรุณาเข้าสู่ระบบก่อนลงนามสัญญา' }, { status: 401 });
+  }
+
   try {
     const data = await req.json();
     const { roomNumber, monthlyRent, depositAmount, startDate, endDate, signatureData } = data;
@@ -26,32 +30,27 @@ export async function POST(req: Request) {
     // 2. Resolve tenant identity
     let tenantId;
     let tenantUserId: number | null = null;
-    if (session?.user) {
-      const userEmail = session.user.email;
-      const uRes = await sql`SELECT id FROM users WHERE LOWER(email) = LOWER(${userEmail}) LIMIT 1`;
-      if (uRes.length > 0) tenantUserId = uRes[0].id;
+    const userEmail = session.user.email;
+    const uRes = await sql`SELECT id FROM users WHERE LOWER(email) = LOWER(${userEmail}) LIMIT 1`;
+    if (uRes.length > 0) tenantUserId = uRes[0].id;
 
-      const tenants = await sql`SELECT id, user_id FROM tenants WHERE LOWER(email) = LOWER(${userEmail}) LIMIT 1`;
-      
-      if (tenants.length > 0) {
-        tenantId = tenants[0].id;
-        if (!tenants[0].user_id && tenantUserId) {
-          await sql`UPDATE tenants SET user_id = ${tenantUserId} WHERE id = ${tenantId}`;
-        }
-      } else {
-        const insertResult: any = await sql`
-          INSERT INTO tenants (name, email, user_id, status)
-          VALUES (${session.user.name || 'User'}, ${userEmail}, ${tenantUserId}, 'Active')
-        `;
-        tenantId = insertResult.insertId || null;
-        if (!tenantId) {
-          const fetchAgain = await sql`SELECT id FROM tenants WHERE LOWER(email) = LOWER(${userEmail}) LIMIT 1`;
-          if (fetchAgain.length > 0) tenantId = fetchAgain[0].id;
-        }
+    const tenants = await sql`SELECT id, user_id FROM tenants WHERE LOWER(email) = LOWER(${userEmail}) LIMIT 1`;
+    
+    if (tenants.length > 0) {
+      tenantId = tenants[0].id;
+      if (!tenants[0].user_id && tenantUserId) {
+        await sql`UPDATE tenants SET user_id = ${tenantUserId} WHERE id = ${tenantId}`;
       }
     } else {
-      const fallbackTenants = await sql`SELECT id FROM tenants LIMIT 1`;
-      tenantId = fallbackTenants.length > 0 ? fallbackTenants[0].id : null;
+      const insertResult: any = await sql`
+        INSERT INTO tenants (name, email, user_id, status)
+        VALUES (${session.user.name || 'User'}, ${userEmail}, ${tenantUserId}, 'Active')
+      `;
+      tenantId = insertResult.insertId || null;
+      if (!tenantId) {
+        const fetchAgain = await sql`SELECT id FROM tenants WHERE LOWER(email) = LOWER(${userEmail}) LIMIT 1`;
+        if (fetchAgain.length > 0) tenantId = fetchAgain[0].id;
+      }
     }
 
     if (!tenantId) {

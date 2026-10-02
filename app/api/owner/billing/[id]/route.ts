@@ -27,8 +27,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (typeof status === 'string') {
       const lower = status.toLowerCase();
       if (lower === 'paid') normalizedStatus = 'Paid';
-      else if (lower === 'unpaid') normalizedStatus = 'Unpaid';
-      else if (lower === 'pending') normalizedStatus = 'Pending';
+      else if (lower === 'unpaid' || lower === 'pending') normalizedStatus = 'Unpaid';
+      else if (lower === 'overdue') normalizedStatus = 'Overdue';
+      else if (lower === 'cancelled' || lower === 'canceled') normalizedStatus = 'Cancelled';
     }
 
     if (normalizedStatus) {
@@ -119,6 +120,37 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           console.warn('[Billing Accounting Sync] Warn:', txErr);
         }
 
+      } else if (normalizedStatus === 'Cancelled') {
+        // Handle bill cancellation: remove accounting transaction & notify tenant
+        try {
+          await sql`DELETE FROM accounting_transactions WHERE reference_type = 'bill' AND reference_id = ${billId}`;
+        } catch (e) {
+          console.warn('[Billing Cancel Accounting Sync] Warn:', e);
+        }
+        try {
+          await sql`UPDATE maintenance_requests SET bill_id = NULL WHERE bill_id = ${billId}`;
+        } catch (e) {}
+        try {
+          await sql`UPDATE cleaning_jobs SET bill_id = NULL WHERE bill_id = ${billId}`;
+        } catch (e) {}
+        if (tenantUserId) {
+          try {
+            await sql`
+              INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+              VALUES (
+                ${tenantUserId},
+                'ใบแจ้งหนี้ถูกยกเลิก',
+                ${'ใบแจ้งหนี้รอบ ' + (currentBill.billing_cycle || '-') + ' ถูกยกเลิกเรียบร้อยแล้ว'},
+                'bill_cancelled',
+                0,
+                '/tenant/billing',
+                NOW()
+              )
+            `;
+          } catch (e) {
+            console.warn('[Billing Cancel Notification] Warn:', e);
+          }
+        }
       } else if (normalizedStatus === 'Unpaid' && slip_url === null) {
         // Notify tenant about slip rejection
         if (tenantUserId) {
@@ -163,10 +195,22 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   }
 
   try {
-    // Nullify references in maintenance_jobs and cleaning_jobs to prevent orphaned keys
-    await sql`UPDATE maintenance_jobs SET bill_id = NULL WHERE bill_id = ${billId}`;
-    await sql`UPDATE cleaning_jobs SET bill_id = NULL WHERE bill_id = ${billId}`;
-    await sql`DELETE FROM accounting_transactions WHERE reference_type = 'bill' AND reference_id = ${billId}`;
+    // Nullify references in maintenance_requests and cleaning_jobs to prevent orphaned keys
+    try {
+      await sql`UPDATE maintenance_requests SET bill_id = NULL WHERE bill_id = ${billId}`;
+    } catch (e) {
+      console.warn('[Billing DELETE] maintenance_requests update:', e);
+    }
+    try {
+      await sql`UPDATE cleaning_jobs SET bill_id = NULL WHERE bill_id = ${billId}`;
+    } catch (e) {
+      console.warn('[Billing DELETE] cleaning_jobs update:', e);
+    }
+    try {
+      await sql`DELETE FROM accounting_transactions WHERE reference_type = 'bill' AND reference_id = ${billId}`;
+    } catch (e) {
+      console.warn('[Billing DELETE] accounting_transactions delete:', e);
+    }
 
     await sql`DELETE FROM bills WHERE id = ${billId}`;
     return NextResponse.json({ success: true, message: 'Bill deleted successfully' });

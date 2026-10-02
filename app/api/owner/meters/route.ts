@@ -180,6 +180,10 @@ export async function POST(req: Request) {
     if (!room_id || !type || current_reading === undefined || !billing_cycle) {
       return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
     }
+
+    if (!photo_url || typeof photo_url !== 'string' || photo_url.trim() === '') {
+      return NextResponse.json({ success: false, message: 'ต้องถ่ายภาพหรือแนบหลักฐานรูปภาพหน้าปัดมิเตอร์ก่อนบันทึก' }, { status: 400 });
+    }
     
     // Persist photo to disk and get static URL
     const finalPhotoUrl = saveMeterPhoto(photo_url, dormId, Number(room_id), type, billing_cycle);

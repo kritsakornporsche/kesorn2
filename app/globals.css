@@ -2,6 +2,67 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ── TH Sarabun New Official Font ─────────────────────────────────────────── */
+@font-face {
+  font-family: 'TH Sarabun New';
+  src: local('TH Sarabun New'), local('THSarabunNew'),
+       url('/fonts/THSarabunNew.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'TH Sarabun New';
+  src: local('TH Sarabun New Bold'), local('THSarabunNew-Bold'),
+       url('/fonts/THSarabunNew-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'TH Sarabun New';
+  src: local('TH Sarabun New Italic'), local('THSarabunNew-Italic'),
+       url('/fonts/THSarabunNew-Italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'TH Sarabun New';
+  src: local('TH Sarabun New BoldItalic'), local('THSarabunNew-BoldItalic'),
+       url('/fonts/THSarabunNew-BoldItalic.ttf') format('truetype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'THSarabunNew';
+  src: local('TH Sarabun New'), local('THSarabunNew'),
+       url('/fonts/THSarabunNew.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'THSarabunNew';
+  src: local('TH Sarabun New Bold'), local('THSarabunNew-Bold'),
+       url('/fonts/THSarabunNew-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+.font-sarabun,
+.font-sarabun *,
+[data-font="sarabun"] {
+  font-family: 'TH Sarabun New', 'THSarabunNew', 'Sarabun', sans-serif !important;
+}
+
 :root {
   /* Clean Modern Slate & Indigo Light Theme */
   --background: #F8FAFC; /* Clean slate-50 */

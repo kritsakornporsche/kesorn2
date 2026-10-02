@@ -5,13 +5,20 @@ import { auth } from '@/auth';
 export async function GET(req: Request) {
   try {
     const session = await auth();
-    const { searchParams } = new URL(req.url);
-    const emailParam = searchParams.get('email');
-    const userEmail = session?.user?.email || emailParam;
-
-    if (!userEmail) {
+    if (!session?.user?.email) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+
+    const { searchParams } = new URL(req.url);
+    const emailParam = searchParams.get('email');
+    const role = (session.user as any)?.role;
+    const isStaff = role === 'owner' || role === 'keeper' || role === 'platform_admin';
+
+    if (emailParam && emailParam.toLowerCase() !== session.user.email.toLowerCase() && !isStaff) {
+      return NextResponse.json({ success: false, message: 'Forbidden: คุณไม่มีสิทธิ์เข้าถึงข้อมูลของผู้ใช้อื่น' }, { status: 403 });
+    }
+
+    const userEmail = (isStaff && emailParam) ? emailParam : session.user.email;
 
     const sql = getDb();
 

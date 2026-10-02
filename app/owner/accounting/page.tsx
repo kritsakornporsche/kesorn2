@@ -122,44 +122,46 @@ export default function OwnerAccounting() {
             <div className="px-6 py-4 border-b border-white/20/10 bg-card">
               <h3 className="text-white font-bold">รายการทั้งหมด</h3>
             </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-white/20/10">
-                  <th className="text-left px-6 py-3 text-muted-foreground text-xs uppercase tracking-widest font-bold">วันที่</th>
-                  <th className="text-left px-6 py-3 text-muted-foreground text-xs uppercase tracking-widest font-bold">ประเภท</th>
-                  <th className="text-left px-6 py-3 text-muted-foreground text-xs uppercase tracking-widest font-bold">หมวด</th>
-                  <th className="text-left px-6 py-3 text-muted-foreground text-xs uppercase tracking-widest font-bold">รายละเอียด</th>
-                  <th className="text-right px-6 py-3 text-muted-foreground text-xs uppercase tracking-widest font-bold">จำนวน</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E5DFD3]">
-                {transactions.length === 0 ? (
-                  <tr><td colSpan={5} className="px-6 py-12 text-center text-muted-foreground text-sm">ยังไม่มีรายการ</td></tr>
-                ) : transactions.map(t => (
-                  <tr key={t.id} className="hover:bg-card transition-colors">
-                    <td className="px-6 py-4 text-white/80">{t.transaction_date ? new Date(t.transaction_date).toLocaleDateString('th-TH') : '-'}</td>
-                    <td className="px-6 py-4">
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
-                        t.type === 'Income' ? 'bg-[#10B981]/10 text-[#10B981]' : 'bg-[#EF4444]/10 text-[#EF4444]'
-                      }`}>{t.type === 'Income' ? 'รายรับ' : 'รายจ่าย'}</span>
-                    </td>
-                    <td className="px-6 py-4 text-white/80">{t.category}</td>
-                    <td className="px-6 py-4 text-white">{t.description || '-'}</td>
-                    <td className={`px-6 py-4 text-right font-bold ${t.type === 'Income' ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-                      {t.type === 'Income' ? '+' : '-'}฿{fmt(Number(t.amount))}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[600px]">
+                <thead>
+                  <tr className="border-b border-white/20/10">
+                    <th className="text-left px-6 py-3 text-muted-foreground text-xs uppercase tracking-widest font-bold">วันที่</th>
+                    <th className="text-left px-6 py-3 text-muted-foreground text-xs uppercase tracking-widest font-bold">ประเภท</th>
+                    <th className="text-left px-6 py-3 text-muted-foreground text-xs uppercase tracking-widest font-bold">หมวด</th>
+                    <th className="text-left px-6 py-3 text-muted-foreground text-xs uppercase tracking-widest font-bold">รายละเอียด</th>
+                    <th className="text-right px-6 py-3 text-muted-foreground text-xs uppercase tracking-widest font-bold">จำนวน</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-[#E5DFD3]">
+                  {transactions.length === 0 ? (
+                    <tr><td colSpan={5} className="px-6 py-12 text-center text-muted-foreground text-sm">ยังไม่มีรายการ</td></tr>
+                  ) : transactions.map(t => (
+                    <tr key={t.id} className="hover:bg-card transition-colors">
+                      <td className="px-6 py-4 text-white/80">{t.transaction_date ? new Date(t.transaction_date).toLocaleDateString('th-TH') : '-'}</td>
+                      <td className="px-6 py-4">
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                          t.type === 'Income' ? 'bg-[#10B981]/10 text-[#10B981]' : 'bg-[#EF4444]/10 text-[#EF4444]'
+                        }`}>{t.type === 'Income' ? 'รายรับ' : 'รายจ่าย'}</span>
+                      </td>
+                      <td className="px-6 py-4 text-white/80">{t.category}</td>
+                      <td className="px-6 py-4 text-white">{t.description || '-'}</td>
+                      <td className={`px-6 py-4 text-right font-bold ${t.type === 'Income' ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                        {t.type === 'Income' ? '+' : '-'}฿{fmt(Number(t.amount))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Add Transaction Modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowForm(false)}>
-          <div className="bg-card border border-white/20/10 rounded-2xl p-8 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto" onClick={() => setShowForm(false)}>
+          <div className="bg-card border border-white/20/10 rounded-2xl p-6 sm:p-8 w-full max-w-md shadow-2xl my-auto" onClick={e => e.stopPropagation()}>
             <h2 className="text-white font-black text-lg mb-6">บันทึกรายการใหม่</h2>
             <div className="space-y-4">
               <div>

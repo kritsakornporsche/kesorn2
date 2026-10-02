@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
+import { handleSignOut } from '@/lib/auth-client';
 import { useState, useEffect } from 'react';
 import NotificationsPopover from '@/components/NotificationsPopover';
 import ThemeToggle from '@/app/components/ThemeToggle';
@@ -171,14 +172,7 @@ export default function OwnerNavbar({ onToggleMobileMenu }: OwnerNavbarProps) {
         {/* Sign Out Button (Visible on both Mobile and Desktop) */}
         <button
           type="button"
-          onClick={() => {
-            if (typeof window !== 'undefined') {
-              localStorage.removeItem('userRole');
-              localStorage.removeItem('userEmail');
-              localStorage.removeItem('userName');
-            }
-            signOut({ callbackUrl: '/' });
-          }}
+          onClick={() => handleSignOut('/')}
           className="flex h-9 px-2.5 sm:px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-500 hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-100 border border-rose-500/30 transition-all items-center gap-1.5 text-xs font-bold shadow-sm cursor-pointer active:scale-95 shrink-0"
           title="ออกจากระบบ"
         >

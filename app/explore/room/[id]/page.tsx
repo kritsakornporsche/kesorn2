@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, use, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import ChatWidget from '@/app/components/ChatWidget';
 import ContractSimulator from '@/app/components/ContractSimulator';
-import ContractSigner from '@/app/components/ContractSigner';
+import PrintableContractModal from '@/components/PrintableContractModal';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
 
 function getGoogleMapsEmbedUrl(mapUrl?: string, address?: string, dormName?: string) {
@@ -51,12 +51,44 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
   const { data: session, status: sessionStatus } = useSession();
   
   const [room, setRoom] = useState<any>(null);
-  const [step, setStep] = useState(1); // 1: Info, 2: Tenant Info, 3: Contract Modal, 4: QR Payment & Slip Upload, 5: Waiting Owner
+  const [step, setStep] = useState(1); // 1: Info, 2: Info & Dates, 3: ID Card OCR & Contract Review, 4: QR Payment & Slip, 5: Finished
   const [loading, setLoading] = useState(true);
-  const [bookingData, setBookingData] = useState({ name: '', phone: '', email: '' });
+  const [bookingData, setBookingData] = useState({
+    name: '',
+    phone: '',
+    parent_phone: '',
+    email: '',
+    start_date: new Date().toISOString().split('T')[0],
+    end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+    id_card_number: '',
+    id_card_address: '',
+    id_card_image: '',
+    houseNo: '',
+    village: '',
+    road: '',
+    subdistrict: '',
+    district: '',
+    province: '',
+  });
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSimulator, setShowSimulator] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+
+  // OCR and Document States (Google Gemini Vision AI)
+  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+  const [ocrSuccessMsg, setOcrSuccessMsg] = useState<string | null>(null);
+  const [ocrStats, setOcrStats] = useState<string | null>(null);
+  const [ocrErrorMsg, setOcrErrorMsg] = useState<string | null>(null);
+  const [createdContractId, setCreatedContractId] = useState<number | string | null>(null);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [downloadingDocx, setDownloadingDocx] = useState(false);
+
+  // Camera state for guest ID scan
+  const [cameraActive, setCameraActive] = useState<boolean>(false);
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   // QR Code & Slip Payment States
   const [qrData, setQrData] = useState<{ qrImage: string; amount: number; promptpayNumber: string; promptpayName: string } | null>(null);
@@ -115,11 +147,17 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     if (sessionStatus === 'authenticated' && session?.user) {
       setBookingData((prev) => ({
         ...prev,
-        name: prev.name || session.user?.name || '',
+        name: prev.name && prev.name !== 'guest' ? prev.name : ((session.user?.name && session.user?.name !== 'guest') ? session.user.name : ''),
         email: prev.email || session.user?.email || '',
       }));
     }
-  }, [sessionStatus, session, room, step, isRoomAvailable]);
+  }, [sessionStatus, session]);
+
+  useEffect(() => {
+    if (sessionStatus === 'unauthenticated' && step > 1) {
+      router.push(`/signin?callbackUrl=${encodeURIComponent(window.location.pathname)}`);
+    }
+  }, [step, sessionStatus, router]);
 
   // Fetch saved progress on mount
   useEffect(() => {
@@ -166,13 +204,14 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     return () => clearTimeout(timer);
   }, [step, bookingData, sessionStatus, roomId]);
 
-  // Fetch QR code when reaching Step 4 (Payment) - Deposit 1 month only
+  // Fetch QR code when reaching Step 4 (Payment)
   useEffect(() => {
     async function fetchQr() {
       if (step === 4 && room) {
         setQrLoading(true);
         try {
-          const depositAmount = 1000; // ค่าจองห้องพักเพื่อยืนยันสิทธิ์ 1,000 บาท ตามเงื่อนไขหอพักเกษร 2
+          const isTestRoom = (room.room_number || '').toUpperCase() === 'T01';
+          const depositAmount = isTestRoom ? 1 : 1000; // T01 = 1 บาท สำหรับทดสอบการโอน
           const res = await fetch(`/api/booking/qr?roomId=${roomId}&dormId=${room.dorm_id}&amount=${depositAmount}`);
           const data = await res.json();
           if (data.success) {
@@ -190,10 +229,317 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     fetchQr();
   }, [step, room, roomId]);
 
-  // Handle Contract Agreement -> Transition to Step 4 (QR Payment)
-  const handleSignContract = (signature: string) => {
-    setContractSignature(signature || 'CONFIRMED_E_CONTRACT');
-    setStep(4);
+  // Camera controls for ID Card Scanner
+  const startCamera = async (mode: 'environment' | 'user' = facingMode) => {
+    setCameraError(null);
+    setCameraActive(true);
+    try {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('เบราว์เซอร์ไม่รองรับ WebRTC กล้องสด กรุณาใช้ปุ่ม "ถ่ายรูปด้วยกล้องมือถือ"');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: mode,
+          width: { ideal: 1920, min: 640 },
+          height: { ideal: 1080, min: 480 },
+        },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute('playsinline', 'true');
+        videoRef.current.setAttribute('webkit-playsinline', 'true');
+        videoRef.current.muted = true;
+        await videoRef.current.play().catch(() => {});
+      }
+    } catch (err: any) {
+      console.error('Camera access error:', err);
+      setCameraError('ไม่สามารถเปิดกล้องสดได้: ' + (err.message || 'กรุณาอนุญาตการเข้าถึงกล้อง หรือใช้ปุ่มถ่ายรูปด้วยกล้องมือถือ/อัปโหลดไฟล์'));
+    }
+  };
+
+  // Ensure stream is attached when video element mounts
+  useEffect(() => {
+    if (cameraActive && streamRef.current && videoRef.current) {
+      const videoEl = videoRef.current;
+      videoEl.srcObject = streamRef.current;
+      videoEl.setAttribute('playsinline', 'true');
+      videoEl.setAttribute('webkit-playsinline', 'true');
+      videoEl.muted = true;
+      videoEl.play().catch((err) => console.warn('Video play error:', err));
+    }
+  }, [cameraActive]);
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    setCameraActive(false);
+  };
+
+  const toggleCameraFacing = async () => {
+    const nextMode = facingMode === 'environment' ? 'user' : 'environment';
+    setFacingMode(nextMode);
+    if (cameraActive) {
+      await startCamera(nextMode);
+    }
+  };
+
+  const optimizeImageForOcr = (dataUrl: string, maxDim = 1280): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width <= maxDim && height <= maxDim) {
+          // Re-encode through canvas anyway to ensure standard JPEG under 500KB and clean orientation
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.85));
+            return;
+          }
+          resolve(dataUrl);
+          return;
+        }
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
+        } else {
+          resolve(dataUrl);
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  };
+
+  const capturePhoto = async () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(video, 0, 0, width, height);
+    const base64Data = canvas.toDataURL('image/jpeg', 0.88);
+    stopCamera();
+
+    // Immediately save image to bookingData so image is never lost
+    setBookingData((prev) => ({ ...prev, id_card_image: base64Data }));
+
+    const optimized = await optimizeImageForOcr(base64Data);
+    processIdImage(optimized);
+  };
+
+  // Google Gemini Vision AI OCR Processor
+  const processIdImage = async (base64Data: string) => {
+    setIsOcrProcessing(true);
+    setOcrSuccessMsg(null);
+    setOcrStats(null);
+    setOcrErrorMsg(null);
+
+    // Save image to state
+    setBookingData((prev) => ({
+      ...prev,
+      id_card_image: base64Data,
+    }));
+
+    const t0 = Date.now();
+
+    try {
+      const res = await fetch('/api/booking/ocr-id', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64Data }),
+      });
+
+      const ocrJson = await res.json();
+      const elapsedSec = ((Date.now() - t0) / 1000).toFixed(1);
+
+      if (ocrJson.success && ocrJson.data) {
+        const d = ocrJson.data;
+        const addrParts = d.address_parts || {};
+        
+        // Extract extracted name cleanly (prioritizing full_name_th)
+        const extractedName = d.full_name_th || (d.first_name_th ? `${d.title_th ? d.title_th + ' ' : ''}${d.first_name_th} ${d.last_name_th || ''}`.trim() : '');
+
+        setBookingData((prev) => ({
+          ...prev,
+          name: extractedName || (prev.name === 'guest' ? '' : prev.name),
+          id_card_number: d.id_card_number || prev.id_card_number,
+          id_card_address: d.address || prev.id_card_address,
+          id_card_image: base64Data,
+          houseNo: addrParts.houseNo || prev.houseNo,
+          village: addrParts.village || prev.village,
+          road: addrParts.road || prev.road,
+          subdistrict: addrParts.subdistrict || prev.subdistrict,
+          district: addrParts.district || prev.district,
+          province: addrParts.province || prev.province,
+        }));
+        setOcrSuccessMsg(`✓ อ่านข้อมูลบัตรสำเร็จ: ${extractedName || d.id_card_number || ''}`);
+        setOcrStats(`อ่านสำเร็จใน ${elapsedSec} วินาที (Google Gemini AI Vision)`);
+      } else {
+        const errMsg = ocrJson.message || 'ไม่สามารถอ่านตัวอักษรบนบัตรได้ชัดเจน กรุณาตรวจสอบหรือกรอกเพิ่มเติมในช่องด้านล่าง';
+        setOcrErrorMsg(errMsg);
+      }
+    } catch (err: any) {
+      console.error('OCR Error:', err);
+      setOcrErrorMsg('เกิดข้อผิดพลาดในการเชื่อมต่อ AI OCR: ' + (err.message || 'กรุณาลองใหม่อีกครั้ง'));
+    } finally {
+      setIsOcrProcessing(false);
+    }
+  };
+
+  // ID Card Smart OCR Handler
+  const handleIdCardUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setOcrErrorMsg(null);
+    setOcrSuccessMsg(null);
+    setIsOcrProcessing(true);
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const rawBase64 = reader.result as string;
+      let imgToProcess = rawBase64;
+      try {
+        imgToProcess = await optimizeImageForOcr(rawBase64);
+      } catch (err: any) {
+        console.warn('Canvas optimization skipped/failed, using raw image:', err);
+        imgToProcess = rawBase64;
+      }
+      setBookingData((prev) => ({ ...prev, id_card_image: imgToProcess }));
+      processIdImage(imgToProcess);
+    };
+    reader.onerror = () => {
+      setIsOcrProcessing(false);
+      setOcrErrorMsg('ไม่สามารถอ่านไฟล์ภาพจากอุปกรณ์ได้ กรุณาลองใหม่อีกครั้ง');
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleDemoIdCard = () => {
+    setIsOcrProcessing(true);
+    setOcrSuccessMsg(null);
+    setOcrStats(null);
+    setTimeout(() => {
+      setBookingData((prev) => ({
+        ...prev,
+        name: 'นายกฤษกร บวรนันทกุล',
+        phone: prev.phone || '089-123-4567',
+        parent_phone: prev.parent_phone || '081-987-6543',
+        id_card_number: '1-5601-00123-45-6',
+        id_card_address: '224/12 หมู่ 2 ต.แม่กา อ.เมือง จ.พะเยา 56000',
+        houseNo: '224/12',
+        village: '2',
+        road: '-',
+        subdistrict: 'แม่กา',
+        district: 'เมือง',
+        province: 'พะเยา',
+        id_card_image: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&q=80',
+      }));
+      setIsOcrProcessing(false);
+      setOcrSuccessMsg('✓ นำเข้าข้อมูลตัวอย่างสำเร็จ (นายกฤษกร บวรนันทกุล, 1-5601-00123-45-6)');
+      setOcrStats('จำลองสำเร็จใน 0.4 วินาที');
+    }, 400);
+  };
+
+  // Download Word Contract
+  const handleDownloadDocx = async () => {
+    setDownloadingDocx(true);
+    try {
+      const contractPayload = {
+        room_number: room?.room_number,
+        floor: room?.floor,
+        price: room?.price,
+        monthly_rent: room?.price,
+        deposit_amount: 1000,
+        tenant_name: bookingData.name,
+        tenant_phone: bookingData.phone,
+        parent_phone: bookingData.parent_phone,
+        tenant_email: bookingData.email,
+        id_card_number: bookingData.id_card_number,
+        tenant_address: bookingData.id_card_address,
+        start_date: bookingData.start_date,
+        end_date: bookingData.end_date,
+        created_at: new Date().toISOString()
+      };
+      const res = await fetch('/api/contracts/export-docx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contract: contractPayload }),
+      });
+      if (!res.ok) throw new Error('Export DOCX failed');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `สัญญาเช่า_หอพักเกษร_ห้อง${room?.room_number}_${(bookingData.name || '').replace(/\s+/g, '_')}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error(e);
+      alert('เกิดข้อผิดพลาดในการดาวน์โหลดไฟล์ Word');
+    } finally {
+      setDownloadingDocx(false);
+    }
+  };
+
+  // Cancel booking in progress and reset
+  const handleCancelCurrentBooking = async () => {
+    if (!confirm('ต้องการยกเลิกการทำรายการจองห้องนี้หรือไม่?')) return;
+    try {
+      if (sessionStatus === 'authenticated' && roomId) {
+        await fetch('/api/booking/progress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomId: parseInt(roomId),
+            currentStep: 1,
+            bookingData: {}
+          })
+        });
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setStep(1);
+    setSlipData(null);
   };
 
   // Handle Slip Upload
@@ -212,7 +558,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     }
   };
 
-  // Final Submit with Slip & Contract (Deposit 1 month only)
+  // Final Submit with Slip, ID Card OCR, & Contract Details
   const handleFinalSubmit = async () => {
     if (!slipData) {
       alert('กรุณาแนบรูปภาพสลิปการโอนเงินก่อนส่งคำขอจอง');
@@ -221,22 +567,22 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
     setIsProcessing(true);
     try {
-      const startDate = new Date().toISOString().split('T')[0];
-      const endDateDate = new Date();
-      endDateDate.setFullYear(endDateDate.getFullYear() + 1);
-      const endDate = endDateDate.toISOString().split('T')[0];
-
       const res = await fetch('/api/contracts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           roomId: parseInt(roomId),
-          signature: contractSignature,
-          startDate,
-          endDate,
-          depositAmount: 1000, // ค่าจองห้องพักเพื่อยืนยันสิทธิ์ 1,000 บาท
+          signature: 'CONFIRMED_E_CONTRACT',
+          startDate: bookingData.start_date,
+          endDate: bookingData.end_date,
+          depositAmount: totalDeposit, // ค่าจองห้องพักเพื่อยืนยันสิทธิ์ (T01 = 1 บาท, ห้องทั่วไป = 1,000 บาท)
           monthlyRent: Number(room.price),
           tenantName: bookingData.name,
+          phone: bookingData.phone,
+          parentPhone: bookingData.parent_phone,
+          idCardNumber: bookingData.id_card_number,
+          tenantAddress: bookingData.id_card_address,
+          idCardImage: bookingData.id_card_image,
           slipUrl: slipData
         })
       });
@@ -244,6 +590,9 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
       const data = await res.json();
       if (!data.success) throw new Error(data.message);
 
+      if (data.contractId) {
+        setCreatedContractId(data.contractId);
+      }
       setStep(5);
     } catch (e: any) {
       console.error(e);
@@ -273,8 +622,9 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
   }
 
   const images = getImagesArray(room.images || room.image_url);
-  const totalDeposit = 1000; // ค่าจองห้องพักเพื่อยืนยันสิทธิ์ 1,000 บาท ตามประกาศจริง
-  const securityDeposit = 2000; // เงินประกันความเสียหาย 2,000 บาท
+  const isTestRoom = (room.room_number || '').toUpperCase() === 'T01';
+  const totalDeposit = isTestRoom ? 1 : 1000; // ค่าจองห้องพักเพื่อยืนยันสิทธิ์ (T01 = 1 บาท, ห้องทั่วไป = 1,000 บาท)
+  const securityDeposit = isTestRoom ? 20 : 2000; // เงินประกันความเสียหาย (T01 = 20 บาท, ห้องทั่วไป = 2,000 บาท)
   const contractStartDate = new Date().toLocaleDateString('th-TH');
   const contractEndDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toLocaleDateString('th-TH');
 
@@ -571,7 +921,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
             {step === 1 && (
               <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-xl space-y-6 animate-in fade-in duration-300">
                 <div className="space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 1 จาก 3</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 1 จาก 4</span>
                   <h2 className="text-2xl font-black tracking-tight">สรุปค่าใช้จ่ายการจองห้องพัก</h2>
                 </div>
 
@@ -631,7 +981,13 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     </div>
                   ) : isRoomAvailable ? (
                     <button
-                      onClick={() => setStep(2)}
+                      onClick={() => {
+                        if (!session) {
+                          router.push(`/signin?callbackUrl=${encodeURIComponent(window.location.pathname)}`);
+                          return;
+                        }
+                        setStep(2);
+                      }}
                       className="w-full py-5 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-sm transition-all shadow-xl shadow-primary/25 hover:scale-[1.02] active:scale-95 cursor-pointer"
                     >
                       {isMovingOut ? 'ตกลงเช่า และเริ่มจองล่วงหน้า →' : 'ตกลงเช่า และเริ่มจองห้อง →'}
@@ -671,55 +1027,129 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
               </div>
             )}
 
-            {/* Step 2: Tenant Contact Info */}
+            {/* Step 2: Tenant Contact Info & Lease Period */}
             {step === 2 && (
               <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-xl space-y-6 animate-in fade-in duration-300">
                 <div className="space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 2 จาก 3</span>
-                  <h2 className="text-2xl font-black tracking-tight">ระบุข้อมูลผู้จอง</h2>
-                  <p className="text-xs text-muted-foreground">ข้อมูลจะถูกนำไปใช้จัดทำสัญญาเช่าห้องพัก</p>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 2 จาก 4</span>
+                  <h2 className="text-2xl font-black tracking-tight">ข้อมูลผู้จองและระยะเวลาเข้าพัก</h2>
+                  <p className="text-xs text-muted-foreground">ข้อมูลจะถูกนำไปใช้กรอกลงในแบบฟอร์มสัญญาเช่าหอพักเกษร 2 อัตโนมัติ</p>
                 </div>
 
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">ชื่อ - นามสกุล</label>
-                    <input
-                      type="text"
-                      className="w-full px-5 py-4 rounded-2xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
-                      placeholder="ชื่อจริง - นามสกุลจริง"
-                      value={bookingData.name}
-                      onChange={(e) => setBookingData({ ...bookingData, name: e.target.value })}
-                    />
+                  <div className="p-3.5 bg-primary/10 border border-primary/20 rounded-2xl text-xs text-primary flex items-center gap-2.5">
+                    <span className="text-base">🪪</span>
+                    <span><strong>ชื่อ-นามสกุล และเลขประจำตัวประชาชน:</strong> จะถูกอ่านและกรอกจากบัตรประชาชนอัตโนมัติในขั้นตอนถัดไป (AI OCR)</span>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">เบอร์โทรศัพท์ติดต่อ</label>
-                    <input
-                      type="tel"
-                      className="w-full px-5 py-4 rounded-2xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
-                      placeholder="08X-XXX-XXXX"
-                      value={bookingData.phone}
-                      onChange={(e) => setBookingData({ ...bookingData, phone: e.target.value })}
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                        เบอร์โทรศัพท์ผู้เช่า <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        className="w-full px-5 py-3.5 rounded-2xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
+                        placeholder="08X-XXX-XXXX"
+                        value={bookingData.phone}
+                        onChange={(e) => setBookingData({ ...bookingData, phone: e.target.value })}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                        เบอร์โทรผู้ปกครอง <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        className="w-full px-5 py-3.5 rounded-2xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
+                        placeholder="08X-XXX-XXXX (ผู้ปกครอง)"
+                        value={bookingData.parent_phone}
+                        onChange={(e) => setBookingData({ ...bookingData, parent_phone: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Lease Period (ระยะเวลาสัญญา) */}
+                  <div className="p-4 bg-secondary/50 rounded-2xl border border-border space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        <span>📅</span> ระยะเวลาตามสัญญาเช่า
+                      </label>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const start = new Date(bookingData.start_date || new Date());
+                            const end = new Date(start);
+                            end.setFullYear(end.getFullYear() + 1);
+                            setBookingData(prev => ({ ...prev, end_date: end.toISOString().split('T')[0] }));
+                          }}
+                          className="px-2.5 py-1 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
+                        >
+                          สัญญา 1 ปี (12 เดือน)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const start = new Date(bookingData.start_date || new Date());
+                            const end = new Date(start);
+                            end.setMonth(end.getMonth() + 6);
+                            setBookingData(prev => ({ ...prev, end_date: end.toISOString().split('T')[0] }));
+                          }}
+                          className="px-2.5 py-1 bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
+                        >
+                          6 เดือน
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <span className="text-[11px] font-semibold text-muted-foreground block">วัน/เดือน ที่เริ่มเข้าอยู่</span>
+                        <input
+                          type="date"
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border focus:border-primary outline-none font-bold text-xs"
+                          value={bookingData.start_date}
+                          onChange={(e) => setBookingData({ ...bookingData, start_date: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[11px] font-semibold text-muted-foreground block">วัน/เดือน สิ้นสุดสัญญา</span>
+                        <input
+                          type="date"
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border focus:border-primary outline-none font-bold text-xs"
+                          value={bookingData.end_date}
+                          onChange={(e) => setBookingData({ ...bookingData, end_date: e.target.value })}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="space-y-3 pt-4">
+                <div className="space-y-3 pt-2">
                   <button
                     onClick={() => setStep(3)}
-                    disabled={!bookingData.name || !bookingData.phone}
+                    disabled={!bookingData.phone || !bookingData.parent_phone}
                     className="w-full py-5 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-sm transition-all shadow-xl shadow-primary/25 hover:scale-[1.02] active:scale-95 disabled:opacity-40 cursor-pointer"
                   >
-                    ถัดไป: ตรวจสอบและลงนามสัญญา →
+                    ถัดไป: สแกนบัตรประชาชน (AI OCR) →
                   </button>
-                  <button
-                    onClick={() => setStep(1)}
-                    className="w-full py-3 text-xs font-bold text-muted-foreground hover:text-foreground"
-                  >
-                    ย้อนกลับ
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setStep(1)}
+                      className="flex-1 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      ← ย้อนกลับ
+                    </button>
+                    <button
+                      onClick={handleCancelCurrentBooking}
+                      className="py-2.5 px-3 text-xs font-bold text-rose-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all cursor-pointer"
+                    >
+                      ยกเลิกการจอง
+                    </button>
+                  </div>
 
-                  {/* 💬 Quick contact in Step 2 */}
                   <div className="pt-2 border-t border-border/50 flex items-center justify-between text-xs text-muted-foreground">
                     <span>มีข้อสงสัยก่อนทำสัญญา?</span>
                     <button
@@ -735,13 +1165,336 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
               </div>
             )}
 
-            {/* Step 4: PromptPay QR Payment & Transfer Slip Upload (1 Month Deposit Only) */}
+            {/* Step 3: Smart Thai ID Card OCR & Contract Review */}
+            {step === 3 && (
+              <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-xl space-y-6 animate-in fade-in duration-300">
+                <div className="space-y-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 3 จาก 4</span>
+                  <h2 className="text-2xl font-black tracking-tight">สแกนบัตรประชาชนและข้อมูลสัญญา</h2>
+                  <p className="text-xs text-muted-foreground">
+                    ระบบ AI OCR (Google Gemini Vision AI) จะอ่านข้อมูลบัตรประชาชนและนำไปกรอกลงในแบบฟอร์มสัญญาเช่าหอพักเกษรฉบับจริงให้อัตโนมัติ
+                  </p>
+                </div>
+
+                {/* ID Card Scanner Banner */}
+                <div className="p-5 bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-primary/10 border border-primary/20 rounded-3xl space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">🪪</span>
+                      <div>
+                        <span className="text-xs font-black text-primary block">
+                          AI Smart OCR บัตรประชาชน (Google Gemini AI Vision)
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          สแกนอ่านข้อมูลแม่นยำ • กรอกสัญญาอัตโนมัติ
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {ocrSuccessMsg && (
+                    <div className="p-3 bg-emerald-500/15 border border-emerald-500/30 rounded-2xl text-emerald-400 text-xs font-bold flex items-center justify-between animate-in fade-in">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">✓</span>
+                        <span>{ocrSuccessMsg}</span>
+                      </div>
+                      {ocrStats && (
+                        <span className="text-[10px] bg-emerald-500/20 px-2 py-0.5 rounded-full text-emerald-300 font-mono">
+                          {ocrStats}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {ocrErrorMsg && (
+                    <div className="p-3.5 bg-rose-500/15 border border-rose-500/30 rounded-2xl text-rose-400 text-xs font-bold flex items-center justify-between animate-in fade-in">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">⚠️</span>
+                        <span>{ocrErrorMsg}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setOcrErrorMsg(null)}
+                        className="text-[10px] text-muted-foreground hover:text-white px-2 py-1 bg-white/10 rounded-lg cursor-pointer"
+                      >
+                        ปิด
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Camera Scanner View */}
+                  {cameraActive && (
+                    <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-primary/40 shadow-2xl space-y-3 p-3">
+                      <div className="relative aspect-[16/10] max-h-[360px] mx-auto rounded-xl overflow-hidden flex items-center justify-center bg-slate-950">
+                        <video
+                          ref={videoRef}
+                          autoPlay
+                          playsInline
+                          muted
+                          className="w-full h-full object-cover"
+                        />
+                        {/* ID Card Overlay guide */}
+                        <div className="absolute inset-4 sm:inset-8 border-2 border-dashed border-cyan-400/80 rounded-2xl pointer-events-none flex flex-col justify-between p-3">
+                          <span className="text-[10px] font-bold text-cyan-300 bg-black/60 px-2 py-0.5 rounded self-start">
+                            วางบัตรประชาชนให้อยู่ในกรอบ
+                          </span>
+                          <span className="text-[10px] text-cyan-300/80 bg-black/60 px-2 py-0.5 rounded self-end">
+                            ให้เห็นตัวอักษรและรูปถ่ายชัดเจน
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-center gap-3 pt-1">
+                        <button
+                          type="button"
+                          onClick={capturePhoto}
+                          className="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/25 active:scale-95 cursor-pointer"
+                        >
+                          <span>📸</span> ถ่ายภาพบัตรทันที
+                        </button>
+                        <button
+                          type="button"
+                          onClick={toggleCameraFacing}
+                          className="p-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all border border-slate-700 cursor-pointer"
+                          title="สลับกล้องหน้า/หลัง"
+                        >
+                          🔄
+                        </button>
+                        <button
+                          type="button"
+                          onClick={stopCamera}
+                          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white/80 hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                        >
+                          ยกเลิก
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {cameraError && (
+                    <div className="p-3 bg-rose-500/15 border border-rose-500/30 rounded-xl text-rose-400 text-xs">
+                      {cameraError}
+                    </div>
+                  )}
+
+                  {/* Processing Indicator */}
+                  {isOcrProcessing && (
+                    <div className="py-8 flex flex-col items-center justify-center gap-3 text-primary bg-primary/5 rounded-2xl border border-primary/20">
+                      <div className="relative">
+                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />
+                        <span className="absolute inset-0 flex items-center justify-center text-sm">🤖</span>
+                      </div>
+                      <div className="text-center space-y-1">
+                        <span className="text-xs font-black animate-pulse block">
+                          Google Gemini AI Vision กำลังอ่านข้อมูลบัตรประชาชน...
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          กำลังดึงเลขบัตร 13 หลัก, ชื่อ-นามสกุล, และที่อยู่เพื่อกรอกลงสัญญา
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Upload & Camera Actions when not active and not processing */}
+                  {!cameraActive && !isOcrProcessing && (
+                    <div className="space-y-3">
+                      {/* If Image Already Uploaded: Preview Box */}
+                      {bookingData.id_card_image ? (
+                        <div className="p-4 bg-background/80 rounded-2xl border border-primary/30 flex items-center justify-between gap-4 flex-wrap">
+                          <div className="flex items-center gap-3">
+                            <div className="w-16 h-12 rounded-lg overflow-hidden border border-border bg-slate-900 flex-shrink-0">
+                              <img
+                                src={bookingData.id_card_image}
+                                alt="รูปบัตรประชาชน"
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div>
+                              <span className="text-xs font-bold text-foreground block">
+                                บันทึกรูปบัตรประชาชนเรียบร้อยแล้ว
+                              </span>
+                              <span className="text-[10px] text-emerald-400 font-bold">
+                                ✓ ข้อมูลถูกนำไปกรอกลงในแบบฟอร์มสัญญาเรียบร้อย
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => startCamera()}
+                              className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-foreground rounded-xl text-xs font-bold border border-border cursor-pointer"
+                            >
+                              📷 ถ่ายกล้องสด
+                            </button>
+                            <label className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-xl text-xs font-bold border border-emerald-500/30 cursor-pointer">
+                              📱 กล้องมือถือ
+                              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleIdCardUpload} />
+                            </label>
+                            <label className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl text-xs font-bold border border-primary/20 cursor-pointer">
+                              📁 อัปโหลดไฟล์
+                              <input type="file" accept="image/*" className="hidden" onChange={handleIdCardUpload} />
+                            </label>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          {/* Option 1: Live WebRTC Camera */}
+                          <button
+                            type="button"
+                            onClick={() => startCamera()}
+                            className="p-4 bg-primary/10 hover:bg-primary/20 border-2 border-primary/30 hover:border-primary rounded-2xl flex flex-col items-center justify-center gap-2 transition-all cursor-pointer group active:scale-98"
+                          >
+                            <div className="w-10 h-10 rounded-2xl bg-primary text-white flex items-center justify-center text-lg shadow-md group-hover:scale-110 transition-transform">
+                              📸
+                            </div>
+                            <span className="text-xs font-black text-foreground">เปิดกล้องสด (Live)</span>
+                            <span className="text-[10px] text-muted-foreground text-center">
+                              ส่องบัตรผ่านหน้าจอแบบเรียลไทม์
+                            </span>
+                          </button>
+
+                          {/* Option 2: Mobile Native Camera */}
+                          <label className="p-4 bg-emerald-500/10 hover:bg-emerald-500/20 border-2 border-dashed border-emerald-500/30 hover:border-emerald-500/60 rounded-2xl flex flex-col items-center justify-center gap-2 transition-all cursor-pointer group active:scale-98">
+                            <div className="w-10 h-10 rounded-2xl bg-emerald-500 text-slate-950 flex items-center justify-center text-lg shadow-md group-hover:scale-110 transition-transform">
+                              📱
+                            </div>
+                            <span className="text-xs font-black text-emerald-400">ถ่ายรูปด้วยกล้องมือถือ</span>
+                            <span className="text-[10px] text-muted-foreground text-center">
+                              เปิดแอปกล้องในโทรศัพท์ทันที
+                            </span>
+                            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleIdCardUpload} />
+                          </label>
+
+                          {/* Option 3: File Upload */}
+                          <label className="p-4 bg-background/80 hover:bg-background border-2 border-dashed border-primary/30 hover:border-primary rounded-2xl flex flex-col items-center justify-center gap-2 transition-all cursor-pointer group active:scale-98">
+                            <div className="w-10 h-10 rounded-2xl bg-secondary text-primary flex items-center justify-center text-lg group-hover:scale-110 transition-transform">
+                              📁
+                            </div>
+                            <span className="text-xs font-black text-foreground">เลือกไฟล์รูปบัตร</span>
+                            <span className="text-[10px] text-muted-foreground text-center">
+                              อัปโหลด JPG / PNG จากเครื่อง
+                            </span>
+                            <input type="file" accept="image/*" className="hidden" onChange={handleIdCardUpload} />
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Extracted Fields */}
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                        ชื่อ-นามสกุล ผู้เช่า <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
+                        placeholder="นาย/นางสาว..."
+                        value={bookingData.name}
+                        onChange={(e) => setBookingData({ ...bookingData, name: e.target.value })}
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                        เลขประจำตัวประชาชน (13 หลัก) <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-mono font-bold text-sm tracking-wider"
+                        placeholder="X-XXXX-XXXXX-XX-X"
+                        value={bookingData.id_card_number}
+                        onChange={(e) => setBookingData({ ...bookingData, id_card_number: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                        ที่อยู่ตามทะเบียนบ้าน / บัตรประชาชน <span className="text-rose-500">*</span>
+                      </label>
+                      {bookingData.subdistrict && (
+                        <span className="text-[10px] font-bold text-primary">
+                          ✓ แยกช่องอัตโนมัติ: ต.{bookingData.subdistrict} อ.{bookingData.district} จ.{bookingData.province}
+                        </span>
+                      )}
+                    </div>
+                    <textarea
+                      rows={2}
+                      className="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-bold text-xs"
+                      placeholder="บ้านเลขที่ หมู่ ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
+                      value={bookingData.id_card_address}
+                      onChange={(e) => setBookingData({ ...bookingData, id_card_address: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                {/* Contract Summary & Terms Preview */}
+                <div className="p-4 bg-muted/30 border border-border rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                      <span>📜</span> ข้อตกลงสัญญาเช่าหอพักเกษร 2
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsPrintModalOpen(true)}
+                      className="px-3 py-1.5 bg-primary hover:bg-primary/90 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95"
+                    >
+                      <span>📄</span> ดูร่างสัญญาฉบับทางการ 3 หน้า (ฟอนต์ TH Sarabun New)
+                    </button>
+                  </div>
+
+                  <div className="text-[11px] text-muted-foreground space-y-1 bg-background/50 p-3 rounded-xl border border-border max-h-32 overflow-y-auto leading-relaxed">
+                    <p>1. ค่าเช่าห้องพักเดือนละ ฿{Number(room.price).toLocaleString()} กำหนดชำระภายในวันที่ 5 ของทุกเดือน</p>
+                    <p>2. ค่าน้ำประปาเหมาจ่าย ฿100/คน/เดือน • ค่าไฟฟ้าหน่วยละ ฿{room.electricity_rate || 8}/ยูนิต</p>
+                    <p>3. ค่ามัดจำสัญญาเช่า ฿1,000 จะคืนให้ตอนออก เมื่อพักครบสัญญาอย่างน้อย 1 ปี</p>
+                    <p>4. ห้ามส่งเสียงดังรบกวนยามวิกาล, ห้ามเสพสิ่งเสพติด, รักษาความสะอาดห้องพักสม่ำเสมอ</p>
+                    <p>5. สัญญาเช่าฉบับจริงจะลงลายมือชื่อทั้งสองฝ่ายต่อหน้าในวันเข้าพักจริง</p>
+                  </div>
+
+                  <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-[11px] text-blue-400 leading-relaxed">
+                    ℹ️ <strong>วิธีลงนามสัญญา:</strong> เมื่อท่านชำระเงินจองสำเร็จ ระบบจะส่งไฟล์ Word (.docx) และ PDF ที่พิมพ์ด้วยแบบฟอร์มทางการ <strong>TH Sarabun New</strong> ไปยังเจ้าของหอพัก เพื่อพิมพ์เอกสารให้ท่านและเจ้าของหอพักลงลายมือชื่อจริงร่วมกันในวันเข้าหอพัก
+                  </div>
+                </div>
+
+                {/* Next & Back Actions */}
+                <div className="space-y-3 pt-2">
+                  <button
+                    onClick={() => setStep(4)}
+                    disabled={!bookingData.id_card_number || !bookingData.id_card_address}
+                    className="w-full py-5 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-sm transition-all shadow-xl shadow-primary/25 hover:scale-[1.02] active:scale-95 disabled:opacity-40 cursor-pointer"
+                  >
+                    ถัดไป: ชำระเงินค่าจอง ฿{totalDeposit.toLocaleString()} →
+                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setStep(2)}
+                      className="flex-1 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      ← ย้อนกลับ
+                    </button>
+                    <button
+                      onClick={handleCancelCurrentBooking}
+                      className="py-2.5 px-3 text-xs font-bold text-rose-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all cursor-pointer"
+                    >
+                      ยกเลิกการจอง
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 4: PromptPay QR Payment & Transfer Slip Upload */}
             {step === 4 && (
               <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-xl space-y-6 animate-in fade-in duration-300">
                 <div className="space-y-2 text-center">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-500">ขั้นตอนที่ 3: การชำระเงิน</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-500">ขั้นตอนที่ 4 จาก 4</span>
                   <h2 className="text-2xl font-black tracking-tight">โอนเงินค่าจองและแนบสลิป</h2>
-                  <p className="text-xs text-muted-foreground">ชำระเงินจอง 1,000 บาท เพื่อล็อกห้องพักและยืนยันสิทธิ์</p>
+                  <p className="text-xs text-muted-foreground">ชำระเงินจอง {totalDeposit.toLocaleString()} บาท เพื่อล็อกห้องพักและยืนยันสิทธิ์</p>
                 </div>
 
                 {/* QR Code Container */}
@@ -782,7 +1535,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                 )}
 
                 <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-300 leading-relaxed">
-                  💡 <strong>หมายเหตุ:</strong> ชำระเฉพาะเงินประกัน 1 เดือนเพื่อยืนยันการจองห้องพัก สำหรับค่าเช่าเดือนแรก เจ้าของหอพักจะคิดคำนวณและเรียกเก็บเมื่อเข้าพักจริง
+                  💡 <strong>หมายเหตุ:</strong> ชำระเฉพาะเงินจองเพื่อยืนยันสิทธิ์ 1,000 บาท สำหรับเงินประกันความเสียหาย ฿2,000 และค่าเช่าเดือนแรก เจ้าของหอพักจะคิดคำนวณและเรียกเก็บในวันทำสัญญาเข้าพักจริง
                 </div>
 
                 {/* Slip Upload Area */}
@@ -828,45 +1581,87 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     disabled={!slipData || isProcessing}
                     className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl text-sm transition-all shadow-xl shadow-emerald-500/25 hover:scale-[1.02] active:scale-95 disabled:opacity-40 cursor-pointer"
                   >
-                    {isProcessing ? 'กำลังส่งคำขอจอง...' : '✓ ยืนยันการโอนเงินและส่งคำขอจอง'}
+                    {isProcessing ? 'กำลังส่งคำขอจองและสร้างสัญญา...' : '✓ ยืนยันการโอนเงินและส่งคำขอจอง'}
                   </button>
-                  <button
-                    onClick={() => setStep(3)}
-                    disabled={isProcessing}
-                    className="w-full py-3 text-xs font-bold text-muted-foreground hover:text-foreground"
-                  >
-                    ย้อนกลับไปดูสัญญา
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setStep(3)}
+                      disabled={isProcessing}
+                      className="flex-1 py-3 text-xs font-bold text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      ← ย้อนกลับ
+                    </button>
+                    <button
+                      onClick={handleCancelCurrentBooking}
+                      disabled={isProcessing}
+                      className="py-3 px-3 text-xs font-bold text-rose-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all cursor-pointer"
+                    >
+                      ยกเลิกการจอง
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* Step 5: Finished & Waiting for Owner Approval */}
+            {/* Step 5: Finished & Contract Documents Ready */}
             {step === 5 && (
               <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-xl space-y-6 text-center animate-in fade-in duration-300">
-                <div className="w-16 h-16 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full flex items-center justify-center text-2xl mx-auto animate-pulse">
-                  ⏳
+                <div className="w-16 h-16 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full flex items-center justify-center text-3xl mx-auto shadow-lg shadow-emerald-500/10">
+                  ✓
                 </div>
                 <div className="space-y-2">
-                  <h3 className="text-2xl font-black tracking-tight">ส่งคำขอจองห้องพักสำเร็จ</h3>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500">จองห้องพักสำเร็จ</span>
+                  <h3 className="text-2xl font-black tracking-tight">ส่งคำขอจองและจัดทำสัญญาเช่าสำเร็จ</h3>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    ระบบได้ส่งสัญญาเช่าและสลิปการโอนเงินประกัน 1 เดือนไปยังเจ้าของหอพักเรียบร้อยแล้ว <br/>
-                    เจ้าของหอพักจะทำการตรวจสอบและอนุมัติสัญญาเช่าให้คุณโดยเร็ว
+                    ระบบได้กรอกข้อมูลของคุณลงในฟอร์มสัญญาเช่าหอพักเกษร 2 เรียบร้อยแล้ว พร้อมส่งสลิปและร่างสัญญาให้เจ้าของหอพักตรวจสอบ
                   </p>
                 </div>
 
-                <div className="pt-4 space-y-3">
+                {/* Contract Download Box */}
+                <div className="p-5 bg-secondary/50 rounded-3xl border border-border space-y-3 text-left">
+                  <span className="text-xs font-black text-foreground flex items-center gap-2">
+                    <span>📄</span> เอกสารสัญญาเช่าของคุณ (พร้อมพิมพ์/แก้ไข)
+                  </span>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    คุณสามารถดาวน์โหลดเอกสารสัญญาเช่าที่กรอกข้อมูลครบถ้วนแล้วเก็บไว้เป็นหลักฐาน หรือเจ้าของหอจะพิมพ์ฉบับจริงให้เซ็นชื่อเมื่อเข้าหอพัก
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleDownloadDocx}
+                      disabled={downloadingDocx}
+                      className="py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50"
+                    >
+                      <span>{downloadingDocx ? '⏳ กำลังสร้างไฟล์ Word...' : '📄 ดาวน์โหลด Word (.docx)'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsPrintModalOpen(true)}
+                      className="py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
+                    >
+                      <span>🖨️ ดู / พิมพ์สัญญา (PDF)</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-[11px] text-amber-400 text-left leading-relaxed">
+                  📌 <strong>ขั้นตอนถัดไปในวันเข้าพัก:</strong> เมื่อเจ้าของหอพักตรวจสอบยอดเงินจอง ฿1,000 เรียบร้อย จะพิมพ์สัญญาเช่ากระดาษฉบับนี้เพื่อลงลายมือชื่อจริงร่วมกับท่านในวันรับกุญแจเข้าพัก และถ่ายรูปสัญญาตัวจริงบันทึกลงระบบเป็นหลักฐาน
+                </div>
+
+                <div className="pt-2 space-y-2.5">
                   <Link
-                    href="/tenant"
-                    className="w-full inline-flex justify-center items-center py-5 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-xs uppercase tracking-widest hover:scale-[1.02] active:scale-95 shadow-xl shadow-primary/20 transition-all cursor-pointer"
+                    href="/explore/booking-status"
+                    className="w-full inline-flex justify-center items-center py-4 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-xs uppercase tracking-widest hover:scale-[1.02] active:scale-95 shadow-xl shadow-primary/20 transition-all cursor-pointer"
                   >
-                    📊 ไปที่หน้าแดชบอร์ดเพื่อติดตามสถานะการจอง
+                    📋 ดูสถานะการจองของฉัน
                   </Link>
                   <Link
-                    href="/explore"
-                    className="w-full inline-flex justify-center items-center py-3.5 bg-secondary hover:bg-secondary/80 text-foreground font-bold rounded-2xl text-xs uppercase tracking-wider transition-all cursor-pointer"
+                    href="/"
+                    className="w-full inline-flex justify-center items-center py-3 bg-secondary hover:bg-secondary/80 text-foreground font-bold rounded-2xl text-xs uppercase tracking-wider transition-all cursor-pointer"
                   >
-                    กลับไปหน้าสำรวจหอพัก
+                    กลับไปหน้าแนะนำหอเกษร 2
                   </Link>
                 </div>
               </div>
@@ -877,23 +1672,34 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
         </div>
       </div>
 
-      {/* Contract Signer Modal (Step 3) */}
-      {step === 3 && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 lg:p-12 overflow-y-auto bg-black/80 backdrop-blur-xl animate-in fade-in duration-300">
-          <div className="max-w-5xl w-full">
-            <ContractSigner
-              tenantName={bookingData.name}
-              roomNumber={room.room_number}
-              monthlyRent={Number(room.price)}
-              depositAmount={totalDeposit}
-              startDate={contractStartDate}
-              endDate={contractEndDate}
-              onSign={handleSignContract}
-              onCancel={() => setStep(2)}
-            />
-          </div>
-        </div>
-      )}
+      {/* Printable Contract Modal (Word/PDF/Print) */}
+      <PrintableContractModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+        contract={{
+          id: createdContractId || 'DRAFT',
+          room_number: room?.room_number || '',
+          room_type: room?.room_type,
+          tenant_name: bookingData.name,
+          tenant_phone: bookingData.phone,
+          parent_phone: bookingData.parent_phone,
+          tenant_email: bookingData.email,
+          id_card_number: bookingData.id_card_number,
+          tenant_address: bookingData.id_card_address,
+          houseNo: bookingData.houseNo,
+          village: bookingData.village,
+          road: bookingData.road,
+          subdistrict: bookingData.subdistrict,
+          district: bookingData.district,
+          province: bookingData.province,
+          id_card_image: bookingData.id_card_image,
+          start_date: bookingData.start_date,
+          end_date: bookingData.end_date,
+          deposit_amount: 1000,
+          monthly_rent: Number(room?.price || 0),
+          created_at: new Date().toISOString(),
+        } as any}
+      />
 
       {/* Contract Simulator Modal */}
       {showSimulator && room && (

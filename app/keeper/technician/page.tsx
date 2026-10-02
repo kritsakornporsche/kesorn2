@@ -1,7 +1,9 @@
 'use client';
 
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
+import { handleSignOut } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import Image from 'next/image';
 import KeeperSidebar from '../components/KeeperSidebar';
@@ -74,17 +76,30 @@ export default function TechnicianDashboardPage() {
     }
   }, [activeDormId]);
 
+  const [accessDenied, setAccessDenied] = useState<string | null>(null);
+
   useEffect(() => {
     const localEmail = typeof window !== 'undefined' ? localStorage.getItem('userEmail') : null;
 
     if (status === 'authenticated') {
       const user = session?.user as any;
-      if (user?.role !== 'keeper' || user?.sub_role !== 'technician') {
-        router.push('/');
-      } else {
+      const role = user?.role;
+      const subRole = user?.sub_role;
+
+      if (role === 'owner') {
+        setAccessDenied(null);
         const savedDorm = typeof window !== 'undefined' ? localStorage.getItem('selectedKeeperDormId') || 'all' : 'all';
         setActiveDormId(savedDorm);
         fetchData(savedDorm);
+      } else if (role === 'keeper' && (subRole === 'technician' || !subRole)) {
+        setAccessDenied(null);
+        const savedDorm = typeof window !== 'undefined' ? localStorage.getItem('selectedKeeperDormId') || 'all' : 'all';
+        setActiveDormId(savedDorm);
+        fetchData(savedDorm);
+      } else if (subRole === 'maid') {
+        setAccessDenied('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (หน้านี้สำหรับฝ่ายช่างซ่อมบำรุง)');
+      } else {
+        setAccessDenied('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (เฉพาะฝ่ายช่างซ่อมบำรุงหรือผู้ดูแลหอพัก)');
       }
     } else if (status === 'unauthenticated') {
       if (localEmail) {
@@ -184,6 +199,35 @@ export default function TechnicianDashboardPage() {
     return <div className="flex h-screen items-center justify-center bg-[#080F1E] font-display text-white/50 tracking-wider">กำลังโหลดระบบ...</div>;
   }
 
+  if (accessDenied) {
+    return (
+      <div className="flex h-screen bg-[#080F1E] text-white">
+        <KeeperSidebar />
+        <main className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+          <div className="p-8 max-w-md w-full rounded-3xl bg-[#0F172A] border border-white/10 shadow-2xl space-y-4">
+            <span className="text-5xl block">🚫</span>
+            <h2 className="text-lg font-bold text-white">ไม่มีสิทธิ์เข้าถึงหน้านี้</h2>
+            <p className="text-xs text-slate-300 leading-relaxed">{accessDenied}</p>
+            <div className="pt-3 flex flex-wrap justify-center gap-3">
+              <Link
+                href="/keeper/maid"
+                className="px-4 py-2.5 rounded-xl text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-all shadow-md"
+              >
+                ไปยังหน้าแม่บ้าน
+              </Link>
+              <Link
+                href="/"
+                className="px-4 py-2.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-white transition-all"
+              >
+                กลับหน้าหลัก
+              </Link>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen bg-[#080F1E]">
       <KeeperSidebar onDormChange={(id) => { setActiveDormId(id); fetchData(id); }} />
@@ -195,7 +239,7 @@ export default function TechnicianDashboardPage() {
             <div className="flex items-center gap-3">
               <h1 className="font-display text-xl font-bold tracking-tight text-white">ภาพรวมงานช่างซ่อมบำรุง</h1>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                Multi-Dormitory
+                หอพักเกษร 2
               </span>
             </div>
             <p className="text-xs text-white/50 font-medium mt-0.5">ยินดีต้อนรับคุณ {session?.user?.name}</p>
@@ -203,14 +247,7 @@ export default function TechnicianDashboardPage() {
           <div className="flex items-center gap-4">
             <div className="text-xs font-medium text-white/50 hidden sm:block">เวลาปัจจุบัน: {currentTime}</div>
             <button
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  localStorage.removeItem('userRole');
-                  localStorage.removeItem('userEmail');
-                  localStorage.removeItem('userName');
-                }
-                signOut({ callbackUrl: '/' });
-              }}
+              onClick={() => handleSignOut('/')}
               className="text-xs font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 border border-rose-100 hover:bg-rose-100 transition-colors px-4 py-2 rounded-xl"
             >
               ออกจากระบบ
@@ -558,22 +595,42 @@ export default function TechnicianDashboardPage() {
                         </div>
                       </div>
 
-                      {(selectedJob.notes || selectedJob.photo_url) && (
-                        <div className="space-y-4">
-                          {selectedJob.notes && (
-                            <div>
-                              <h4 className="text-xs font-bold uppercase tracking-wider text-white/50 mb-2">บันทึกการซ่อม:</h4>
-                              <p className="text-sm text-white bg-[#1E293B] border border-white/20/10 p-4 rounded-2xl">{selectedJob.notes}</p>
-                            </div>
-                          )}
-                          {selectedJob.photo_url && (
-                            <div>
-                              <h4 className="text-xs font-bold uppercase tracking-wider text-white/50 mb-2">รูปภาพผลงานซ่อม:</h4>
-                              <div className="rounded-2xl overflow-hidden border border-white/20/10 relative h-44 w-full bg-black/40">
-                                <img src={selectedJob.photo_url} alt="ผลงานซ่อม" className="h-full w-full object-cover" />
+                      {/* Attached Problem / Maintenance Photos (if any) */}
+                      {selectedJob.photo_url && (
+                        <div>
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-white/50 mb-2">📸 รูปภาพประกอบปัญหาจากผู้เช่า:</h4>
+                          {(() => {
+                            let photos: string[] = [];
+                            try {
+                              if (selectedJob.photo_url?.startsWith('[')) {
+                                photos = JSON.parse(selectedJob.photo_url);
+                              } else if (selectedJob.photo_url) {
+                                photos = [selectedJob.photo_url];
+                              }
+                            } catch {
+                              photos = selectedJob.photo_url ? [selectedJob.photo_url] : [];
+                            }
+                            return (
+                              <div className="flex flex-wrap gap-2.5">
+                                {photos.map((pUrl, pIdx) => (
+                                  <a key={pIdx} href={pUrl} target="_blank" rel="noreferrer" className="block">
+                                    <img 
+                                      src={pUrl} 
+                                      alt={`รูปแจ้งซ่อม ${pIdx + 1}`} 
+                                      className="w-20 h-20 object-cover rounded-2xl border border-white/20 hover:border-blue-400 hover:scale-105 transition-all shadow-md"
+                                    />
+                                  </a>
+                                ))}
                               </div>
-                            </div>
-                          )}
+                            );
+                          })()}
+                        </div>
+                      )}
+
+                      {selectedJob.notes && (
+                        <div>
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-white/50 mb-2">บันทึกการซ่อม:</h4>
+                          <p className="text-sm text-white bg-[#1E293B] border border-white/20/10 p-4 rounded-2xl">{selectedJob.notes}</p>
                         </div>
                       )}
 

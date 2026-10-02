@@ -84,6 +84,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'กรุณาระบุวันที่ต้องการย้ายออก' }, { status: 400 });
     }
 
+    const desiredDateObj = new Date(desiredDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const advanceDays = Math.ceil((desiredDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    if (advanceDays < 30) {
+      return NextResponse.json({
+        success: false,
+        message: 'ตามระเบียบหอพัก ต้องแจ้งย้ายออกล่วงหน้าอย่างน้อย 30 วัน (ไม่สามารถเลือกวันที่น้อยกว่า 30 วันได้)'
+      }, { status: 400 });
+    }
+
     const sql = getDb();
     
     // Find tenant by email
@@ -157,15 +168,24 @@ export async function POST(req: Request) {
         tenant_id, room_id, move_out_date, desired_date, reason, status,
         promptpay_target, promptpay_name, bank_name, contract_id,
         deposit_amount, unpaid_bills_total, penalty_amount, net_refund_amount,
-        is_contract_completed, refund_qr_payload
+        is_contract_completed, refund_qr_payload, settlement_status
       )
       VALUES (
         ${tenantId}, ${roomId}, ${desiredDate}, ${desiredDate}, ${reason || null}, 'Pending',
         ${promptpayTarget}, ${promptpayName || tenant.name}, ${bankName || 'พร้อมเพย์'}, ${contractId},
         ${depositAmount}, ${unpaidTotal}, ${penaltyAmount}, ${netRefund},
-        ${isCompleted ? 1 : 0}, ${qrPayload || null}
+        ${isCompleted ? 1 : 0}, ${qrPayload || null}, 'PendingMeter'
       )
     `;
+
+    // Rule 16.1: Mark contract as MoveOutPending immediately to prevent duplicate billing in Billing Portal
+    if (contractId) {
+      await sql`
+        UPDATE contracts 
+        SET status = 'MoveOutPending' 
+        WHERE id = ${contractId}
+      `;
+    }
 
     // Notify owner about move-out request
     try {

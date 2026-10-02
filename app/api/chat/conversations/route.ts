@@ -53,10 +53,12 @@ export async function GET(request: Request) {
       }
 
       // 2. Ensure conversations exist for all Keepers of the owner's dorm(s)
+      const cleanDormIds = dormIds.map(Number).filter(Boolean);
+      const safeDormIds = cleanDormIds.length > 0 ? cleanDormIds : [1];
       const keepers = await sql`
         SELECT k.id, k.name, k.position, k.user_id, k.dorm_id, k.email 
         FROM keepers k 
-        WHERE k.dorm_id IN ${sql(dormIds)}
+        WHERE k.dorm_id IN (${safeDormIds})
       `;
 
       for (const k of keepers) {
@@ -87,7 +89,7 @@ export async function GET(request: Request) {
         SELECT t.id, t.name, t.user_id, t.dorm_id, t.email, r.room_number
         FROM tenants t
         LEFT JOIN rooms r ON t.room_id = r.id
-        WHERE t.dorm_id IN ${sql(dormIds)}
+        WHERE t.dorm_id IN (${safeDormIds})
           AND (t.status = 'Active' OR t.status = 'Occupied')
       `;
 
@@ -116,10 +118,10 @@ export async function GET(request: Request) {
       // 4. Clean up any dummy/orphan conversations with 0 messages that are NOT tenants and NOT keepers
       await sql`
         DELETE FROM conversations 
-        WHERE (owner_id = ${user.id} OR dorm_id IN ${sql(dormIds)})
+        WHERE (owner_id = ${user.id} OR dorm_id IN (${safeDormIds}))
           AND NOT EXISTS (SELECT 1 FROM chat_messages cm WHERE cm.conversation_id = conversations.id)
-          AND guest_id NOT IN (SELECT COALESCE(user_id, 0) FROM keepers WHERE dorm_id IN ${sql(dormIds)})
-          AND guest_id NOT IN (SELECT COALESCE(user_id, 0) FROM tenants WHERE dorm_id IN ${sql(dormIds)})
+          AND guest_id NOT IN (SELECT COALESCE(user_id, 0) FROM keepers WHERE dorm_id IN (${safeDormIds}))
+          AND guest_id NOT IN (SELECT COALESCE(user_id, 0) FROM tenants WHERE dorm_id IN (${safeDormIds}))
       `;
 
       // 5. Query ONLY the 3 approved groups:
@@ -164,7 +166,7 @@ export async function GET(request: Request) {
         LEFT JOIN keepers k ON (k.user_id = u.id OR k.email = u.email) AND k.dorm_id = c.dorm_id
         LEFT JOIN tenants t ON (t.user_id = u.id OR t.email = u.email) AND t.dorm_id = c.dorm_id
         LEFT JOIN rooms r ON t.room_id = r.id
-        WHERE (c.owner_id = ${user.id} OR c.dorm_id IN ${sql(dormIds)})
+        WHERE (c.owner_id = ${user.id} OR c.dorm_id IN (${safeDormIds}))
           AND (
             -- 1. ผู้ดูแลหอของตัวเอง
             k.id IS NOT NULL

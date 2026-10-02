@@ -45,7 +45,15 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
-    const { name, phone, bio, image_url, password } = await request.json();
+    const body = await request.json();
+    if (body.role && body.role !== (session.user as any)?.role) {
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Forbidden: ไม่อนุญาตให้แก้ไขหรือยกระดับบทบาทผู้ใช้งานด้วยตนเอง (Privilege Escalation Prevented)' 
+      }, { status: 403 });
+    }
+
+    const { name, phone, bio, image_url, password } = body;
     
     let sql;
     if ((session.user as any).role === 'platform_admin') {

@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
+import { handleSignOut } from '@/lib/auth-client';
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 
@@ -102,29 +103,32 @@ export default function Navbar() {
               <div className="hidden sm:block h-8 w-px bg-border/40" />
               
               {session && (
-                <Link 
-                  href={
-                    (session.user as any)?.role === 'platform_admin' ? '/platform' :
-                    (session.user as any)?.role === 'owner' ? '/owner' :
-                    (session.user as any)?.role === 'keeper' ? '/keeper' :
-                    (session.user as any)?.role === 'researcher' ? '/researcher' :
-                    '/tenant'
-                  }
-                  className={cn(
-                    "rounded-xl bg-primary/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-primary",
-                    "hover:bg-primary hover:text-primary-foreground transition-all duration-300",
-                    "shadow-sm hover:shadow-md hover:scale-[1.05] active:scale-95 flex items-center gap-2"
-                  )}
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                  </svg>
-                   <span className="hidden xs:inline">ไปที่แดชบอร์ด</span>
-                </Link>
+                <div className="flex items-center gap-2">
+                  <Link 
+                    href={
+                      (session.user as any)?.role === 'platform_admin' ? '/platform' :
+                      (session.user as any)?.role === 'owner' ? '/owner' :
+                      (session.user as any)?.role === 'keeper' ? '/keeper' :
+                      (session.user as any)?.role === 'researcher' ? '/researcher' :
+                      (session.user as any)?.role === 'guest' ? '/guest' :
+                      '/tenant'
+                    }
+                    className={cn(
+                      "rounded-xl bg-primary/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-primary",
+                      "hover:bg-primary hover:text-primary-foreground transition-all duration-300",
+                      "shadow-sm hover:shadow-md hover:scale-[1.05] active:scale-95 flex items-center gap-2"
+                    )}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                    </svg>
+                    <span className="hidden xs:inline">ไปที่แดชบอร์ด</span>
+                  </Link>
+                </div>
               )}
 
               <button 
-                onClick={() => signOut({ callbackUrl: '/' })}
+                onClick={() => handleSignOut('/')}
                 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-destructive transition-all hover:translate-y-[-1px] cursor-pointer"
               >
                 ออกจากระบบ
@@ -253,6 +257,7 @@ export default function Navbar() {
                     (session.user as any)?.role === 'owner' ? '/owner' :
                     (session.user as any)?.role === 'keeper' ? '/keeper' :
                     (session.user as any)?.role === 'researcher' ? '/researcher' :
+                    (session.user as any)?.role === 'guest' ? '/guest' :
                     '/tenant'
                   }
                   onClick={() => setMobileMenuOpen(false)}
@@ -267,7 +272,7 @@ export default function Navbar() {
                 <button 
                   onClick={() => {
                     setMobileMenuOpen(false);
-                    signOut({ callbackUrl: '/' });
+                    handleSignOut('/');
                   }}
                   className="mt-4 text-xs font-black uppercase tracking-widest text-destructive hover:bg-destructive/10 py-3 rounded-xl transition-all"
                 >

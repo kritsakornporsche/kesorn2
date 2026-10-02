@@ -12,7 +12,19 @@ export default async function PlatformLayout({ children }: { children: ReactNode
   }
 
   // Must have platform_admin role
-  const role = (session.user as any)?.role;
+  let role = (session.user as any)?.role;
+  if (role !== 'platform_admin' && role !== 'admin' && session.user.email) {
+    try {
+      const { getDb } = await import('@/lib/db');
+      const sql = getDb();
+      const u = await sql`SELECT COALESCE(role, primary_role) as role FROM users WHERE LOWER(email) = ${session.user.email.toLowerCase()} LIMIT 1`;
+      if (u.length > 0 && (u[0].role === 'platform_admin' || u[0].role === 'admin')) {
+        role = u[0].role;
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
   if (role !== 'platform_admin' && role !== 'admin') {
     redirect('/signin?error=' + encodeURIComponent('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (เฉพาะผู้ดูแลระบบ)'));
   }

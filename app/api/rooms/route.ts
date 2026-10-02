@@ -20,18 +20,33 @@ export async function GET(req: NextRequest) {
     }
 
     const sql = getDb();
+
+    // ── Rule 16.4: Auto-recover rooms from Maintenance to Available when ready_to_occupy_date <= CURRENT_DATE ──
+    try {
+      await sql`
+        UPDATE rooms 
+        SET status = 'Available', ready_to_occupy_date = NULL, tenant_id = NULL
+        WHERE status = 'Maintenance' 
+          AND ready_to_occupy_date IS NOT NULL 
+          AND ready_to_occupy_date <= CURRENT_DATE()
+      `;
+    } catch (recoverErr) {
+      console.warn('Auto recovery error for maintenance rooms:', recoverErr);
+    }
+
     const isExplore = searchParams.get('explore') === 'true';
 
     let query;
     if (isExplore) {
       query = sql`
         SELECT 
-          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at,
+          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at, r.ready_to_occupy_date,
           mor.move_out_date,
           mor.status as move_out_status,
           mor.id as move_out_request_id,
           CASE 
             WHEN r.status IN ('Available', 'ว่าง') THEN 'Available'
+            WHEN r.status = 'Maintenance' AND (r.ready_to_occupy_date IS NULL OR r.ready_to_occupy_date <= CURRENT_DATE()) THEN 'Available'
             WHEN r.status IN ('MovingOut', 'Moving Out', 'กำลังจะย้ายออก') OR mor.id IS NOT NULL THEN 'MovingOut'
             ELSE r.status
           END as display_status
@@ -42,7 +57,11 @@ export async function GET(req: NextRequest) {
           WHERE status IN ('Pending', 'Approved')
           GROUP BY room_id
         ) mor ON mor.room_id = r.id
-        WHERE (r.status IN ('Available', 'ว่าง', 'MovingOut', 'Moving Out', 'กำลังจะย้ายออก') OR mor.id IS NOT NULL)
+        WHERE (
+          r.status IN ('Available', 'ว่าง', 'MovingOut', 'Moving Out', 'กำลังจะย้ายออก') 
+          OR (r.status = 'Maintenance' AND r.ready_to_occupy_date <= CURRENT_DATE())
+          OR mor.id IS NOT NULL
+        )
           AND (r.dorm_id = ${targetDormId} OR r.dorm_id IS NULL)
         ORDER BY r.floor ASC, CAST(r.room_number AS UNSIGNED) ASC, r.room_number ASC
       `;

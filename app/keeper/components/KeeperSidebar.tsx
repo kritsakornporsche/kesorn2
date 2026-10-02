@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
+import { handleSignOut } from '@/lib/auth-client';
 import { useState, useEffect } from 'react';
 import ThemeToggle from '@/app/components/ThemeToggle';
 import KeeperBottomNav from './KeeperBottomNav';
@@ -17,7 +18,7 @@ const navItems = [
   {
     href: '/keeper/technician',
     label: 'งานซ่อมบำรุง / ช่าง',
-    roles: ['technician', 'keeper', 'maid'],
+    roles: ['technician', 'keeper'],
     icon: '🔧',
   },
 ];
@@ -42,7 +43,7 @@ export default function KeeperSidebar({ onDormChange }: { onDormChange?: (dormId
           const savedDorm = typeof window !== 'undefined' ? localStorage.getItem('selectedKeeperDormId') : null;
           if (savedDorm) {
             setSelectedDormId(savedDorm);
-          } else if (data.dorms.length > 0) {
+          } else if (data.dorms.length > 1) {
             const firstId = String(data.dorms[0].id);
             setSelectedDormId(firstId);
             localStorage.setItem('selectedKeeperDormId', firstId);
@@ -154,14 +155,7 @@ export default function KeeperSidebar({ onDormChange }: { onDormChange?: (dormId
           {/* Desktop Sign Out */}
           <button
             type="button"
-            onClick={() => {
-              if (typeof window !== 'undefined') {
-                localStorage.removeItem('userRole');
-                localStorage.removeItem('userEmail');
-                localStorage.removeItem('userName');
-              }
-              signOut({ callbackUrl: '/' });
-            }}
+            onClick={() => handleSignOut('/')}
             className="hidden md:flex h-9 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-600 dark:text-rose-300 hover:text-rose-700 dark:hover:text-rose-100 border border-rose-500/30 transition-all items-center gap-1.5 text-xs font-bold shadow-sm cursor-pointer active:scale-95 shrink-0"
             title="ออกจากระบบ"
           >

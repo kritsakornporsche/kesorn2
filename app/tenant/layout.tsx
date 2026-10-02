@@ -14,23 +14,25 @@ export default async function TenantLayout({ children }: { children: ReactNode }
     redirect('/signin?callbackUrl=' + encodeURIComponent('/tenant'));
   }
 
-  // Allow tenant, owner, or users with tenant/booking contracts
+  // Check user role and active contract
   let role = (session.user as any)?.role;
-  let isAllowed = role === 'tenant' || role === 'owner' || role === 'guest';
+  let isAllowed = false;
 
   if (session.user.email) {
     try {
       const sql = getDb();
       const u = await sql`
         SELECT COALESCE(role, primary_role, 'guest') as effective_role,
-               (SELECT COUNT(*) FROM contracts c JOIN tenants t ON c.tenant_id = t.id WHERE t.email = ${session.user.email}) as contract_count,
-               (SELECT COUNT(*) FROM tenants WHERE email = ${session.user.email}) as tenant_count
+               (SELECT COUNT(*) FROM contracts c JOIN tenants t ON c.tenant_id = t.id WHERE t.email = ${session.user.email} AND c.status = 'Active') as active_contract_count,
+               (SELECT COUNT(*) FROM tenants WHERE email = ${session.user.email} AND status = 'Active') as active_tenant_count
         FROM users 
         WHERE LOWER(email) = ${session.user.email.toLowerCase()} 
         LIMIT 1
       `;
       if (u.length > 0) {
-        if (u[0].effective_role === 'tenant' || u[0].effective_role === 'owner' || Number(u[0].contract_count) > 0 || Number(u[0].tenant_count) > 0) {
+        const effRole = u[0].effective_role;
+        const hasActiveContract = Number(u[0].active_contract_count) > 0 || Number(u[0].active_tenant_count) > 0;
+        if (effRole === 'owner' || (effRole === 'tenant' && hasActiveContract) || (role === 'tenant' && hasActiveContract)) {
           isAllowed = true;
         }
       }
@@ -39,8 +41,9 @@ export default async function TenantLayout({ children }: { children: ReactNode }
     }
   }
 
-  if (!isAllowed && (role === 'keeper' || role === 'platform_admin')) {
-    redirect('/signin?error=' + encodeURIComponent('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (เฉพาะลูกหอ)'));
+  if (!isAllowed) {
+    // Guest or unconfirmed booking must stay on /guest
+    redirect('/guest');
   }
 
   const userName = session?.user?.name || 'ผู้ใช้งาน';

@@ -17,7 +17,7 @@ export default async function KeeperLayout({ children }: { children: ReactNode }
     if (session.user.email) {
       try {
         const sql = getDb();
-        const u = await sql`SELECT role FROM users WHERE LOWER(email) = ${session.user.email.toLowerCase()} LIMIT 1`;
+        const u = await sql`SELECT COALESCE(role, primary_role) as role FROM users WHERE LOWER(email) = ${session.user.email.toLowerCase()} LIMIT 1`;
         if (u.length > 0 && (u[0].role === 'keeper' || u[0].role === 'owner')) {
           role = u[0].role;
         }

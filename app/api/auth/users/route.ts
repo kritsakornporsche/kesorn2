@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDormDb } from '@/lib/db';
+import { auth } from '@/auth';
 
 const sql = getDormDb('smartdom_dorm_1');
 
@@ -22,9 +23,18 @@ async function ensureTable() {
   `;
 }
 
-// GET /api/auth/users — list all users (admin use)
+// GET /api/auth/users — list all users (admin & owner use)
 export async function GET() {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+    const role = (session.user as any)?.role;
+    if (role !== 'admin' && role !== 'platform_admin' && role !== 'owner') {
+      return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
+    }
+
     await ensureTable();
 
     // Alias 'name' as 'full_name' so the frontend interface stays consistent
@@ -36,11 +46,11 @@ export async function GET() {
 
     const summary = await sql`
       SELECT
-        COUNT(*)                                        AS total,
-        COUNT(*) FILTER (WHERE role = 'owner')          AS owners,
-        COUNT(*) FILTER (WHERE role = 'keeper')         AS keepers,
-        COUNT(*) FILTER (WHERE role = 'tenant')         AS tenants,
-        COUNT(*) FILTER (WHERE is_active = TRUE)        AS active
+        COUNT(*)                                            AS total,
+        COUNT(CASE WHEN role = 'owner' THEN 1 END)          AS owners,
+        COUNT(CASE WHEN role = 'keeper' THEN 1 END)         AS keepers,
+        COUNT(CASE WHEN role = 'tenant' THEN 1 END)         AS tenants,
+        COUNT(CASE WHEN is_active = TRUE THEN 1 END)        AS active
       FROM users
     `;
 

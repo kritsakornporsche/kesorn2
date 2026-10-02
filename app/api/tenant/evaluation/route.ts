@@ -118,6 +118,10 @@ export async function GET(req: Request) {
     if (!session) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    const role = (session.user as any)?.role;
+    if (role !== 'owner' && role !== 'platform_admin' && role !== 'researcher') {
+      return NextResponse.json({ success: false, message: 'Forbidden: เฉพาะเจ้าของหอพัก ผู้ดูแลระบบ หรือผู้วิจัย' }, { status: 403 });
+    }
     const sql = getDb();
     const { searchParams } = new URL(req.url);
     const dormId = parseInt(searchParams.get('dormId') || '1');

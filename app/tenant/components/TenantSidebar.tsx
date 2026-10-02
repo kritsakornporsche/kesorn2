@@ -3,12 +3,13 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { signOut } from 'next-auth/react';
+import { handleSignOut } from '@/lib/auth-client';
 import NotificationsPopover from '@/components/NotificationsPopover';
 import ThemeToggle from '@/app/components/ThemeToggle';
 
 const navItems = [
   { href: '/tenant', label: 'หน้าหลัก', icon: '🏠', sublabel: 'ข้อมูลห้องพักและสถานะ', exact: true },
+  { href: '/explore/booking-status', label: 'สถานะการจอง', icon: '📋', sublabel: 'ตรวจสอบ/ยกเลิกการจองห้องพัก' },
   { href: '/tenant/billing', label: 'บิลค่าเช่า', icon: '🧾', sublabel: 'ค่าเช่า ค่าน้ำ ค่าไฟ' },
   { href: '/tenant/maintenance', label: 'แจ้งซ่อม / ทำความสะอาด', icon: '🔧', sublabel: 'แจ้งปัญหาและบริการทำความสะอาด' },
   { href: '/tenant/chat', label: 'แชทหอพัก', icon: '💬', sublabel: 'สนทนากับเจ้าของหอพัก' },
@@ -155,12 +156,8 @@ export default function TenantSidebar({
               <button
                 type="button"
                 onClick={() => {
-                  if (typeof window !== 'undefined') {
-                    localStorage.removeItem('userRole');
-                    localStorage.removeItem('userEmail');
-                    localStorage.removeItem('userName');
-                  }
-                  signOut({ callbackUrl: '/' });
+                  setMobileMenuOpen(false);
+                  handleSignOut('/');
                 }}
                 className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-rose-500/10 hover:bg-rose-500/15 border border-rose-500/20 text-rose-600 dark:text-rose-400 font-bold text-sm transition-all active:scale-[0.98] cursor-pointer"
               >
@@ -257,14 +254,7 @@ export default function TenantSidebar({
           {/* Sign Out (Visible on both Mobile and Desktop) */}
           <button
             type="button"
-            onClick={() => {
-              if (typeof window !== 'undefined') {
-                localStorage.removeItem('userRole');
-                localStorage.removeItem('userEmail');
-                localStorage.removeItem('userName');
-              }
-              signOut({ callbackUrl: '/' });
-            }}
+            onClick={() => handleSignOut('/')}
             className="flex h-9 px-2.5 sm:px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-500 hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-100 border border-rose-500/30 transition-all items-center gap-1.5 text-xs font-bold shadow-sm cursor-pointer active:scale-95 shrink-0"
             title="ออกจากระบบ"
           >
