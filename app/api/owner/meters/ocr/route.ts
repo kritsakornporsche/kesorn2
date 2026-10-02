@@ -180,7 +180,7 @@ export async function POST(req: Request) {
         }
 
         const base64Data = targetImageForVision.replace(/^data:image\/\w+;base64,/, '');
-        const models = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+        const models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-flash-latest'];
         let geminiRes: Response | null = null;
 
         for (const model of models) {

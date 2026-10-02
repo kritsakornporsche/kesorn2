@@ -123,7 +123,7 @@ export default function MeterRecordMobileFlowPage() {
     });
   };
 
-  // Handle Photo Capture/Upload + OCR Simulation
+  // Handle Photo Capture/Upload + Real AI OCR
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -134,16 +134,30 @@ export default function MeterRecordMobileFlowPage() {
       setCapturedPhoto(compressedWebP);
       setIsCompressing(false);
 
-      // AI OCR Simulation (reads numbers or suggest increment)
+      // Call Real AI OCR Endpoint
       setIsOcrProcessing(true);
-      setTimeout(() => {
-        setIsOcrProcessing(false);
-        if (!inputReading && currentRoom) {
-          // Default sensible OCR test estimation (previous + 65 units)
-          const suggested = currentRoom.previous_reading + 65;
-          setInputReading(String(suggested));
+      try {
+        const ocrRes = await fetch('/api/owner/meters/ocr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: compressedWebP,
+            previous_reading: currentRoom?.previous_reading || 0,
+            type: 'electricity',
+          }),
+        });
+        const ocrData = await ocrRes.json();
+        if (ocrData.success && ocrData.reading !== null && ocrData.reading !== undefined) {
+          setInputReading(String(ocrData.reading));
+          showToast(`⚡ AI อ่านเลขมิเตอร์ได้: ${ocrData.reading}`, 'success');
+        } else if (currentRoom) {
+          showToast('📸 อัปโหลดรูปสำเร็จ กรุณาตรวจสอบหรือกรอกตัวเลขมิเตอร์', 'warning');
         }
-      }, 700);
+      } catch (ocrErr) {
+        console.warn('OCR processing error:', ocrErr);
+      } finally {
+        setIsOcrProcessing(false);
+      }
     } catch (err) {
       setIsCompressing(false);
       setIsOcrProcessing(false);
