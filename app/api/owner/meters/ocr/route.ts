@@ -180,7 +180,7 @@ export async function POST(req: Request) {
         }
 
         const base64Data = targetImageForVision.replace(/^data:image\/\w+;base64,/, '');
-        const models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-flash-latest'];
+        const models = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-flash'];
         let geminiRes: Response | null = null;
 
         for (const model of models) {
@@ -248,12 +248,8 @@ without markdown formatting. Previous reading was ${previous_reading || 0}. If c
     // Pass A: Run on zoomed, high-contrast center dial crop (fast & most accurate on mechanical odometers)
     if (detectedNumber === null && cropImage) {
       try {
-        const cropBuffer = Buffer.from(
-          cropImage.replace(/^data:image\/\w+;base64,/, ''),
-          'base64'
-        );
         const worker = await getSharedOcrWorker();
-        const ret = await worker.recognize(cropBuffer);
+        const ret = await worker.recognize(cropImage);
         const text = ret.data.text ? ret.data.text.trim() : '';
         if (text) {
           rawText = text;
@@ -273,13 +269,8 @@ without markdown formatting. Previous reading was ${previous_reading || 0}. If c
     // Pass B: Fallback to full image if crop didn't catch reading
     if (detectedNumber === null && image) {
       try {
-        const base64Buffer = Buffer.from(
-          image.replace(/^data:image\/\w+;base64,/, ''),
-          'base64'
-        );
-
         const worker = await getSharedOcrWorker();
-        const ret = await worker.recognize(base64Buffer);
+        const ret = await worker.recognize(image);
 
         const text = ret.data.text ? ret.data.text.trim() : '';
         if (text) {
@@ -310,6 +301,7 @@ without markdown formatting. Previous reading was ${previous_reading || 0}. If c
 
     return NextResponse.json({
       success: true,
+      reading: detectedNumber,
       data: {
         reading: detectedNumber,
         rawText,

@@ -147,9 +147,11 @@ export default function MeterRecordMobileFlowPage() {
           }),
         });
         const ocrData = await ocrRes.json();
-        if (ocrData.success && ocrData.reading !== null && ocrData.reading !== undefined) {
-          setInputReading(String(ocrData.reading));
-          showToast(`⚡ AI อ่านเลขมิเตอร์ได้: ${ocrData.reading}`, 'success');
+        const extractedReading = ocrData.reading ?? ocrData.data?.reading ?? null;
+
+        if (ocrData.success && extractedReading !== null && extractedReading !== undefined) {
+          setInputReading(String(extractedReading));
+          showToast(`⚡ AI อ่านเลขมิเตอร์ได้: ${extractedReading}`, 'success');
         } else if (currentRoom) {
           showToast('📸 อัปโหลดรูปสำเร็จ กรุณาตรวจสอบหรือกรอกตัวเลขมิเตอร์', 'warning');
         }
