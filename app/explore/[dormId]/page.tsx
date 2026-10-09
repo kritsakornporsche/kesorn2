@@ -157,11 +157,11 @@ export default function GuestDormRoomsPage({ params }: { params: Promise<{ dormI
   const movingOutCount = validRooms.filter(isMovingOut).length;
 
   const getFirstImage = (imageParam: string | null) => {
-    if (!imageParam) return '/modern_dorm_room_2_1775739199686.png';
+    if (!imageParam) return '/images/kesorn/room-bed.jpg';
     try {
       if (imageParam.startsWith('[') && imageParam.endsWith(']')) {
         const images = JSON.parse(imageParam);
-        return images[0] || '/modern_dorm_room_2_1775739199686.png';
+        return images[0] || '/images/kesorn/room-bed.jpg';
       }
       return imageParam;
     } catch (e) {

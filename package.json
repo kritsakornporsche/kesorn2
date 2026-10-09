@@ -8,15 +8,7 @@
     "dev": "next dev -p 3001",
     "build": "next build --webpack",
     "start": "next start -p 3001",
-    "lint": "next lint",
-    "db:local": "node scripts/switch-db.js local",
-    "db:remote": "node scripts/switch-db.js remote",
-    "db:switch": "node scripts/switch-db.js",
-    "db:dump": "node scripts/export-local-db-dump.js",
-    "db:push-remote": "node scripts/import-db-to-target.js remote",
-    "report:run": "node scripts/run-lighthouse-all.js",
-    "report:screenshots": "node scripts/capture-lighthouse-screenshots.js",
-    "report:all": "node scripts/run-lighthouse-all.js && node scripts/capture-lighthouse-screenshots.js"
+    "lint": "next lint"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4",

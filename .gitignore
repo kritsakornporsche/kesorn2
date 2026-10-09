@@ -48,8 +48,17 @@ next-env.d.ts
 # test artifacts & scratch
 cookie_tenant.txt
 scratch/
+audit/
+docs/
+functional_test_evidence/
+report/
+report_final/
+report_flow/
 *.traineddata
 *.pdf
 *.zip
+*.rar
+*.docx
 scripts/*.json
-
+public/uploads/*/*
+!public/uploads/*/.gitkeep
