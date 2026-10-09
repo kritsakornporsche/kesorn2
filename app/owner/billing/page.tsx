@@ -21,6 +21,7 @@ interface MonthlyBill {
   status: 'Pending' | 'Unpaid' | 'Paid' | 'Overdue' | 'PendingCorrection' | string;
   slip_url?: string | null;
   slip_data?: string | null;
+  meter_photo_url?: string | null;
   created_at: string;
   days_overdue?: number;
   late_fee?: number;
@@ -40,6 +41,7 @@ interface MeterReadyRoom {
   common_fee: number;
   total_amount: number;
   billing_cycle: string;
+  photo_url?: string | null;
 }
 
 export default function OwnerMonthlyBillingPage() {
@@ -56,6 +58,7 @@ export default function OwnerMonthlyBillingPage() {
 
   // Modals & Inspection State
   const [selectedSlip, setSelectedSlip] = useState<{ url: string; details?: any } | null>(null);
+  const [selectedMeterPhoto, setSelectedMeterPhoto] = useState<{ url: string; roomNumber: string; cycle?: string; reading?: string | number } | null>(null);
   const [verifying, setVerifying] = useState<number | null>(null);
   const [batchIssuing, setBatchIssuing] = useState(false);
   const [disputeModalBill, setDisputeModalBill] = useState<MonthlyBill | null>(null);
@@ -142,6 +145,7 @@ export default function OwnerMonthlyBillingPage() {
               common_fee: commonFee,
               total_amount: total,
               billing_cycle: meterCycle,
+              photo_url: m.photo_url || null,
             });
           }
         });
@@ -162,6 +166,44 @@ export default function OwnerMonthlyBillingPage() {
     }
     fetchBillingData();
   }, [authStatus, router]);
+
+  const [issuingSingleId, setIssuingSingleId] = useState<number | null>(null);
+
+  // 15.1 Issue Single Bill for specific room
+  const handleIssueSingleBill = async (room: MeterReadyRoom) => {
+    setIssuingSingleId(room.room_id);
+    try {
+      const res = await fetch('/api/owner/billing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenant_id: room.tenant_id,
+          room_number: room.room_number,
+          title: `ค่าเช่าห้องและสาธารณูปโภค (${room.billing_cycle})`,
+          room_amount: room.room_price,
+          electric_units: room.units_used,
+          electric_amount: room.elec_amount,
+          water_amount: room.water_amount,
+          common_fee: room.common_fee,
+          amount: room.total_amount,
+          billing_cycle: room.billing_cycle,
+          due_date: `${room.billing_cycle}-05`,
+          bill_type: 'monthly',
+        }),
+      });
+      const d = await res.json();
+      if (d.success) {
+        showToast(`🎉 ออกบิลและส่งแจ้งเตือนห้อง ${room.room_number} เรียบร้อยแล้ว!`, 'success');
+        fetchBillingData();
+      } else {
+        showToast(d.message || 'เกิดข้อผิดพลาดในการออกบิล', 'error');
+      }
+    } catch (e: any) {
+      showToast('เกิดข้อผิดพลาด: ' + e.message, 'error');
+    } finally {
+      setIssuingSingleId(null);
+    }
+  };
 
   // 15.1 Batch Issue All Ready Bills
   const handleIssueAllReadyBills = async () => {
@@ -417,6 +459,10 @@ export default function OwnerMonthlyBillingPage() {
 
                   <div className="space-y-2 text-xs">
                     <div className="flex justify-between text-slate-300">
+                      <span>ผู้เช่า:</span>
+                      <span className="font-bold text-white">{r.tenant_name}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-300">
                       <span>ค่าห้องพัก:</span>
                       <span className="font-mono">฿{r.room_price.toLocaleString()}</span>
                     </div>
@@ -436,6 +482,27 @@ export default function OwnerMonthlyBillingPage() {
                       <span>ยอดรวมทั้งสิ้น:</span>
                       <span className="font-mono">฿{r.total_amount.toLocaleString()}</span>
                     </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-white/10 flex items-center gap-2">
+                    {r.photo_url && (
+                      <button
+                        onClick={() => setSelectedMeterPhoto({ url: r.photo_url!, roomNumber: r.room_number, cycle: r.billing_cycle, reading: r.units_used })}
+                        className="px-3 py-2.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                        title="ดูรูปถ่ายมิเตอร์"
+                      >
+                        <span>📸</span>
+                        <span>รูปมิเตอร์</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleIssueSingleBill(r)}
+                      disabled={issuingSingleId === r.room_id || batchIssuing}
+                      className="flex-1 py-2.5 bg-primary/20 hover:bg-primary text-primary hover:text-white border border-primary/30 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      <span>📨</span>
+                      <span>{issuingSingleId === r.room_id ? 'กำลังส่งบิล...' : `ส่งบิลห้อง ${r.room_number}`}</span>
+                    </button>
                   </div>
                 </div>
               ))
@@ -461,7 +528,12 @@ export default function OwnerMonthlyBillingPage() {
                   <div key={bill.id} className="bg-slate-900/90 border border-white/10 rounded-2xl p-5 shadow-xl space-y-4">
                     <div className="flex justify-between items-center pb-3 border-b border-white/10">
                       <div>
-                        <span className="text-base font-black text-white">ห้อง {bill.room_number}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-base font-black text-white">ห้อง {bill.room_number}</span>
+                          <span className="px-2 py-0.5 rounded-md bg-white/10 text-slate-300 text-[10px] font-mono font-bold">
+                            บิล #{bill.id}
+                          </span>
+                        </div>
                         <p className="text-[11px] text-slate-400">{bill.tenant_name}</p>
                       </div>
                       <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${
@@ -496,33 +568,43 @@ export default function OwnerMonthlyBillingPage() {
                     </div>
 
                     {/* Slip Attachment or Actions */}
-                    <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2">
+                    <div className="pt-3 border-t border-white/10 flex flex-col gap-2">
+                      <div className="flex items-center justify-between gap-2">
+                        {bill.meter_photo_url && (
+                          <button
+                            onClick={() => setSelectedMeterPhoto({ url: bill.meter_photo_url!, roomNumber: bill.room_number, cycle: bill.billing_cycle, reading: bill.electric_units })}
+                            className="px-2.5 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>📸</span>
+                            <span>ดูรูปมิเตอร์</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setDisputeModalBill(bill)}
+                          className="px-2.5 py-1.5 bg-white/5 hover:bg-white/15 text-slate-300 text-xs font-bold rounded-lg border border-white/10 cursor-pointer ml-auto"
+                        >
+                          ✏️ ขอแก้เลข
+                        </button>
+                      </div>
+
                       {bill.slip_url ? (
-                        <div className="flex items-center gap-2 w-full">
+                        <div className="flex items-center gap-2 w-full pt-1 border-t border-white/5">
                           <button
                             onClick={() => setSelectedSlip({ url: bill.slip_url! })}
-                            className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-lg"
+                            className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-lg cursor-pointer"
                           >
                             ดูสลิป
                           </button>
                           <button
                             onClick={() => handleVerifySlip(bill.id, bill.slip_url!)}
                             disabled={verifying === bill.id}
-                            className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-lg shadow-md transition-all"
+                            className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-lg shadow-md transition-all cursor-pointer"
                           >
                             {verifying === bill.id ? 'กำลังตรวจ...' : '✓ ตรวจ SlipOK'}
                           </button>
                         </div>
                       ) : (
-                        <div className="flex justify-between items-center w-full">
-                          <span className="text-[11px] text-slate-500 italic">ยังไม่แนบสลิป</span>
-                          <button
-                            onClick={() => setDisputeModalBill(bill)}
-                            className="px-3 py-1 bg-white/5 hover:bg-white/15 text-slate-300 text-xs font-bold rounded-lg border border-white/10"
-                          >
-                            ✏️ ขอแก้เลข
-                          </button>
-                        </div>
+                        <span className="text-[10px] text-slate-500 italic text-right">ยังไม่แนบสลิปชำระเงิน</span>
                       )}
                     </div>
                   </div>
@@ -552,7 +634,12 @@ export default function OwnerMonthlyBillingPage() {
                   <div key={bill.id} className="bg-slate-900/90 border border-emerald-500/30 rounded-2xl p-5 shadow-xl space-y-4">
                     <div className="flex justify-between items-center pb-3 border-b border-white/10">
                       <div>
-                        <span className="text-base font-black text-white">ห้อง {bill.room_number}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-base font-black text-white">ห้อง {bill.room_number}</span>
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold">
+                            บิล #{bill.id}
+                          </span>
+                        </div>
                         <p className="text-[11px] text-slate-400">{bill.tenant_name}</p>
                       </div>
                       <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
@@ -616,6 +703,7 @@ export default function OwnerMonthlyBillingPage() {
                       <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">ผู้ยื่นคำขอ</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">เลขเดิม ➔ เลขใหม่</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">ยอดเงินใหม่</th>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">หลักฐานภาพถ่าย</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">เหตุผล</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">สถานะ</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400 text-right">การตัดสินใจ</th>
@@ -638,7 +726,34 @@ export default function OwnerMonthlyBillingPage() {
                         <td className="px-6 py-4 text-xs font-mono font-bold text-emerald-400">
                           ฿{Number(d.new_total_amount).toLocaleString()}
                         </td>
-                        <td className="px-6 py-4 text-xs text-slate-400">{d.reason || '-'}</td>
+                        <td className="px-6 py-4 text-xs">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {d.meter_photo_url && (
+                              <button
+                                onClick={() => setSelectedMeterPhoto({ url: d.meter_photo_url, roomNumber: d.room_number, cycle: d.billing_cycle, reading: d.old_electric_reading })}
+                                className="px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                                title="ดูภาพถ่ายมิเตอร์จากระบบ"
+                              >
+                                <span>📸</span>
+                                <span>รูปมิเตอร์เดิม</span>
+                              </button>
+                            )}
+                            {d.evidence_photo_url && (
+                              <button
+                                onClick={() => setSelectedMeterPhoto({ url: d.evidence_photo_url, roomNumber: d.room_number, cycle: d.billing_cycle, reading: d.new_electric_reading })}
+                                className="px-2 py-1 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                                title="ดูภาพถ่ายหลักฐานที่ผู้ยื่นแนบมา"
+                              >
+                                <span>🔍</span>
+                                <span>รูปหลักฐานที่แนบ</span>
+                              </button>
+                            )}
+                            {!d.meter_photo_url && !d.evidence_photo_url && (
+                              <span className="text-slate-500 text-[11px] italic">-</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-xs text-slate-400 max-w-[200px] truncate" title={d.reason}>{d.reason || '-'}</td>
                         <td className="px-6 py-4">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
                             d.status === 'Approved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' :
@@ -649,21 +764,29 @@ export default function OwnerMonthlyBillingPage() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          {d.status === 'Pending' && (
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => handleResolveDispute(d.id, 'approve')}
-                                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-lg"
-                              >
-                                อนุมัติ
-                              </button>
-                              <button
-                                onClick={() => handleResolveDispute(d.id, 'reject')}
-                                className="px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white text-xs font-black rounded-lg"
-                              >
-                                ปฏิเสธ
-                              </button>
-                            </div>
+                          {d.status === 'Pending' ? (
+                            d.requested_by === 'owner' ? (
+                              <span className="px-2.5 py-1 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[11px] font-bold">
+                                ⏳ รอลูกหอกดอนุมัติ
+                              </span>
+                            ) : (
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => handleResolveDispute(d.id, 'approve')}
+                                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-lg cursor-pointer"
+                                >
+                                  อนุมัติ
+                                </button>
+                                <button
+                                  onClick={() => handleResolveDispute(d.id, 'reject')}
+                                  className="px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white text-xs font-black rounded-lg cursor-pointer"
+                                >
+                                  ปฏิเสธ
+                                </button>
+                              </div>
+                            )
+                          ) : (
+                            <span className="text-slate-500 text-[11px]">-</span>
                           )}
                         </td>
                       </tr>
@@ -749,6 +872,55 @@ export default function OwnerMonthlyBillingPage() {
                 ส่งคำขอแก้ไข (ระงับบิลชั่วคราว)
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Meter Evidence Photo Modal */}
+      {selectedMeterPhoto && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center pb-3 border-b border-white/10">
+              <div>
+                <h3 className="text-base font-black text-white flex items-center gap-2">
+                  <span>📸 ภาพหลักฐานมิเตอร์ไฟฟ้า (ห้อง {selectedMeterPhoto.roomNumber})</span>
+                </h3>
+                {selectedMeterPhoto.cycle && (
+                  <p className="text-xs text-slate-400 mt-0.5">รอบบิล {selectedMeterPhoto.cycle}</p>
+                )}
+              </div>
+              <button
+                onClick={() => setSelectedMeterPhoto(null)}
+                className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="relative aspect-[4/3] bg-black/60 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center">
+              <Image
+                src={selectedMeterPhoto.url}
+                alt="Meter Evidence"
+                fill
+                unoptimized
+                className="object-contain p-2"
+              />
+            </div>
+
+            {selectedMeterPhoto.reading !== undefined && selectedMeterPhoto.reading !== null && (
+              <div className="bg-slate-950 p-3.5 rounded-xl border border-white/5 flex justify-between items-center text-xs">
+                <span className="text-slate-400">หน่วยมิเตอร์ / เลขที่บันทึก:</span>
+                <span className="text-emerald-400 font-mono font-bold text-sm">{selectedMeterPhoto.reading} หน่วย</span>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setSelectedMeterPhoto(null)}
+              className="w-full py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer"
+            >
+              ปิดหน้าต่าง
+            </button>
           </div>
         </div>
       )}

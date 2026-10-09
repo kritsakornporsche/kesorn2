@@ -16,9 +16,10 @@ export async function POST(req: Request) {
 
     // Verify contract exists and belongs to tenant
     const contracts = await sql`
-      SELECT c.* FROM contracts c
-      JOIN tenants t ON c.tenant_id = t.id
-      JOIN users u ON t.user_id = u.id OR t.email = u.email
+      SELECT c.*, r.dorm_id as room_dorm_id FROM contracts c
+      JOIN rooms r ON c.room_id = r.id
+      LEFT JOIN tenants t ON c.tenant_id = t.id
+      LEFT JOIN users u ON t.user_id = u.id OR t.email = u.email
       WHERE c.id = ${contract_id}
       LIMIT 1
     `;

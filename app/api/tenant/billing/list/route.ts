@@ -23,7 +23,7 @@ export async function GET(req: Request) {
 
     const sql = getDb();
     
-    // Find all bills associated with this user/tenant across any dorms
+    // Find all bills associated with this user/tenant across any dorms, including meter evidence photo
     const bills = await sql`
       SELECT 
         b.*,
@@ -37,9 +37,44 @@ export async function GET(req: Request) {
         dp.electricity_rate,
         dp.name as dorm_name,
         dp.promptpay_number,
-        dp.promptpay_name
+        COALESCE(mr.photo_url, (
+          SELECT mr2.photo_url 
+          FROM meter_readings mr2 
+          WHERE mr2.room_id = r.id 
+            AND mr2.photo_url IS NOT NULL 
+            AND mr2.photo_url != '' 
+          ORDER BY mr2.id DESC 
+          LIMIT 1
+        )) as meter_photo_url,
+        mr.previous_reading as meter_prev_reading,
+        mr.current_reading as meter_current_reading,
+        bc.id as correction_id,
+        bc.status as correction_status,
+        bc.reason as correction_reason,
+        bc.new_electric_reading as correction_new_reading,
+        bc.new_total_amount as correction_new_total,
+        bc.requested_by as correction_requested_by
       FROM bills b
       LEFT JOIN dormitory_profile dp ON 1=1
+      LEFT JOIN rooms r ON r.room_number = b.room_number
+      LEFT JOIN meter_readings mr ON mr.id = (
+        SELECT mr3.id 
+        FROM meter_readings mr3 
+        WHERE mr3.room_id = r.id 
+          AND (mr3.billing_cycle = b.billing_cycle OR mr3.billing_cycle IS NULL)
+          AND (mr3.type = 'Electricity' OR mr3.type = 'Electric')
+        ORDER BY mr3.id DESC 
+        LIMIT 1
+      )
+      LEFT JOIN (
+        SELECT bc1.*
+        FROM bill_corrections bc1
+        INNER JOIN (
+          SELECT bill_id, MAX(id) as max_id
+          FROM bill_corrections
+          GROUP BY bill_id
+        ) bc2 ON bc1.id = bc2.max_id
+      ) bc ON bc.bill_id = b.id
       WHERE b.tenant_id IN (
         SELECT t.id FROM tenants t 
         WHERE t.email = ${userEmail || ''} 

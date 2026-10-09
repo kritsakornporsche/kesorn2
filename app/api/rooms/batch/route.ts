@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     const errors: string[] = [];
 
     for (const room of rooms) {
-      const { room_number, room_type, price, status, floor, image_url } = room;
+      const { room_number, room_type, price, status, floor, image_url, deposit_amount, water_rate, common_fee } = room;
 
       if (!room_number || !room_type || price === undefined) {
         skippedCount++;
@@ -43,9 +43,13 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
+      const deposit = deposit_amount !== undefined && deposit_amount !== null && deposit_amount !== '' ? parseFloat(deposit_amount) : 3000;
+      const water = water_rate !== undefined && water_rate !== null && water_rate !== '' ? parseFloat(water_rate) : 100;
+      const common = common_fee !== undefined && common_fee !== null && common_fee !== '' ? parseFloat(common_fee) : 150;
+
       await sql`
-        INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id)
-        VALUES (${room_number}, ${room_type}, ${price}, ${status || 'Available'}, ${floor || 1}, ${image_url || null}, ${targetDormId})
+        INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount, water_rate, common_fee)
+        VALUES (${room_number}, ${room_type}, ${price}, ${status || 'Available'}, ${floor || 1}, ${image_url || null}, ${targetDormId}, ${deposit}, ${water}, ${common})
       `;
       createdCount++;
     }

@@ -44,11 +44,31 @@ export async function GET(req: Request) {
         dp.promptpay_number,
         dp.promptpay_name,
         dp.water_rate,
-        dp.electricity_rate
+        dp.electricity_rate,
+        COALESCE(mr.photo_url, (
+          SELECT mr2.photo_url 
+          FROM meter_readings mr2 
+          WHERE mr2.room_id = r.id 
+            AND mr2.photo_url IS NOT NULL 
+            AND mr2.photo_url != '' 
+          ORDER BY mr2.id DESC 
+          LIMIT 1
+        )) as meter_photo_url,
+        mr.previous_reading as meter_prev_reading,
+        mr.current_reading as meter_current_reading
       FROM bills b
       LEFT JOIN tenants t ON b.tenant_id = t.id
-      LEFT JOIN rooms r ON r.id = t.room_id
+      LEFT JOIN rooms r ON r.id = t.room_id OR r.room_number = b.room_number
       LEFT JOIN dormitory_profile dp ON 1=1
+      LEFT JOIN meter_readings mr ON mr.id = (
+        SELECT mr3.id 
+        FROM meter_readings mr3 
+        WHERE mr3.room_id = r.id 
+          AND (mr3.billing_cycle = b.billing_cycle OR mr3.billing_cycle IS NULL)
+          AND (mr3.type = 'Electricity' OR mr3.type = 'Electric')
+        ORDER BY mr3.id DESC 
+        LIMIT 1
+      )
       ORDER BY b.due_date DESC, b.created_at DESC
     `;
     

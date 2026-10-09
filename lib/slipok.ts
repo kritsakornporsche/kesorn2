@@ -368,10 +368,10 @@ export async function verifySlipWithSlipOK(
     const fromBankDisplay = senderBank || 'ธนาคารต้นทาง';
     const toBankDisplay = receiverBank || 'ธนาคารปลายทาง';
 
-    // 1. Handle Duplicate Slip (code 1012)
+    // 1. Handle Duplicate Slip (code 1012) - Enforce Anti-Replay Duplicate Check
     if (result.code === 1012) {
-      if ((logParam === false || isBooking) && hasData) {
-        // In sandbox testing mode or booking testing with result.data, permit duplicate slip to allow repeated testing
+      if (logParam === false && hasData) {
+        // Only in explicit log=false sandbox test mode
       } else {
         return {
           success: false,
@@ -385,7 +385,7 @@ export async function verifySlipWithSlipOK(
           sender: { name: senderName, account: senderAccount, bank: senderBank },
           receiver: { name: receiverName, account: receiverAccount, bank: receiverBank },
           reason: 'สลิปนี้เคยส่งเข้ามาในระบบแล้ว (สลิปซ้ำ)',
-          message: `⚠️ สลิปซ้ำ: ระบบอ่านข้อมูลสลิปได้สำเร็จ แต่สลิปนี้เคยถูกส่งเข้ามาในระบบแล้ว (รหัสอ้างอิง: ${transRef || '-'}) โอนจาก ${senderName || 'ผู้โอน'} (${fromBankDisplay}) ไปยัง ${receiverName || 'ผู้รับ'} (${toBankDisplay}) ยอด ฿${slipAmount?.toLocaleString('th-TH') || '-'} เมื่อ ${formattedTime}`,
+          message: `⚠️ สลิปซ้ำ: ระบบตรวจพบว่าสลิปนี้เคยถูกส่งเข้ามาในระบบแล้ว (รหัสอ้างอิง: ${transRef || '-'}) โอนจาก ${senderName || 'ผู้โอน'} (${fromBankDisplay}) ไปยัง ${receiverName || 'ผู้รับ'} (${toBankDisplay}) ยอด ฿${slipAmount?.toLocaleString('th-TH') || '-'} เมื่อ ${formattedTime} ไม่สามารถนำสลิปเดิมมาใช้ซ้ำได้`,
           rawData: payload,
         };
       }

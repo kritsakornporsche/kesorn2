@@ -16,11 +16,15 @@ export async function GET(request: Request) {
     if (!roomId) {
       return NextResponse.json({ success: false, message: 'Room ID is required' }, { status: 400 });
     }
+    const parsedRoomId = parseInt(roomId);
+    if (isNaN(parsedRoomId)) {
+      return NextResponse.json({ success: false, message: 'Invalid Room ID' }, { status: 400 });
+    }
 
     const progress = await sql`
       SELECT current_step, booking_data 
       FROM booking_progress 
-      WHERE user_email = ${session.user.email} AND room_id = ${parseInt(roomId)}
+      WHERE user_email = ${session.user.email} AND room_id = ${parsedRoomId}
     `;
 
     if (!progress || progress.length === 0) {
@@ -56,25 +60,26 @@ export async function POST(request: Request) {
   try {
     const { roomId, currentStep, bookingData } = await request.json();
 
-    if (!roomId || !currentStep) {
-      return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
+    const parsedRoomId = parseInt(roomId);
+    if (isNaN(parsedRoomId) || !currentStep) {
+      return NextResponse.json({ success: false, message: 'Missing or invalid required fields' }, { status: 400 });
     }
 
     const existing = await sql`
       SELECT id FROM booking_progress 
-      WHERE user_email = ${session.user.email} AND room_id = ${parseInt(roomId)}
+      WHERE user_email = ${session.user.email} AND room_id = ${parsedRoomId}
     `;
 
     if (existing.length > 0) {
       await sql`
         UPDATE booking_progress 
         SET current_step = ${currentStep}, booking_data = ${JSON.stringify(bookingData)}, updated_at = NOW()
-        WHERE user_email = ${session.user.email} AND room_id = ${parseInt(roomId)}
+        WHERE user_email = ${session.user.email} AND room_id = ${parsedRoomId}
       `;
     } else {
       await sql`
         INSERT INTO booking_progress (user_email, room_id, current_step, booking_data, updated_at)
-        VALUES (${session.user.email}, ${parseInt(roomId)}, ${currentStep}, ${JSON.stringify(bookingData)}, NOW())
+        VALUES (${session.user.email}, ${parsedRoomId}, ${currentStep}, ${JSON.stringify(bookingData)}, NOW())
       `;
     }
 
@@ -94,10 +99,14 @@ export async function DELETE(request: Request) {
 
   try {
     const { roomId } = await request.json();
+    const parsedRoomId = parseInt(roomId);
+    if (isNaN(parsedRoomId)) {
+      return NextResponse.json({ success: false, message: 'Invalid Room ID' }, { status: 400 });
+    }
 
     await sql`
       DELETE FROM booking_progress 
-      WHERE user_email = ${session.user.email} AND room_id = ${parseInt(roomId)}
+      WHERE user_email = ${session.user.email} AND room_id = ${parsedRoomId}
     `;
 
     return NextResponse.json({ success: true, message: 'Progress cleared successfully' });

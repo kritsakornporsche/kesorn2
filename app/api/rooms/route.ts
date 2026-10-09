@@ -41,6 +41,9 @@ export async function GET(req: NextRequest) {
       query = sql`
         SELECT 
           r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at, r.ready_to_occupy_date,
+          COALESCE(r.deposit_amount, 3000) as deposit_amount,
+          COALESCE(r.water_rate, 100) as water_rate,
+          COALESCE(r.common_fee, 150) as common_fee,
           mor.move_out_date,
           mor.status as move_out_status,
           mor.id as move_out_request_id,
@@ -62,13 +65,19 @@ export async function GET(req: NextRequest) {
           OR (r.status = 'Maintenance' AND r.ready_to_occupy_date <= CURRENT_DATE())
           OR mor.id IS NOT NULL
         )
-          AND (r.dorm_id = ${targetDormId} OR r.dorm_id IS NULL)
-        ORDER BY r.floor ASC, CAST(r.room_number AS UNSIGNED) ASC, r.room_number ASC
+        ORDER BY 
+          CASE WHEN r.room_number LIKE '%T01%' OR r.room_number LIKE '%TC01%' THEN 0 ELSE 1 END ASC,
+          r.floor ASC, 
+          CAST(r.room_number AS UNSIGNED) ASC, 
+          r.room_number ASC
       `;
     } else {
       query = sql`
         SELECT 
           r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at,
+          COALESCE(r.deposit_amount, 3000) as deposit_amount,
+          COALESCE(r.water_rate, 100) as water_rate,
+          COALESCE(r.common_fee, 150) as common_fee,
           mor.move_out_date,
           mor.status as move_out_status,
           mor.id as move_out_request_id,
@@ -85,7 +94,11 @@ export async function GET(req: NextRequest) {
           GROUP BY room_id
         ) mor ON mor.room_id = r.id
         WHERE (r.dorm_id = ${targetDormId} OR r.dorm_id IS NULL)
-        ORDER BY r.floor ASC, CAST(r.room_number AS UNSIGNED) ASC, r.room_number ASC
+        ORDER BY 
+          CASE WHEN r.room_number LIKE '%T01%' OR r.room_number LIKE '%TC01%' THEN 0 ELSE 1 END ASC,
+          r.floor ASC, 
+          CAST(r.room_number AS UNSIGNED) ASC, 
+          r.room_number ASC
       `;
     }
 
@@ -106,7 +119,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { room_number, room_type, price, status, floor, image_url } = body;
+    const { room_number, room_type, price, status, floor, image_url, deposit_amount, water_rate, common_fee } = body;
     const dormId = parseInt(body.dorm_id || (session.user as any)?.dormId || '0', 10) || 1;
 
     if (!room_number || !room_type || price === undefined) {
@@ -121,9 +134,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: 'หมายเลขห้องนี้มีอยู่ในระบบแล้ว' }, { status: 409 });
     }
 
+    const deposit = deposit_amount !== undefined && deposit_amount !== null && deposit_amount !== '' ? parseFloat(deposit_amount) : 3000;
+    const water = water_rate !== undefined && water_rate !== null && water_rate !== '' ? parseFloat(water_rate) : 100;
+    const common = common_fee !== undefined && common_fee !== null && common_fee !== '' ? parseFloat(common_fee) : 150;
+
     const result = await sql`
-      INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id)
-      VALUES (${room_number}, ${room_type}, ${price}, ${status || 'Available'}, ${floor || 1}, ${image_url || null}, ${dormId})
+      INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount, water_rate, common_fee)
+      VALUES (${room_number}, ${room_type}, ${price}, ${status || 'Available'}, ${floor || 1}, ${image_url || null}, ${dormId}, ${deposit}, ${water}, ${common})
     `;
     
     const newRoomId = (result as any).insertId;
@@ -131,7 +148,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ 
       success: true, 
       message: 'Room created successfully', 
-      data: { id: newRoomId, room_number, room_type, price, status, floor } 
+      data: { id: newRoomId, room_number, room_type, price, status, floor, deposit_amount: deposit, water_rate: water, common_fee: common } 
     }, { status: 201 });
 
   } catch (error: any) {

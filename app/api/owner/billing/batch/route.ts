@@ -35,14 +35,14 @@ export async function POST(req: Request) {
 
     // Fetch dormitory utility rates (default water: 100 THB, electricity: 8 THB)
     const profileRes = await sql`
-      SELECT water_rate, electricity_rate 
+      SELECT water_rate, electricity_rate, common_fee 
       FROM dormitory_profile 
       WHERE dorm_id = ${targetDormId} OR id = ${targetDormId}
       LIMIT 1
     `;
-    // Strict water fee rule: Flat 100 THB per room every billing cycle
-    const flatWaterRate = 100.00;
+    const defaultWaterRate = profileRes.length > 0 ? Number(profileRes[0].water_rate || 100) : 100.00;
     const electricUnitPrice = profileRes.length > 0 ? Number(profileRes[0].electricity_rate || 8) : 8.00;
+    const defaultCommonFee = profileRes.length > 0 ? Number(profileRes[0].common_fee || 150) : 150.00;
 
     // 1. Find all active tenants in this dormitory via rooms/contracts
     const activeTenants = await sql`
@@ -51,6 +51,8 @@ export async function POST(req: Request) {
         t.room_id,
         COALESCE(r.price, 2800) as amount,
         r.room_number,
+        r.water_rate as room_water_rate,
+        r.common_fee as room_common_fee,
         COALESCE(r.dorm_id, t.dorm_id, 1) as dorm_id
       FROM tenants t
       LEFT JOIN rooms r ON t.room_id = r.id
@@ -73,10 +75,12 @@ export async function POST(req: Request) {
       if (existing.length === 0) {
         const isT01 = (tenant.room_number || '').toUpperCase() === 'T01';
         const roomRent = isT01 ? 10 : (Number(tenant.amount) || 2800);
-        const flatWater = isT01 ? 5 : flatWaterRate;
+        const roomWater = tenant.room_water_rate !== null && tenant.room_water_rate !== undefined ? Number(tenant.room_water_rate) : defaultWaterRate;
+        const flatWater = isT01 ? 5 : roomWater;
         const waterUnits = 1.00;
         const activeElectricPrice = isT01 ? 1 : electricUnitPrice;
-        const commonFeeAmount = isT01 ? 5 : (Number(profile.common_fee) || 0);
+        const roomCommon = tenant.room_common_fee !== null && tenant.room_common_fee !== undefined ? Number(tenant.room_common_fee) : defaultCommonFee;
+        const commonFeeAmount = isT01 ? 5 : roomCommon;
 
         // Auto-fetch electricity meter reading for this room
         let electricUnits = 0.00;

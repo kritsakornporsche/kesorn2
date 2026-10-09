@@ -43,14 +43,25 @@ export default function MeterRecordMobileFlowPage() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // Fetch rooms 1 to 20
+  // Fetch only Occupied rooms that have NOT been recorded in the current billing cycle
   const fetchRooms = async () => {
     try {
       setLoading(true);
       const res = await fetch('/api/owner/meters/summary');
       const data = await res.json();
       if (data.success) {
-        const formatted: RoomRecord[] = (data.data || []).map((r: any) => ({
+        const currentCycle = new Date().toISOString().substring(0, 7);
+
+        // Filter: 
+        // 1. Room has people living in it (room_status === 'Occupied' or contract_status === 'Active')
+        // 2. Room has NOT been recorded in the current billing cycle yet (latest_cycle !== currentCycle)
+        const activeUnrecorded = (data.data || []).filter((r: any) => {
+          const isOccupied = r.room_status === 'Occupied' || r.contract_status === 'Active';
+          const alreadyRecordedThisCycle = r.latest_cycle === currentCycle && r.latest_reading !== null;
+          return isOccupied && !alreadyRecordedThisCycle;
+        });
+
+        const formatted: RoomRecord[] = activeUnrecorded.map((r: any) => ({
           id: r.room_id,
           room_number: r.room_number,
           floor: r.floor,
@@ -358,7 +369,21 @@ export default function MeterRecordMobileFlowPage() {
       {loading ? (
         <div className="p-20 text-center text-slate-400 font-bold animate-pulse">กำลังเตรียมระบบจดมิเตอร์...</div>
       ) : !currentRoom ? (
-        <div className="p-16 text-center text-slate-400">ไม่พบข้อมูลห้องพัก</div>
+        <div className="p-16 text-center text-slate-300 bg-slate-900/80 border border-white/10 rounded-3xl space-y-4 max-w-lg mx-auto shadow-2xl">
+          <span className="text-5xl block">🎉</span>
+          <h3 className="text-xl font-black text-white">จดมิเตอร์ครบถ้วนแล้ว!</h3>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            ห้องพักที่มีผู้เช่าอาศัยอยู่ทั้งหมดได้รับการจดมิเตอร์รอบเดือน {billingCycle} เรียบร้อยแล้ว (ไม่มีห้องค้างจด)
+          </p>
+          <div className="pt-2">
+            <Link
+              href="/owner/meters"
+              className="inline-block px-6 py-3 bg-primary hover:bg-primary/90 text-white font-black text-xs rounded-xl shadow-lg transition-all"
+            >
+              ← กลับไปหน้ารวมมิเตอร์
+            </Link>
+          </div>
+        </div>
       ) : (
         /* Desktop: 2-Column Responsive Layout | Mobile: Single Column */
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">

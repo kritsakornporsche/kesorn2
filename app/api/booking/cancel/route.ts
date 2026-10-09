@@ -61,6 +61,19 @@ export async function POST(req: Request) {
       WHERE id = ${targetContractId}
     `;
 
+    // 3.1 Cancel any associated booking bills
+    try {
+      await sql`
+        UPDATE bills 
+        SET status = 'Cancelled' 
+        WHERE (tenant_id IN (SELECT tenant_id FROM contracts WHERE id = ${targetContractId}) OR room_number IN (SELECT room_number FROM rooms WHERE id = ${targetRoomId}))
+          AND bill_type = 'booking'
+          AND status != 'Cancelled'
+      `;
+    } catch (bErr) {
+      console.warn('Could not cancel booking bill:', bErr);
+    }
+
     // 4. Reset room status to Available immediately
     if (targetRoomId) {
       await sql`

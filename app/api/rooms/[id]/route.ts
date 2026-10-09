@@ -22,9 +22,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         ku.email as keeper_email,
         mor.move_out_date,
         mor.status as move_out_status,
-        CASE WHEN UPPER(r.room_number) = 'T01' THEN 5.00 ELSE dp.water_rate END as water_rate,
+        CASE 
+          WHEN UPPER(r.room_number) = 'T01' THEN 5.00 
+          WHEN r.water_rate IS NOT NULL THEN r.water_rate
+          ELSE dp.water_rate 
+        END as water_rate,
         CASE WHEN UPPER(r.room_number) = 'T01' THEN 1.00 ELSE dp.electricity_rate END as electricity_rate,
-        CASE WHEN UPPER(r.room_number) = 'T01' THEN 5.00 ELSE dp.common_fee END as common_fee,
+        CASE 
+          WHEN UPPER(r.room_number) = 'T01' THEN 5.00 
+          WHEN r.common_fee IS NOT NULL THEN r.common_fee
+          ELSE dp.common_fee 
+        END as common_fee,
+        CASE 
+          WHEN UPPER(r.room_number) = 'T01' THEN 20.00 
+          WHEN r.deposit_amount IS NOT NULL THEN r.deposit_amount
+          ELSE 3000.00 
+        END as deposit_amount,
         dp.pet_friendly,
         dp.has_parking,
         dp.has_air_con,
@@ -73,7 +86,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const resolvedParams = await params;
     const id = resolvedParams.id;
     const body = await request.json();
-    const { room_number, room_type, price, status, floor, image_url } = body;
+    const { room_number, room_type, price, status, floor, image_url, deposit_amount, water_rate, common_fee } = body;
 
     if (!id || !room_number || !room_type || price === undefined) {
       return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
@@ -87,6 +100,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ success: false, message: 'Room number already exists in this dormitory' }, { status: 409 });
     }
 
+    const deposit = deposit_amount !== undefined && deposit_amount !== null && deposit_amount !== '' ? parseFloat(deposit_amount) : 3000;
+    const water = water_rate !== undefined && water_rate !== null && water_rate !== '' ? parseFloat(water_rate) : 100;
+    const common = common_fee !== undefined && common_fee !== null && common_fee !== '' ? parseFloat(common_fee) : 150;
+
     await sql`
       UPDATE rooms 
       SET room_number = ${room_number}, 
@@ -94,7 +111,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
           price = ${price}, 
           status = ${status}, 
           floor = ${floor}, 
-          image_url = ${image_url || null}
+          image_url = ${image_url || null},
+          deposit_amount = ${deposit},
+          water_rate = ${water},
+          common_fee = ${common}
       WHERE id = ${id}
     `;
 

@@ -58,10 +58,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       `;
     }
 
-    // 5. Update room_id for the tenant record
+    // 5. Update room_id and status for the tenant record
     await sql`
       UPDATE tenants
-      SET room_id = ${room_id}
+      SET room_id = ${room_id}, status = 'active'
       WHERE email = ${tenant_email}
     `;
 

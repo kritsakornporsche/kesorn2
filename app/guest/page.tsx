@@ -386,7 +386,7 @@ export default function GuestDashboardPage() {
                 }`}>
                   <div className="flex items-center gap-3 mb-2">
                     <span className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center font-black text-sm">1</span>
-                    <span className="font-black text-sm">2.1.1 จองสำเร็จ</span>
+                    <span className="font-black text-sm">จองสำเร็จ</span>
                   </div>
                   <p className="text-xs text-slate-400">โอนมัดจำ 1,000 บาทแล้ว รอเจ้าของหอจัดทำสัญญา</p>
                 </div>
@@ -397,7 +397,7 @@ export default function GuestDashboardPage() {
                 }`}>
                   <div className="flex items-center gap-3 mb-2">
                     <span className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-black text-sm">2</span>
-                    <span className="font-black text-sm">2.1.2 ทำสัญญาสำเร็จ</span>
+                    <span className="font-black text-sm">ทำสัญญาสำเร็จ</span>
                   </div>
                   <p className="text-xs text-slate-400">เจ้าของแนบสัญญาแล้ว อยู่ระหว่างชำระค่าแรกเข้า</p>
                 </div>
@@ -408,7 +408,7 @@ export default function GuestDashboardPage() {
                 }`}>
                   <div className="flex items-center gap-3 mb-2">
                     <span className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black text-sm">3</span>
-                    <span className="font-black text-sm">2.1.3 กำลังเข้าอยู่อาศัย</span>
+                    <span className="font-black text-sm">กำลังเข้าอยู่อาศัย</span>
                   </div>
                   <p className="text-xs text-slate-400">ชำระค่าแรกเข้าสำเร็จ ปรับเป็นลูกหอสมบูรณ์</p>
                 </div>

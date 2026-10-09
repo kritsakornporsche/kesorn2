@@ -21,6 +21,16 @@ async function getMoveOutData() {
   if (tenantRes.length === 0) return null;
   const tenant = tenantRes[0];
 
+  // Find active contract
+  const contractRes = await sql`
+    SELECT id, start_date, end_date, deposit_amount, status 
+    FROM contracts 
+    WHERE tenant_id = ${tenant.id} AND status IN ('Active', 'Approved', 'MoveOutPending')
+    ORDER BY id DESC 
+    LIMIT 1
+  `;
+  const contract = contractRes.length > 0 ? contractRes[0] : null;
+
   const requests = await sql`
     SELECT 
       mor.*, 
@@ -31,16 +41,21 @@ async function getMoveOutData() {
     FROM move_out_requests mor
     LEFT JOIN rooms r ON mor.room_id = r.id
     LEFT JOIN contracts c ON c.id = COALESCE(mor.contract_id, (SELECT id FROM contracts WHERE tenant_id = mor.tenant_id ORDER BY id DESC LIMIT 1))
-    WHERE mor.tenant_id = ${tenant.id} 
+    WHERE mor.tenant_id = ${tenant.id} AND mor.status IN ('Pending', 'Approved', 'Completed')
     ORDER BY mor.id DESC 
     LIMIT 1
   `;
 
-  return requests.length > 0 ? requests[0] : null;
+  return {
+    request: requests.length > 0 ? requests[0] : null,
+    contract
+  };
 }
 
 export default async function TenantMoveOut() {
-  const request = await getMoveOutData();
+  const data = await getMoveOutData();
+  const request = data?.request;
+  const contract = data?.contract;
 
   return (
     <div className="p-6 lg:p-10 max-w-5xl mx-auto space-y-10 font-sans">
@@ -71,9 +86,13 @@ export default async function TenantMoveOut() {
                 : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
             }`}>
               {request.status === 'Completed' 
-                ? '✓ คืนเงินประกันและเสร็จสิ้นขั้นตอนการย้ายออกเรียบร้อยแล้ว (Completed)' 
+                ? '✓ หักลบค่าใช้จ่ายปิดห้องและเสร็จสิ้นขั้นตอนการย้ายออกเรียบร้อยแล้ว (Completed)' 
                 : request.status === 'Approved'
-                ? '✓ ผู้ดูแลอนุมัติคำร้องแล้ว (รอการสแกนโอนเงินประกัน)'
+                ? (request.settlement_type === 'TenantPay' 
+                    ? '✓ ตรวจห้องเรียบร้อยแล้ว (กรุณาชำระบิลส่วนต่างที่หน้าบิล)' 
+                    : request.settlement_type === 'ZeroBalance'
+                    ? '✓ หักลบค่าใช้จ่ายพอดี 0 บาท (ดำเนินการเสร็จสมบูรณ์)'
+                    : '✓ ผู้ดูแลอนุมัติคำร้องแล้ว (รอการสแกนโอนเงินประกันคืน)')
                 : '⏳ อยู่ระหว่างการตรวจสอบโดยผู้ดูแลหอพัก (Pending Verification)'}
             </div>
 
@@ -133,46 +152,139 @@ export default async function TenantMoveOut() {
               </div>
 
               {/* Financial Calculation Breakdown */}
-              <div className="bg-secondary/20 p-6 rounded-3xl border border-border space-y-3">
-                <h4 className="text-xs font-black uppercase tracking-wider text-primary">
-                  รายละเอียดการคำนวณเงินประกัน
-                </h4>
-
-                <div className="flex justify-between text-sm text-foreground/80">
-                  <span>เงินประกันสัญญาเดิมที่วางไว้:</span>
-                  <span className="font-mono font-bold text-emerald-400">
-                    +฿{Number(request.deposit_amount || request.contract_deposit || 0).toLocaleString()}
+              <div className="bg-secondary/20 p-6 rounded-3xl border border-border space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-primary flex items-center gap-1.5">
+                    <span>🧾</span>
+                    <span>{request.is_contract_completed ? 'รายละเอียดการคำนวณเงินประกัน & ค่าใช้จ่ายปิดห้อง' : 'รายละเอียดค่าใช้จ่าย & สถานะเงินประกัน (ออกก่อนกำหนด)'}</span>
+                  </h4>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                    request.settlement_type === 'OwnerRefund' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' :
+                    request.settlement_type === 'TenantPay' ? 'bg-rose-500/15 text-rose-300 border-rose-500/30' :
+                    'bg-slate-500/15 text-slate-300 border-slate-500/30'
+                  }`}>
+                    {request.settlement_type === 'OwnerRefund' ? 'หอพักคืนเงินประกัน' :
+                     request.settlement_type === 'TenantPay' ? 'ลูกหอต้องชำระส่วนต่าง' : 'หักล้างพอดี 0 บาท'}
                   </span>
                 </div>
 
-                <div className="flex justify-between text-sm text-foreground/80">
-                  <span>หักยอดค่าใช้จ่ายค้างชำระ (บิลน้ำ-ไฟ-ห้อง):</span>
-                  <span className="font-mono font-bold text-rose-400">
-                    -฿{Number(request.unpaid_bills_total || 0).toLocaleString()}
+                {/* Itemized Expenses Breakdown */}
+                <div className="bg-card/60 p-4 rounded-2xl border border-border space-y-2.5 text-xs">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                    รายการค่าใช้จ่ายรอบสุดท้าย (จดมิเตอร์ & ตรวจห้องแล้ว)
                   </span>
+
+                  {Number(request.room_rent_amount || 0) > 0 && (
+                    <div className="flex justify-between text-foreground/90">
+                      <span>🏠 ค่าเช่าห้องพัก:</span>
+                      <span className="font-mono font-bold text-foreground">฿{Number(request.room_rent_amount).toLocaleString()}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between text-foreground/90">
+                    <span>⚡ ค่าไฟฟ้า ({Number(request.electric_units_used || 0)} หน่วย @4.88 บ.):</span>
+                    <span className="font-mono font-bold text-foreground">฿{Number(request.electric_amount || 0).toLocaleString()}</span>
+                  </div>
+
+                  <div className="flex justify-between text-foreground/90">
+                    <span>💧 ค่าน้ำประปา (เหมาจ่าย):</span>
+                    <span className="font-mono font-bold text-foreground">฿{Number(request.water_amount || 100).toLocaleString()}</span>
+                  </div>
+
+                  <div className="flex justify-between text-foreground/90">
+                    <span>🧹 ค่าส่วนกลาง / ค่าบริการ:</span>
+                    <span className="font-mono font-bold text-foreground">฿{Number(request.common_fee || 150).toLocaleString()}</span>
+                  </div>
+
+                  {Number(request.extra_damage_amount || 0) > 0 && (
+                    <div className="flex justify-between text-rose-400 font-semibold">
+                      <span>🔨 ค่าทำความสะอาด / ความเสียหาย {request.extra_damage_note ? `(${request.extra_damage_note})` : ''}:</span>
+                      <span className="font-mono font-bold">+฿{Number(request.extra_damage_amount).toLocaleString()}</span>
+                    </div>
+                  )}
+
+                  {Number(request.unpaid_bills_total || 0) > 0 && (
+                    <div className="flex justify-between text-rose-400 font-semibold">
+                      <span>⚠️ บิลค้างชำระก่อนหน้า:</span>
+                      <span className="font-mono font-bold">+฿{Number(request.unpaid_bills_total).toLocaleString()}</span>
+                    </div>
+                  )}
+
+                  <div className="pt-2 border-t border-border flex justify-between font-black text-amber-400 text-sm">
+                    <span>รวมค่าใช้จ่ายทั้งหมด:</span>
+                    <span className="font-mono">฿{Number(request.total_expenses || 0).toLocaleString()}</span>
+                  </div>
                 </div>
 
-                {Number(request.penalty_amount || 0) > 0 && (
-                  <div className="flex justify-between text-sm text-foreground/80">
-                    <span>หักค่าเสียหาย / ทำความสะอาดห้องเพิ่มเติม:</span>
-                    <span className="font-mono font-bold text-rose-400">
-                      -฿{Number(request.penalty_amount).toLocaleString()}
-                    </span>
+                {/* Settlement Calculation */}
+                {request.is_contract_completed ? (
+                  <div className="space-y-2 pt-1">
+                    <div className="flex justify-between text-xs sm:text-sm text-foreground/80">
+                      <span>เงินประกันสัญญาเดิมที่วางไว้:</span>
+                      <span className="font-mono font-bold text-emerald-400">
+                        +฿{Number(request.deposit_amount || request.contract_deposit || 3000).toLocaleString()}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between text-xs sm:text-sm text-foreground/80">
+                      <span>หักยอดค่าใช้จ่ายทั้งหมดรอบสุดท้าย:</span>
+                      <span className="font-mono font-bold text-rose-400">
+                        -฿{Number(request.total_expenses || 0).toLocaleString()}
+                      </span>
+                    </div>
+
+                    <div className="pt-3 border-t border-border flex justify-between items-center">
+                      <span className="font-bold text-white text-sm sm:text-base">
+                        {request.settlement_type === 'TenantPay' 
+                          ? 'ยอดค่าใช้จ่ายส่วนต่างที่ลูกหอต้องชำระ:' 
+                          : request.status === 'Completed' 
+                          ? 'ยอดเงินประกันสุทธิที่โอนคืนแล้ว:' 
+                          : 'ยอดเงินประกันสุทธิที่คาดว่าจะได้รับคืน:'}
+                      </span>
+                      <span className={`text-2xl font-black font-mono ${
+                        request.settlement_type === 'TenantPay' ? 'text-rose-400' : 'text-emerald-400'
+                      }`}>
+                        ฿{request.settlement_type === 'TenantPay' 
+                          ? Math.max(0, Number(request.total_expenses || 0) - 3000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                          : Number(request.net_refund_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+
+                    {request.settlement_type === 'TenantPay' && (
+                      <div className="pt-2">
+                        <a 
+                          href="/tenant/billing" 
+                          className="inline-flex items-center justify-center w-full gap-2 px-4 py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-black rounded-xl text-xs transition-all shadow-md shadow-primary/20"
+                        >
+                          💳 ไปที่หน้าบิลเพื่อชำระส่วนต่าง ฿{Math.max(0, Number(request.total_expenses || 0) - 3000).toLocaleString()} →
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl space-y-3 text-sm">
+                    <div className="flex items-center gap-2 text-rose-300 font-bold">
+                      <span>⚠️</span>
+                      <span>เงื่อนไขการย้ายออกก่อนครบสัญญา 1 ปี:</span>
+                    </div>
+                    <ul className="list-disc pl-5 text-xs text-slate-300 space-y-1 leading-relaxed">
+                      <li><strong>ไม่ได้รับเงินประกันคืน</strong> (ยึดเงินประกันตามข้อตกลงในสัญญา)</li>
+                      <li>ยอดค่าใช้จ่ายทั้งหมดรอบสุดท้ายที่ต้องชำระ: <strong className="text-amber-400 font-mono">฿{Number(request.total_expenses || 0).toLocaleString()}</strong> บาท</li>
+                    </ul>
+                    <div className="pt-2">
+                      <a 
+                        href="/tenant/billing" 
+                        className="inline-flex items-center justify-center w-full gap-2 px-4 py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-black rounded-xl text-xs transition-all shadow-md shadow-primary/20"
+                      >
+                        💳 ไปยังหน้าบิลของฉัน เพื่อตรวจสอบ/ชำระบิล →
+                      </a>
+                    </div>
                   </div>
                 )}
-
-                <div className="pt-3 border-t border-border flex justify-between items-center">
-                  <span className="font-bold text-white text-base">
-                    {request.status === 'Completed' ? 'ยอดเงินประกันสุทธิที่โอนคืนแล้ว:' : 'ยอดเงินประกันสุทธิที่คาดว่าจะได้รับคืน:'}
-                  </span>
-                  <span className="text-2xl font-black font-mono text-emerald-400">
-                    ฿{Number(request.net_refund_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
               </div>
 
               {/* Refund Completed Section */}
-              {request.status === 'Completed' && (
+              {request.status === 'Completed' && request.is_contract_completed === 1 && (
                 <div className="p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-3xl space-y-4">
                   <div className="flex items-center gap-3">
                     <span className="text-3xl">🎉</span>
@@ -225,9 +337,15 @@ export default async function TenantMoveOut() {
                   <div className="w-full py-3.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold rounded-xl text-center text-sm">
                     ✓ ดำเนินการเสร็จสมบูรณ์ ขอบคุณที่ร่วมพักอาศัยกับหอพักเกษร 2
                   </div>
+                ) : request.settlement_type === 'TenantPay' ? (
+                  <div className="flex-1 bg-rose-500/10 text-rose-300 font-bold py-3.5 px-4 rounded-xl text-center text-sm border border-rose-500/20">
+                    เจ้าของหอพักได้จัดส่งบิลค่าใช้จ่ายส่วนต่างให้ท่านแล้ว กรุณาชำระที่หน้า &quot;บิลของฉัน&quot;
+                  </div>
                 ) : (
                   <div className="flex-1 bg-white/5 text-white/70 font-bold py-3.5 px-4 rounded-xl text-center text-sm border border-border">
-                    ผู้ดูแลกำลังตรวจสอบรายการห้องพักและเตรียมการสแกนโอนเงิน
+                    {request.status === 'Approved'
+                      ? 'ผู้ดูแลอนุมัติคำร้องแล้ว อยู่ระหว่างเตรียมการโอนเงินประกันคืน'
+                      : 'ผู้ดูแลกำลังตรวจสอบมิเตอร์และคำนวณยอดปิดการย้ายออก'}
                   </div>
                 )}
               </div>
@@ -236,7 +354,7 @@ export default async function TenantMoveOut() {
           </div>
         </div>
       ) : (
-        <MoveOutForm />
+        <MoveOutForm contractEndDate={contract?.end_date} />
       )}
     </div>
   );

@@ -5,9 +5,16 @@ import { NextResponse } from 'next/server';
 export async function GET(req: Request) {
   try {
     const session = await auth();
+    const role = (session?.user as any)?.role;
+    if (!session?.user) {
+      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
+      return NextResponse.json({ success: false, message: 'Forbidden: เฉพาะเจ้าของหอพักและผู้ดูแลระบบ' }, { status: 403 });
+    }
     const { searchParams } = new URL(req.url);
     const dormIdParam = searchParams.get('dormId') || searchParams.get('dormDbName');
-    const userEmail = session?.user?.email || searchParams.get('email');
+    const userEmail = session.user.email;
 
     const sql = getDb();
 
@@ -88,8 +95,12 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const session = await auth();
+    const role = (session?.user as any)?.role;
     if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
+      return NextResponse.json({ success: false, message: 'Forbidden: เฉพาะเจ้าของหอพักและผู้ดูแลระบบ' }, { status: 403 });
     }
 
     const body = await req.json();

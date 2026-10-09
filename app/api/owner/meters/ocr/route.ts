@@ -180,13 +180,20 @@ export async function POST(req: Request) {
         }
 
         const base64Data = targetImageForVision.replace(/^data:image\/\w+;base64,/, '');
-        const models = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-flash'];
+        // Prioritize lightweight, high-availability, instant vision models
+        const models = [
+          'gemini-3.1-flash-lite',
+          'gemini-3.5-flash-lite',
+          'gemini-flash-lite-latest',
+          'gemini-3.8-flash',
+          'gemini-flash-latest'
+        ];
         let geminiRes: Response | null = null;
 
         for (const model of models) {
           try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 12000);
+            const timeoutId = setTimeout(() => controller.abort(), 7000);
 
             geminiRes = await fetch(
               `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
@@ -199,11 +206,11 @@ export async function POST(req: Request) {
                     {
                       parts: [
                         {
-                          text: `Read the utility meter dial counter display (${type || 'utility'} meter, e.g. Mitsubishi / Sanwa).
-Look closely at the rotating number wheels (including black wheels with white digits, and any rightmost decimal wheel).
-Return ONLY valid JSON:
-{ "reading": 2419, "digits": "2419.0", "confidence": 0.99 }
-without markdown formatting. Previous reading was ${previous_reading || 0}. If completely unreadable, return { "reading": null, "confidence": 0 }`,
+                          text: `You are an expert OCR meter reading system. Look closely at the utility/electricity/water meter in the image (e.g. Mitsubishi / Sanwa).
+Find the rectangular odometer counter window at the upper center showing rotating number wheels.
+Read only the numbers inside the counter (ignore 220V, 50Hz, 1200r/kWh, serial numbers).
+Return ONLY JSON: { "reading": 6126, "digits": "6126" } without markdown formatting.
+If previous reading is given (${previous_reading || 0}), the new reading should be equal or greater under normal circumstances.`,
                         },
                         {
                           inline_data: {
@@ -229,13 +236,23 @@ without markdown formatting. Previous reading was ${previous_reading || 0}. If c
           const geminiData = await geminiRes.json();
           const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
           const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-          const parsed = JSON.parse(cleanJson);
-          if (parsed && typeof parsed.reading === 'number') {
-            detectedNumber = parsed.reading;
-            confidence = parsed.confidence || 0.99;
-            engineUsed = isCustomKey ? 'gemini-custom-key' : 'gemini-system-key';
-            if (parsed.digits) {
-              rawText = String(parsed.digits);
+          try {
+            const parsed = JSON.parse(cleanJson);
+            if (parsed && typeof parsed.reading === 'number') {
+              detectedNumber = parsed.reading;
+              confidence = parsed.confidence || 0.98;
+              engineUsed = isCustomKey ? 'gemini-custom-key' : 'gemini-system-key';
+              if (parsed.digits) {
+                rawText = String(parsed.digits);
+              }
+            }
+          } catch (jsonErr) {
+            // If model returned a raw number string
+            const match = responseText.match(/\b\d+(\.\d+)?\b/);
+            if (match) {
+              detectedNumber = parseFloat(match[0]);
+              confidence = 0.95;
+              engineUsed = isCustomKey ? 'gemini-custom-key' : 'gemini-system-key';
             }
           }
         }

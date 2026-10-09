@@ -13,6 +13,9 @@ interface Room {
   status: string;
   floor: number;
   image_url?: string | null;
+  deposit_amount?: number;
+  water_rate?: number;
+  common_fee?: number;
 }
 
 export default function RoomsManagement() {
@@ -36,14 +39,20 @@ export default function RoomsManagement() {
     pattern: 'prefix_floor_num', // 'prefix_floor_num' (A101), 'prefix_num' (A1), 'prefix_floor_dash' (A1-01)
     room_type: 'Standard',
     price: 4500,
+    deposit_amount: 3000,
+    water_rate: 100,
+    common_fee: 150,
     status: 'Available',
   });
 
-  // Updated Form State to handle multiple images
+  // Updated Form State to handle multiple images and fee configuration
   const [formData, setFormData] = useState({
     room_number: '',
     room_type: 'Standard',
     price: 4500,
+    deposit_amount: 3000,
+    water_rate: 100,
+    common_fee: 150,
     floor: 1,
     status: 'Available',
     images: [] as string[] // array of base64 strings
@@ -137,6 +146,9 @@ export default function RoomsManagement() {
         room_number: num,
         room_type: batchForm.room_type,
         price: batchForm.price,
+        deposit_amount: batchForm.deposit_amount,
+        water_rate: batchForm.water_rate,
+        common_fee: batchForm.common_fee,
         floor: batchForm.floor,
         status: batchForm.status,
         dorm_id: ownerDormId
@@ -185,7 +197,17 @@ export default function RoomsManagement() {
       if (data.success) {
         setIsModalOpen(false);
         setEditingRoom(null);
-        setFormData({ room_number: '', room_type: 'Standard', price: 4500, floor: 1, status: 'Available', images: [] });
+        setFormData({ 
+          room_number: '', 
+          room_type: 'Standard', 
+          price: 4500, 
+          deposit_amount: 3000,
+          water_rate: 100,
+          common_fee: 150,
+          floor: 1, 
+          status: 'Available', 
+          images: [] 
+        });
         if (ownerDormId) fetchRooms(ownerDormId);
       } else {
         alert(`${data.message}${data.error ? `: ${data.error}` : ''}`);
@@ -216,6 +238,9 @@ export default function RoomsManagement() {
       room_number: room.room_number,
       room_type: room.room_type,
       price: room.price,
+      deposit_amount: room.deposit_amount !== undefined ? Number(room.deposit_amount) : 3000,
+      water_rate: room.water_rate !== undefined ? Number(room.water_rate) : 100,
+      common_fee: room.common_fee !== undefined ? Number(room.common_fee) : 150,
       floor: room.floor,
       status: room.status,
       images: parsedImages
@@ -342,7 +367,21 @@ export default function RoomsManagement() {
           </button>
 
           <button 
-            onClick={() => { setEditingRoom(null); setFormData({ room_number: '', room_type: 'Standard', price: 4500, floor: 1, status: 'Available', images: [] }); setIsModalOpen(true); }}
+            onClick={() => { 
+              setEditingRoom(null); 
+              setFormData({ 
+                room_number: '', 
+                room_type: 'Standard', 
+                price: 4500, 
+                deposit_amount: 3000,
+                water_rate: 100,
+                common_fee: 150,
+                floor: 1, 
+                status: 'Available', 
+                images: [] 
+              }); 
+              setIsModalOpen(true); 
+            }}
             className="px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center gap-2 transition-all duration-300 group bg-primary text-white shadow-lg hover:brightness-110 active:scale-95 cursor-pointer whitespace-nowrap"
           >
             <div className="p-1 bg-card/20 rounded-lg group-hover:rotate-90 transition-transform duration-500">
@@ -461,9 +500,22 @@ export default function RoomsManagement() {
                       <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">{room.room_type} (Type)</span>
                       <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">ชั้น {room.floor} (Floor)</span>
                    </div>
-                   <div className="flex items-end gap-1 mb-8">
+                   <div className="flex items-end gap-1 mb-4">
                       <span className="text-3xl font-black text-foreground">฿{Number(room.price).toLocaleString()}</span>
                       <span className="text-xs font-bold text-muted-foreground mb-1.5 whitespace-nowrap">/ เดือน</span>
+                   </div>
+
+                   {/* Fee Breakdown Badges */}
+                   <div className="flex flex-wrap gap-1.5 mb-6">
+                      <span className="px-2.5 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded-lg border border-primary/20">
+                        🛡️ ประกัน ฿{Number(room.deposit_amount || 3000).toLocaleString()}
+                      </span>
+                      <span className="px-2.5 py-1 bg-cyan-500/10 text-cyan-400 text-[10px] font-bold rounded-lg border border-cyan-500/20">
+                        💧 น้ำ ฿{Number(room.water_rate || 100).toLocaleString()}
+                      </span>
+                      <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 text-[10px] font-bold rounded-lg border border-amber-500/20">
+                        🧹 ส่วนกลาง ฿{Number(room.common_fee || 150).toLocaleString()}
+                      </span>
                    </div>
 
                    <div className="mt-auto flex items-center gap-3 pt-6 border-t border-[#F3EFE9]">
@@ -533,7 +585,7 @@ export default function RoomsManagement() {
                         <input 
                             type="number" 
                             value={formData.floor}
-                            onChange={(e) => setFormData({...formData, floor: parseInt(e.target.value)})}
+                            onChange={(e) => setFormData({...formData, floor: parseInt(e.target.value) || 1})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground focus:bg-card transition-all"
                         />
                     </div>
@@ -551,17 +603,75 @@ export default function RoomsManagement() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1 text-center">ราคาเช่ารายเดือน (Rental Price)</label>
-                    <div className="relative group max-w-xs mx-auto">
-                        <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-muted-foreground group-focus-within:scale-110 transition-transform">฿</span>
-                        <input 
-                          type="number" 
-                          required
-                          value={formData.price}
-                          onChange={(e) => setFormData({...formData, price: parseFloat(e.target.value)})}
-                          className="w-full pl-14 pr-6 py-5 bg-white/5 border border-primary/30 rounded-[30px] font-black outline-none text-foreground text-3xl text-center focus:ring-8 focus:ring-primary/5 focus:bg-card transition-all"
-                        />
+                  {/* Pricing & Fee Configuration */}
+                  <div className="bg-primary/5 p-5 sm:p-6 rounded-3xl border border-primary/20 space-y-4">
+                    <span className="text-[10px] font-black text-primary uppercase tracking-widest block">
+                      💵 อัตราค่าเช่าและค่าบริการ (Pricing & Fees)
+                    </span>
+
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1 text-center">ราคาค่าเช่าห้อง / เดือน (Rental Price)</label>
+                      <div className="relative group max-w-xs mx-auto">
+                          <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-muted-foreground group-focus-within:scale-110 transition-transform">฿</span>
+                          <input 
+                            type="number" 
+                            required
+                            value={formData.price}
+                            onChange={(e) => setFormData({...formData, price: parseFloat(e.target.value) || 0})}
+                            className="w-full pl-14 pr-6 py-4 bg-background border border-primary/40 rounded-[24px] font-black outline-none text-foreground text-2xl text-center focus:ring-4 focus:ring-primary/10 focus:bg-card transition-all"
+                            placeholder="4500"
+                          />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
+                          🛡️ เงินประกัน (Deposit)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
+                          <input 
+                            type="number" 
+                            value={formData.deposit_amount}
+                            onChange={(e) => setFormData({...formData, deposit_amount: parseFloat(e.target.value) || 0})}
+                            className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all"
+                            placeholder="3000"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
+                          💧 ค่าน้ำเหมาจ่าย (Water)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
+                          <input 
+                            type="number" 
+                            value={formData.water_rate}
+                            onChange={(e) => setFormData({...formData, water_rate: parseFloat(e.target.value) || 0})}
+                            className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all"
+                            placeholder="100"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
+                          🧹 ค่าส่วนกลาง (Common Fee)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
+                          <input 
+                            type="number" 
+                            value={formData.common_fee}
+                            onChange={(e) => setFormData({...formData, common_fee: parseFloat(e.target.value) || 0})}
+                            className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all"
+                            placeholder="150"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -591,7 +701,7 @@ export default function RoomsManagement() {
                             <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">เพิ่มรูป</span>
                             <input 
                                 type="file" 
-                                accept="image/*"
+                                accept="image/*" 
                                 multiple
                                 className="hidden" 
                                 onChange={handleFileUpload}
@@ -738,17 +848,74 @@ export default function RoomsManagement() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1 text-center">ราคาเช่ารายเดือนทุกห้อง (Rental Price)</label>
-                    <div className="relative group max-w-xs mx-auto">
-                        <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-muted-foreground group-focus-within:scale-110 transition-transform">฿</span>
-                        <input 
-                          type="number" 
-                          required
-                          value={batchForm.price}
-                          onChange={(e) => setBatchForm({...batchForm, price: parseFloat(e.target.value) || 0})}
-                          className="w-full pl-14 pr-6 py-5 bg-white/5 border border-emerald-500/40 rounded-[30px] font-black outline-none text-foreground text-3xl text-center focus:ring-8 focus:ring-emerald-500/10 focus:bg-card transition-all"
-                        />
+                  {/* Batch Pricing & Fees */}
+                  <div className="bg-emerald-500/10 p-5 rounded-3xl border border-emerald-500/20 space-y-4">
+                    <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest block">
+                      💵 อัตราค่าเช่าและค่าบริการสำหรับทุกห้องที่สร้าง
+                    </span>
+
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1 text-center">ราคาเช่ารายเดือนทุกห้อง (Rental Price)</label>
+                      <div className="relative group max-w-xs mx-auto">
+                          <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-muted-foreground group-focus-within:scale-110 transition-transform">฿</span>
+                          <input 
+                            type="number" 
+                            required
+                            value={batchForm.price}
+                            onChange={(e) => setBatchForm({...batchForm, price: parseFloat(e.target.value) || 0})}
+                            className="w-full pl-14 pr-6 py-4 bg-white/5 border border-emerald-500/40 rounded-[24px] font-black outline-none text-foreground text-2xl text-center focus:ring-4 focus:ring-emerald-500/10 focus:bg-card transition-all"
+                          />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
+                          🛡️ เงินประกัน (Deposit)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
+                          <input 
+                            type="number" 
+                            value={batchForm.deposit_amount}
+                            onChange={(e) => setBatchForm({...batchForm, deposit_amount: parseFloat(e.target.value) || 0})}
+                            className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all"
+                            placeholder="3000"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
+                          💧 ค่าน้ำ (Water Rate)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
+                          <input 
+                            type="number" 
+                            value={batchForm.water_rate}
+                            onChange={(e) => setBatchForm({...batchForm, water_rate: parseFloat(e.target.value) || 0})}
+                            className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all"
+                            placeholder="100"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
+                          🧹 ค่าส่วนกลาง (Common)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
+                          <input 
+                            type="number" 
+                            value={batchForm.common_fee}
+                            onChange={(e) => setBatchForm({...batchForm, common_fee: parseFloat(e.target.value) || 0})}
+                            className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all"
+                            placeholder="150"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
 

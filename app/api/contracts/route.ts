@@ -115,9 +115,25 @@ export async function POST(req: NextRequest) {
         }, { status: 400 });
       }
 
+      slipokRef = verifyResult.transRef || null;
+
+      // 🛡️ Anti-Replay Guard: Reject if this slip transaction reference has ever been used before anywhere
+      if (slipokRef && !slipokRef.startsWith('MOCK-')) {
+        const usedSlipCheck = await sql`
+          SELECT id, room_number, created_at FROM bills 
+          WHERE slipok_trans_ref = ${slipokRef}
+          LIMIT 1
+        `;
+        if (usedSlipCheck.length > 0) {
+          return NextResponse.json({
+            success: false,
+            message: `สลิปนี้เคยถูกส่งเข้ามาในระบบแล้ว (รหัสอ้างอิง: ${slipokRef}) ไม่สามารถนำสลิปเดิมมาใช้จองห้องพักใหม่ได้`
+          }, { status: 400 });
+        }
+      }
+
       isAutoApproved = true;
       slipVerified = 1;
-      slipokRef = verifyResult.transRef || null;
       slipRaw = JSON.stringify(verifyResult.rawData || {});
     }
 

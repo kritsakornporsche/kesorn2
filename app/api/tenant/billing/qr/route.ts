@@ -44,7 +44,7 @@ export async function GET(req: Request) {
         const diffTime = today.getTime() - due.getTime();
         if (diffTime > 0) {
           const daysOverdue = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-          const lateFee = daysOverdue * 100;
+          const lateFee = daysOverdue * 50;
           billAmount += lateFee;
         }
       }

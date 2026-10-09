@@ -7,6 +7,7 @@ import Image from 'next/image';
 import PremiumDatePicker from '@/app/components/PremiumDatePicker';
 import PrintableContractModal from '@/components/PrintableContractModal';
 import DepositRefundModal from '@/components/DepositRefundModal';
+import { PdpaOcrConsentModal } from '@/app/components/PdpaOcrConsentModal';
 
 interface Contract {
   id: number;
@@ -53,7 +54,9 @@ export default function OwnerContractsPage() {
   const [renewingContract, setRenewingContract] = useState<Contract | null>(null);
   const [previewingFileUrl, setPreviewingFileUrl] = useState<string | null>(null);
   const [previewingTitle, setPreviewingTitle] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'Active' | 'History' | 'MoveOut'>('Active');
+  const [activeTab, setActiveTab] = useState<'Active' | 'Renewal' | 'History' | 'MoveOut'>('Active');
+  const [rejectingContract, setRejectingContract] = useState<Contract | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   // Printable Contract Modal
@@ -72,6 +75,8 @@ export default function OwnerContractsPage() {
   // ID Card OCR state
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
   const [ocrSuccessMsg, setOcrSuccessMsg] = useState<string | null>(null);
+  const [isPdpaModalOpen, setIsPdpaModalOpen] = useState(false);
+  const [pendingOcrData, setPendingOcrData] = useState<{ base64: string; fileName: string } | null>(null);
 
   // New Contract Form State
   const [formData, setFormData] = useState({
@@ -152,50 +157,57 @@ export default function OwnerContractsPage() {
     }
   }, [formData.room_id, rooms]);
 
+  const processOcrImage = async (base64Data: string, fileName: string) => {
+    setIsOcrProcessing(true);
+    setOcrSuccessMsg(null);
+    try {
+      const res = await fetch('/api/owner/contracts/ocr-id', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64Data })
+      });
+      const ocrJson = await res.json();
+
+      if (ocrJson.success && ocrJson.data) {
+        const d = ocrJson.data;
+        setFormData(prev => ({
+          ...prev,
+          tenant_name: d.full_name_th || prev.tenant_name,
+          id_card_number: d.id_card_number || prev.id_card_number,
+          tenant_address: d.address || prev.tenant_address,
+          id_card_image: base64Data,
+          contract_file_url: prev.contract_file_url || base64Data,
+          contract_file_name: prev.contract_file_name || `บัตรประชาชน_${fileName}`,
+          tenant_email: prev.tenant_email || '',
+          tenant_phone: prev.tenant_phone || '',
+        }));
+        setOcrSuccessMsg(`✓ อ่านบัตรประชาชนสำเร็จ: ${d.full_name_th} (${d.id_card_number})`);
+      } else {
+        alert(ocrJson.message || 'ไม่สามารถอ่านข้อมูลบัตรได้ กรุณากรอกด้วยตนเอง');
+      }
+    } catch (err) {
+      console.error('OCR Error:', err);
+      alert('เกิดข้อผิดพลาดในการอ่านบัตรประชาชน');
+    } finally {
+      setIsOcrProcessing(false);
+    }
+  };
+
   // ID Card Image Upload & OCR
   const handleIdCardUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setIsOcrProcessing(true);
     setOcrSuccessMsg(null);
 
     const reader = new FileReader();
     reader.onloadend = async () => {
       const base64Data = reader.result as string;
-      try {
-        const res = await fetch('/api/owner/contracts/ocr-id', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: base64Data })
-        });
-        const ocrJson = await res.json();
-
-        if (ocrJson.success && ocrJson.data) {
-          const d = ocrJson.data;
-          setFormData(prev => ({
-            ...prev,
-            tenant_name: d.full_name_th || prev.tenant_name,
-            id_card_number: d.id_card_number || prev.id_card_number,
-            tenant_address: d.address || prev.tenant_address,
-            id_card_image: base64Data,
-            contract_file_url: prev.contract_file_url || base64Data,
-            contract_file_name: prev.contract_file_name || `บัตรประชาชน_${file.name}`,
-            tenant_email: prev.tenant_email || '',
-            tenant_phone: prev.tenant_phone || '',
-          }));
-          setOcrSuccessMsg(`✓ อ่านบัตรประชาชนสำเร็จ: ${d.full_name_th} (${d.id_card_number})`);
-        } else {
-          alert(ocrJson.message || 'ไม่สามารถอ่านข้อมูลบัตรได้ กรุณากรอกด้วยตนเอง');
-        }
-      } catch (err) {
-        console.error('OCR Error:', err);
-        alert('เกิดข้อผิดพลาดในการอ่านบัตรประชาชน');
-      } finally {
-        setIsOcrProcessing(false);
-      }
+      setPendingOcrData({ base64: base64Data, fileName: file.name });
+      setIsPdpaModalOpen(true);
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   // Smart Demo ID Card Quick Scan
@@ -349,6 +361,37 @@ export default function OwnerContractsPage() {
     }
   };
 
+  const handleRejectRenewalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectingContract) return;
+
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/owner/contracts/reject-renewal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contract_id: rejectingContract.id,
+          reject_reason: rejectReason,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('✓ ปฏิเสธคำขอต่อสัญญาเช่าเรียบร้อยแล้ว');
+        setRejectingContract(null);
+        setRejectReason('');
+        if (ownerDormId) fetchData(ownerDormId);
+      } else {
+        alert(data.message || 'เกิดข้อผิดพลาดในการปฏิเสธคำขอ');
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert('เกิดข้อผิดพลาด: ' + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleOpenUploadSignedModal = (c: Contract) => {
     setUploadingContract(c);
     setSignedContractFile(c.contract_file_url || null);
@@ -402,8 +445,14 @@ export default function OwnerContractsPage() {
 
   const activeContracts = contracts.filter(c => c.status === 'Active');
   const historyContracts = contracts.filter(c => c.status !== 'Active');
-  const renewalRequestedCount = activeContracts.filter(c => c.renewal_requested === 1).length;
+  const renewalRequestedContracts = activeContracts.filter(c => c.renewal_requested === 1);
+  const renewalRequestedCount = renewalRequestedContracts.length;
   const pendingMoveOutCount = moveOutRequests.filter(m => m.status === 'Pending').length;
+
+  const displayedContracts = 
+    activeTab === 'Renewal' ? renewalRequestedContracts :
+    activeTab === 'Active' ? activeContracts :
+    historyContracts;
 
   return (
     <div className="flex-1 overflow-y-auto bg-secondary/40 p-8 lg:p-12">
@@ -419,29 +468,8 @@ export default function OwnerContractsPage() {
               </h1>
             </div>
             <p className="text-muted-foreground text-sm font-medium ml-4 mt-1">
-              ทำสัญญาเช่าอัตโนมัติด้วยการถ่ายรูปบัตรประชาชน (Smart OCR) พิมพ์สัญญา A4 และคืนค่ามัดจำด้วย Dynamic PromptPay QR
+              ตรวจสอบสัญญาเช่า จัดการคำขอต่อสัญญา พิมพ์สัญญา A4 และคืนค่ามัดจำด้วย Dynamic PromptPay QR
             </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <button 
-              onClick={() => {
-                handleDemoIdCard();
-                setIsCreateModalOpen(true);
-              }}
-              className="px-6 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl shadow-xl hover:brightness-110 active:scale-95 transition-all flex items-center gap-2.5 cursor-pointer text-sm"
-            >
-              <span>🪪</span>
-              <span>ทำสัญญาจากบัตรประชาชน (Smart OCR)</span>
-            </button>
-
-            <button 
-              onClick={() => setIsCreateModalOpen(true)}
-              className="px-6 py-4 bg-primary text-white font-black rounded-2xl shadow-xl hover:brightness-110 active:scale-95 transition-all flex items-center gap-2.5 cursor-pointer text-sm"
-            >
-              <span>📝</span>
-              <span>บันทึกสัญญาใหม่</span>
-            </button>
           </div>
         </div>
 
@@ -463,6 +491,23 @@ export default function OwnerContractsPage() {
           </div>
 
           <div 
+            onClick={() => setActiveTab('Renewal')}
+            className={`p-6 rounded-3xl cursor-pointer transition-all border ${
+              activeTab === 'Renewal'
+                ? 'bg-blue-500/20 border-blue-500/60 shadow-lg shadow-blue-950/30'
+                : renewalRequestedCount > 0 
+                  ? 'bg-blue-500/15 border-blue-500/50 animate-pulse' 
+                  : 'bg-card border-border hover:border-white/20'
+            }`}
+          >
+            <div className="flex justify-between items-start mb-2">
+              <h3 className="text-xs font-black text-blue-400 uppercase tracking-widest">คำขอต่อสัญญา</h3>
+              <span className="text-xl">🔄</span>
+            </div>
+            <p className="text-4xl font-black text-blue-400">{renewalRequestedCount} <span className="text-xs text-blue-300/60 font-medium">รออนุมัติ</span></p>
+          </div>
+
+          <div 
             onClick={() => setActiveTab('MoveOut')}
             className={`p-6 rounded-3xl cursor-pointer transition-all border ${
               activeTab === 'MoveOut' 
@@ -475,21 +520,6 @@ export default function OwnerContractsPage() {
               <span className="text-xl">💰</span>
             </div>
             <p className="text-4xl font-black text-amber-400">{pendingMoveOutCount} <span className="text-xs text-amber-300/60 font-medium">รอคืนเงิน</span></p>
-          </div>
-
-          <div 
-            onClick={() => setActiveTab('Active')}
-            className={`p-6 rounded-3xl cursor-pointer transition-all border ${
-              renewalRequestedCount > 0 
-                ? 'bg-blue-500/15 border-blue-500/50 animate-pulse' 
-                : 'bg-card border-border'
-            }`}
-          >
-            <div className="flex justify-between items-start mb-2">
-              <h3 className="text-xs font-black text-blue-400 uppercase tracking-widest">คำขอต่อสัญญา</h3>
-              <span className="text-xl">🔄</span>
-            </div>
-            <p className="text-4xl font-black text-blue-400">{renewalRequestedCount} <span className="text-xs text-blue-300/60 font-medium">รายการ</span></p>
           </div>
 
           <div 
@@ -519,6 +549,22 @@ export default function OwnerContractsPage() {
             }`}
           >
             🟢 สัญญาปัจจุบัน ({activeContracts.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab('Renewal')}
+            className={`pb-4 font-black text-sm transition-all border-b-2 whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+              activeTab === 'Renewal' 
+                ? 'border-blue-500 text-blue-400' 
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <span>🔄 คำขอต่อสัญญา ({renewalRequestedCount})</span>
+            {renewalRequestedCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-500 text-slate-950 font-black animate-pulse">
+                {renewalRequestedCount}
+              </span>
+            )}
           </button>
 
           <button
@@ -571,14 +617,14 @@ export default function OwnerContractsPage() {
                         กำลังโหลดข้อมูลสัญญาเช่า...
                       </td>
                     </tr>
-                  ) : (activeTab === 'Active' ? activeContracts : historyContracts).length === 0 ? (
+                  ) : displayedContracts.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-20 text-center text-muted-foreground font-bold">
-                        ไม่พบรายการสัญญาในหมวดหมู่นี้
+                        {activeTab === 'Renewal' ? '🎉 ไม่มีคำขอต่อสัญญาเช่าที่รออนุมัติ' : 'ไม่พบรายการสัญญาในหมวดหมู่นี้'}
                       </td>
                     </tr>
                   ) : (
-                    (activeTab === 'Active' ? activeContracts : historyContracts).map((c) => (
+                    displayedContracts.map((c) => (
                       <tr key={c.id} className="hover:bg-white/5 transition-colors">
                         <td className="px-8 py-6">
                           <div className="flex items-center gap-3">
@@ -588,6 +634,11 @@ export default function OwnerContractsPage() {
                             <div>
                               <p className="font-black text-foreground">{c.tenant_name}</p>
                               <p className="text-xs text-muted-foreground">{c.tenant_phone || c.tenant_email || '-'}</p>
+                              {c.renewal_requested === 1 && (
+                                <div className="mt-1 px-2.5 py-1 bg-blue-500/15 border border-blue-500/30 rounded-lg text-[11px] text-blue-300 font-medium">
+                                  🔔 <strong>ขอต่อสัญญา:</strong> {c.renewal_note || 'ขอต่อสัญญาเช่า'}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -640,16 +691,47 @@ export default function OwnerContractsPage() {
 
                         <td className="px-8 py-6">
                           <span className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-lg border inline-block ${
+                            c.renewal_requested === 1 ? 'bg-blue-500/15 text-blue-400 border-blue-500/30 animate-pulse' :
                             c.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
                             c.status === 'Renewed' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
                             'bg-slate-500/10 text-slate-400 border-slate-500/20'
                           }`}>
-                            {c.status}
+                            {c.renewal_requested === 1 ? '🔄 ขอต่อสัญญา' : (c.status === 'Active' ? 'Active' : c.status === 'Renewed' ? 'ต่ออายุแล้ว' : c.status)}
                           </span>
                         </td>
 
                         <td className="px-8 py-6 text-center">
                           <div className="flex flex-wrap items-center justify-center gap-2">
+                            {/* Renew / Approve / Reject Contract Buttons */}
+                            {c.status === 'Active' && (
+                              <>
+                                <button
+                                  onClick={() => handleOpenRenewModal(c)}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95 ${
+                                    c.renewal_requested === 1
+                                      ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black shadow-lg shadow-emerald-500/20'
+                                      : 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30'
+                                  }`}
+                                  title={c.renewal_requested === 1 ? 'อนุมัติต่อสัญญาเช่า' : 'ต่ออายุสัญญาเช่าฉบับใหม่'}
+                                >
+                                  <span>{c.renewal_requested === 1 ? '✓ อนุมัติต่อสัญญา' : '🔄 ต่อสัญญา'}</span>
+                                </button>
+
+                                {c.renewal_requested === 1 && (
+                                  <button
+                                    onClick={() => {
+                                      setRejectingContract(c);
+                                      setRejectReason('');
+                                    }}
+                                    className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
+                                    title="ปฏิเสธคำขอต่อสัญญาเช่า"
+                                  >
+                                    <span>✕ ปฏิเสธ</span>
+                                  </button>
+                                )}
+                              </>
+                            )}
+
                             {/* Print / Download Contract Button */}
                             <button
                               onClick={() => {
@@ -693,17 +775,6 @@ export default function OwnerContractsPage() {
                               >
                                 <span>📷</span>
                                 <span>แนบรูปสัญญาที่เซ็น</span>
-                              </button>
-                            )}
-
-                            {/* Renew Button if active */}
-                            {c.status === 'Active' && (
-                              <button
-                                onClick={() => handleOpenRenewModal(c)}
-                                className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
-                              >
-                                <span>🔄</span>
-                                <span>ต่อสัญญา</span>
                               </button>
                             )}
                           </div>
@@ -1071,6 +1142,11 @@ export default function OwnerContractsPage() {
               <form onSubmit={handleRenewSubmit} className="p-8 space-y-6">
                 <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-amber-300 text-xs font-medium space-y-1">
                   <p className="font-bold">สัญญาเดิม: {new Date(renewingContract.start_date).toLocaleDateString('th-TH')} - {new Date(renewingContract.end_date).toLocaleDateString('th-TH')}</p>
+                  {renewingContract.renewal_requested === 1 && (
+                    <p className="text-blue-300 mt-1 pt-1 border-t border-amber-500/20">
+                      🔔 <strong>คำขอจากผู้เช่า:</strong> {renewingContract.renewal_note || 'ขอต่อสัญญาเช่า'}
+                    </p>
+                  )}
                 </div>
 
                 <PremiumDatePicker
@@ -1100,9 +1176,66 @@ export default function OwnerContractsPage() {
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="flex-[2] py-4 bg-amber-500 text-white font-black rounded-2xl shadow-xl hover:brightness-110 active:scale-95 transition-all disabled:opacity-50"
+                    className="flex-[2] py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl shadow-xl hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
                   >
-                    {submitting ? 'กำลังบันทึกต่ออายุ...' : 'บันทึกต่ออายุสัญญา →'}
+                    {submitting ? 'กำลังบันทึกต่ออายุ...' : '✓ อนุมัติและบันทึกต่ออายุสัญญา →'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal 2.1: Contract Renewal Rejection Modal */}
+        {rejectingContract && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-6 overflow-y-auto">
+            <div className="bg-card rounded-[36px] w-full max-w-lg border border-border shadow-2xl overflow-hidden">
+              <div className="bg-[#0B0F19] border-b border-border p-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-black text-rose-400">✕ ปฏิเสธคำขอต่อสัญญาเช่า</h2>
+                  <p className="text-xs text-muted-foreground font-medium mt-0.5">ห้อง {rejectingContract.room_number} - {rejectingContract.tenant_name}</p>
+                </div>
+                <button 
+                  onClick={() => setRejectingContract(null)}
+                  className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl text-muted-foreground hover:text-foreground flex items-center justify-center transition-all cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleRejectRenewalSubmit} className="p-6 space-y-6">
+                <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-rose-300 text-xs space-y-1">
+                  <p className="font-bold">สัญญาห้อง {rejectingContract.room_number} (สิ้นสุด {new Date(rejectingContract.end_date).toLocaleDateString('th-TH')})</p>
+                  <p className="text-white/80">🔔 <strong>คำขอเดิม:</strong> {rejectingContract.renewal_note || 'ขอต่อสัญญาเช่า'}</p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-black text-foreground/50 uppercase tracking-widest">
+                    ระบุเหตุผลในการปฏิเสธ (จะส่งแจ้งเตือนไปยังลูกหอ)
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="เช่น ทางหอพักมีแผนปรับปรุงห้องพักหลังหมดสัญญา..."
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    className="w-full px-5 py-4 bg-background border border-border rounded-2xl text-foreground text-sm outline-none focus:border-rose-500 transition-all custom-scrollbar"
+                  />
+                </div>
+
+                <div className="flex gap-4 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setRejectingContract(null)}
+                    className="flex-1 py-4 text-muted-foreground font-bold hover:bg-white/5 rounded-2xl transition-all"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="flex-[2] py-4 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-2xl shadow-xl hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {submitting ? 'กำลังบันทึก...' : 'ยืนยันปฏิเสธคำขอ →'}
                   </button>
                 </div>
               </form>
@@ -1275,6 +1408,24 @@ export default function OwnerContractsPage() {
             </div>
           </div>
         )}
+
+        {/* PDPA OCR Consent Modal */}
+        <PdpaOcrConsentModal
+          isOpen={isPdpaModalOpen}
+          title="หนังสือยินยอมการเก็บและประมวลผลบัตรประชาชน (PDPA)"
+          actionText="ยินยอมและอ่านข้อมูลบัตรด้วย AI"
+          onClose={() => {
+            setIsPdpaModalOpen(false);
+            setPendingOcrData(null);
+          }}
+          onConsent={() => {
+            setIsPdpaModalOpen(false);
+            if (pendingOcrData) {
+              processOcrImage(pendingOcrData.base64, pendingOcrData.fileName);
+              setPendingOcrData(null);
+            }
+          }}
+        />
 
       </div>
     </div>

@@ -633,7 +633,13 @@ export default function OwnerMoveOutPage() {
                 onClick={handleSubmitMeter}
                 className="px-6 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-xl text-xs font-black shadow-xl shadow-primary/20 cursor-pointer disabled:opacity-50"
               >
-                {submittingMeter ? 'กำลังบันทึก...' : 'ยืนยันและส่งบิล (Confirm & Issue)'}
+                {submittingMeter 
+                  ? 'กำลังบันทึก...' 
+                  : (!isEarlySelected && totalExpenseCalc === depositBase)
+                  ? '✓ ยืนยันปิดจบการย้ายออกทันที (หักล้าง 0 บาท)'
+                  : (!isEarlySelected && totalExpenseCalc < depositBase)
+                  ? 'ยืนยันและไปขั้นตอนคืนเงินประกัน →'
+                  : 'ยืนยันและส่งบิลค่าใช้จ่าย →'}
               </button>
             </div>
           </div>

@@ -9,6 +9,7 @@ import ChatWidget from '@/app/components/ChatWidget';
 import ContractSimulator from '@/app/components/ContractSimulator';
 import PrintableContractModal from '@/components/PrintableContractModal';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
+import { PdpaOcrConsentModal } from '@/app/components/PdpaOcrConsentModal';
 
 function getGoogleMapsEmbedUrl(mapUrl?: string, address?: string, dormName?: string) {
   if (mapUrl) {
@@ -82,6 +83,11 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
   const [createdContractId, setCreatedContractId] = useState<number | string | null>(null);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
+
+  // PDPA Consent Modal & Checkbox State
+  const [pdpaConsent, setPdpaConsent] = useState(false);
+  const [isPdpaModalOpen, setIsPdpaModalOpen] = useState(false);
+  const [pendingOcrImage, setPendingOcrImage] = useState<string | null>(null);
 
   // Camera state for guest ID scan
   const [cameraActive, setCameraActive] = useState<boolean>(false);
@@ -159,10 +165,14 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     }
   }, [step, sessionStatus, router]);
 
-  // Fetch saved progress on mount
+  // Fetch saved progress on mount (only if room is available)
   useEffect(() => {
     async function fetchProgress() {
-      if (sessionStatus === 'authenticated' && session?.user?.email && roomId) {
+      if (sessionStatus === 'authenticated' && session?.user?.email && roomId && room) {
+        if (!isRoomAvailable) {
+          setStep(1);
+          return;
+        }
         try {
           const res = await fetch(`/api/booking/progress?roomId=${roomId}`);
           const data = await res.json();
@@ -180,7 +190,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
       }
     }
     fetchProgress();
-  }, [sessionStatus, session, roomId]);
+  }, [sessionStatus, session, roomId, room, isRoomAvailable]);
 
   // Save progress whenever step or data changes
   useEffect(() => {
@@ -359,7 +369,8 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     setBookingData((prev) => ({ ...prev, id_card_image: base64Data }));
 
     const optimized = await optimizeImageForOcr(base64Data);
-    processIdImage(optimized);
+    setPendingOcrImage(optimized);
+    setIsPdpaModalOpen(true);
   };
 
   // Google Gemini Vision AI OCR Processor
@@ -428,7 +439,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
     setOcrErrorMsg(null);
     setOcrSuccessMsg(null);
-    setIsOcrProcessing(true);
 
     const reader = new FileReader();
     reader.onload = async () => {
@@ -441,10 +451,10 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
         imgToProcess = rawBase64;
       }
       setBookingData((prev) => ({ ...prev, id_card_image: imgToProcess }));
-      processIdImage(imgToProcess);
+      setPendingOcrImage(imgToProcess);
+      setIsPdpaModalOpen(true);
     };
     reader.onerror = () => {
-      setIsOcrProcessing(false);
       setOcrErrorMsg('ไม่สามารถอ่านไฟล์ภาพจากอุปกรณ์ได้ กรุณาลองใหม่อีกครั้ง');
     };
     reader.readAsDataURL(file);
@@ -590,6 +600,17 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
       const data = await res.json();
       if (!data.success) throw new Error(data.message);
 
+      // Clear booking progress
+      try {
+        await fetch('/api/booking/progress', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId: parseInt(roomId) })
+        });
+      } catch (pe) {
+        console.warn('Clear progress error:', pe);
+      }
+
       if (data.contractId) {
         setCreatedContractId(data.contractId);
       }
@@ -624,7 +645,8 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
   const images = getImagesArray(room.images || room.image_url);
   const isTestRoom = (room.room_number || '').toUpperCase() === 'T01';
   const totalDeposit = isTestRoom ? 1 : 1000; // ค่าจองห้องพักเพื่อยืนยันสิทธิ์ (T01 = 1 บาท, ห้องทั่วไป = 1,000 บาท)
-  const securityDeposit = isTestRoom ? 20 : 2000; // เงินประกันความเสียหาย (T01 = 20 บาท, ห้องทั่วไป = 2,000 บาท)
+  const fullDeposit = isTestRoom ? 20 : (room.deposit_amount ? Number(room.deposit_amount) : 3000);
+  const securityDeposit = Math.max(0, fullDeposit - totalDeposit); // เงินประกันส่วนที่เหลือชำระวันทำสัญญา
   const contractStartDate = new Date().toLocaleDateString('th-TH');
   const contractEndDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toLocaleDateString('th-TH');
 
@@ -850,7 +872,9 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     <span className="text-lg">📝</span>
                     <div className="text-xs">
                       <span className="font-bold block">การจองและเงินประกัน</span>
-                      <span className="text-muted-foreground text-[11px]">จองเพียง 1,000 บาท (เงินประกัน 2,000 บาท คืนเมื่อสิ้นสุดสัญญา)</span>
+                      <span className="text-muted-foreground text-[11px]">
+                        จองเพียง {totalDeposit.toLocaleString()} บาท (เงินประกันรวม {fullDeposit.toLocaleString()} บาท ชำระส่วนที่เหลือวันทำสัญญา คืนเมื่อสิ้นสุดสัญญา)
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -929,7 +953,9 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   <div className="flex justify-between items-center text-sm">
                     <div>
                       <span className="text-muted-foreground block">ค่าเช่ารายเดือน</span>
-                      <span className="text-[11px] text-cyan-500 font-semibold">ค่าน้ำเหมาจ่าย ฿100/ด. • ฟรี Wi-Fi</span>
+                      <span className="text-[11px] text-cyan-500 font-semibold">
+                        ค่าน้ำ ฿{Number(room.water_rate || 100).toLocaleString()}/ด. • ส่วนกลาง ฿{Number(room.common_fee || 150).toLocaleString()}/ด.
+                      </span>
                     </div>
                     <span className="font-bold">฿{Number(room.price).toLocaleString()} / เดือน</span>
                   </div>
@@ -993,8 +1019,30 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                       {isMovingOut ? 'ตกลงเช่า และเริ่มจองล่วงหน้า →' : 'ตกลงเช่า และเริ่มจองห้อง →'}
                     </button>
                   ) : (
-                    <div className="p-5 bg-muted rounded-2xl text-center text-xs text-muted-foreground font-semibold">
-                      ห้องพักนี้ไม่เปิดรับจองในขณะนี้
+                    <div className="p-6 bg-red-500/10 border border-red-500/20 rounded-3xl text-center space-y-3">
+                      <div className="w-10 h-10 bg-red-500/20 text-red-400 rounded-full flex items-center justify-center text-lg mx-auto">
+                        🔒
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-red-400">ห้องพักนี้มีผู้จองแล้ว / ไม่ว่างในขณะนี้</p>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          คุณสามารถตรวจสอบสถานะการจองของคุณ หรือเลือกดูห้องพักอื่นที่ยังว่างอยู่ได้ครับ
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-2 pt-1">
+                        <Link
+                          href="/explore/booking-status"
+                          className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl text-xs transition-all shadow-md active:scale-95"
+                        >
+                          📋 ตรวจสอบสถานะการจองของฉัน
+                        </Link>
+                        <Link
+                          href="/"
+                          className="w-full py-2.5 bg-secondary hover:bg-secondary/80 text-foreground font-semibold rounded-xl text-xs transition-all border border-border"
+                        >
+                          🔍 ดูห้องพักอื่นที่ว่าง
+                        </Link>
+                      </div>
                     </div>
                   )}
 
@@ -1295,6 +1343,33 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     </div>
                   )}
 
+                  {/* Mandatory PDPA Checkbox before scanning/uploading ID card */}
+                  <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 space-y-2.5">
+                    <label className="flex items-start gap-3 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        id="mandatory-pdpa-consent"
+                        checked={pdpaConsent}
+                        onChange={(e) => setPdpaConsent(e.target.checked)}
+                        className="mt-1 w-4 h-4 rounded border-blue-400 text-primary focus:ring-primary cursor-pointer shrink-0"
+                      />
+                      <div className="space-y-1.5">
+                        <span className="text-xs font-bold text-foreground leading-tight block">
+                          ยินยอมให้ประมวลผลข้อมูลส่วนบุคคลและภาพถ่ายบัตรประชาชน (PDPA & AI Data Privacy) <span className="text-rose-500">*</span>
+                        </span>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                          ข้าพเจ้ายินยอมให้ส่งภาพถ่ายบัตรประชาชนเพื่อประมวลผลด้วย <strong>Google Gemini AI Vision API</strong> สำหรับการอ่านตัวอักษรและกรอกสัญญาเช่าหอพักเกษร 2 อัตโนมัติ
+                        </p>
+                        <div className="p-2.5 bg-background/60 rounded-xl border border-border/80 text-[10px] text-muted-foreground space-y-1 leading-relaxed">
+                          <p className="font-bold text-foreground">🛡️ มาตรฐานความปลอดภัยข้อมูลของ Google Gemini API:</p>
+                          <p>• <strong>ไม่นำข้อมูลไปเทรน AI:</strong> ข้อมูลภาพและตัวอักษรจะ<strong>ไม่ถูกนำไปใช้ฝึกฝน (Train AI)</strong> โมเดลสาธารณะของ Google แต่อย่างใด</p>
+                          <p>• <strong>เข้ารหัสระดับสูง:</strong> ส่งข้อมูลผ่านการเข้ารหัส HTTPS/TLS ไปยัง Google Cloud เพื่อแปลงข้อความแล้วส่งกลับมายังระบบหอพักทันที</p>
+                          <p>• <strong>ไม่เผยแพร่ต่อบุคคลภายนอก:</strong> นำข้อมูลไปใช้เพื่อตรวจสอบและสร้างเอกสารสัญญาเช่าฉบับจริงเท่านั้น</p>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+
                   {/* Upload & Camera Actions when not active and not processing */}
                   {!cameraActive && !isOcrProcessing && (
                     <div className="space-y-3">
@@ -1321,61 +1396,115 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => startCamera()}
+                              onClick={() => {
+                                if (!pdpaConsent) {
+                                  alert('กรุณากดยินยอม PDPA ด้านบนก่อนเปิดกล้อง');
+                                  return;
+                                }
+                                startCamera();
+                              }}
                               className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-foreground rounded-xl text-xs font-bold border border-border cursor-pointer"
                             >
                               📷 ถ่ายกล้องสด
                             </button>
-                            <label className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-xl text-xs font-bold border border-emerald-500/30 cursor-pointer">
+                            <label className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                              pdpaConsent
+                                ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30 cursor-pointer'
+                                : 'bg-muted/40 text-muted-foreground border-border opacity-50 cursor-not-allowed'
+                            }`}>
                               📱 กล้องมือถือ
-                              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleIdCardUpload} />
+                              <input
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                className="hidden"
+                                disabled={!pdpaConsent}
+                                onChange={handleIdCardUpload}
+                              />
                             </label>
-                            <label className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl text-xs font-bold border border-primary/20 cursor-pointer">
+                            <label className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                              pdpaConsent
+                                ? 'bg-primary/10 hover:bg-primary/20 text-primary border-primary/20 cursor-pointer'
+                                : 'bg-muted/40 text-muted-foreground border-border opacity-50 cursor-not-allowed'
+                            }`}>
                               📁 อัปโหลดไฟล์
-                              <input type="file" accept="image/*" className="hidden" onChange={handleIdCardUpload} />
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                disabled={!pdpaConsent}
+                                onChange={handleIdCardUpload}
+                              />
                             </label>
                           </div>
                         </div>
                       ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          {/* Option 1: Live WebRTC Camera */}
-                          <button
-                            type="button"
-                            onClick={() => startCamera()}
-                            className="p-4 bg-primary/10 hover:bg-primary/20 border-2 border-primary/30 hover:border-primary rounded-2xl flex flex-col items-center justify-center gap-2 transition-all cursor-pointer group active:scale-98"
-                          >
-                            <div className="w-10 h-10 rounded-2xl bg-primary text-white flex items-center justify-center text-lg shadow-md group-hover:scale-110 transition-transform">
-                              📸
+                        <div className="relative">
+                          {!pdpaConsent && (
+                            <div className="mb-2 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-2 text-amber-400 text-xs font-semibold">
+                              <span>🔒</span>
+                              <span>กรุณากดทำเครื่องหมายยินยอม PDPA ด้านบนก่อน จึงจะสามารถเปิดกล้องหรืออัปโหลดรูปบัตรได้</span>
                             </div>
-                            <span className="text-xs font-black text-foreground">เปิดกล้องสด (Live)</span>
-                            <span className="text-[10px] text-muted-foreground text-center">
-                              ส่องบัตรผ่านหน้าจอแบบเรียลไทม์
-                            </span>
-                          </button>
+                          )}
 
-                          {/* Option 2: Mobile Native Camera */}
-                          <label className="p-4 bg-emerald-500/10 hover:bg-emerald-500/20 border-2 border-dashed border-emerald-500/30 hover:border-emerald-500/60 rounded-2xl flex flex-col items-center justify-center gap-2 transition-all cursor-pointer group active:scale-98">
-                            <div className="w-10 h-10 rounded-2xl bg-emerald-500 text-slate-950 flex items-center justify-center text-lg shadow-md group-hover:scale-110 transition-transform">
-                              📱
-                            </div>
-                            <span className="text-xs font-black text-emerald-400">ถ่ายรูปด้วยกล้องมือถือ</span>
-                            <span className="text-[10px] text-muted-foreground text-center">
-                              เปิดแอปกล้องในโทรศัพท์ทันที
-                            </span>
-                            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleIdCardUpload} />
-                          </label>
+                          <div className={`grid grid-cols-1 sm:grid-cols-3 gap-3 transition-opacity ${!pdpaConsent ? 'opacity-40 pointer-events-none' : ''}`}>
+                            {/* Option 1: Live WebRTC Camera */}
+                            <button
+                              type="button"
+                              disabled={!pdpaConsent}
+                              onClick={() => startCamera()}
+                              className="p-4 bg-primary/10 hover:bg-primary/20 border-2 border-primary/30 hover:border-primary rounded-2xl flex flex-col items-center justify-center gap-2 transition-all cursor-pointer group active:scale-98 disabled:cursor-not-allowed"
+                            >
+                              <div className="w-10 h-10 rounded-2xl bg-primary text-white flex items-center justify-center text-lg shadow-md group-hover:scale-110 transition-transform">
+                                📸
+                              </div>
+                              <span className="text-xs font-black text-foreground">เปิดกล้องสด (Live)</span>
+                              <span className="text-[10px] text-muted-foreground text-center">
+                                ส่องบัตรผ่านหน้าจอแบบเรียลไทม์
+                              </span>
+                            </button>
 
-                          {/* Option 3: File Upload */}
-                          <label className="p-4 bg-background/80 hover:bg-background border-2 border-dashed border-primary/30 hover:border-primary rounded-2xl flex flex-col items-center justify-center gap-2 transition-all cursor-pointer group active:scale-98">
-                            <div className="w-10 h-10 rounded-2xl bg-secondary text-primary flex items-center justify-center text-lg group-hover:scale-110 transition-transform">
-                              📁
-                            </div>
-                            <span className="text-xs font-black text-foreground">เลือกไฟล์รูปบัตร</span>
-                            <span className="text-[10px] text-muted-foreground text-center">
-                              อัปโหลด JPG / PNG จากเครื่อง
-                            </span>
-                            <input type="file" accept="image/*" className="hidden" onChange={handleIdCardUpload} />
-                          </label>
+                            {/* Option 2: Mobile Native Camera */}
+                            <label className={`p-4 bg-emerald-500/10 hover:bg-emerald-500/20 border-2 border-dashed border-emerald-500/30 hover:border-emerald-500/60 rounded-2xl flex flex-col items-center justify-center gap-2 transition-all group active:scale-98 ${
+                              pdpaConsent ? 'cursor-pointer' : 'cursor-not-allowed'
+                            }`}>
+                              <div className="w-10 h-10 rounded-2xl bg-emerald-500 text-slate-950 flex items-center justify-center text-lg shadow-md group-hover:scale-110 transition-transform">
+                                📱
+                              </div>
+                              <span className="text-xs font-black text-emerald-400">ถ่ายรูปด้วยกล้องมือถือ</span>
+                              <span className="text-[10px] text-muted-foreground text-center">
+                                เปิดแอปกล้องในโทรศัพท์ทันที
+                              </span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                className="hidden"
+                                disabled={!pdpaConsent}
+                                onChange={handleIdCardUpload}
+                              />
+                            </label>
+
+                            {/* Option 3: File Upload */}
+                            <label className={`p-4 bg-background/80 hover:bg-background border-2 border-dashed border-primary/30 hover:border-primary rounded-2xl flex flex-col items-center justify-center gap-2 transition-all group active:scale-98 ${
+                              pdpaConsent ? 'cursor-pointer' : 'cursor-not-allowed'
+                            }`}>
+                              <div className="w-10 h-10 rounded-2xl bg-secondary text-primary flex items-center justify-center text-lg group-hover:scale-110 transition-transform">
+                                📁
+                              </div>
+                              <span className="text-xs font-black text-foreground">เลือกไฟล์รูปบัตร</span>
+                              <span className="text-[10px] text-muted-foreground text-center">
+                                อัปโหลด JPG / PNG จากเครื่อง
+                              </span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                disabled={!pdpaConsent}
+                                onChange={handleIdCardUpload}
+                              />
+                            </label>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1716,6 +1845,22 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
       {/* Chat Widget */}
       {room && <ChatWidget dormId={room.dorm_id} ownerName={room.owner_name} />}
+
+      {/* PDPA OCR Consent Modal */}
+      <PdpaOcrConsentModal
+        isOpen={isPdpaModalOpen}
+        onClose={() => {
+          setIsPdpaModalOpen(false);
+          setPendingOcrImage(null);
+        }}
+        onConsent={() => {
+          setIsPdpaModalOpen(false);
+          if (pendingOcrImage) {
+            processIdImage(pendingOcrImage);
+            setPendingOcrImage(null);
+          }
+        }}
+      />
     </div>
   );
 }

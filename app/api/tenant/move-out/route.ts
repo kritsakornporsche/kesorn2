@@ -87,13 +87,6 @@ export async function POST(req: Request) {
     const desiredDateObj = new Date(desiredDate);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const advanceDays = Math.ceil((desiredDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    if (advanceDays < 30) {
-      return NextResponse.json({
-        success: false,
-        message: 'ตามระเบียบหอพัก ต้องแจ้งย้ายออกล่วงหน้าอย่างน้อย 30 วัน (ไม่สามารถเลือกวันที่น้อยกว่า 30 วันได้)'
-      }, { status: 400 });
-    }
 
     const sql = getDb();
     
@@ -148,14 +141,16 @@ export async function POST(req: Request) {
     const unpaidTotal = unpaidBills.reduce((sum: number, b: any) => sum + Number(b.amount || 0), 0);
 
     // 3. Audit Check 3: Calculate net refund
-    const penaltyAmount = isCompleted ? 0 : 0; // Configurable penalty or 0
-    const netRefund = Math.max(0, depositAmount - unpaidTotal - penaltyAmount);
+    // For early move out: deposit is not refunded, netRefund = 0
+    const penaltyAmount = isCompleted ? 0 : depositAmount;
+    const netRefund = isCompleted ? Math.max(0, depositAmount - unpaidTotal) : 0;
 
     // 4. Audit Check 4: PromptPay Target & Exact-Amount QR payload
-    const promptpayTarget = (promptpayTargetInput || tenant.phone || tenant.id_card_number || '0829853519').replace(/[\s-]/g, '');
+    const rawTarget = isCompleted ? (promptpayTargetInput || tenant.phone || tenant.id_card_number || '') : (promptpayTargetInput || '-');
+    const promptpayTarget = rawTarget.replace(/[\s-]/g, '') || '-';
     let qrPayload = '';
     try {
-      if (promptpayTarget && netRefund > 0) {
+      if (isCompleted && promptpayTarget && promptpayTarget !== '-' && netRefund > 0) {
         qrPayload = generatePayload(promptpayTarget, { amount: netRefund });
       }
     } catch (e) {
@@ -172,7 +167,7 @@ export async function POST(req: Request) {
       )
       VALUES (
         ${tenantId}, ${roomId}, ${desiredDate}, ${desiredDate}, ${reason || null}, 'Pending',
-        ${promptpayTarget}, ${promptpayName || tenant.name}, ${bankName || 'พร้อมเพย์'}, ${contractId},
+        ${promptpayTarget}, ${promptpayName || (isCompleted ? tenant.name : 'ผู้เช่า (ออกก่อนกำหนด)')}, ${bankName || (isCompleted ? 'พร้อมเพย์' : 'ไม่ต้องโอนคืน')}, ${contractId},
         ${depositAmount}, ${unpaidTotal}, ${penaltyAmount}, ${netRefund},
         ${isCompleted ? 1 : 0}, ${qrPayload || null}, 'PendingMeter'
       )

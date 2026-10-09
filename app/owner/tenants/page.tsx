@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 
+import WalkInTenantModal from '@/app/components/WalkInTenantModal';
+
 interface Tenant {
   id: number;
   name: string;
@@ -16,6 +18,7 @@ interface Tenant {
 export default function TenantsManagement() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isWalkInOpen, setIsWalkInOpen] = useState(false);
   const router = useRouter();
 
   // Search & Filter state (Rule 12)
@@ -76,13 +79,23 @@ export default function TenantsManagement() {
           </div>
         </div>
 
-        <button
-          onClick={fetchTenants}
-          className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white font-bold text-xs rounded-xl border border-white/10 transition-all flex items-center gap-2 self-start sm:self-auto"
-        >
-          <span>🔄</span>
-          <span>รีเฟรช</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={() => setIsWalkInOpen(true)}
+            className="px-4 py-2.5 bg-primary hover:bg-primary/90 text-white font-black text-xs rounded-xl shadow-lg transition-all flex items-center gap-2 hover:scale-105 active:scale-95 cursor-pointer"
+          >
+            <span>🚶</span>
+            <span>+ เพิ่มผู้เช่าแบบ Walk-in</span>
+          </button>
+
+          <button
+            onClick={fetchTenants}
+            className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white font-bold text-xs rounded-xl border border-white/10 transition-all flex items-center gap-2"
+          >
+            <span>🔄</span>
+            <span>รีเฟรช</span>
+          </button>
+        </div>
       </div>
 
       {/* Search & Filter Controls (Rule 12) */}
@@ -198,6 +211,15 @@ export default function TenantsManagement() {
           </div>
         )}
       </div>
+
+      {/* Walk-in Modal */}
+      <WalkInTenantModal
+        isOpen={isWalkInOpen}
+        onClose={() => setIsWalkInOpen(false)}
+        onSuccess={() => {
+          fetchTenants();
+        }}
+      />
     </div>
   );
 }

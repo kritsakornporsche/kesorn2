@@ -9,8 +9,11 @@ export async function GET(req: Request) {
   try {
     const session = await auth();
     const role = (session?.user as any)?.role;
-    if (!session?.user || (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin')) {
+    if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
+      return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
     }
     const sql = getDb();
     const { searchParams } = new URL(req.url);
@@ -121,8 +124,11 @@ export async function POST(req: Request) {
   try {
     const session = await auth();
     const role = (session?.user as any)?.role;
-    if (!session?.user || (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin')) {
+    if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
+      return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
     }
     const sql = getDb();
     const body = await req.json();
@@ -143,7 +149,7 @@ export async function POST(req: Request) {
 
     // 1. Fetch move-out request
     const reqRes = await sql`
-      SELECT mor.*, c.start_date, c.end_date, c.deposit_amount as c_deposit, r.price as room_price, r.dorm_id, t.user_id, t.email as t_email
+      SELECT mor.*, c.start_date, c.end_date, c.deposit_amount as c_deposit, r.price as room_price, r.dorm_id, r.room_number, t.user_id, t.email as t_email, t.name as tenant_name
       FROM move_out_requests mor
       LEFT JOIN contracts c ON c.id = COALESCE(mor.contract_id, (SELECT id FROM contracts WHERE tenant_id = mor.tenant_id ORDER BY id DESC LIMIT 1))
       LEFT JOIN rooms r ON mor.room_id = r.id
@@ -189,7 +195,7 @@ export async function POST(req: Request) {
     let newReqStatus = 'Approved';
 
     if (moveOutType === 'Early') {
-      // 16.1.1: No deposit refund (deposit 3000 seized), tenant pays full expenses
+      // 16.1.1: No deposit refund (deposit seized), tenant pays final expense bill
       settlementType = 'TenantPay';
       netRefundAmount = 0;
       newSettlementStatus = totalExpenses === 0 ? 'Completed' : 'PendingPayment';
@@ -244,7 +250,82 @@ export async function POST(req: Request) {
       WHERE id = ${requestId}
     `;
 
-    // 6. Mark contract as 'MoveOutPending' to prevent regular billing portal duplication (Rule 16.1)
+    // 6. If Tenant Must Pay (Early Move-Out OR Normal Move-Out with insufficient deposit), auto-generate final settlement bill in bills table
+    const tenantMustPayAmount = moveOutType === 'Early' ? totalExpenses : Math.max(0, totalExpenses - 3000.00);
+    if ((settlementType === 'TenantPay' || moveOutType === 'Early') && tenantMustPayAmount > 0) {
+      const currentCycle = new Date().toISOString().substring(0, 7);
+      const billTitle = moveOutType === 'Early' 
+        ? `บิลค่าใช้จ่ายรอบสุดท้ายก่อนย้ายออก (ย้ายออกก่อนกำหนด)` 
+        : `บิลค่าใช้จ่ายส่วนต่างหลังหักเงินประกัน (ย้ายออกตามกำหนด)`;
+      
+      // Give tenant 3-5 days grace period to pay the final move-out bill
+      const gracePeriod = new Date();
+      gracePeriod.setDate(gracePeriod.getDate() + 3);
+      const dueDateStr = readyToOccupyDate ? new Date(readyToOccupyDate).toISOString().slice(0, 10) : gracePeriod.toISOString().slice(0, 10);
+
+      // Check if an unpaid move_out bill already exists for this tenant
+      const existingMoveOutBill = await sql`
+        SELECT id FROM bills 
+        WHERE tenant_id = ${moveReq.tenant_id} 
+          AND bill_type = 'move_out_settlement' 
+          AND status NOT IN ('Paid', 'paid', 'Cancelled')
+        LIMIT 1
+      `;
+
+      if (existingMoveOutBill.length > 0) {
+        // Update the existing bill
+        await sql`
+          UPDATE bills 
+          SET 
+            amount = ${tenantMustPayAmount},
+            title = ${billTitle},
+            room_amount = ${roomRentAmount},
+            water_amount = ${waterAmount},
+            electric_amount = ${electricAmount},
+            water_units = 1.00,
+            electric_units = ${unitsUsed},
+            common_fee = ${commonFee},
+            due_date = ${dueDateStr}
+          WHERE id = ${existingMoveOutBill[0].id}
+        `;
+      } else {
+        // Create a new move_out settlement bill
+        await sql`
+          INSERT INTO bills (
+            tenant_id, dorm_id, room_number, title, amount, billing_cycle,
+            due_date, status, bill_type, room_amount, water_units,
+            electric_units, water_amount, electric_amount, common_fee, created_at
+          )
+          VALUES (
+            ${moveReq.tenant_id}, ${moveReq.dorm_id || 1}, ${moveReq.room_number || '-'}, ${billTitle}, ${tenantMustPayAmount}, ${currentCycle},
+            ${dueDateStr}, 'Unpaid', 'move_out_settlement', ${roomRentAmount}, 1.00,
+            ${unitsUsed}, ${waterAmount}, ${electricAmount}, ${commonFee}, NOW()
+          )
+        `;
+      }
+
+      // Send notification to tenant
+      if (moveReq.user_id) {
+        try {
+          await sql`
+            INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+            VALUES (
+              ${moveReq.user_id},
+              'เจ้าของหอพักได้ส่งบิลค่าใช้จ่ายรอบสุดท้ายให้ท่านแล้ว',
+              ${`บิลค่าใช้จ่ายปิดห้องพัก (${billTitle}) ยอดรวม ฿${tenantMustPayAmount.toLocaleString()} บาท กรุณาตรวจสอบและชำระเงิน`},
+              'bill_created',
+              0,
+              '/tenant/billing',
+              NOW()
+            )
+          `;
+        } catch (notifErr) {
+          console.warn('Tenant bill notification warn:', notifErr);
+        }
+      }
+    }
+
+    // 7. Mark contract as 'MoveOutPending' to prevent regular billing portal duplication (Rule 16.1)
     if (moveReq.contract_id) {
       await sql`
         UPDATE contracts 
@@ -294,8 +375,11 @@ export async function PUT(req: Request) {
   try {
     const session = await auth();
     const role = (session?.user as any)?.role;
-    if (!session?.user || (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin')) {
+    if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
+      return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
     }
     const sql = getDb();
     const body = await req.json();

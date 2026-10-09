@@ -50,14 +50,21 @@ export async function GET() {
       JOIN rooms r ON c.room_id = r.id
       LEFT JOIN dormitory_registry dr ON r.dorm_id = dr.id
       LEFT JOIN dormitory_profile dp ON dp.id = 1
-      LEFT JOIN bills b ON (b.tenant_id = c.tenant_id AND (b.is_first_bill = 1 OR b.bill_type = 'booking') AND b.status != 'Cancelled')
+      LEFT JOIN (
+        SELECT id, tenant_id, room_number, amount, status, due_date, slip_url, room_amount
+        FROM bills
+        WHERE (is_first_bill = 1 OR bill_type = 'booking') AND status != 'Cancelled'
+        ORDER BY id DESC
+        LIMIT 1
+      ) b ON (b.tenant_id = c.tenant_id)
       WHERE (t.email = ${session.user.email} 
          OR t.user_id = ${(session.user as any).id || 0}
          OR c.id_card_number IN (SELECT id_card_number FROM contracts WHERE tenant_id IN (SELECT id FROM tenants WHERE email = ${session.user.email}))
          OR c.tenant_id IN (SELECT id FROM tenants WHERE email = ${session.user.email}))
         AND c.status IN ('PendingContract', 'PendingFirstBill', 'PendingOwnerSignature', 'Active', 'Cancelled', 'Rejected')
+      GROUP BY c.id
       ORDER BY c.id DESC
-      LIMIT 5
+      LIMIT 10
     `;
 
     return NextResponse.json({

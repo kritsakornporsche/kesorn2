@@ -145,6 +145,10 @@ export default function GuestDormRoomsPage({ params }: { params: Promise<{ dormI
       return true;
     })
     .sort((a, b) => {
+      const isTestA = /^t0?1$/i.test(a.room_number) || /^tc0?1$/i.test(a.room_number);
+      const isTestB = /^t0?1$/i.test(b.room_number) || /^tc0?1$/i.test(b.room_number);
+      if (isTestA && !isTestB) return -1;
+      if (!isTestA && isTestB) return 1;
       if (a.floor !== b.floor) return a.floor - b.floor;
       return a.room_number.localeCompare(b.room_number, undefined, { numeric: true });
     });

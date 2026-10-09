@@ -26,7 +26,7 @@ export async function POST(req: Request) {
 
     // 1. Fetch contract and bill
     const contracts = await sql`
-      SELECT c.*, t.id as tenant_id, t.user_id, t.email as tenant_email, r.id as room_id, r.room_number, r.dorm_id
+      SELECT c.*, t.id as tenant_id, t.user_id, t.email as tenant_email, r.id as room_id, r.room_number, r.dorm_id, r.deposit_amount as room_deposit_amount
       FROM contracts c
       LEFT JOIN tenants t ON c.tenant_id = t.id
       LEFT JOIN rooms r ON c.room_id = r.id
@@ -90,9 +90,9 @@ export async function POST(req: Request) {
     const { saveBase64Image } = await import('@/lib/file-storage');
     const storedSlipUrl = saveBase64Image(slipUrl, 'slips', `first_bill_${contract.tenant_id}_${contract.room_id}`) || slipUrl;
 
-    // 3. Update contract: deposit_amount = totalRequiredDeposit (20 for T01, 3000 for standard), status = 'Active' (Rule 2.1.3)
+    // 3. Update contract: deposit_amount = totalRequiredDeposit (20 for T01, room.deposit_amount / 3000 for standard), status = 'Active' (Rule 2.1.3)
     const isTestRoom = (contract.room_number || '').toUpperCase() === 'T01';
-    const totalDepositAmount = isTestRoom ? 20.00 : 3000.00;
+    const totalDepositAmount = isTestRoom ? 20.00 : (Number(contract.room_deposit_amount) || 3000.00);
 
     await sql`
       UPDATE contracts 
@@ -123,13 +123,21 @@ export async function POST(req: Request) {
       await sql`UPDATE rooms SET status = 'Occupied' WHERE id = ${contract.room_id}`;
     }
 
-    // 6. Update user role to 'tenant' in users table
+    // 6. Update user role to 'tenant' in users table & tenants table
     const targetEmail = contract.tenant_email || session.user.email;
     await sql`
       UPDATE users 
       SET role = 'tenant', primary_role = 'tenant'
       WHERE LOWER(email) = LOWER(${targetEmail}) OR id = ${contract.user_id || 0}
     `;
+
+    if (contract.tenant_id) {
+      await sql`
+        UPDATE tenants 
+        SET status = 'active', room_id = ${contract.room_id}
+        WHERE id = ${contract.tenant_id}
+      `;
+    }
 
     return NextResponse.json({
       success: true,

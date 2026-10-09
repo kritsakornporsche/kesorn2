@@ -17,18 +17,58 @@ export async function GET(req: Request) {
     let corrections;
     if (billId) {
       corrections = await sql`
-        SELECT bc.*, b.room_number, b.billing_cycle, u.name as requester_name
+        SELECT bc.*, b.room_number, b.billing_cycle, u.name as requester_name,
+               COALESCE(mr.photo_url, (
+                 SELECT mr2.photo_url 
+                 FROM meter_readings mr2 
+                 JOIN rooms r ON r.id = mr2.room_id 
+                 WHERE r.room_number = b.room_number 
+                   AND mr2.photo_url IS NOT NULL 
+                   AND mr2.photo_url != '' 
+                 ORDER BY mr2.id DESC 
+                 LIMIT 1
+               )) as meter_photo_url
         FROM bill_corrections bc
         JOIN bills b ON bc.bill_id = b.id
+        LEFT JOIN rooms r ON r.room_number = b.room_number
+        LEFT JOIN meter_readings mr ON mr.id = (
+          SELECT mr3.id 
+          FROM meter_readings mr3 
+          WHERE mr3.room_id = r.id 
+            AND (mr3.billing_cycle = b.billing_cycle OR mr3.billing_cycle IS NULL)
+            AND (mr3.type = 'Electricity' OR mr3.type = 'Electric')
+          ORDER BY mr3.id DESC 
+          LIMIT 1
+        )
         LEFT JOIN users u ON bc.requester_id = u.id
         WHERE bc.bill_id = ${billId}
         ORDER BY bc.id DESC
       `;
     } else {
       corrections = await sql`
-        SELECT bc.*, b.room_number, b.billing_cycle, u.name as requester_name
+        SELECT bc.*, b.room_number, b.billing_cycle, u.name as requester_name,
+               COALESCE(mr.photo_url, (
+                 SELECT mr2.photo_url 
+                 FROM meter_readings mr2 
+                 JOIN rooms r ON r.id = mr2.room_id 
+                 WHERE r.room_number = b.room_number 
+                   AND mr2.photo_url IS NOT NULL 
+                   AND mr2.photo_url != '' 
+                 ORDER BY mr2.id DESC 
+                 LIMIT 1
+               )) as meter_photo_url
         FROM bill_corrections bc
         JOIN bills b ON bc.bill_id = b.id
+        LEFT JOIN rooms r ON r.room_number = b.room_number
+        LEFT JOIN meter_readings mr ON mr.id = (
+          SELECT mr3.id 
+          FROM meter_readings mr3 
+          WHERE mr3.room_id = r.id 
+            AND (mr3.billing_cycle = b.billing_cycle OR mr3.billing_cycle IS NULL)
+            AND (mr3.type = 'Electricity' OR mr3.type = 'Electric')
+          ORDER BY mr3.id DESC 
+          LIMIT 1
+        )
         LEFT JOIN users u ON bc.requester_id = u.id
         ORDER BY bc.id DESC
         LIMIT 50
@@ -79,15 +119,18 @@ export async function POST(req: Request) {
     const userId = (session.user as any)?.id || 1;
 
     // Recalculate new total
+    // Support either entering units directly or absolute meter reading
+    let newUnits = Number(newElectricReading || 0);
     const prevReading = Number(bill.electric_reading_prev || 0);
-    const newReading = Number(newElectricReading);
-    const newUnits = Math.max(0, newReading - prevReading);
+    if (newUnits > prevReading && prevReading > 0) {
+      newUnits = Math.max(0, newUnits - prevReading);
+    }
     const elecRate = 4.88;
-    const newElecAmount = newUnits * elecRate;
+    const newElecAmount = Number((newUnits * elecRate).toFixed(2));
     const waterAmount = Number(bill.water_amount || 100);
     const commonFee = Number(bill.common_fee || 150);
     const roomAmount = Number(bill.room_amount || 3400);
-    const newTotal = roomAmount + newElecAmount + waterAmount + commonFee;
+    const newTotal = Number((roomAmount + newElecAmount + waterAmount + commonFee).toFixed(2));
 
     // 2. Insert correction request
     const insertRes = await sql`
@@ -107,9 +150,37 @@ export async function POST(req: Request) {
       WHERE id = ${billId}
     `;
 
+    // Notify Owner if requested by tenant
+    if (userRole === 'tenant') {
+      try {
+        const ownerUser = await sql`
+          SELECT u.id FROM users u
+          JOIN dormitory_registry dr ON dr.owner_id = u.id OR LOWER(dr.owner_email) = LOWER(u.email)
+          WHERE dr.id = 1
+          LIMIT 1
+        `;
+        if (ownerUser.length > 0) {
+          await sql`
+            INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+            VALUES (
+              ${ownerUser[0].id},
+              'มีคำขอแก้ไขบิลค่าใช้จ่าย',
+              ${'ลูกหอห้อง ' + (bill.room_number || '') + ' ได้ส่งคำขอแก้ไขค่ามิเตอร์ไฟในบิล #' + bill.id + ' (' + (reason || 'ขอตรวจสอบมิเตอร์ใหม่') + ')'},
+              'bill_dispute',
+              0,
+              '/owner/billing',
+              NOW()
+            )
+          `;
+        }
+      } catch (ne) {
+        console.warn('Dispute notify warn:', ne);
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      message: '✅ ส่งคำขอแก้ไขบิลเรียบร้อยแล้ว บิลถูกระงับการชำระชั่วคราวเพื่อรอการยืนยัน',
+      message: '✅ ส่งคำขอแก้ไขบิลเรียบร้อยแล้ว บิลถูกระงับการชำระชั่วคราวเพื่อรอเจ้าของหอตรวจสอบ',
       correctionId: insertRes.insertId,
     });
   } catch (err: any) {
@@ -142,7 +213,27 @@ export async function PUT(req: Request) {
       return NextResponse.json({ success: false, message: 'ไม่พบคำขอแก้ไข' }, { status: 404 });
     }
 
+    const role = (session.user as any)?.role;
+    const isStaff = role === 'owner' || role === 'keeper' || role === 'platform_admin';
+
     const corr = corrRes[0];
+
+    // Rule:
+    // If requested_by === 'owner': Tenant must approve/reject. Staff cannot approve their own correction.
+    // If requested_by === 'tenant': Owner/Keeper must approve/reject.
+    if (corr.requested_by === 'owner' && isStaff) {
+      return NextResponse.json({
+        success: false,
+        message: '⚠️ เนื่องจากคำขอนี้สร้างโดยเจ้าของหอพัก ต้องให้ลูกหอเป็นผู้อนุมัติหรือปฏิเสธเท่านั้น เจ้าของหอไม่สามารถอนุมัติเองได้'
+      }, { status: 403 });
+    }
+
+    if (corr.requested_by === 'tenant' && !isStaff) {
+      return NextResponse.json({
+        success: false,
+        message: '⚠️ คำขอนี้สร้างโดยลูกหอ ต้องรอให้เจ้าของหอพักเป็นผู้อนุมัติหรือปฏิเสธ'
+      }, { status: 403 });
+    }
 
     if (action === 'approve') {
       // 14.3.2: Recalculate bill and set 5 days due date (14.3.3)
