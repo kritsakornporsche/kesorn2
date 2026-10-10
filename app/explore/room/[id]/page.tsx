@@ -10,6 +10,7 @@ import ContractSimulator from '@/app/components/ContractSimulator';
 import PrintableContractModal from '@/components/PrintableContractModal';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
 import { PdpaOcrConsentModal } from '@/app/components/PdpaOcrConsentModal';
+import { ThaIdDigitalIdButton } from '@/components/features/ThaIdDigitalIdModal';
 
 function getGoogleMapsEmbedUrl(mapUrl?: string, address?: string, dormName?: string) {
   if (mapUrl) {
@@ -1223,6 +1224,27 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     ระบบ AI OCR (Google Gemini Vision AI) จะอ่านข้อมูลบัตรประชาชนและนำไปกรอกลงในแบบฟอร์มสัญญาเช่าหอพักเกษรฉบับจริงให้อัตโนมัติ
                   </p>
                 </div>
+
+                {/* Digital ID (D.DOPA ThaID OAuth 2.0) Plug-in */}
+                <ThaIdDigitalIdButton
+                  onVerified={(d) => {
+                    const addrParts = d.address_parts || {};
+                    setBookingData((prev) => ({
+                      ...prev,
+                      name: d.full_name_th || prev.name,
+                      id_card_number: '',
+                      id_card_address: d.address || prev.id_card_address,
+                      houseNo: addrParts.houseNo || prev.houseNo,
+                      village: addrParts.village || prev.village,
+                      road: addrParts.road || prev.road,
+                      subdistrict: addrParts.subdistrict || prev.subdistrict,
+                      district: addrParts.district || prev.district,
+                      province: addrParts.province || prev.province,
+                    }));
+                    setOcrSuccessMsg(`✓ ยืนยันตัวตนผ่านแอป ThaID สำเร็จ: ${d.full_name_th} (${d.ial_level})`);
+                    setOcrStats(`D.DOPA OpenID Connect • KYC Ref: ${d.sub_pid_hash}`);
+                  }}
+                />
 
                 {/* ID Card Scanner Banner */}
                 <div className="p-5 bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-primary/10 border border-primary/20 rounded-3xl space-y-4">

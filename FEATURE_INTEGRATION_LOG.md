@@ -87,6 +87,22 @@ gitGraph
 
 ---
 
+### ✅ Feature #2: ระบบยืนยันตัวตนดิจิทัลผ่านแอป ThaID (D.DOPA OAuth 2.0 / OpenID Connect + Sandbox Simulator)
+- **วันที่ดำเนินการ:** 10 ตุลาคม 2026
+- **วัตถุประสงค์:** เพิ่มช่องทางยืนยันตัวตนระดับ **IAL 2.3 (Identity Assurance Level 2.3)** ตามมาตรฐานกรมการปกครอง (D.DOPA ThaID) โดยใช้โปรโตคอล **OAuth 2.0 + PKCE (SHA-256)** และหลักการ **PDPA Zero-ID Storage** (ร้องขอ Scope เฉพาะ `name` และ `address` โดยไม่ขอ `pid` เลขบัตร 13 หลัก และออกรหัสอ้างอิง `PPID Hash` แทน) พร้อมโหมดจำลองการกดอนุญาตบนแอปมือถือ (Sandbox Simulator) สำหรับสาธิตตอนสอบวิจัย
+- **ผลกระทบต่อฐานข้อมูล (Database Impact):**
+  - ไม่ต้องแก้ไขโครงสร้างตารางฐานข้อมูลเดิม (Zero Schema Change)
+- **ไฟล์ที่สร้างใหม่แยกโมดูล (New Modular Files - ไม่ชนกับโค้ดเพื่อน 100%):**
+  1. `lib/features/thaid-digital-id.ts` — จัดการ OAuth 2.0 Session, PKCE `code_verifier`/`code_challenge` (S256), สร้างรหัสอ้างอิง `PPID Hash` และลายเซ็นรับรอง `HMAC-SHA256`
+  2. `app/api/features/thaid/route.ts` — API สำหรับสร้าง Dynamic QR Code ของ ThaID (`GET`) และตรวจสอบ Callback Token (`POST`)
+  3. `components/features/ThaIdDigitalIdModal.tsx` — Plug-in Component (`<ThaIdDigitalIdButton />`) พร้อมหน้าต่าง QR Code และโหมดจำลองการกดอนุญาตบนแอป ThaID
+- **ไฟล์ส่วนกลางที่เชื่อม Plug-in เข้าไป (Minimal Touch - เพิ่มเพียงจุดละ 1 Component):**
+  1. `app/explore/room/[id]/page.tsx` — เพิ่ม `<ThaIdDigitalIdButton />` ใน Step 3 หน้าจองห้องพักของ Guest
+  2. `app/components/WalkInTenantModal.tsx` — เพิ่ม `<ThaIdDigitalIdButton />` ในหน้าลงทะเบียนผู้เช่า Walk-in
+  3. `app/owner/contracts/page.tsx` — เพิ่ม `<ThaIdDigitalIdButton />` ในหน้าสร้างสัญญาเช่าของเจ้าของหอพัก
+
+---
+
 ## 🔄 คู่มือการรวมระบบย้อนหลัง (How to Merge Later)
 
 เมื่อต้องการนำงานของเพื่อน (สมมติว่าอยู่บน `origin/main`) มารวมกับฟีเจอร์ใหม่ของเรา (`feature-development`) สามารถทำได้ 2 วิธี:

@@ -8,6 +8,7 @@ import PremiumDatePicker from '@/app/components/PremiumDatePicker';
 import PrintableContractModal from '@/components/PrintableContractModal';
 import DepositRefundModal from '@/components/DepositRefundModal';
 import { PdpaOcrConsentModal } from '@/app/components/PdpaOcrConsentModal';
+import { ThaIdDigitalIdButton } from '@/components/features/ThaIdDigitalIdModal';
 
 interface Contract {
   id: number;
@@ -920,6 +921,19 @@ export default function OwnerContractsPage() {
               </div>
 
               <div className="overflow-y-auto p-8 custom-scrollbar space-y-6">
+
+                {/* Digital ID (D.DOPA ThaID OAuth 2.0) Plug-in */}
+                <ThaIdDigitalIdButton
+                  onVerified={(d) => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      tenant_name: d.full_name_th || prev.tenant_name,
+                      id_card_number: '',
+                      tenant_address: d.address || prev.tenant_address,
+                    }));
+                    setOcrSuccessMsg(`✓ ยืนยันตัวตนผ่านแอป ThaID สำเร็จ: ${d.full_name_th} (${d.ial_level} • ${d.sub_pid_hash})`);
+                  }}
+                />
 
                 {/* ID Card Smart OCR Banner */}
                 <div className="p-6 bg-gradient-to-br from-blue-950/40 to-indigo-950/40 rounded-3xl border border-blue-500/30 space-y-4">

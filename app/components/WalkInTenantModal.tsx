@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
 import { PdpaOcrConsentModal } from '@/app/components/PdpaOcrConsentModal';
+import { ThaIdDigitalIdButton } from '@/components/features/ThaIdDigitalIdModal';
 
 interface WalkInModalProps {
   isOpen: boolean;
@@ -412,6 +413,15 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                   </div>
                 )}
               </div>
+
+              {/* Digital ID (D.DOPA ThaID OAuth 2.0) Plug-in */}
+              <ThaIdDigitalIdButton
+                onVerified={(d) => {
+                  if (d.full_name_th) setTenantName(d.full_name_th);
+                  if (d.address) setTenantAddress(d.address);
+                  setOcrSuccessMsg(`✓ ยืนยันตัวตนผ่านแอป ThaID สำเร็จ: ${d.full_name_th} (${d.ial_level} • ${d.sub_pid_hash})`);
+                }}
+              />
 
               {/* ID Card AI OCR Section */}
               <div className="p-5 bg-slate-950/60 border border-white/10 rounded-2xl space-y-4">
