@@ -6,7 +6,6 @@ function createContractDocx(data: any) {
   const roomNumber = data.room_number || '-';
   const floor = data.floor || (roomNumber.length >= 2 ? roomNumber[0] : '1');
   const tenantName = data.tenant_name || '..........................................................';
-  const idCardNumber = data.id_card_number || '..........................................................';
   const tenantAddress = data.tenant_address || '................................................................................................................................................';
   const tenantPhone = data.tenant_phone || data.phone || '..............................................';
   const parentPhone = data.parent_phone || '..................................................................................';
@@ -62,8 +61,7 @@ function createContractDocx(data: any) {
         }),
         new Paragraph({
           children: [
-            new TextRun({ text: `นาย/นางสาว ${tenantName}`, bold: true, size: 24, font: 'TH Sarabun New' }),
-            new TextRun({ text: ` เลขประจำตัวประชาชน ${idCardNumber}`, size: 24, font: 'TH Sarabun New' })
+            new TextRun({ text: `นาย/นางสาว ${tenantName}`, bold: true, size: 24, font: 'TH Sarabun New' })
           ]
         }),
         new Paragraph({

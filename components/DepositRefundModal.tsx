@@ -83,7 +83,7 @@ export default function DepositRefundModal({
   const isDeficit = deposit < totalDeductions;
   const deficitAmount = isDeficit ? totalDeductions - deposit : 0;
 
-  const promptpayTarget = (request?.promptpay_target || request?.tenant_phone || request?.tenant_id_card || '0829853519').replace(/[\s-]/g, '');
+  const promptpayTarget = (request?.promptpay_target || request?.tenant_phone || '0829853519').replace(/[\s-]/g, '');
 
   // Live QR Code Generation whenever netRefund changes
   useEffect(() => {

@@ -101,18 +101,16 @@ export async function performIdCardOcr(options: {
     cleanBase64 = parts[1] || '';
   }
 
-  const prompt = `คุณคือระบบอ่านข้อมูลบัตรประจำตัวประชาชนไทย (Thai National ID Card OCR)
-กรุณาอ่านข้อมูลจากรูปบัตรประชาชนนี้อย่างละเอียด ถูกต้อง และตอบกลับเฉพาะรูปแบบ JSON ดังนี้เท่านั้น โดยไม่มี markdown หรือข้อความอื่น:
+  const prompt = `คุณคือระบบอ่านข้อมูลบัตรประจำตัวประชาชนไทยเพื่อช่วยกรอกสัญญาเช่าหอพัก (PDPA Data Minimization: ไม่อ่านและไม่เก็บเลขประจำตัวประชาชน 13 หลัก)
+กรุณาอ่านเฉพาะ ชื่อ-นามสกุล และ ที่อยู่ตามทะเบียนบ้าน จากรูปบัตรประชาชนนี้อย่างละเอียด ถูกต้อง และตอบกลับเฉพาะรูปแบบ JSON ดังนี้เท่านั้น โดยไม่มี markdown หรือข้อความอื่น:
 {
-  "id_card_number": "เลขประจำตัวประชาชน 13 หลัก (เฉพาะตัวเลข)",
   "title_th": "คำนำหน้า เช่น นาย, นางสาว, นาง",
   "first_name_th": "ชื่อภาษาไทย",
   "last_name_th": "นามสกุลภาษาไทย",
   "full_name_th": "ชื่อ-นามสกุลภาษาไทยพร้อมคำนำหน้า",
   "full_name_en": "ชื่อ-นามสกุลภาษาอังกฤษ เช่น Mr. Somchai Jaidee",
   "birth_date": "วันเกิด เช่น 15 ม.ค. 2545 หรือ 2002-01-15",
-  "address": "ที่อยู่ตามบัตรประชาชนแบบเต็ม เช่น 123 หมู่ 1 ต.แม่กา อ.เมือง จ.พะเยา 56000",
-  "expiry_date": "วันหมดอายุของบัตร"
+  "address": "ที่อยู่ตามบัตรประชาชนแบบเต็ม เช่น 123 หมู่ 1 ต.แม่กา อ.เมือง จ.พะเยา 56000"
 }`;
 
   for (const model of models) {
@@ -183,13 +181,8 @@ export async function performIdCardOcr(options: {
     };
   }
 
-  // Format 13-digit citizen ID
-  if (parsed.id_card_number) {
-    const rawNum = String(parsed.id_card_number).replace(/\D/g, '');
-    if (rawNum.length === 13) {
-      parsed.id_card_number = `${rawNum[0]}-${rawNum.slice(1, 5)}-${rawNum.slice(5, 10)}-${rawNum.slice(10, 12)}-${rawNum[12]}`;
-    }
-  }
+  // PDPA Privacy by Design: Never extract, return, or store 13-digit National ID number
+  parsed.id_card_number = '';
 
   // Address parts parsing
   const addressParts = parseThaiAddress(parsed.address || '');
@@ -199,6 +192,7 @@ export async function performIdCardOcr(options: {
     success: true,
     data: {
       ...parsed,
+      id_card_number: '',
       full_name_th: parsed.full_name_th || `${parsed.title_th || ''} ${parsed.first_name_th || ''} ${parsed.last_name_th || ''}`.trim(),
       address_parts: addressParts,
       engine: usedModel,
@@ -206,6 +200,6 @@ export async function performIdCardOcr(options: {
       scanned_at: new Date().toISOString(),
     },
     elapsed_ms: elapsedMs,
-    message: `อ่านข้อมูลบัตรประชาชนสำเร็จด้วย Gemini Vision AI (${elapsedMs}ms)`,
+    message: `อ่านชื่อ-นามสกุลและที่อยู่สำเร็จด้วย Gemini Vision AI (${elapsedMs}ms)`,
   };
 }

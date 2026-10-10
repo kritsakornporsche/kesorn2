@@ -211,7 +211,7 @@ export async function POST(req: Request) {
             phone = ${cleanPhone},
             room_id = ${room.id},
             user_id = ${userId},
-            id_card_number = ${cleanIdCard},
+            id_card_number = NULL,
             address = ${tenantAddress || null},
             status = 'Pending',
             move_in_date = ${formattedStartDate},
@@ -223,13 +223,13 @@ export async function POST(req: Request) {
         INSERT INTO tenants (
           name, email, phone, room_id, user_id, id_card_number, address, status, move_in_date, dorm_id
         ) VALUES (
-          ${cleanName}, ${cleanEmail}, ${cleanPhone}, ${room.id}, ${userId}, ${cleanIdCard}, ${tenantAddress || null}, 'Pending', ${formattedStartDate}, ${targetDormId}
+          ${cleanName}, ${cleanEmail}, ${cleanPhone}, ${room.id}, ${userId}, NULL, ${tenantAddress || null}, 'Pending', ${formattedStartDate}, ${targetDormId}
         )
       `;
       tenantId = (tenantInsert as any).insertId;
     }
 
-    // 5. Contract Record Creation (Status = PendingOwnerSignature)
+    // 5. Contract Record Creation (Status = PendingOwnerSignature, no 13-digit ID stored)
     const contractInsert = await sql`
       INSERT INTO contracts (
         tenant_id, 
@@ -256,7 +256,7 @@ export async function POST(req: Request) {
         NULL,
         ${new Date()},
         ${storedSlipUrl || null},
-        ${cleanIdCard},
+        NULL,
         ${tenantAddress || null},
         NULL,
         ${cleanParentPhone},

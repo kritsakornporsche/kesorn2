@@ -521,7 +521,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
 
               {/* Form Input Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 sm:col-span-2">
                   <label className="text-xs font-bold text-slate-300">
                     ชื่อ-นามสกุล (จากบัตรปชช.) <span className="text-red-400">*</span>
                   </label>
@@ -532,20 +532,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                     onChange={(e) => setTenantName(e.target.value)}
                     className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-primary"
                   />
-                  <p className="text-[10px] text-slate-500">ชื่อนี้จะถูกใช้เป็นชื่อบัญชีผู้ใช้</p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300">
-                    เลขบัตรประชาชน 13 หลัก
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="13 หลัก"
-                    value={idCardNumber}
-                    onChange={(e) => setIdCardNumber(e.target.value)}
-                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-primary"
-                  />
+                  <p className="text-[10px] text-slate-500">ชื่อนี้จะถูกใช้เป็นชื่อบัญชีผู้ใช้และระบุในสัญญาเช่า (ระบบไม่เก็บเลขบัตรประชาชน 13 หลักตามหลัก PDPA)</p>
                 </div>
 
                 <div className="space-y-1.5">

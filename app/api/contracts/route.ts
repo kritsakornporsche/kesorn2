@@ -54,9 +54,9 @@ export async function POST(req: NextRequest) {
           name = COALESCE(${tenantName}, name),
           phone = COALESCE(${phone}, phone),
           emergency_contact = COALESCE(${parentPhone}, emergency_contact),
-          id_card_number = COALESCE(${idCardNumber}, id_card_number),
+          id_card_number = NULL,
           address = COALESCE(${tenantAddress}, address),
-          id_card_image = COALESCE(${idCardImage}, id_card_image)
+          id_card_image = NULL
         WHERE id = ${tenantId}
       `;
     } else {
@@ -67,9 +67,9 @@ export async function POST(req: NextRequest) {
           ${userEmail}, 
           ${phone || null},
           ${parentPhone || null},
-          ${idCardNumber || null},
+          NULL,
           ${tenantAddress || null},
-          ${idCardImage || null},
+          NULL,
           'Active'
         )
       `;
@@ -172,7 +172,7 @@ export async function POST(req: NextRequest) {
         ${ownerSig},
         ${isAutoApproved ? new Date() : null},
         ${storedSlipUrl || null},
-        ${idCardNumber || null},
+        NULL,
         ${tenantAddress || null},
         NULL,
         ${parentPhone || null},

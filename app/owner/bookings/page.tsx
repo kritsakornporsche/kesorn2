@@ -366,7 +366,7 @@ export default function OwnerBookingsPage() {
                       <span className="font-mono font-black text-white">฿{Number(item.monthly_rent || 3400).toLocaleString()} /ด.</span>
                     </div>
                     <p className="text-[11px] text-slate-400 truncate">
-                      บัตร ปชช: {item.id_card_number || '-'}
+                      ที่อยู่: {item.tenant_address || '-'}
                     </p>
                     <div className="pt-1 flex items-center gap-2">
                       <a
@@ -525,15 +525,15 @@ export default function OwnerBookingsPage() {
             <div className="space-y-4">
               {/* Personal Info */}
               <div className="p-4 bg-slate-950/80 rounded-2xl border border-white/5 space-y-3">
-                <h4 className="text-xs font-black uppercase tracking-widest text-primary">ข้อมูลผู้เช่าและบัตรประชาชน</h4>
+                <h4 className="text-xs font-black uppercase tracking-widest text-primary">ข้อมูลผู้เช่าและที่อยู่ตามสัญญา</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">ชื่อ-นามสกุล:</span>
                     <span className="text-white font-bold text-sm">{previewContractModal.guest_name}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">เลขประจำตัวประชาชน:</span>
-                    <span className="text-white font-bold font-mono text-sm">{previewContractModal.id_card_number || '-'}</span>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">อีเมลผู้เช่า:</span>
+                    <span className="text-white font-bold text-sm">{previewContractModal.guest_email || '-'}</span>
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">เบอร์โทรศัพท์ผู้เช่า:</span>
@@ -544,7 +544,7 @@ export default function OwnerBookingsPage() {
                     <span className="text-white font-bold font-mono">{previewContractModal.parent_phone || '-'}</span>
                   </div>
                   <div className="sm:col-span-2">
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">ที่อยู่ตามบัตรประชาชน:</span>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">ที่อยู่ตามทะเบียนบ้าน / สัญญาเช่า:</span>
                     <span className="text-slate-200">{previewContractModal.tenant_address || '-'}</span>
                   </div>
                 </div>

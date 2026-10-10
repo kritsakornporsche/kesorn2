@@ -176,7 +176,7 @@ export async function POST(req: Request) {
     if (tenants.length === 0) {
       const tenantInsert = await sql`
         INSERT INTO tenants (name, email, phone, room_id, user_id, id_card_number, id_card_image, address, status, move_in_date, dorm_id)
-        VALUES (${tenantName.trim()}, ${tenantEmail.trim()}, ${tenantPhone?.trim() || null}, ${room_id}, ${userId}, ${id_card_number?.trim() || null}, ${id_card_image || null}, ${tenant_address?.trim() || null}, 'active', ${start_date}, ${targetDormId})
+        VALUES (${tenantName.trim()}, ${tenantEmail.trim()}, ${tenantPhone?.trim() || null}, ${room_id}, ${userId}, NULL, NULL, ${tenant_address?.trim() || null}, 'active', ${start_date}, ${targetDormId})
       `;
       tenantId = (tenantInsert as any).insertId;
     } else {
@@ -191,8 +191,8 @@ export async function POST(req: Request) {
             move_in_date = ${start_date},
             move_out_date = NULL,
             dorm_id = ${targetDormId},
-            id_card_number = COALESCE(${id_card_number?.trim() || null}, id_card_number),
-            id_card_image = COALESCE(${id_card_image || null}, id_card_image),
+            id_card_number = NULL,
+            id_card_image = NULL,
             address = COALESCE(${tenant_address?.trim() || null}, address)
         WHERE id = ${tenantId}
       `;
@@ -209,7 +209,7 @@ export async function POST(req: Request) {
       `;
     }
 
-    // 4. Save Contract with id_card_number, tenant_address, id_card_image, contract_file_url and status 'Active'
+    // 4. Save Contract without storing 13-digit ID number or ID card image (PDPA Privacy by Design)
     const contractInsert = await sql`
       INSERT INTO contracts (
         tenant_id, room_id, start_date, end_date, deposit_amount, status, contract_file_url,
@@ -217,7 +217,7 @@ export async function POST(req: Request) {
       )
       VALUES (
         ${tenantId}, ${room_id}, ${start_date}, ${end_date}, ${deposit_amount || 0}, 'Active', ${contract_file_url || null},
-        ${id_card_number?.trim() || null}, ${tenant_address?.trim() || null}, ${id_card_image || null}
+        NULL, ${tenant_address?.trim() || null}, NULL
       )
     `;
     const contractId = (contractInsert as any).insertId;

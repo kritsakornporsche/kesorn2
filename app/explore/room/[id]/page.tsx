@@ -1337,7 +1337,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                           Google Gemini AI Vision กำลังอ่านข้อมูลบัตรประชาชน...
                         </span>
                         <span className="text-[10px] text-muted-foreground">
-                          กำลังดึงเลขบัตร 13 หลัก, ชื่อ-นามสกุล, และที่อยู่เพื่อกรอกลงสัญญา
+                          กำลังดึงชื่อ-นามสกุล และที่อยู่ตามทะเบียนบ้านเพื่อกรอกลงสัญญาอัตโนมัติ (ไม่เก็บเลขบัตร 13 หลัก)
                         </span>
                       </div>
                     </div>
@@ -1513,32 +1513,20 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
                 {/* Extracted Fields */}
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
-                        ชื่อ-นามสกุล ผู้เช่า <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        className="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
-                        placeholder="นาย/นางสาว..."
-                        value={bookingData.name}
-                        onChange={(e) => setBookingData({ ...bookingData, name: e.target.value })}
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
-                        เลขประจำตัวประชาชน (13 หลัก) <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        className="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-mono font-bold text-sm tracking-wider"
-                        placeholder="X-XXXX-XXXXX-XX-X"
-                        value={bookingData.id_card_number}
-                        onChange={(e) => setBookingData({ ...bookingData, id_card_number: e.target.value })}
-                      />
-                    </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                      ชื่อ-นามสกุล ผู้เช่า <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
+                      placeholder="นาย/นางสาว..."
+                      value={bookingData.name}
+                      onChange={(e) => setBookingData({ ...bookingData, name: e.target.value })}
+                    />
+                    <p className="text-[10px] text-emerald-400 font-semibold">
+                      🛡️ ระบบใช้หลักการคุ้มครองข้อมูลส่วนบุคคล (PDPA Privacy by Design) ไม่เรียกเก็บและไม่บันทึกเลขประจำตัวประชาชน 13 หลักลงในฐานข้อมูล
+                    </p>
                   </div>
 
                   <div className="space-y-1">
@@ -1594,7 +1582,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                 <div className="space-y-3 pt-2">
                   <button
                     onClick={() => setStep(4)}
-                    disabled={!bookingData.id_card_number || !bookingData.id_card_address}
+                    disabled={!bookingData.name || !bookingData.id_card_address}
                     className="w-full py-5 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-sm transition-all shadow-xl shadow-primary/25 hover:scale-[1.02] active:scale-95 disabled:opacity-40 cursor-pointer"
                   >
                     ถัดไป: ชำระเงินค่าจอง ฿{totalDeposit.toLocaleString()} →
