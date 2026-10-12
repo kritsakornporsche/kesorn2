@@ -144,6 +144,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
     }
 
+    // Monthly bills start as drafts: reviewed, then sent (which notifies the tenant)
+    const isDraft = body.bill_type === 'monthly';
+
     // Prevent duplicate bill for same tenant in same billing cycle
     if (normalizedCycle) {
       const existing = await sql`
@@ -182,8 +185,8 @@ export async function POST(req: Request) {
         ${title}, 
         ${amount}, 
         ${normalizedCycle}, 
-        ${due_date}, 
-        'Unpaid', 
+        ${due_date},
+        ${isDraft ? 'Draft' : 'Unpaid'},
         ${room_number || null}, 
         ${water_units || 0}, 
         ${electric_units || 0}, 
@@ -195,8 +198,8 @@ export async function POST(req: Request) {
       )
     `;
 
-    // Notify tenant about new bill
-    try {
+    // Notify tenant about new bill (drafts are notified when sent)
+    if (!isDraft) try {
       const tenantUser = await sql`
         SELECT COALESCE(t.user_id, u.id) as user_id
         FROM tenants t

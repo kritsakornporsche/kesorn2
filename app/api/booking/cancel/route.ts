@@ -68,7 +68,7 @@ export async function POST(req: Request) {
         SET status = 'Cancelled' 
         WHERE (tenant_id IN (SELECT tenant_id FROM contracts WHERE id = ${targetContractId}) OR room_number IN (SELECT room_number FROM rooms WHERE id = ${targetRoomId}))
           AND bill_type = 'booking'
-          AND status != 'Cancelled'
+          AND LOWER(status) NOT IN ('cancelled', 'paid')
       `;
     } catch (bErr) {
       console.warn('Could not cancel booking bill:', bErr);

@@ -53,7 +53,7 @@ export default function OwnerMonthlyBillingPage() {
   const rates = useRates();
 
   // 15. 3 Core Tabs: Ready (พร้อมออก) | Overdue/Unpaid (ค้างชำระ) | Paid (ชำระแล้ว)
-  const [activeTab, setActiveTab] = useState<'ready' | 'unpaid' | 'paid' | 'dispute'>('ready');
+  const [activeTab, setActiveTab] = useState<'ready' | 'draft' | 'unpaid' | 'paid' | 'dispute'>('ready');
   const [bills, setBills] = useState<MonthlyBill[]>([]);
   const [readyRooms, setReadyRooms] = useState<MeterReadyRoom[]>([]);
   const [disputes, setDisputes] = useState<any[]>([]);
@@ -185,7 +185,7 @@ export default function OwnerMonthlyBillingPage() {
       });
       const d = await res.json();
       if (d.success) {
-        showToast(`🎉 ออกบิลและส่งแจ้งเตือนห้อง ${room.room_number} เรียบร้อยแล้ว!`, 'success');
+        showToast(`📝 สร้างร่างบิลห้อง ${room.room_number} แล้ว ตรวจแล้วกดส่งในแท็บ "ร่าง"`, 'success');
         fetchBillingData();
       } else {
         showToast(d.message || 'เกิดข้อผิดพลาดในการออกบิล', 'error');
@@ -218,12 +218,63 @@ export default function OwnerMonthlyBillingPage() {
         if (d.success) successCount++;
       }
 
-      showToast(`🎉 ออกบิลและส่งแจ้งเตือนเรียบร้อยแล้วทั้งหมด ${successCount} ห้อง!`, 'success');
+      showToast(`📝 สร้างร่างบิลแล้ว ${successCount} ห้อง ตรวจแล้วกดส่งในแท็บ "ร่าง"`, 'success');
       fetchBillingData();
     } catch (e: any) {
       showToast('เกิดข้อผิดพลาด: ' + e.message, 'error');
     } finally {
       setBatchIssuing(false);
+    }
+  };
+
+  // Send draft bills to tenants (this is when tenants get notified)
+  const handleSendBills = async (billIds: number[]) => {
+    if (billIds.length === 0) return;
+    try {
+      const res = await fetch('/api/owner/billing/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billIds }),
+      });
+      const d = await res.json();
+      showToast(d.message || (d.success ? 'ส่งบิลแล้ว' : 'ส่งบิลไม่สำเร็จ'), d.success ? 'success' : 'error');
+      fetchBillingData();
+    } catch (e: any) {
+      showToast('เกิดข้อผิดพลาด: ' + e.message, 'error');
+    }
+  };
+
+  const handleDeleteDraft = async (billId: number) => {
+    if (!confirm('ลบร่างบิลนี้?')) return;
+    try {
+      const res = await fetch(`/api/owner/billing/${billId}`, { method: 'DELETE' });
+      const d = await res.json();
+      showToast(d.success ? 'ลบร่างแล้ว' : (d.message || 'ลบไม่สำเร็จ'), d.success ? 'success' : 'error');
+      fetchBillingData();
+    } catch (e: any) {
+      showToast('เกิดข้อผิดพลาด: ' + e.message, 'error');
+    }
+  };
+
+  // Owner only: reverse a payment, reason required (history is kept)
+  const handleUnpay = async (billId: number) => {
+    const reason = prompt('เหตุผลที่ยกเลิกการชำระ (บังคับกรอก)');
+    if (reason === null) return;
+    if (!reason.trim()) {
+      showToast('ต้องระบุเหตุผล', 'error');
+      return;
+    }
+    try {
+      const res = await fetch('/api/owner/billing/unpay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billId, reason }),
+      });
+      const d = await res.json();
+      showToast(d.message || (d.success ? 'ยกเลิกการชำระแล้ว' : 'ไม่สำเร็จ'), d.success ? 'success' : 'error');
+      fetchBillingData();
+    } catch (e: any) {
+      showToast('เกิดข้อผิดพลาด: ' + e.message, 'error');
     }
   };
 
@@ -300,10 +351,11 @@ export default function OwnerMonthlyBillingPage() {
     }
   };
 
+  const draftBills = bills.filter((b) => String(b.status).toLowerCase() === 'draft');
   const unpaidBills = bills.filter((b) => b.status === 'Unpaid' || b.status === 'Overdue' || b.status === 'PendingCorrection');
   const paidBills = bills.filter((b) => b.status === 'Paid');
 
-  const filteredBills = (activeTab === 'unpaid' ? unpaidBills : paidBills).filter((b) => {
+  const filteredBills = (activeTab === 'unpaid' ? unpaidBills : activeTab === 'draft' ? draftBills : paidBills).filter((b) => {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchRoom = b.room_number?.toLowerCase().includes(q);
@@ -361,6 +413,16 @@ export default function OwnerMonthlyBillingPage() {
           >
             <span>🟡 15.1 บิลพร้อมออก</span>
             <span className="px-2 py-0.5 rounded-full bg-black/30 text-[10px] font-mono">{readyRooms.length}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('draft')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 ${
+              activeTab === 'draft' ? 'bg-sky-500 text-white shadow-lg' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
+            }`}
+          >
+            <span>📝 ร่างรอส่ง</span>
+            <span className="px-2 py-0.5 rounded-full bg-black/30 text-[10px] font-mono">{draftBills.length}</span>
           </button>
 
           <button
@@ -423,7 +485,7 @@ export default function OwnerMonthlyBillingPage() {
                 className="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs rounded-xl shadow-xl transition-all flex items-center gap-2"
               >
                 <span>🚀</span>
-                <span>{batchIssuing ? 'กำลังส่งบิลทั้งหมด...' : 'ส่งบิลทั้งหมดที่พร้อมออก'}</span>
+                <span>{batchIssuing ? 'กำลังสร้างร่าง...' : 'สร้างร่างบิลทั้งหมดที่พร้อมออก'}</span>
               </button>
             )}
           </div>
@@ -485,7 +547,7 @@ export default function OwnerMonthlyBillingPage() {
                       className="flex-1 py-2.5 bg-primary/20 hover:bg-primary text-primary hover:text-white border border-primary/30 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                     >
                       <span>📨</span>
-                      <span>{issuingSingleId === r.room_id ? 'กำลังส่งบิล...' : `ส่งบิลห้อง ${r.room_number}`}</span>
+                      <span>{issuingSingleId === r.room_id ? 'กำลังสร้างร่าง...' : `สร้างร่างบิลห้อง ${r.room_number}`}</span>
                     </button>
                   </div>
                 </div>
@@ -599,6 +661,66 @@ export default function OwnerMonthlyBillingPage() {
         </div>
       )}
 
+      {/* Draft bills: reviewed here, tenants see and get notified only after sending */}
+      {activeTab === 'draft' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-sky-500/10 border border-sky-500/30 p-4 rounded-2xl">
+            <p className="text-xs text-sky-200">ผู้เช่ายังไม่เห็นบิลร่าง · กด "ส่งบิล" แล้วผู้เช่าจะได้รับแจ้งเตือน · วันครบกำหนดคิดใหม่ตอนส่ง</p>
+            {filteredBills.length > 0 && (
+              <button
+                onClick={() => handleSendBills(filteredBills.map((b) => b.id))}
+                className="px-4 py-2 bg-sky-500 hover:bg-sky-400 text-white text-xs font-black rounded-xl whitespace-nowrap"
+              >
+                📤 ส่งทั้งหมด ({filteredBills.length})
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredBills.length === 0 ? (
+              <div className="col-span-full p-16 text-center text-slate-400 font-bold bg-slate-900/50 rounded-3xl border border-white/10">
+                ✨ ไม่มีร่างบิลรอส่ง
+              </div>
+            ) : (
+              filteredBills.map((bill) => (
+                <div key={bill.id} className="bg-slate-900/90 border border-sky-500/30 rounded-2xl p-5 shadow-xl space-y-4">
+                  <div className="flex justify-between items-center pb-3 border-b border-white/10">
+                    <div>
+                      <span className="text-base font-black text-white">ห้อง {bill.room_number}</span>
+                      <p className="text-[11px] text-slate-400">{bill.tenant_name}</p>
+                    </div>
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black bg-sky-500/10 text-sky-300 border border-sky-500/30">📝 ร่าง</span>
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between text-slate-300">
+                      <span>รอบบิล:</span>
+                      <span className="font-mono text-white">{bill.billing_cycle}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-300">
+                      <span>ยอดรวม:</span>
+                      <span className="font-mono font-black text-white text-sm">฿{Number(bill.amount).toLocaleString()}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleSendBills([bill.id])}
+                      className="flex-1 py-2 bg-sky-500 hover:bg-sky-400 text-white text-xs font-black rounded-xl"
+                    >
+                      📤 ส่งบิล
+                    </button>
+                    <button
+                      onClick={() => handleDeleteDraft(bill.id)}
+                      className="px-3 py-2 bg-white/5 hover:bg-rose-500/20 text-rose-300 text-xs font-bold rounded-xl border border-white/10"
+                    >
+                      ลบร่าง
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 15.3 Paid Bills Tab (SlipOK Verified with Anti-Cheat Details) */}
       {activeTab === 'paid' && (
         <div className="space-y-4">
@@ -657,6 +779,15 @@ export default function OwnerMonthlyBillingPage() {
                         className="w-full py-2 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold rounded-xl border border-white/10 transition-colors"
                       >
                         🖼️ ดูภาพสลิปหลักฐาน
+                      </button>
+                    )}
+
+                    {(session?.user as any)?.role === 'owner' && (
+                      <button
+                        onClick={() => handleUnpay(bill.id)}
+                        className="w-full py-2 bg-white/5 hover:bg-rose-500/20 text-rose-300 text-xs font-bold rounded-xl border border-white/10 transition-colors"
+                      >
+                        ↩️ ยกเลิกการชำระ
                       </button>
                     )}
                   </div>

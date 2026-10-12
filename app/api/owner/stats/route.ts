@@ -62,6 +62,10 @@ export async function GET(req: Request) {
     const unpaidBillsCount = Number(unpaidBillsRes[0]?.count || 0);
     const unpaidBillsAmount = Number(unpaidBillsRes[0]?.total || 0);
 
+    // Drafts are not owed yet (not sent to tenants); shown separately as work to do
+    const draftBillsRes = await sql`SELECT COUNT(*) as count FROM bills WHERE LOWER(status) = 'draft'`;
+    const draftBillsCount = Number(draftBillsRes[0]?.count || 0);
+
     const paidBillsRes = await sql`
       SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as total 
       FROM bills 
@@ -150,6 +154,7 @@ export async function GET(req: Request) {
         pendingMaintenance,
         unpaidBillsCount,
         unpaidBillsAmount,
+        draftBillsCount,
         paidBillsCount,
         paidBillsAmount: showIncome ? paidBillsAmount : null,
         expiringContracts,

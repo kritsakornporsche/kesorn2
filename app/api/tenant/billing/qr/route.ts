@@ -31,7 +31,8 @@ export async function GET(req: Request) {
         LIMIT 1
       `;
 
-      if (billRes.length === 0) {
+      // Drafts have not been sent to the tenant yet
+      if (billRes.length === 0 || String(billRes[0].status || '').toLowerCase() === 'draft') {
         return NextResponse.json({ success: false, message: 'ไม่พบรายการบิลนี้ในระบบ' }, { status: 404 });
       }
 

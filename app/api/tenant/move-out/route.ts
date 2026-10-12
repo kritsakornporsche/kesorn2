@@ -38,7 +38,7 @@ export async function GET(req: Request) {
     const unpaidBills = await sql`
       SELECT id, title, amount, billing_cycle, status, created_at
       FROM bills 
-      WHERE tenant_id = ${tenant.id} AND status NOT IN ('Paid', 'paid')
+      WHERE tenant_id = ${tenant.id} AND LOWER(status) NOT IN ('paid', 'draft')
       ORDER BY id ASC
     `;
     const unpaidTotal = unpaidBills.reduce((sum: number, b: any) => sum + Number(b.amount || 0), 0);
@@ -136,7 +136,7 @@ export async function POST(req: Request) {
     // 2. Audit Check 2: Check unpaid bills
     const unpaidBills = await sql`
       SELECT id, amount, title, status FROM bills 
-      WHERE tenant_id = ${tenantId} AND status NOT IN ('Paid', 'paid')
+      WHERE tenant_id = ${tenantId} AND LOWER(status) NOT IN ('paid', 'draft')
     `;
     const unpaidTotal = unpaidBills.reduce((sum: number, b: any) => sum + Number(b.amount || 0), 0);
 

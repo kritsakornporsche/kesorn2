@@ -57,6 +57,11 @@ export async function POST(req: Request) {
       }
     }
 
+    // Drafts have not been sent to the tenant yet
+    if (String(bill.status || '').toLowerCase() === 'draft') {
+      return NextResponse.json({ success: false, message: 'ไม่พบรายการบิลนี้ในระบบ' }, { status: 404 });
+    }
+
     if (bill.status && bill.status.toLowerCase() === 'paid') {
       return NextResponse.json({ success: false, message: 'บิลนี้ได้รับการชำระเงินเรียบร้อยแล้ว' }, { status: 400 });
     }

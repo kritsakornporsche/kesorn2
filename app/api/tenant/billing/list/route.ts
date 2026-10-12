@@ -82,6 +82,7 @@ export async function GET(req: Request) {
            OR t.user_id = ${userId || 0}
            OR t.user_id IN (SELECT u.id FROM users u WHERE u.email = ${userEmail || ''})
       )
+        AND LOWER(b.status) <> 'draft'
       ORDER BY b.id DESC
     `;
 

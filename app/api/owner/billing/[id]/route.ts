@@ -1,5 +1,6 @@
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
+import { isStatus } from '@/lib/bill-status';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
@@ -38,6 +39,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     // Payments are recorded only through recordPayment (slip verification / receiving money)
     if (normalizedStatus === 'Paid') {
       return NextResponse.json({ success: false, message: 'บันทึกการชำระผ่านการรับเงินเท่านั้น' }, { status: 400 });
+    }
+
+    // Paid bills are locked; the owner can reverse a payment with /api/owner/billing/unpay
+    const existing = await sql`SELECT status FROM bills WHERE id = ${billId} LIMIT 1`;
+    if (existing.length === 0) {
+      return NextResponse.json({ success: false, message: 'ไม่พบบิล' }, { status: 404 });
+    }
+    if (isStatus(existing[0].status, 'paid')) {
+      return NextResponse.json({ success: false, message: 'บิลที่ชำระแล้วแก้ไขไม่ได้' }, { status: 400 });
     }
 
     if (normalizedStatus) {
@@ -157,6 +167,11 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   }
 
   try {
+    const existing = await sql`SELECT status FROM bills WHERE id = ${billId} LIMIT 1`;
+    if (existing.length > 0 && isStatus(existing[0].status, 'paid')) {
+      return NextResponse.json({ success: false, message: 'บิลที่ชำระแล้วลบไม่ได้' }, { status: 400 });
+    }
+
     // Nullify references in maintenance_requests and cleaning_jobs to prevent orphaned keys
     try {
       await sql`UPDATE maintenance_requests SET bill_id = NULL WHERE bill_id = ${billId}`;

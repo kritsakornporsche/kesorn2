@@ -146,9 +146,15 @@ export default function OwnerAccounting() {
                       </td>
                       <td className="px-6 py-4 text-white/80">{t.category}</td>
                       <td className="px-6 py-4 text-white">{t.description || '-'}</td>
-                      <td className={`px-6 py-4 text-right font-bold ${t.type === 'Income' ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-                        {t.type === 'Income' ? '+' : '-'}฿{fmt(Number(t.amount))}
-                      </td>
+                      {(() => {
+                        // Effect on profit: income adds, expense subtracts; a reversal is income with a negative amount
+                        const signed = t.type === 'Income' ? Number(t.amount) : -Number(t.amount);
+                        return (
+                          <td className={`px-6 py-4 text-right font-bold ${signed >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                            {signed >= 0 ? '+' : '-'}฿{fmt(Math.abs(signed))}
+                          </td>
+                        );
+                      })()}
                     </tr>
                   ))}
                 </tbody>

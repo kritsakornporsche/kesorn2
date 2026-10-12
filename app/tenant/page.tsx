@@ -63,7 +63,7 @@ async function getDashboardData() {
          OR user_id = ${userId}
          OR user_id IN (SELECT id FROM users WHERE email = ${userEmail})
     ) 
-    AND status NOT IN ('Paid', 'paid') 
+    AND LOWER(status) NOT IN ('paid', 'draft')
     ORDER BY due_date ASC
   `;
 

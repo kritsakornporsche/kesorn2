@@ -10,6 +10,7 @@ async function tenantOwnsBill(sql: any, user: CurrentUser, billId: unknown) {
     SELECT b.id FROM bills b
     JOIN tenants t ON t.id = b.tenant_id
     WHERE b.id = ${billId} AND (t.user_id = ${user.id} OR LOWER(t.email) = ${user.email.toLowerCase()})
+      AND LOWER(b.status) <> 'draft'
     LIMIT 1
   `;
   return rows.length > 0;

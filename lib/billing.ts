@@ -20,8 +20,9 @@ export const DEFAULT_RATES: Rates = {
 const DEMO_ROOM_NUMBER = 'T01';
 const DEMO_ROOM_RATES = { electricityPerUnit: 1, waterPerPerson: 5, commonFee: 5 };
 
-// Late fees accrue only while the bill is payable; PendingCorrection is frozen by a dispute
-const LATE_FEE_STATUSES = new Set(['Unpaid', 'Overdue', 'Pending']);
+// Late fees accrue only while the bill is payable (compared in lower case; older code wrote mixed case).
+// PendingCorrection is frozen by a dispute and Draft has not been sent yet.
+const LATE_FEE_STATUSES = new Set(['unpaid', 'overdue', 'pending']);
 
 const TIME_ZONE = 'Asia/Bangkok';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -171,7 +172,7 @@ export function calcLateFee(
   asOf: Date | string | number,
   rates: Rates
 ) {
-  if (bill.bill_type !== 'monthly' || !bill.due_date || !LATE_FEE_STATUSES.has(String(bill.status))) {
+  if (bill.bill_type !== 'monthly' || !bill.due_date || !LATE_FEE_STATUSES.has(String(bill.status || '').toLowerCase())) {
     return { daysOverdue: 0, lateFee: 0 };
   }
   const daysOverdue = Math.max(0, dayNumber(bangkokDate(asOf)) - dayNumber(bangkokDate(bill.due_date)));

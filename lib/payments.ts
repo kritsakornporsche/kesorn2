@@ -4,6 +4,7 @@
 import { getDb } from '@/lib/db';
 import { Pool } from '@/lib/mysql-adapter';
 import { bangkokDate, calcLateFee, getRates } from '@/lib/billing';
+import { isStatus, logStatus } from '@/lib/bill-status';
 
 export type PaymentMethod = 'slip' | 'cash' | 'transfer';
 
@@ -20,7 +21,7 @@ export interface PaymentInput {
 
 export type PaymentResult =
   | { ok: true; paymentId: number; required: number; lateFee: number; daysOverdue: number }
-  | { ok: false; reason: 'invalid_input' | 'not_found' | 'already_paid' | 'cancelled' }
+  | { ok: false; reason: 'invalid_input' | 'not_found' | 'already_paid' | 'cancelled' | 'not_sent' }
   | { ok: false; reason: 'insufficient'; required: number };
 
 // Validated here because MySQL may run without strict mode and silently coerce bad values
@@ -69,10 +70,10 @@ export async function recordPayment(billId: number, input: PaymentInput): Promis
     };
 
     if (!bill) return reject({ ok: false, reason: 'not_found' });
-    // Older code paths wrote statuses in different cases (e.g. 'paid')
-    const status = String(bill.status || '').toLowerCase();
-    if (status === 'paid') return reject({ ok: false, reason: 'already_paid' });
-    if (status === 'cancelled' || status === 'canceled') return reject({ ok: false, reason: 'cancelled' });
+    if (isStatus(bill.status, 'paid')) return reject({ ok: false, reason: 'already_paid' });
+    if (isStatus(bill.status, 'cancelled')) return reject({ ok: false, reason: 'cancelled' });
+    // A draft has not been sent to the tenant yet
+    if (isStatus(bill.status, 'draft')) return reject({ ok: false, reason: 'not_sent' });
 
     const { lateFee, daysOverdue } = calcLateFee(bill, input.paidAt, rates);
     const required = Math.round((Number(bill.amount) + lateFee) * 100) / 100;
@@ -94,27 +95,24 @@ export async function recordPayment(billId: number, input: PaymentInput): Promis
         input.method, input.method, billId]
     );
 
-    const existingTx = await client.query(
-      "SELECT id FROM accounting_transactions WHERE reference_id = ? AND reference_type = 'bill' LIMIT 1",
-      [billId]
+    // One income row per payment, so a bill can be paid again after an unpay reversed the first payment
+    const paymentId = paymentRes.rows.insertId;
+    await client.query(
+      `INSERT INTO accounting_transactions (dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date)
+       VALUES (?, 'Income', ?, ?, ?, ?, 'bill_payment', ?)`,
+      [
+        bill.dorm_id || 1,
+        ACCOUNTING_CATEGORY[bill.bill_type] || 'Rent',
+        input.amount,
+        `ชำระบิลห้อง ${bill.room_number || '-'} (${bill.title || bill.billing_cycle || 'ค่าเช่าและบริการ'}) [${input.method}${input.slipRef ? ' Ref: ' + input.slipRef : ''}]`,
+        paymentId,
+        bangkokDate(input.paidAt),
+      ]
     );
-    if (existingTx.rows.length === 0) {
-      await client.query(
-        `INSERT INTO accounting_transactions (dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date)
-         VALUES (?, 'Income', ?, ?, ?, ?, 'bill', ?)`,
-        [
-          bill.dorm_id || 1,
-          ACCOUNTING_CATEGORY[bill.bill_type] || 'Rent',
-          input.amount,
-          `ชำระบิลห้อง ${bill.room_number || '-'} (${bill.title || bill.billing_cycle || 'ค่าเช่าและบริการ'}) [${input.method}${input.slipRef ? ' Ref: ' + input.slipRef : ''}]`,
-          billId,
-          bangkokDate(input.paidAt),
-        ]
-      );
-    }
+    await logStatus(client, billId, bill.status, 'Paid', null, input.recordedBy || null);
 
     await client.query('COMMIT', []);
-    return { ok: true, paymentId: paymentRes.rows.insertId, required, lateFee, daysOverdue };
+    return { ok: true, paymentId, required, lateFee, daysOverdue };
   } catch (error) {
     await client.query('ROLLBACK', []).catch(() => {});
     throw error;
