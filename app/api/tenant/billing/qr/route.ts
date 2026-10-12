@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { calcLateFee, getRates } from '@/lib/billing';
 import { auth } from '@/auth';
 import generatePayload from 'promptpay-qr';
 import qrcode from 'qrcode';
@@ -35,20 +36,8 @@ export async function GET(req: Request) {
       }
 
       const bill = billRes[0];
-      let billAmount = Number(bill.amount);
-      if (bill.status === 'Unpaid' && bill.due_date) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const due = new Date(bill.due_date);
-        due.setHours(0, 0, 0, 0);
-        const diffTime = today.getTime() - due.getTime();
-        if (diffTime > 0) {
-          const daysOverdue = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-          const lateFee = daysOverdue * 50;
-          billAmount += lateFee;
-        }
-      }
-      amount = billAmount;
+      const { lateFee } = calcLateFee(bill, new Date(), await getRates(sql));
+      amount = Number(bill.amount) + lateFee;
       dormId = bill.dorm_id || bill.tenant_dorm_id || 1;
       billTitle = bill.title;
     } else {

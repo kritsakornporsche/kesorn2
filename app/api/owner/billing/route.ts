@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
+import { bangkokDate, calcLateFee, getRates, priceMonthlyBill } from '@/lib/billing';
 import { NextResponse } from 'next/server';
 
 export async function GET(req: Request) {
@@ -72,21 +73,11 @@ export async function GET(req: Request) {
       ORDER BY b.due_date DESC, b.created_at DESC
     `;
     
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const rates = await getRates(sql);
+    const now = new Date();
 
     const enrichedBills = bills.map((b: any) => {
-      let daysOverdue = 0;
-      let lateFee = 0;
-      if (b.status === 'Unpaid' && b.due_date) {
-        const due = new Date(b.due_date);
-        due.setHours(0, 0, 0, 0);
-        const diffTime = today.getTime() - due.getTime();
-        if (diffTime > 0) {
-          daysOverdue = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-          lateFee = daysOverdue * 50;
-        }
-      }
+      const { daysOverdue, lateFee } = calcLateFee(b, now, rates);
       return {
         ...b,
         days_overdue: daysOverdue,
@@ -114,23 +105,19 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { 
-      tenant_id, 
-      title, 
-      amount, 
-      billing_cycle, 
-      due_date, 
-      room_number, 
-      water_units, 
-      electric_units, 
-      water_amount, 
-      electric_amount, 
-      room_amount 
+    let {
+      tenant_id,
+      title,
+      amount,
+      due_date,
+      water_units,
+      electric_units,
+      water_amount,
+      electric_amount,
+      room_amount,
+      common_fee,
     } = body;
-
-    if (!tenant_id || !title || !amount || !due_date) {
-      return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
-    }
+    const { billing_cycle, room_number } = body;
 
     // Normalize billing_cycle to YYYY-MM format
     let normalizedCycle = billing_cycle;
@@ -140,7 +127,21 @@ export async function POST(req: Request) {
         normalizedCycle = `${match[1]}-${match[2].padStart(2, '0')}`;
       }
     } else {
-      normalizedCycle = new Date().toISOString().slice(0, 7);
+      normalizedCycle = bangkokDate(new Date()).slice(0, 7);
+    }
+
+    // Monthly bills are always priced on the server; amounts and due date from the client are ignored
+    if (body.bill_type === 'monthly') {
+      const priced = await priceMonthlyBill(sql, room_number, normalizedCycle);
+      if ('error' in priced) {
+        return NextResponse.json({ success: false, message: priced.error }, { status: 400 });
+      }
+      ({ tenant_id, amount, due_date, water_units, electric_units, water_amount, electric_amount, room_amount, common_fee } = priced);
+      title = title || `ค่าเช่าห้องและสาธารณูปโภค (${normalizedCycle})`;
+    }
+
+    if (!tenant_id || !title || !amount || !due_date) {
+      return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
     }
 
     // Prevent duplicate bill for same tenant in same billing cycle
@@ -173,6 +174,7 @@ export async function POST(req: Request) {
         water_amount, 
         electric_amount, 
         room_amount,
+        common_fee,
         bill_type
       )
       VALUES (
@@ -188,6 +190,7 @@ export async function POST(req: Request) {
         ${water_amount || 0}, 
         ${electric_amount || 0}, 
         ${room_amount || 0},
+        ${common_fee || 0},
         ${body.bill_type || (title.includes('จอง') || title.includes('มัดจำ') ? 'booking' : (title.includes('ซ่อม') || title.includes('ทำความสะอาด') ? 'service' : 'monthly'))}
       )
     `;
@@ -207,7 +210,7 @@ export async function POST(req: Request) {
           VALUES (
             ${tenantUser[0].user_id},
             'ใบแจ้งหนี้ใหม่ประจำรอบบิล',
-            ${'มีใบแจ้งหนี้รอบบิล ' + (billing_cycle || '-') + ' จำนวน ฿' + Number(amount || 0).toLocaleString('th-TH') + ' กำหนดชำระภายใน ' + new Date(due_date).toLocaleDateString('th-TH')},
+            ${'มีใบแจ้งหนี้รอบบิล ' + (normalizedCycle || '-') + ' จำนวน ฿' + Number(amount || 0).toLocaleString('th-TH') + ' กำหนดชำระภายใน ' + new Date(due_date).toLocaleDateString('th-TH')},
             'billing',
             0,
             '/tenant/billing',
@@ -219,7 +222,10 @@ export async function POST(req: Request) {
       console.warn('Bill create notify warn:', ne);
     }
 
-    return NextResponse.json({ success: true, data: { id: (result as any).insertId, ...body } });
+    return NextResponse.json({
+      success: true,
+      data: { id: (result as any).insertId, ...body, tenant_id, title, amount, due_date, billing_cycle: normalizedCycle, electric_units, electric_amount, water_amount, room_amount, common_fee },
+    });
   } catch (err: any) {
     console.error('[Billing API POST] Error:', err);
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { calcLateFee, getRates } from '@/lib/billing';
 import { auth } from '@/auth';
 
 export async function GET(req: Request) {
@@ -84,21 +85,11 @@ export async function GET(req: Request) {
       ORDER BY b.id DESC
     `;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const rates = await getRates(sql);
+    const now = new Date();
 
     const enrichedBills = bills.map((b: any) => {
-      let daysOverdue = 0;
-      let lateFee = 0;
-      if (b.status === 'Unpaid' && b.due_date) {
-        const due = new Date(b.due_date);
-        due.setHours(0, 0, 0, 0);
-        const diffTime = today.getTime() - due.getTime();
-        if (diffTime > 0) {
-          daysOverdue = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-          lateFee = daysOverdue * 50;
-        }
-      }
+      const { daysOverdue, lateFee } = calcLateFee(b, now, rates);
       return {
         ...b,
         days_overdue: daysOverdue,

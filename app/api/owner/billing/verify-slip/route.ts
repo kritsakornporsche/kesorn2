@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
+import { calcLateFee, getRates } from '@/lib/billing';
 import { NextResponse } from 'next/server';
 import { verifySlipWithSlipOK } from '@/lib/slipok';
 
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
     let targetSlip = slipUrl;
 
     const billRes = await sql`
-      SELECT id, amount, common_fee, due_date, billing_cycle, created_at, status, slip_url 
+      SELECT id, amount, common_fee, due_date, billing_cycle, created_at, status, slip_url, bill_type
       FROM bills 
       WHERE id = ${billId} 
       LIMIT 1
@@ -63,7 +64,14 @@ export async function POST(req: Request) {
     }
 
     // 2. Anti-Cheat 15.3: Check if slip timestamp is BEFORE bill creation date
-    const slipDateTime = new Date(verifyResult.transDate ? `${verifyResult.transDate}T${verifyResult.transTime || '00:00:00'}` : Date.now());
+    // SlipOK reports Thai local time; add +07:00 when the value has no offset so the result
+    // does not depend on the server timezone. Falls back to now if the slip has no readable time.
+    const slipTimeText: string | undefined = verifyResult.dateTime
+      || (verifyResult.transDate ? `${verifyResult.transDate}T${verifyResult.transTime || '00:00:00'}` : undefined);
+    const parsedSlipTime = slipTimeText
+      ? new Date(/(Z|[+-]\d{2}:?\d{2})$/i.test(slipTimeText) ? slipTimeText : `${slipTimeText.trim().replace(' ', 'T')}+07:00`)
+      : null;
+    const slipDateTime = parsedSlipTime && !Number.isNaN(parsedSlipTime.getTime()) ? parsedSlipTime : new Date();
     const billCreatedAt = new Date(bill.created_at);
 
     if (slipDateTime.getTime() < billCreatedAt.getTime() - 60000) { // 1 min margin
@@ -74,11 +82,8 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // 3. Dynamic Late Fee Calculation (15.2: 50 THB/day, max 500 THB)
-    let dueDate = new Date(bill.due_date || `${bill.billing_cycle}-05T23:59:59`);
-    const diffTime = slipDateTime.getTime() - dueDate.getTime();
-    const daysOverdue = diffTime > 0 ? Math.ceil(diffTime / (1000 * 60 * 60 * 24)) : 0;
-    const penaltyAmount = Math.min(500, daysOverdue * 50);
+    // 3. Late fee counted up to the actual transfer time (monthly rent bills only, no cap)
+    const { daysOverdue, lateFee: penaltyAmount } = calcLateFee(bill, slipDateTime, await getRates(sql));
     const expectedTotal = Number(bill.amount) + penaltyAmount;
 
     // 4. Verify Amount match

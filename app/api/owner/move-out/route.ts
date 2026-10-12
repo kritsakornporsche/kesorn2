@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
+import { getRates, ratesForRoom } from '@/lib/billing';
 import generatePayload from 'promptpay-qr';
 import qrcode from 'qrcode';
 
@@ -168,7 +169,7 @@ export async function POST(req: Request) {
     const prevUnit = parseFloat(electricPrevUnit || 0);
     const newUnit = parseFloat(electricNewUnit || 0);
     const unitsUsed = Math.max(0, newUnit - prevUnit);
-    const electricAmount = Number((unitsUsed * 4.88).toFixed(2));
+    const electricAmount = Number((unitsUsed * ratesForRoom(await getRates(sql), moveReq.room_number).electricityPerUnit).toFixed(2));
     const waterAmount = 100.00; // Flat 100 THB
     const commonFee = 150.00;   // Flat 150 THB
     const roomRentAmount = Number(moveReq.room_price || 0); // Full month rent

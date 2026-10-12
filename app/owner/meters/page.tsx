@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
+import { useRates } from '@/lib/use-rates';
 
 interface RoomMeterSummary {
   room_id: number;
@@ -24,6 +25,7 @@ export default function MetersOverviewPage() {
   const router = useRouter();
 
   const [rooms, setRooms] = useState<RoomMeterSummary[]>([]);
+  const rates = useRates();
   const [loading, setLoading] = useState(true);
 
   // Search, Filter, Pagination state
@@ -107,7 +109,7 @@ export default function MetersOverviewPage() {
             <div>
               <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">ระบบจดมิเตอร์ไฟฟ้า (ห้องพักทั้งหมด)</h1>
               <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                อัตราค่าไฟฟ้า 4.88 บาท/หน่วย • ค่าน้ำเหมาจ่าย 100 บาท/เดือน • ส่วนกลาง 150 บาท/เดือน
+                อัตราค่าไฟฟ้า {rates.electricityPerUnit} บาท/หน่วย • ค่าน้ำเหมาจ่าย {rates.waterPerPerson} บาท/คน/เดือน • ส่วนกลาง {rates.commonFee} บาท/เดือน
               </p>
             </div>
           </div>

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { calcLateFee, getRates } from '@/lib/billing';
 import { auth } from '@/auth';
 
 export async function POST(req: Request) {
@@ -69,18 +70,8 @@ export async function POST(req: Request) {
     const expectedDorm = dormProfileRes[0] || {};
 
     const baseAmount = Number(bill.amount);
-    let lateFee = 0;
-    if (bill.due_date) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const due = new Date(bill.due_date);
-      due.setHours(0, 0, 0, 0);
-      const diffTime = today.getTime() - due.getTime();
-      if (diffTime > 0) {
-        const daysOverdue = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-        lateFee = daysOverdue * 50;
-      }
-    }
+    // Slip time is unknown before verification; verify-slip recounts against the transfer time
+    const { lateFee } = calcLateFee(bill, new Date(), await getRates(sql));
 
     const dormConfig = {
       name: expectedDorm.promptpay_name || expectedDorm.name || 'หอพักเกษร 2',

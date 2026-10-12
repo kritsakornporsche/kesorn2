@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
+import { useRates } from '@/lib/use-rates';
+import { ratesForRoom } from '@/lib/billing';
 
 interface MoveOutItem {
   id: number;
@@ -53,6 +55,7 @@ interface MoveOutItem {
 export default function OwnerMoveOutPage() {
   const { data: session } = useSession();
   const [requests, setRequests] = useState<MoveOutItem[]>([]);
+  const rates = useRates();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'16.1' | '16.2' | '16.3'>('16.1');
   const [searchQuery, setSearchQuery] = useState('');
@@ -212,7 +215,8 @@ export default function OwnerMoveOutPage() {
 
   // Real-time calculation helpers for modal
   const unitsUsedCalc = Math.max(0, (meterForm.newUnit || 0) - (meterForm.prevUnit || 0));
-  const elecAmountCalc = Number((unitsUsedCalc * 4.88).toFixed(2));
+  const elecRateCalc = ratesForRoom(rates, selectedReq?.room_number).electricityPerUnit;
+  const elecAmountCalc = Number((unitsUsedCalc * elecRateCalc).toFixed(2));
   const waterAmountCalc = 100;
   const commonFeeCalc = 150;
   const roomRentCalc = selectedReq ? Number(selectedReq.room_price || 0) : 0;
@@ -561,7 +565,7 @@ export default function OwnerMoveOutPage() {
                   <span>฿{roomRentCalc.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between py-1 text-slate-300">
-                  <span>ค่าไฟ ({unitsUsedCalc} หน่วย × 4.88 บาท):</span>
+                  <span>ค่าไฟ ({unitsUsedCalc} หน่วย × {elecRateCalc} บาท):</span>
                   <span className="text-primary font-bold">฿{elecAmountCalc.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between py-1 text-slate-300">

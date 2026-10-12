@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { useRates } from '@/lib/use-rates';
 
 interface MonthlyBill {
   id: number;
@@ -41,12 +42,15 @@ interface MeterReadyRoom {
   common_fee: number;
   total_amount: number;
   billing_cycle: string;
+  due_date: string;
+  lines: { key: string; label: string; detail: string; amount: number }[];
   photo_url?: string | null;
 }
 
 export default function OwnerMonthlyBillingPage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
+  const rates = useRates();
 
   // 15. 3 Core Tabs: Ready (พร้อมออก) | Overdue/Unpaid (ค้างชำระ) | Paid (ชำระแล้ว)
   const [activeTab, setActiveTab] = useState<'ready' | 'unpaid' | 'paid' | 'dispute'>('ready');
@@ -119,32 +123,28 @@ export default function OwnerMonthlyBillingPage() {
           if (
             isOccupied &&
             isCurrentCycle &&
-            m.latest_reading !== null && 
-            m.units_used !== null && 
+            m.latest_reading !== null &&
+            m.units_used !== null &&
+            m.bill_preview &&
             !issuedBillKeys.has(key) &&
             m.contract_status !== 'MoveOutPending'
           ) {
-            const isT01 = (m.room_number || '').toUpperCase() === 'T01';
-            const roomPrice = isT01 ? 10 : Number(m.price || 3400);
-            const units = Number(m.units_used);
-            const elecRate = isT01 ? 1.00 : 4.88;
-            const elecAmount = units * elecRate;
-            const waterAmount = isT01 ? 5.00 : 100.00;
-            const commonFee = isT01 ? 5.00 : 150.00;
-            const total = roomPrice + elecAmount + waterAmount + commonFee;
-
+            // Amounts are priced by the server (lib/billing); the page only displays them
+            const p = m.bill_preview;
             ready.push({
               room_id: m.room_id,
               room_number: m.room_number,
               tenant_name: m.tenant_name || (m.room_status === 'Occupied' ? 'ผู้เช่าประจำ' : 'ผู้เช่า'),
               tenant_id: m.tenant_id || m.room_id,
-              room_price: roomPrice,
-              units_used: units,
-              elec_amount: elecAmount,
-              water_amount: waterAmount,
-              common_fee: commonFee,
-              total_amount: total,
+              room_price: p.roomAmount,
+              units_used: p.electricUnits,
+              elec_amount: p.electricAmount,
+              water_amount: p.waterAmount,
+              common_fee: p.commonFee,
+              total_amount: p.total,
               billing_cycle: meterCycle,
+              due_date: p.due_date,
+              lines: p.lines,
               photo_url: m.photo_url || null,
             });
           }
@@ -177,17 +177,9 @@ export default function OwnerMonthlyBillingPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tenant_id: room.tenant_id,
           room_number: room.room_number,
           title: `ค่าเช่าห้องและสาธารณูปโภค (${room.billing_cycle})`,
-          room_amount: room.room_price,
-          electric_units: room.units_used,
-          electric_amount: room.elec_amount,
-          water_amount: room.water_amount,
-          common_fee: room.common_fee,
-          amount: room.total_amount,
           billing_cycle: room.billing_cycle,
-          due_date: `${room.billing_cycle}-05`,
           bill_type: 'monthly',
         }),
       });
@@ -216,17 +208,9 @@ export default function OwnerMonthlyBillingPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            tenant_id: room.tenant_id,
             room_number: room.room_number,
             title: `ค่าเช่าห้องและสาธารณูปโภค (${room.billing_cycle})`,
-            room_amount: room.room_price,
-            electric_units: room.units_used,
-            electric_amount: room.elec_amount,
-            water_amount: room.water_amount,
-            common_fee: room.common_fee,
-            amount: room.total_amount,
             billing_cycle: room.billing_cycle,
-            due_date: `${room.billing_cycle}-05`,
             bill_type: 'monthly',
           }),
         });
@@ -349,7 +333,7 @@ export default function OwnerMonthlyBillingPage() {
             <div>
               <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">ระบบบิลค่าเช่ารายเดือน (Monthly Billing)</h1>
               <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                ค่าไฟ 4.88 บาท/หน่วย • ค่าน้ำ 100 บาท • ค่าส่วนกลาง 150 บาท • ค่าปรับวันละ 50 บาท (เพดาน 500 บาท)
+                ค่าไฟ {rates.electricityPerUnit} บาท/หน่วย • ค่าน้ำ {rates.waterPerPerson} บาท/คน • ค่าส่วนกลาง {rates.commonFee} บาท • ค่าปรับวันละ {rates.lateFeePerDay} บาท (เฉพาะบิลค่าเช่ารายเดือน)
               </p>
             </div>
           </div>
@@ -467,11 +451,11 @@ export default function OwnerMonthlyBillingPage() {
                       <span className="font-mono">฿{r.room_price.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between text-slate-300">
-                      <span>ค่าไฟ ({r.units_used} หน่วย x 4.88):</span>
+                      <span>ค่าไฟ ({r.lines.find(l => l.key === 'electric')?.detail}):</span>
                       <span className="font-mono">฿{r.elec_amount.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-slate-300">
-                      <span>ค่าน้ำประปา (เหมาจ่าย):</span>
+                      <span>ค่าน้ำประปา ({r.lines.find(l => l.key === 'water')?.detail}):</span>
                       <span className="font-mono">฿{r.water_amount.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-slate-300">
@@ -557,13 +541,13 @@ export default function OwnerMonthlyBillingPage() {
                       </div>
                       {isOverdue && (
                         <div className="flex justify-between text-rose-400 font-bold">
-                          <span>ค่าปรับล่าช้า ({bill.days_overdue} วัน x 50 บ.):</span>
-                          <span className="font-mono">+฿{Number(bill.late_fee ?? bill.penalty_amount ?? (bill.days_overdue! * 50)).toLocaleString()}</span>
+                          <span>ค่าปรับล่าช้า ({bill.days_overdue} วัน x {rates.lateFeePerDay} บ.):</span>
+                          <span className="font-mono">+฿{Number(bill.late_fee ?? 0).toLocaleString()}</span>
                         </div>
                       )}
                       <div className="pt-2 border-t border-white/10 flex justify-between font-black text-emerald-400 text-sm">
                         <span>ยอดชำระรวม:</span>
-                        <span className="font-mono">฿{Number(bill.total_amount ?? (Number(bill.amount) + (bill.days_overdue ? bill.days_overdue * 50 : 0))).toLocaleString()}</span>
+                        <span className="font-mono">฿{Number(bill.total_amount ?? bill.amount).toLocaleString()}</span>
                       </div>
                     </div>
 

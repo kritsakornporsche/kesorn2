@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { requireRole, type CurrentUser } from '@/lib/authz';
+import { getRates, ratesForRoom } from '@/lib/billing';
 
 // Same tenant matching as /api/tenant/billing/list (bills.tenant_id -> tenants.id)
 async function tenantOwnsBill(sql: any, user: CurrentUser, billId: unknown) {
@@ -154,7 +155,7 @@ export async function POST(req: Request) {
     if (newUnits > prevReading && prevReading > 0) {
       newUnits = Math.max(0, newUnits - prevReading);
     }
-    const elecRate = 4.88;
+    const elecRate = ratesForRoom(await getRates(sql), bill.room_number).electricityPerUnit;
     const newElecAmount = Number((newUnits * elecRate).toFixed(2));
     const waterAmount = Number(bill.water_amount || 100);
     const commonFee = Number(bill.common_fee || 150);
@@ -275,12 +276,13 @@ export async function PUT(req: Request) {
       const newDueDate = new Date();
       newDueDate.setDate(newDueDate.getDate() + 5);
       newDueDate.setHours(23, 59, 59, 999);
+      const elecRate = ratesForRoom(await getRates(sql), corr.room_number).electricityPerUnit;
 
       await sql`
         UPDATE bills
         SET amount = ${corr.new_total_amount},
             electric_units = ${corr.new_electric_reading},
-            electric_amount = ${(corr.new_electric_reading * 4.88).toFixed(2)},
+            electric_amount = ${(corr.new_electric_reading * elecRate).toFixed(2)},
             due_date = ${newDueDate.toISOString().slice(0, 19).replace('T', ' ')},
             status = 'Unpaid',
             penalty_amount = 0.00,

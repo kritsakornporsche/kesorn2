@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useRates } from '@/lib/use-rates';
+import { ratesForRoom } from '@/lib/billing';
 
 interface RoomRecord {
   id: number;
@@ -22,6 +24,7 @@ export default function MeterRecordMobileFlowPage() {
   const router = useRouter();
 
   const [rooms, setRooms] = useState<RoomRecord[]>([]);
+  const rates = useRates();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [billingCycle, setBillingCycle] = useState(new Date().toISOString().substring(0, 7));
@@ -554,7 +557,7 @@ export default function MeterRecordMobileFlowPage() {
                 </label>
                 {unitsUsed !== null && unitsUsed >= 0 && (
                   <span className="text-xs sm:text-sm font-mono font-bold text-emerald-400 bg-emerald-950/50 px-3 py-1 rounded-full border border-emerald-500/30">
-                    หน่วยที่ใช้: {unitsUsed.toFixed(1)} ยูนิต (฿{(unitsUsed * 4.88).toFixed(2)})
+                    หน่วยที่ใช้: {unitsUsed.toFixed(1)} ยูนิต (฿{(unitsUsed * ratesForRoom(rates, currentRoom?.room_number).electricityPerUnit).toFixed(2)})
                   </span>
                 )}
               </div>

@@ -354,7 +354,7 @@ export default function TenantBillingPage() {
                                  ⚡ ค่าไฟฟ้า
                                </span>
                                <span className="text-[11px] text-muted-foreground pl-6 font-mono">
-                                 {elecUnits > 0 ? `${elecUnits} หน่วย (@${bill.electricity_rate || 4.88} บ.)` : 'ตามรอบมิเตอร์'}
+                                 {elecUnits > 0 ? `${elecUnits} หน่วย (@${Number((elecAmt / elecUnits).toFixed(2))} บ.)` : 'ตามรอบมิเตอร์'}
                                  {bill.meter_current_reading ? ` (เลขมิเตอร์: ${bill.meter_current_reading})` : ''}
                                </span>
                              </div>
@@ -389,7 +389,7 @@ export default function TenantBillingPage() {
                          {lateFee > 0 && (
                            <div className="flex items-center justify-between text-xs sm:text-sm text-rose-500 bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20">
                              <span className="font-bold flex items-center gap-2">
-                               ⚠️ ค่าปรับล่าช้า ({bill.days_overdue} วัน x ฿50)
+                               ⚠️ ค่าปรับล่าช้า ({bill.days_overdue} วัน x ฿{Number(bill.days_overdue) > 0 ? lateFee / Number(bill.days_overdue) : 0})
                              </span>
                              <span className="font-black">+฿{lateFee.toLocaleString()}</span>
                            </div>
@@ -531,7 +531,9 @@ export default function TenantBillingPage() {
                 <span className="text-white font-black text-base">{selectedBill.electric_units || 0} หน่วย</span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">ค่าไฟฟ้า (@4.88 บ.)</span>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">
+                  ค่าไฟฟ้า{Number(selectedBill.electric_units) > 0 ? ` (@${Number((Number(selectedBill.electric_amount || 0) / Number(selectedBill.electric_units)).toFixed(2))} บ.)` : ''}
+                </span>
                 <span className="text-primary font-black text-base">฿{Number(selectedBill.electric_amount || 0).toLocaleString()}</span>
               </div>
             </div>

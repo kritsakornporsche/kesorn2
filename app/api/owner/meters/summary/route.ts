@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
+import { calcDueDate, calcMonthlyBill, getRates, ratesForRoom } from '@/lib/billing';
 
 export async function GET(req: Request) {
   try {
@@ -53,6 +54,7 @@ export async function GET(req: Request) {
         r.id, r.room_number, r.floor, r.room_type, r.price, r.status,
         c.status as contract_status,
         c.tenant_id,
+        c.occupants,
         t.name as tenant_name
       FROM rooms r
       LEFT JOIN contracts c ON (c.room_id = r.id AND c.status IN ('Active', 'MoveOutPending'))
@@ -60,6 +62,7 @@ export async function GET(req: Request) {
       ORDER BY CAST(r.room_number AS UNSIGNED) ASC, r.room_number ASC
     `;
 
+    const rates = await getRates(sql);
     const summary = [];
     for (const room of rooms) {
       const latestReading = await sql`
@@ -86,6 +89,18 @@ export async function GET(req: Request) {
         units_used: latestReading[0]?.units_used !== undefined ? Number(latestReading[0].units_used) : null,
         photo_url: latestReading[0]?.photo_url || null,
         created_at: latestReading[0]?.created_at || null,
+        // Server-side price of the bill this reading would produce (the page only displays it)
+        bill_preview: latestReading[0]?.units_used !== undefined
+          ? {
+              ...calcMonthlyBill({
+                roomPrice: room.price,
+                unitsUsed: latestReading[0].units_used,
+                occupants: room.occupants,
+                rates: ratesForRoom(rates, room.room_number),
+              }),
+              due_date: calcDueDate(latestReading[0].billing_cycle),
+            }
+          : null,
       });
     }
 

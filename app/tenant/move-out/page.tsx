@@ -182,7 +182,7 @@ export default async function TenantMoveOut() {
                   )}
 
                   <div className="flex justify-between text-foreground/90">
-                    <span>⚡ ค่าไฟฟ้า ({Number(request.electric_units_used || 0)} หน่วย @4.88 บ.):</span>
+                    <span>⚡ ค่าไฟฟ้า ({Number(request.electric_units_used || 0)} หน่วย{Number(request.electric_units_used) > 0 ? ` @${Number((Number(request.electric_amount || 0) / Number(request.electric_units_used)).toFixed(2))} บ.` : ''}):</span>
                     <span className="font-mono font-bold text-foreground">฿{Number(request.electric_amount || 0).toLocaleString()}</span>
                   </div>
 

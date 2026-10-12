@@ -150,7 +150,7 @@ export default function GuestMoveOutSummaryPage() {
                       </div>
                       <div className="flex justify-between py-2 text-slate-300">
                         <span>
-                          ค่าไฟ (เลขเดิม {item.electric_prev_unit || 0} → เลขใหม่ {item.electric_new_unit || 0} = {item.electric_units_used || 0} หน่วย × 4.88 บ.):
+                          ค่าไฟ (เลขเดิม {item.electric_prev_unit || 0} → เลขใหม่ {item.electric_new_unit || 0} = {item.electric_units_used || 0} หน่วย{Number(item.electric_units_used) > 0 ? ` × ${Number((Number(item.electric_amount || 0) / Number(item.electric_units_used)).toFixed(2))} บ.` : ''}):
                         </span>
                         <span className="text-primary font-bold">฿{Number(item.electric_amount || 0).toLocaleString()}</span>
                       </div>
