@@ -1,6 +1,7 @@
 import { getDb } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { recordPayment, slipPaidAt } from '@/lib/payments';
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -82,9 +83,10 @@ export async function POST(req: NextRequest) {
 
     // 2. Automated Slip Verification with SlipOK
     let isAutoApproved = false;
-    let slipVerified = 0;
     let slipokRef: string | null = null;
     let slipRaw: string | null = null;
+    let slipAmount = Number(depositAmount || 1000);
+    let slipTime = new Date();
 
     if (slipUrl) {
       const { verifySlipWithSlipOK } = await import('@/lib/slipok');
@@ -133,8 +135,9 @@ export async function POST(req: NextRequest) {
       }
 
       isAutoApproved = true;
-      slipVerified = 1;
       slipRaw = JSON.stringify(verifyResult.rawData || {});
+      if (verifyResult.amount !== undefined) slipAmount = Number(verifyResult.amount);
+      slipTime = slipPaidAt(verifyResult);
     }
 
     // 2.05 Persist slip Base64 image to uploads directory (Do not store idCardImage)
@@ -197,7 +200,6 @@ export async function POST(req: NextRequest) {
     const roomNumber = roomInfo.length > 0 ? roomInfo[0].room_number : String(roomId);
     const dormId = roomInfo.length > 0 ? (roomInfo[0].dorm_id || 1) : 1;
     const bookingDueDate = startDate ? new Date(startDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
-    const initialBillStatus = isAutoApproved ? 'Paid' : 'Unpaid';
     const bookingTitle = `ค่าจองห้องพัก (ห้อง ${roomNumber})`;
 
     const billInsertRes = await sql`
@@ -234,16 +236,28 @@ export async function POST(req: NextRequest) {
         0,
         'ค่าจองห้องพักเพื่อยืนยันสิทธิ์',
         ${bookingDueDate},
-        ${initialBillStatus},
+        'Unpaid',
         ${storedSlipUrl || null},
         'booking',
-        ${slipVerified},
-        ${isAutoApproved ? new Date() : null},
+        0,
+        ${null},
         ${slipokRef},
         ${slipRaw}
       )
     `;
     const billId = (billInsertRes as any)?.insertId;
+
+    // A verified slip pays the booking bill through the single payment entry point (also records income)
+    if (isAutoApproved && billId) {
+      const payment = await recordPayment(billId, {
+        amount: slipAmount,
+        method: 'slip',
+        paidAt: slipTime,
+        slipRef: slipokRef,
+        recordedBy: Number((session.user as any)?.id) || null,
+      });
+      if (!payment.ok) console.warn('[Booking payment not recorded]', billId, payment);
+    }
 
     // 3. Update room and tenant status for 2.1.1 (Room becomes Reserved/Pending, user remains guest until 2.1.3)
     if (isAutoApproved) {
@@ -265,25 +279,6 @@ export async function POST(req: NextRequest) {
         console.warn('user_dorm_roles sync error:', re);
       }
 
-      // Sync to accounting
-      try {
-        await sql`
-          INSERT INTO accounting_transactions (
-            dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date
-          ) VALUES (
-            ${dormId},
-            'Income',
-            'Deposit',
-            ${depositAmount || 1000},
-            ${'ชำระค่าจองห้อง ' + roomNumber + ' (Ref: ' + (slipokRef || '-') + ') [SlipOK อนุมัติอัตโนมัติ]'},
-            ${billId || contractId},
-            'bill',
-            ${new Date().toISOString().slice(0, 10)}
-          )
-        `;
-      } catch (txErr) {
-        console.warn('Accounting sync error:', txErr);
-      }
     } else {
       await sql`UPDATE rooms SET status = 'Reserved' WHERE id = ${roomId}`;
     }

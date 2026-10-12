@@ -3,6 +3,7 @@ import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { verifySlipWithSlipOK } from '@/lib/slipok';
+import { recordPayment, slipPaidAt } from '@/lib/payments';
 import bcrypt from 'bcryptjs';
 
 /**
@@ -94,7 +95,6 @@ export async function POST(req: Request) {
 
     // 2. SlipOK Verification (Verify ฿1,000 booking slip)
     let isAutoApproved = false;
-    let slipVerified = 0;
     let slipRaw = null;
     let slipokRef: string | null = null;
 
@@ -142,7 +142,6 @@ export async function POST(req: Request) {
     }
 
     isAutoApproved = true;
-    slipVerified = 1;
     slipRaw = JSON.stringify(verifyResult.rawData || {});
 
     // Save slip image to disk
@@ -300,39 +299,31 @@ export async function POST(req: Request) {
         0,
         'ค่าจองห้องพักเพื่อยืนยันสิทธิ์',
         ${formattedStartDate},
-        'Paid',
+        'Unpaid',
         ${storedSlipUrl || null},
         'booking',
-        ${slipVerified},
-        ${new Date()},
+        0,
+        ${null},
         ${slipokRef},
         ${slipRaw}
       )
     `;
     const billId = (billInsertRes as any)?.insertId;
 
+    // The verified slip pays the booking bill through the single payment entry point (also records income)
+    if (billId) {
+      const payment = await recordPayment(billId, {
+        amount: verifyResult.amount !== undefined ? Number(verifyResult.amount) : Number(depositAmount || 1000),
+        method: 'slip',
+        paidAt: slipPaidAt(verifyResult),
+        slipRef: slipokRef,
+        recordedBy: guard.user.id,
+      });
+      if (!payment.ok) console.warn('[Walk-in payment not recorded]', billId, payment);
+    }
+
     // 7. Update Room status to 'Reserved'
     await sql`UPDATE rooms SET status = 'Reserved' WHERE id = ${room.id}`;
-
-    // 8. Log Accounting Transaction
-    try {
-      await sql`
-        INSERT INTO accounting_transactions (
-          dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date
-        ) VALUES (
-          ${targetDormId},
-          'Income',
-          'Deposit',
-          ${depositAmount || 1000},
-          ${'ชำระค่าจองห้อง Walk-in ' + room.room_number + ' (Ref: ' + (slipokRef || '-') + ') [SlipOK อนุมัติอัตโนมัติ]'},
-          ${billId || contractId},
-          'bill',
-          ${new Date().toISOString().slice(0, 10)}
-        )
-      `;
-    } catch (accErr) {
-      console.warn('[Walk-in Accounting Sync Error]', accErr);
-    }
 
     // 9. Send notification to tenant
     try {

@@ -449,12 +449,7 @@ async function executeMoveOutCompletion(sql: any, moveReq: any, readyDate: strin
     `;
   }
 
-  // 3. Mark existing unpaid bills as Paid / Settled
-  await sql`
-    UPDATE bills 
-    SET status = 'Paid' 
-    WHERE tenant_id = ${moveReq.tenant_id} AND status NOT IN ('Paid', 'paid', 'Cancelled')
-  `;
+  // 3. Unpaid bills are left as they are; settling them at move-out is handled by the closing account (commit 12)
 
   // 4. Update tenant status to 'past'
   await sql`

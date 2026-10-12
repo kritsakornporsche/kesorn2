@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { calcLateFee, getRates } from '@/lib/billing';
+import { recordPayment, slipPaidAt } from '@/lib/payments';
 import { auth } from '@/auth';
 
 export async function POST(req: Request) {
@@ -129,49 +130,27 @@ export async function POST(req: Request) {
     const { saveBase64Image } = await import('@/lib/file-storage');
     const storedSlipUrl = saveBase64Image(slipData, 'slips', `bill_${billId}_${Date.now()}`) || slipData;
 
-    // Update bill status directly to 'Paid' (Auto-Approved)
-    await sql`
-      UPDATE bills 
-      SET status = 'Paid', 
-          slip_url = ${storedSlipUrl},
-          slip_verified = 1,
-          slip_verified_at = NOW(),
-          slipok_trans_ref = ${slipokRef},
-          slip_data = ${slipRaw}
-      WHERE id = ${billId}
-    `;
+    // Mark Paid (and record income) through the single payment entry point
+    const amountNum = verifyRes.amount !== undefined ? Number(verifyRes.amount) : baseAmount + lateFee;
+    const payment = await recordPayment(Number(billId), {
+      amount: amountNum,
+      method: 'slip',
+      paidAt: slipPaidAt(verifyRes),
+      slipRef: slipokRef,
+      slipUrl: storedSlipUrl,
+      slipData: slipRaw,
+      recordedBy: Number((session.user as any)?.id) || null,
+    });
+    if (!payment.ok) {
+      const message = payment.reason === 'insufficient'
+        ? `ยอดในสลิป ฿${amountNum.toLocaleString('th-TH')} ไม่ครบ ต้องชำระ ฿${payment.required.toLocaleString('th-TH')} (รวมค่าปรับ)`
+        : payment.reason === 'already_paid' ? 'บิลนี้ชำระเรียบร้อยแล้ว' : 'ไม่สามารถชำระบิลนี้ได้';
+      return NextResponse.json({ success: false, message }, { status: 400 });
+    }
 
     const dormId = bill.dorm_id || 1;
     const roomNumber = bill.room_number || '-';
     const billTitle = bill.title || bill.billing_cycle || 'ค่าเช่าและบริการ';
-    const amountNum = Number(bill.amount || 0);
-
-    // Sync to accounting_transactions
-    try {
-      const existingTx = await sql`
-        SELECT id FROM accounting_transactions 
-        WHERE reference_id = ${billId} AND reference_type = 'bill' 
-        LIMIT 1
-      `;
-      if (existingTx.length === 0) {
-        await sql`
-          INSERT INTO accounting_transactions (
-            dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date
-          ) VALUES (
-            ${dormId},
-            'Income',
-            ${bill.bill_type === 'service' ? 'Service' : (bill.bill_type === 'booking' ? 'Deposit' : 'Rent')},
-            ${amountNum},
-            ${'ชำระบิลห้อง ' + roomNumber + ' (' + billTitle + ') (Ref: ' + (slipokRef || '-') + ') [SlipOK อนุมัติอัตโนมัติ]'},
-            ${billId},
-            'bill',
-            ${new Date().toISOString().slice(0, 10)}
-          )
-        `;
-      }
-    } catch (txErr) {
-      console.warn('[Billing Accounting Sync] Warn:', txErr);
-    }
 
     // 3. Create notifications for tenant and owner
     try {

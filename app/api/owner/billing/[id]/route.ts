@@ -35,6 +35,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       else if (lower === 'cancelled' || lower === 'canceled') normalizedStatus = 'Cancelled';
     }
 
+    // Payments are recorded only through recordPayment (slip verification / receiving money)
+    if (normalizedStatus === 'Paid') {
+      return NextResponse.json({ success: false, message: 'บันทึกการชำระผ่านการรับเงินเท่านั้น' }, { status: 400 });
+    }
+
     if (normalizedStatus) {
       if (slip_url !== undefined) {
         await sql`
@@ -73,57 +78,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
     // Real-time notification and accounting sync
     if (currentBill && normalizedStatus) {
-      const dormId = currentBill.dorm_id || 1;
       const tenantUserId = currentBill.tenant_user_id;
 
-      if (normalizedStatus === 'Paid') {
-        // 1. Notify tenant
-        if (tenantUserId) {
-          try {
-            await sql`
-              INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-              VALUES (
-                ${tenantUserId},
-                'การชำระเงินได้รับการอนุมัติแล้ว',
-                ${'ยอดชำระบิลรอบ ' + (currentBill.billing_cycle || '-') + ' จำนวน ฿' + Number(currentBill.amount || 0).toLocaleString('th-TH') + ' ได้รับการยืนยันเรียบร้อยแล้ว'},
-                'payment_approved',
-                0,
-                '/tenant/billing',
-                NOW()
-              )
-            `;
-          } catch (e) {
-            console.warn('[Billing Notification] Warn:', e);
-          }
-        }
-
-        // 2. Sync to accounting_transactions if not exists
-        try {
-          const existingTx = await sql`
-            SELECT id FROM accounting_transactions
-            WHERE reference_id = ${billId} AND reference_type = 'bill'
-            LIMIT 1
-          `;
-          if (existingTx.length === 0) {
-            await sql`
-              INSERT INTO accounting_transactions (dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date)
-              VALUES (
-                ${dormId},
-                'Income',
-                'Rent',
-                ${currentBill.amount || 0},
-                ${'ชำระบิลห้อง ' + (currentBill.room_number || '-') + ' (' + (currentBill.billing_cycle || '-') + ')'},
-                ${billId},
-                'bill',
-                ${new Date().toISOString().slice(0, 10)}
-              )
-            `;
-          }
-        } catch (txErr) {
-          console.warn('[Billing Accounting Sync] Warn:', txErr);
-        }
-
-      } else if (normalizedStatus === 'Cancelled') {
+      if (normalizedStatus === 'Cancelled') {
         // Handle bill cancellation: remove accounting transaction & notify tenant
         try {
           await sql`DELETE FROM accounting_transactions WHERE reference_type = 'bill' AND reference_id = ${billId}`;

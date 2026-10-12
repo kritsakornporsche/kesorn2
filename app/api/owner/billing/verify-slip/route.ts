@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { calcLateFee, getRates } from '@/lib/billing';
+import { recordPayment, slipPaidAt } from '@/lib/payments';
 import { NextResponse } from 'next/server';
 import { verifySlipWithSlipOK } from '@/lib/slipok';
 
@@ -64,14 +65,7 @@ export async function POST(req: Request) {
     }
 
     // 2. Anti-Cheat 15.3: Check if slip timestamp is BEFORE bill creation date
-    // SlipOK reports Thai local time; add +07:00 when the value has no offset so the result
-    // does not depend on the server timezone. Falls back to now if the slip has no readable time.
-    const slipTimeText: string | undefined = verifyResult.dateTime
-      || (verifyResult.transDate ? `${verifyResult.transDate}T${verifyResult.transTime || '00:00:00'}` : undefined);
-    const parsedSlipTime = slipTimeText
-      ? new Date(/(Z|[+-]\d{2}:?\d{2})$/i.test(slipTimeText) ? slipTimeText : `${slipTimeText.trim().replace(' ', 'T')}+07:00`)
-      : null;
-    const slipDateTime = parsedSlipTime && !Number.isNaN(parsedSlipTime.getTime()) ? parsedSlipTime : new Date();
+    const slipDateTime = slipPaidAt(verifyResult);
     const billCreatedAt = new Date(bill.created_at);
 
     if (slipDateTime.getTime() < billCreatedAt.getTime() - 60000) { // 1 min margin
@@ -87,7 +81,7 @@ export async function POST(req: Request) {
     const expectedTotal = Number(bill.amount) + penaltyAmount;
 
     // 4. Verify Amount match
-    const actualAmount = Number(verifyResult.transAmount || 0);
+    const actualAmount = Number(verifyResult.amount || 0);
     if (Math.abs(actualAmount - expectedTotal) > 1) { // Allow minor rounding
       return NextResponse.json({
         success: false,
@@ -96,19 +90,21 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // 5. Update Bill as Paid
-    await sql`
-      UPDATE bills
-      SET status = 'Paid',
-          penalty_amount = ${penaltyAmount},
-          days_overdue = ${daysOverdue},
-          slip_verified = 1,
-          slip_verified_at = NOW(),
-          slipok_trans_ref = ${verifyResult.transRef || null},
-          slip_data = ${JSON.stringify(verifyResult)},
-          paid_at = ${slipDateTime}
-      WHERE id = ${billId}
-    `;
+    // 5. Mark Paid (and record income) through the single payment entry point
+    const payment = await recordPayment(Number(billId), {
+      amount: actualAmount,
+      method: 'slip',
+      paidAt: slipDateTime,
+      slipRef: verifyResult.transRef || null,
+      slipData: JSON.stringify(verifyResult),
+      recordedBy: guard.user.id,
+    });
+    if (!payment.ok) {
+      const message = payment.reason === 'insufficient'
+        ? `❌ ยอดในสลิป (฿${actualAmount.toLocaleString()}) ไม่ครบ ต้องชำระ ฿${payment.required.toLocaleString()}`
+        : payment.reason === 'already_paid' ? 'บิลนี้ชำระเรียบร้อยแล้ว' : 'ไม่สามารถบันทึกการชำระบิลนี้ได้';
+      return NextResponse.json({ success: false, message, data: verifyResult }, { status: 400 });
+    }
 
     return NextResponse.json({
       success: true,

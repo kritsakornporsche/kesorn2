@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { recordPayment, slipPaidAt } from '@/lib/payments';
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -103,19 +104,18 @@ export async function POST(req: Request) {
       WHERE id = ${contractId}
     `;
 
-    // 4. Mark the first bill as Paid
+    // 4. Mark the first bill as Paid through the single payment entry point (also records income)
     if (targetBill) {
-      await sql`
-        UPDATE bills 
-        SET 
-          status = 'Paid',
-          slip_url = ${storedSlipUrl},
-          slip_verified = 1,
-          slip_verified_at = NOW(),
-          slipok_trans_ref = ${slipokRef},
-          slip_data = ${slipRaw}
-        WHERE id = ${targetBill.id}
-      `;
+      const payment = await recordPayment(targetBill.id, {
+        amount: verifyResult.amount !== undefined ? Number(verifyResult.amount) : expectedAmount,
+        method: 'slip',
+        paidAt: slipPaidAt(verifyResult),
+        slipRef: slipokRef,
+        slipUrl: storedSlipUrl,
+        slipData: slipRaw,
+        recordedBy: Number((session.user as any)?.id) || null,
+      });
+      if (!payment.ok) console.warn('[First bill payment not recorded]', targetBill.id, payment);
     }
 
     // 5. Update room status to Occupied

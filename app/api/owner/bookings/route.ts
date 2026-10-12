@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
+import { recordPayment } from '@/lib/payments';
 import { NextResponse } from 'next/server';
 
 export async function GET(req: Request) {
@@ -191,15 +192,17 @@ export async function POST(req: Request) {
         }
       }
 
-      // 4.1 Mark booking fee bill as Paid
+      // 4.1 Mark booking fee bill as Paid (Flow A approve-then-pay is commit 10)
       if (tenantId) {
-        await sql`
-          UPDATE bills 
-          SET status = 'Paid', slip_verified = 1, slip_verified_at = NOW() 
-          WHERE tenant_id = ${tenantId} 
-            AND bill_type = 'booking' 
+        const bookingBills = await sql`
+          SELECT id, amount FROM bills
+          WHERE tenant_id = ${tenantId}
+            AND bill_type = 'booking'
             AND status IN ('Pending', 'Unpaid')
         `;
+        for (const b of bookingBills) {
+          await recordPayment(b.id, { amount: Number(b.amount), method: 'slip', paidAt: new Date(), recordedBy: guard.user.id });
+        }
       }
 
       // 5. Optionally create first month rent invoice (ใบแจ้งหนี้ค่าเช่าเดือนแรก)
@@ -503,9 +506,8 @@ export async function POST(req: Request) {
       const roomNumber = roomRes[0]?.room_number || String(roomId);
       const targetDormId = dormId || roomRes[0]?.dorm_id || 1;
       const dueDate = startDate ? new Date(startDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
-      const billStatus = autoApprove ? 'Paid' : 'Unpaid'; // SlipOK handles auto-approval; no 'Pending' status needed
-
-      await sql`
+      // Always created Unpaid; an auto-approved booking is then paid through recordPayment
+      const bookingBillRes = await sql`
         INSERT INTO bills (
           tenant_id,
           dorm_id,
@@ -536,12 +538,20 @@ export async function POST(req: Request) {
           0,
           'ค่าจองห้องพักเพื่อยืนยันสิทธิ์',
           ${dueDate},
-          ${billStatus},
+          'Unpaid',
           ${slipUrl || null},
           'booking',
-          ${autoApprove ? 1 : 0}
+          0
         )
       `;
+      if (autoApprove) {
+        await recordPayment((bookingBillRes as any).insertId, {
+          amount: Number(depositAmount || 1000),
+          method: 'slip',
+          paidAt: new Date(),
+          recordedBy: guard.user.id,
+        });
+      }
 
       return NextResponse.json({ 
         success: true, 
