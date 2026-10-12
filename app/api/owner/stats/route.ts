@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 
 export async function GET(req: Request) {
   try {
@@ -8,6 +9,10 @@ export async function GET(req: Request) {
     if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
+    // Managers see outstanding amounts but not income
+    const showIncome = guard.user.role === 'owner';
 
     const sql = getDb();
 
@@ -88,7 +93,9 @@ export async function GET(req: Request) {
     recentPaid.forEach((r: any) => {
       recentActivities.push({
         type: 'paid',
-        title: `ห้อง ${r.room_number} ชำระบิลรอบ ${r.billing_cycle} (฿${Number(r.amount).toLocaleString()})`,
+        title: showIncome
+          ? `ห้อง ${r.room_number} ชำระบิลรอบ ${r.billing_cycle} (฿${Number(r.amount).toLocaleString()})`
+          : `ห้อง ${r.room_number} ชำระบิลรอบ ${r.billing_cycle}`,
         time: r.created_at,
         badge: '🟢 ชำระเงินแล้ว'
       });
@@ -144,7 +151,7 @@ export async function GET(req: Request) {
         unpaidBillsCount,
         unpaidBillsAmount,
         paidBillsCount,
-        paidBillsAmount,
+        paidBillsAmount: showIncome ? paidBillsAmount : null,
         expiringContracts,
         occupancyRate: Math.round((occupiedRooms / (totalRooms || 1)) * 100),
         collectionRate: totalRooms > 0 ? Math.round((paidBillsCount / (totalRooms || 1)) * 100) : 0,

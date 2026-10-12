@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 
 export async function GET(req: Request) {
   try {
@@ -8,9 +9,8 @@ export async function GET(req: Request) {
     if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if ((session.user as any)?.role !== 'owner') {
-      return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner']);
+    if ('response' in guard) return guard.response;
 
     const { searchParams } = new URL(req.url);
     const dormId = parseInt(searchParams.get('dormId') || (session.user as any)?.dormId || '1', 10);
@@ -62,9 +62,8 @@ export async function POST(req: Request) {
     if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if ((session.user as any)?.role !== 'owner') {
-      return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner']);
+    if ('response' in guard) return guard.response;
 
     const body = await req.json();
     const { type, category, amount, description, dorm_id } = body;

@@ -1,6 +1,20 @@
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireRole, type CurrentUser } from '@/lib/authz';
+
+// Same tenant matching as /api/tenant/billing/list (bills.tenant_id -> tenants.id)
+async function tenantOwnsBill(sql: any, user: CurrentUser, billId: unknown) {
+  const rows = await sql`
+    SELECT b.id FROM bills b
+    JOIN tenants t ON t.id = b.tenant_id
+    WHERE b.id = ${billId} AND (t.user_id = ${user.id} OR LOWER(t.email) = ${user.email.toLowerCase()})
+    LIMIT 1
+  `;
+  return rows.length > 0;
+}
+
+const forbidden = () => NextResponse.json({ success: false, message: 'ไม่มีสิทธิ์ใช้งานส่วนนี้' }, { status: 403 });
 
 // GET: Fetch disputes/corrections
 export async function GET(req: Request) {
@@ -10,9 +24,16 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
+    const guard = await requireRole(['owner', 'manager', 'tenant']);
+    if ('response' in guard) return guard.response;
+
     const { searchParams } = new URL(req.url);
     const billId = searchParams.get('billId');
     const sql = getDb();
+
+    if (guard.user.role === 'tenant' && (!billId || !(await tenantOwnsBill(sql, guard.user, billId)))) {
+      return forbidden();
+    }
 
     let corrections;
     if (billId) {
@@ -90,10 +111,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
+    const guard = await requireRole(['owner', 'manager', 'tenant']);
+    if ('response' in guard) return guard.response;
+
     const body = await req.json();
     const { billId, newElectricReading, reason, evidencePhotoUrl } = body;
 
     const sql = getDb();
+
+    if (guard.user.role === 'tenant' && !(await tenantOwnsBill(sql, guard.user, billId))) {
+      return forbidden();
+    }
 
     // 1. Fetch bill details
     const billRes = await sql`
@@ -115,8 +143,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'ไม่สามารถขอแก้ไขบิลที่ชำระเงินเรียบร้อยแล้วได้' }, { status: 400 });
     }
 
-    const userRole = (session.user as any)?.role === 'owner' ? 'owner' : 'tenant';
-    const userId = (session.user as any)?.id || 1;
+    // requested_by is ENUM('owner','tenant'): staff (owner/manager) are recorded as 'owner'
+    const userRole = guard.user.role === 'tenant' ? 'tenant' : 'owner';
+    const userId = guard.user.id;
 
     // Recalculate new total
     // Support either entering units directly or absolute meter reading
@@ -197,6 +226,9 @@ export async function PUT(req: Request) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
+    const guard = await requireRole(['owner', 'manager', 'tenant']);
+    if ('response' in guard) return guard.response;
+
     const body = await req.json();
     const { correctionId, action } = body; // action: 'approve' | 'reject'
 
@@ -213,10 +245,13 @@ export async function PUT(req: Request) {
       return NextResponse.json({ success: false, message: 'ไม่พบคำขอแก้ไข' }, { status: 404 });
     }
 
-    const role = (session.user as any)?.role;
-    const isStaff = role === 'owner' || role === 'keeper' || role === 'platform_admin';
+    const isStaff = guard.user.role === 'owner' || guard.user.role === 'manager';
 
     const corr = corrRes[0];
+
+    if (!isStaff && !(await tenantOwnsBill(sql, guard.user, corr.bill_id))) {
+      return forbidden();
+    }
 
     // Rule:
     // If requested_by === 'owner': Tenant must approve/reject. Staff cannot approve their own correction.

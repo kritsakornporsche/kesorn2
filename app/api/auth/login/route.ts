@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { verifyPassword } from '@/lib/password';
+import { findLoginAccount } from '@/lib/login-lookup';
 
 export async function POST(request: Request) {
   try {
@@ -12,52 +13,30 @@ export async function POST(request: Request) {
     const inputNorm = email.toLowerCase().trim();
     const sql = getDb();
 
-    // ── 1. Check platform_admins ────────────────────────────────────────────
-    try {
-      const admins = await sql`
-        SELECT id, name, email, password, role FROM platform_admins
-        WHERE (
-          LOWER(email) = ${inputNorm}
-          OR LOWER(name) = ${inputNorm}
-          OR SUBSTRING_INDEX(LOWER(email), '@', 1) = ${inputNorm}
-        ) AND is_active = TRUE LIMIT 1
-      `;
-      if (admins.length > 0) {
-        if ((await verifyPassword(password, admins[0].password)).ok) {
-          const { id, name, email: adminEmail } = admins[0];
-          return NextResponse.json({
-            success: true,
-            message: 'เข้าสู่ระบบสำเร็จ (Platform Admin)',
-            redirectUrl: '/platform',
-            user: { id, name, email: adminEmail, role: 'platform_admin', dormDbName: null },
-          });
-        } else {
-          return NextResponse.json({ success: false, message: 'รหัสผ่านไม่ถูกต้อง' }, { status: 401 });
-        }
-      }
-    } catch (e) { /* ignore */ }
+    const lookup = await findLoginAccount(sql, inputNorm);
+    if ('ambiguous' in lookup) {
+      return NextResponse.json({ success: false, message: 'ชื่อนี้ซ้ำกับหลายบัญชี กรุณาเข้าสู่ระบบด้วยอีเมล' }, { status: 409 });
+    }
 
-    // ── 2. Search users table (by email OR name/username OR role shortcut) ──
-    const users = await sql`
-      SELECT id, name, email, password, role, sub_role, is_active 
-      FROM users
-      WHERE (
-        LOWER(email) = ${inputNorm}
-        OR LOWER(name) = ${inputNorm}
-        OR SUBSTRING_INDEX(LOWER(email), '@', 1) = ${inputNorm}
-      )
-      ORDER BY (LOWER(email) = ${inputNorm}) DESC
-      LIMIT 1
-    `;
-
-    if (users.length > 0) {
-      const user = users[0];
+    if ('found' in lookup) {
+      const { table, row: user } = lookup.found;
       const isMatch = (await verifyPassword(password, user.password)).ok;
+      if (isMatch && !user.is_active) {
+        return NextResponse.json({ success: false, message: 'บัญชีนี้ถูกปิดใช้งาน' }, { status: 403 });
+      }
+      if (isMatch && table === 'platform_admins') {
+        return NextResponse.json({
+          success: true,
+          message: 'เข้าสู่ระบบสำเร็จ (Platform Admin)',
+          redirectUrl: '/platform',
+          user: { id: user.id, name: user.name, email: user.email, role: 'platform_admin', dormDbName: null },
+        });
+      }
       if (isMatch) {
         const effectiveRole = user.role || 'guest';
         let redirectUrl = '/explore';
-        
-        if (effectiveRole === 'owner') redirectUrl = '/owner';
+
+        if (effectiveRole === 'owner' || effectiveRole === 'manager') redirectUrl = '/owner';
         else if (effectiveRole === 'tenant') redirectUrl = '/tenant';
         else if (effectiveRole === 'keeper') {
           if (user.sub_role === 'maid') redirectUrl = '/keeper/maid';

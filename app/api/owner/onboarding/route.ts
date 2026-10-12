@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { requireRole } from '@/lib/authz';
 
 export async function GET(req: Request) {
+  const guard = await requireRole(['owner', 'manager']);
+  if ('response' in guard) return guard.response;
   const { searchParams } = new URL(req.url);
   const email = searchParams.get('email');
   const dormDbName = searchParams.get('dormDbName'); // Now this acts as dorm_id
@@ -22,6 +25,7 @@ export async function GET(req: Request) {
 
     // Kesorn 2 single dormitory response
     const dormProfiles = await sql`SELECT * FROM dormitory_profile LIMIT 1`;
+    if (dormProfiles[0]) delete dormProfiles[0].ocr_api_key;
     const dorm = dormProfiles[0] || {
       id: 1,
       name: 'หอพักเกษร 2',

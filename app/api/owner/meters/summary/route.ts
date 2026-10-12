@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 
 export async function GET(req: Request) {
   try {
@@ -8,6 +9,8 @@ export async function GET(req: Request) {
     if (!session?.user?.email) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
 
     const { searchParams } = new URL(req.url);
     const roomId = searchParams.get('roomId');

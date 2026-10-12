@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { handleSignOut } from '@/lib/auth-client';
 import versionData from '@/lib/version.json';
+import { isMenuItemVisible } from '@/lib/owner-only-paths';
 
 interface SubAction {
   href: string;
@@ -205,7 +206,7 @@ export default function OwnerBottomNav() {
         },
         {
           href: '/owner/keepers',
-          label: 'ทีมผู้ดูแลหอพัก',
+          label: 'พนักงาน',
           sublabel: 'จัดการแม่บ้าน ช่างซ่อม และมอบหมายงาน',
           icon: '🧹',
         },
@@ -342,7 +343,7 @@ export default function OwnerBottomNav() {
 
               {/* Sub-Actions Cards (AIO Insurance Style) */}
               <div className="grid grid-cols-1 gap-2.5">
-                {currentSheetCategory.subActions?.map((sub) => {
+                {currentSheetCategory.subActions?.filter((sub) => isMenuItemVisible(sub.href, (session?.user as any)?.role)).map((sub) => {
                   const isCurrent = pathname.startsWith(sub.href);
                   return (
                     <Link

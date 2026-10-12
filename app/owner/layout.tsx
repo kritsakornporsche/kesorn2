@@ -1,6 +1,5 @@
 import { ReactNode } from 'react';
-import { auth } from '@/auth';
-import { getDb } from '@/lib/db';
+import { getCurrentUser } from '@/lib/authz';
 import { redirect } from 'next/navigation';
 import OwnerNavbar from './components/OwnerNavbar';
 import OwnerSidebar from './components/OwnerSidebar';
@@ -12,29 +11,16 @@ export default async function OwnerLayout({
 }: {
   children: ReactNode;
 }) {
-  const session = await auth();
+  const user = await getCurrentUser();
 
-  // SEC-01: Must be authenticated
-  if (!session || !session.user) {
+  // SEC-01: Must be authenticated (role and active status are read from the DB)
+  if (!user) {
     redirect('/signin?callbackUrl=' + encodeURIComponent('/owner'));
   }
 
-  // SEC-02: Must have owner role
-  let role = (session.user as any)?.role;
-  if (role !== 'owner' && session.user.email) {
-    try {
-      const sql = getDb();
-      const u = await sql`SELECT COALESCE(role, primary_role) as role FROM users WHERE LOWER(email) = ${session.user.email.toLowerCase()} LIMIT 1`;
-      if (u.length > 0 && u[0].role === 'owner') {
-        role = 'owner';
-      }
-    } catch (e) {
-      // ignore
-    }
-  }
-
-  if (role !== 'owner') {
-    redirect('/signin?error=' + encodeURIComponent('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (เฉพาะเจ้าของหอพัก)'));
+  // SEC-02: Owner or manager only
+  if (user.role !== 'owner' && user.role !== 'manager') {
+    redirect('/signin?error=' + encodeURIComponent('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (เฉพาะเจ้าของหอพักและผู้จัดการ)'));
   }
 
   return (

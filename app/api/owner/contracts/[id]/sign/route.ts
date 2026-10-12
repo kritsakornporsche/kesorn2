@@ -1,12 +1,15 @@
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session || !session.user) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
+  const guard = await requireRole(['owner', 'manager']);
+  if ('response' in guard) return guard.response;
   const sql = getDb();
 
   try {

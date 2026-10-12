@@ -17,7 +17,7 @@ interface DashboardStats {
   unpaidBillsCount: number;
   unpaidBillsAmount: number;
   paidBillsCount: number;
-  paidBillsAmount: number;
+  paidBillsAmount: number | null;
   expiringContracts: number;
   occupancyRate: number;
   collectionRate: number;
@@ -259,10 +259,12 @@ export default function OwnerDashboardPage() {
             </div>
 
             <div className="space-y-2">
+              {stats.paidBillsAmount !== null && (
               <div className="flex justify-between items-center text-xs">
                 <span className="text-slate-400">ชำระแล้ว:</span>
                 <span className="font-bold text-emerald-400 font-mono">฿{stats.paidBillsAmount.toLocaleString()}</span>
               </div>
+              )}
               <div className="flex justify-between items-center text-xs">
                 <span className="text-slate-400">ค้างชำระ:</span>
                 <span className="font-bold text-rose-400 font-mono">฿{stats.unpaidBillsAmount.toLocaleString()} ({stats.unpaidBillsCount} ห้อง)</span>

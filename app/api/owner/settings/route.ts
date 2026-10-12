@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 
 // GET /api/owner/settings
 export async function GET(req: Request) {
@@ -9,9 +10,8 @@ export async function GET(req: Request) {
     if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if ((session.user as any)?.role !== 'owner') {
-      return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner']);
+    if ('response' in guard) return guard.response;
 
     const sql = getDb();
     const profile = await sql`SELECT * FROM dormitory_profile LIMIT 1`;
@@ -49,9 +49,8 @@ export async function POST(req: Request) {
     if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if ((session.user as any)?.role !== 'owner') {
-      return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner']);
+    if ('response' in guard) return guard.response;
 
     const body = await req.json();
     const {

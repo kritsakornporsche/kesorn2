@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 import generatePayload from 'promptpay-qr';
 import qrcode from 'qrcode';
 
@@ -8,13 +9,11 @@ import qrcode from 'qrcode';
 export async function GET(req: Request) {
   try {
     const session = await auth();
-    const role = (session?.user as any)?.role;
     if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
-      return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
     const sql = getDb();
     const { searchParams } = new URL(req.url);
     const dormId = searchParams.get('dormId') || (session?.user as any)?.dormId || 1;
@@ -123,13 +122,11 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    const role = (session?.user as any)?.role;
     if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
-      return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
     const sql = getDb();
     const body = await req.json();
 
@@ -374,13 +371,11 @@ export async function POST(req: Request) {
 export async function PUT(req: Request) {
   try {
     const session = await auth();
-    const role = (session?.user as any)?.role;
     if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
-      return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
     const sql = getDb();
     const body = await req.json();
     const { requestId, refundSlipUrl, note, readyToOccupyDate } = body;
@@ -399,6 +394,11 @@ export async function PUT(req: Request) {
       return NextResponse.json({ success: false, message: 'ไม่พบรายการคำร้องขอย้ายออก' }, { status: 404 });
     }
     const moveReq = reqRes[0];
+
+    // Recording a deposit refund is owner-only; managers may only settle tenant payments
+    if (moveReq.settlement_type === 'OwnerRefund' && guard.user.role !== 'owner') {
+      return NextResponse.json({ success: false, message: 'การคืนเงินประกันต้องให้เจ้าของหอเป็นผู้บันทึก' }, { status: 403 });
+    }
 
     const targetReadyDate = readyToOccupyDate || moveReq.ready_to_occupy_date || null;
 

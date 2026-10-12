@@ -1,13 +1,15 @@
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
   const session = await auth();
-  const role = (session?.user as any)?.role;
-  if (!session?.user || (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin')) {
-    return NextResponse.json({ success: false, message: 'Unauthorized: เฉพาะเจ้าของหอพักหรือผู้ดูแล' }, { status: 401 });
+  if (!session?.user) {
+    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
+  const guard = await requireRole(['owner', 'manager']);
+  if ('response' in guard) return guard.response;
   const sql = getDb();
 
   try {

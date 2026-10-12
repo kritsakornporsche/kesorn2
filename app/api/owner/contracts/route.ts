@@ -1,17 +1,16 @@
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
 export async function GET(req: Request) {
   try {
     const session = await auth();
-    const role = (session?.user as any)?.role;
     if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
-      return NextResponse.json({ success: false, message: 'Forbidden: เฉพาะเจ้าของหอพัก' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
     const { searchParams } = new URL(req.url);
     const dormIdParam = searchParams.get('dormId');
     const userEmail = session.user.email;
@@ -78,13 +77,11 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    const role = (session?.user as any)?.role;
     if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
-      return NextResponse.json({ success: false, message: 'Forbidden: เฉพาะเจ้าของหอพัก' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
     const body = await req.json();
     const { 
       dormId,
@@ -263,13 +260,11 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   try {
     const session = await auth();
-    const role = (session?.user as any)?.role;
     if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
-      return NextResponse.json({ success: false, message: 'Forbidden: เฉพาะเจ้าของหอพัก' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
     const body = await req.json();
     const { contractId, contract_file_url } = body;
 
@@ -324,13 +319,11 @@ export async function PATCH(req: Request) {
 export async function PUT(req: Request) {
   try {
     const session = await auth();
-    const role = (session?.user as any)?.role;
     if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
-      return NextResponse.json({ success: false, message: 'Forbidden: เฉพาะเจ้าของหอพัก' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
 
     const body = await req.json();
     const { contract_id, contract_file_url, status, create_first_bill, monthly_rent, deposit_extra } = body;

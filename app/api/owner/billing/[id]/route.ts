@@ -1,4 +1,5 @@
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
@@ -7,6 +8,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (!session || !session.user) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
+  const guard = await requireRole(['owner', 'manager']);
+  if ('response' in guard) return guard.response;
   const sql = getDb();
 
   const { id } = await params;
@@ -186,6 +189,8 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   if (!session || !session.user) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
+  const guard = await requireRole(['owner', 'manager']);
+  if ('response' in guard) return guard.response;
   const sql = getDb();
 
   const { id } = await params;

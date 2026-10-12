@@ -1,14 +1,16 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    const role = (session?.user as any)?.role;
-    if (!session?.user || (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin')) {
-      return NextResponse.json({ success: false, message: 'Unauthorized: เฉพาะเจ้าของหอพัก' }, { status: 401 });
+    if (!session?.user) {
+      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
     const body = await req.json();
     const { contract_id, new_end_date, deposit_amount, contract_file_url } = body;
 

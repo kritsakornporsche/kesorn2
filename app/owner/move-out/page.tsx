@@ -434,7 +434,7 @@ export default function OwnerMoveOutPage() {
                     </button>
                   )}
 
-                  {activeTab === '16.2' && (
+                  {activeTab === '16.2' && !(item.settlement_type === 'OwnerRefund' && (session?.user as any)?.role === 'manager') && (
                     <button
                       onClick={() => setSettleReq(item)}
                       className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-lg shadow-emerald-600/20 transition-all flex items-center gap-1.5 cursor-pointer"

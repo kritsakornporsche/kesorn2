@@ -7,6 +7,7 @@ import Credentials from 'next-auth/providers/credentials';
 import { getDb } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 import { verifyPassword } from '@/lib/password';
+import { findLoginAccount } from '@/lib/login-lookup';
 import { authConfig } from './auth.config';
 
 if (!process.env.AUTH_SECRET) {
@@ -53,61 +54,24 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           } catch (e) { console.error('[Auth: rehash]', e); }
         };
 
-        // ── Direct User authentication for Kesorn 2 ─────────────────────────
         try {
-          const users = await sql`
-            SELECT id, name, email, password, COALESCE(role, primary_role, 'guest') as role, primary_role, sub_role, is_active
-            FROM users
-            WHERE (
-              LOWER(email) = ${email}
-              OR LOWER(name) = ${email}
-              OR SUBSTRING_INDEX(LOWER(email), '@', 1) = ${email}
-            )
-            ORDER BY (LOWER(email) = ${email}) DESC
-            LIMIT 1
-          `;
+          // Ambiguous names (several accounts) are refused; /api/auth/login tells the user to use the email
+          const lookup = await findLoginAccount(sql, email);
+          if (!('found' in lookup)) return null;
 
-          if (users.length > 0) {
-            const user = users[0];
-            const check = await verifyPassword(password, user.password);
-            if (check.ok) {
-              if (check.needsRehash) await rehash('users', user.id);
-              return {
-                id: String(user.id),
-                name: user.name,
-                email: user.email,
-                role: user.role || user.primary_role || 'guest',
-                sub_role: user.sub_role || null,
-              } as any;
-            }
-          }
-        } catch (e) { console.error('[Auth: user check]', e); }
+          const { table, row } = lookup.found;
+          const check = await verifyPassword(password, row.password);
+          if (!check.ok || !row.is_active) return null;
+          if (check.needsRehash) await rehash(table, row.id);
 
-        // ── Platform Admin fallback check ──────────────────────────────────
-        try {
-          const admins = await sql`
-            SELECT id, name, email, password, role FROM platform_admins
-            WHERE (
-              LOWER(email) = ${email}
-              OR LOWER(name) = ${email}
-              OR SUBSTRING_INDEX(LOWER(email), '@', 1) = ${email}
-            ) AND is_active = 1 LIMIT 1
-          `;
-          if (admins.length > 0) {
-            const admin = admins[0];
-            const check = await verifyPassword(password, admin.password);
-            if (check.ok) {
-              if (check.needsRehash) await rehash('platform_admins', admin.id);
-              return {
-                id: String(admin.id),
-                name: admin.name,
-                email: admin.email,
-                role: 'platform_admin',
-                sub_role: null,
-              } as any;
-            }
-          }
-        } catch (e) { console.error('[Auth: platform_admin check]', e); }
+          return {
+            id: String(row.id),
+            name: row.name,
+            email: row.email,
+            role: table === 'platform_admins' ? 'platform_admin' : (row.role || 'guest'),
+            sub_role: table === 'platform_admins' ? null : (row.sub_role || null),
+          } as any;
+        } catch (e) { console.error('[Auth: credentials check]', e); }
 
         return null;
       }
