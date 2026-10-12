@@ -28,7 +28,7 @@ export async function POST(request: Request) {
         return NextResponse.json({
           success: true,
           message: 'เข้าสู่ระบบสำเร็จ (Platform Admin)',
-          redirectUrl: '/platform',
+          redirectUrl: '/explore',
           user: { id: user.id, name: user.name, email: user.email, role: 'platform_admin', dormDbName: null },
         });
       }
@@ -42,8 +42,6 @@ export async function POST(request: Request) {
           if (user.sub_role === 'maid') redirectUrl = '/keeper/maid';
           else if (user.sub_role === 'technician') redirectUrl = '/keeper/technician';
           else redirectUrl = '/keeper';
-        } else if (effectiveRole === 'researcher') {
-          redirectUrl = '/researcher';
         }
 
         return NextResponse.json({

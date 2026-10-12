@@ -82,21 +82,15 @@ export default function SignInContent() {
       if (forceDestination) {
         targetPath = forceDestination;
       } else if (callbackUrl) {
-        const isResearcherPath = callbackUrl.startsWith('/researcher') || callbackUrl.startsWith('/sequence');
         const isOwnerPath = callbackUrl.startsWith('/owner');
         const isTenantPath = callbackUrl.startsWith('/tenant');
         const isKeeperPath = callbackUrl.startsWith('/keeper');
-        const isPlatformPath = callbackUrl.startsWith('/platform');
 
-        if (isResearcherPath && userRole !== 'researcher') {
-          targetPath = redirectUrl;
-        } else if (isOwnerPath && userRole !== 'owner') {
+        if (isOwnerPath && userRole !== 'owner' && userRole !== 'manager') {
           targetPath = redirectUrl;
         } else if (isTenantPath && userRole !== 'tenant') {
           targetPath = redirectUrl;
         } else if (isKeeperPath && userRole !== 'keeper') {
-          targetPath = redirectUrl;
-        } else if (isPlatformPath && userRole !== 'platform_admin') {
           targetPath = redirectUrl;
         } else {
           targetPath = callbackUrl;

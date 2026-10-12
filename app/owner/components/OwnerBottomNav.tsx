@@ -35,7 +35,6 @@ export default function OwnerBottomNav() {
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
   const [dorms, setDorms] = useState<any[]>([]);
   const [selectedDb, setSelectedDb] = useState<string | null>(null);
-  const [canAddDorm, setCanAddDorm] = useState(false);
 
   // 1. Fetch unread chat count & dorms info for badge indicators
   useEffect(() => {
@@ -62,7 +61,6 @@ export default function OwnerBottomNav() {
           .then(data => {
             if (data.success) {
               setDorms(data.dorms || []);
-              setCanAddDorm(data.canAddDorm);
               setSelectedDb(data.dormDbName);
             }
           })
@@ -315,15 +313,6 @@ export default function OwnerBottomNav() {
                     <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
                       <span>🏢</span> หอพักที่กำลังดูแล
                     </span>
-                    {canAddDorm && (
-                      <Link
-                        href="/owner/onboarding?force=true"
-                        onClick={() => setActiveSheet(null)}
-                        className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md hover:bg-amber-500/20"
-                      >
-                        + เพิ่มหอพัก
-                      </Link>
-                    )}
                   </div>
                   {dorms.length > 0 && (
                     <select
