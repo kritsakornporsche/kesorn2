@@ -253,6 +253,7 @@ export default function SignInContent() {
             </button>
           </form>
 
+          {process.env.NODE_ENV === 'development' && (
           <div className="mt-8 pt-6 border-t border-border">
             <div className="flex items-center justify-center gap-2 mb-3">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
@@ -262,22 +263,20 @@ export default function SignInContent() {
             </div>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { label: '👑 เจ้าของหอ', user: 'owner', dest: '/owner' },
-                { label: '🏠 ลูกหอ', user: 'tenant', dest: '/tenant' },
-                { label: '🔬 นักวิจัย', user: 'researcher', dest: '/researcher' },
-                { label: '🧹 แม่บ้าน', user: 'maid', dest: '/keeper/maid' },
-                { label: '🔧 ช่างซ่อม', user: 'technician', dest: '/keeper/technician' },
-                { label: '🛡️ แอดมิน', user: 'admin', dest: '/platform' },
-                { label: '🌐 แขก (Guest) / แดชบอร์ดการจอง', user: 'guest', dest: '/guest' },
+                { label: '👑 เจ้าของหอ', user: 'owner', email: 'owner@kesorn.com', dest: '/owner' },
+                { label: '🏠 ลูกหอ', user: 'tenant', email: 'tenant@kesorn.com', dest: '/tenant' },
+                { label: '🧹 แม่บ้าน', user: 'maid', email: 'maid@kesorn.com', dest: '/keeper/maid' },
+                { label: '🔧 ช่างซ่อม', user: 'technician', email: 'technician@kesorn.com', dest: '/keeper/technician' },
+                { label: '🌐 แขก (Guest) / แดชบอร์ดการจอง', user: 'guest', email: 'guest@kesorn.com', dest: '/guest' },
               ].map((roleItem) => (
                 <button
                   key={roleItem.user}
                   type="button"
                   disabled={loading}
                   onClick={() => {
-                    setEmail(roleItem.user);
+                    setEmail(roleItem.email);
                     setPassword(roleItem.user);
-                    loginWithCredentials(roleItem.user, roleItem.user, roleItem.dest);
+                    loginWithCredentials(roleItem.email, roleItem.user, roleItem.dest);
                   }}
                   className={`py-2.5 px-2 text-[11px] font-black rounded-xl border transition-all text-center cursor-pointer select-none active:scale-95 disabled:opacity-50 shadow-sm ${
                     roleItem.user === 'guest'
@@ -290,6 +289,7 @@ export default function SignInContent() {
               ))}
             </div>
           </div>
+          )}
 
           <div className="mt-6 text-center">
              <Link 

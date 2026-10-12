@@ -231,8 +231,10 @@ export async function verifySlipWithSlipOK(
     }
 
     if (
-      rawContent === 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' ||
-      rawContent.includes('TEST_MOCK_VALID_SLIP')
+      process.env.NODE_ENV === 'development' && (
+        rawContent === 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' ||
+        rawContent.includes('TEST_MOCK_VALID_SLIP')
+      )
     ) {
       const mockRef = 'MOCK-SLIPOK-' + Date.now();
       const mockDate = new Date().toISOString();

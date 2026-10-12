@@ -8,17 +8,17 @@
  */
 import { Pool } from '@/lib/mysql-adapter';
 
-const MYSQL_BASE = process.env.DATABASE_URL 
-  ? process.env.DATABASE_URL.replace(/\/[^\/]+$/, '')
-  : 'mysql://smartdom:smartdom@localhost:3306';
-
 // Use a singleton pool to prevent MySQL max_connections exhaustion
 let globalDbPool: any = null;
 
 // ── Unified Single Dormitory Database (kesorn_db) ───────────────────────────
 export function getDb() {
   if (!globalDbPool) {
-    const pool = new Pool({ connectionString: `${MYSQL_BASE}/kesorn_db` });
+    if (!process.env.DATABASE_URL) {
+      throw new Error('DATABASE_URL is not set');
+    }
+    const mysqlBase = process.env.DATABASE_URL.replace(/\/[^\/]+$/, '');
+    const pool = new Pool({ connectionString: `${mysqlBase}/kesorn_db` });
     globalDbPool = async function(strings: any, ...values: any[]) {
       if (Array.isArray(strings) && (strings as any).raw) {
         let queryText = '';

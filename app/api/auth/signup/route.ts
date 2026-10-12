@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { username, email, password, role = 'guest', sub_role = null } = body;
+    const { username, email, password } = body;
 
     // ── Validate required fields ──────────────────────────────────────────────
     if (!username || !username.trim() || !email || !password) {
@@ -41,19 +41,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // ── Validate role ─────────────────────────────────────────────────────────
-    const validRoles = ['guest', 'tenant', 'keeper', 'owner', 'researcher'];
-    const chosenRole = validRoles.includes(role) ? role : 'guest';
-
-    if (chosenRole === 'keeper') {
-      const validSubRoles = ['maid', 'technician'];
-      if (!validSubRoles.includes(sub_role)) {
-        return NextResponse.json(
-          { success: false, message: 'กรุณาระบุประเภทบุคลากรให้ถูกต้อง (แม่บ้าน หรือ ช่างซ่อม)' },
-          { status: 400 }
-        );
-      }
-    }
+    // ── Role: self-signup is always guest (tenants come from contracts, staff from the owner) ──
+    const chosenRole = 'guest';
 
     const sql = getDb();
     const usernameClean = username.trim();
@@ -114,7 +103,7 @@ export async function POST(request: Request) {
         ${hashedPassword},
         ${chosenRole},
         ${chosenRole},
-        ${chosenRole === 'keeper' ? sub_role : null},
+        ${null},
         1
       )
     `;
@@ -131,7 +120,7 @@ export async function POST(request: Request) {
           name: usernameClean,
           email: cleanEmail,
           role: chosenRole,
-          sub_role: chosenRole === 'keeper' ? sub_role : null,
+          sub_role: null,
         },
       },
       { status: 201 }

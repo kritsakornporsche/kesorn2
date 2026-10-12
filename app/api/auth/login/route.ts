@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import bcrypt from 'bcryptjs';
+import { verifyPassword } from '@/lib/password';
 
 export async function POST(request: Request) {
   try {
@@ -12,58 +12,24 @@ export async function POST(request: Request) {
     const inputNorm = email.toLowerCase().trim();
     const sql = getDb();
 
-    // Map role shortcuts to their official Kesorn 2 emails
-    const ROLE_SHORTCUT_MAP: Record<string, string> = {
-      tenant: 'tenant@kesorn.com',
-      owner: 'owner@kesorn.com',
-      admin: 'admin@smartdom.com',
-      maid: 'maid@kesorn.com',
-      tech: 'technician@kesorn.com',
-      technician: 'technician@kesorn.com',
-      researcher: 'researcher@kesorn.com',
-      guest: 'guest@kesorn.com',
-    };
-    const targetEmail = ROLE_SHORTCUT_MAP[inputNorm] || inputNorm;
-
-    const verifyPassword = async (storedHash: string): Promise<boolean> => {
-      if (!storedHash) return false;
-      if (storedHash.startsWith('$2')) {
-        const directMatch = await bcrypt.compare(password, storedHash);
-        if (directMatch) return true;
-        // Fallback: try lower-cased password in case user typed uppercase or capitalized
-        const lowerMatch = await bcrypt.compare(password.toLowerCase(), storedHash);
-        if (lowerMatch) return true;
-        if (password.toLowerCase() === 'tech' && await bcrypt.compare('technician', storedHash)) return true;
-        if (['tenant', 'tenant123', 'password', 'password123', '123456', 'Password123!', 'smartdom'].includes(password)) return true;
-        return false;
-      }
-      if (storedHash.length === 64) {
-        const crypto = require('crypto');
-        const hash = crypto.createHash('sha256').update(password).digest('hex');
-        if (hash === storedHash) return true;
-        return crypto.createHash('sha256').update(password.toLowerCase()).digest('hex') === storedHash;
-      }
-      return password === storedHash || password.toLowerCase() === storedHash.toLowerCase() || (password.toLowerCase() === 'tech' && storedHash === 'technician') || ['tenant', 'tenant123', 'password', 'password123', '123456', 'Password123!', 'smartdom'].includes(password);
-    };
-
     // ── 1. Check platform_admins ────────────────────────────────────────────
     try {
       const admins = await sql`
         SELECT id, name, email, password, role FROM platform_admins
         WHERE (
-          LOWER(email) = ${targetEmail} 
-          OR LOWER(email) = ${inputNorm} 
+          LOWER(email) = ${inputNorm}
           OR LOWER(name) = ${inputNorm}
           OR SUBSTRING_INDEX(LOWER(email), '@', 1) = ${inputNorm}
         ) AND is_active = TRUE LIMIT 1
       `;
       if (admins.length > 0) {
-        if (await verifyPassword(admins[0].password)) {
+        if ((await verifyPassword(password, admins[0].password)).ok) {
+          const { id, name, email: adminEmail } = admins[0];
           return NextResponse.json({
             success: true,
             message: 'เข้าสู่ระบบสำเร็จ (Platform Admin)',
             redirectUrl: '/platform',
-            user: { ...admins[0], role: 'platform_admin', dormDbName: null },
+            user: { id, name, email: adminEmail, role: 'platform_admin', dormDbName: null },
           });
         } else {
           return NextResponse.json({ success: false, message: 'รหัสผ่านไม่ถูกต้อง' }, { status: 401 });
@@ -76,18 +42,17 @@ export async function POST(request: Request) {
       SELECT id, name, email, password, role, sub_role, is_active 
       FROM users
       WHERE (
-        LOWER(email) = ${targetEmail} 
+        LOWER(email) = ${inputNorm}
         OR LOWER(name) = ${inputNorm}
-        OR LOWER(email) = ${inputNorm}
         OR SUBSTRING_INDEX(LOWER(email), '@', 1) = ${inputNorm}
       )
-      ORDER BY (LOWER(email) = ${targetEmail}) DESC, (LOWER(email) = ${inputNorm}) DESC
+      ORDER BY (LOWER(email) = ${inputNorm}) DESC
       LIMIT 1
     `;
 
     if (users.length > 0) {
       const user = users[0];
-      const isMatch = await verifyPassword(user.password);
+      const isMatch = (await verifyPassword(password, user.password)).ok;
       if (isMatch) {
         const effectiveRole = user.role || 'guest';
         let redirectUrl = '/explore';
