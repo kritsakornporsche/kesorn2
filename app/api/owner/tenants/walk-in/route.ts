@@ -4,8 +4,8 @@ import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { verifySlipWithSlipOK } from '@/lib/slipok';
 import { recordPayment, slipPaidAt } from '@/lib/payments';
-import { getDormPromptPay } from '@/lib/billing';
-import { createContract, CONTRACT_MESSAGES } from '@/lib/contracts';
+import { bookingFeeFor, getDormPromptPay } from '@/lib/billing';
+import { createContract, contractMessage } from '@/lib/contracts';
 
 /**
  * POST /api/owner/tenants/walk-in
@@ -37,7 +37,6 @@ export async function POST(req: Request) {
       roomId,
       startDate,
       endDate,
-      depositAmount = 1000,
       monthlyRent,
       tenantName,
       email,
@@ -93,6 +92,8 @@ export async function POST(req: Request) {
     }
 
     const targetDormId = room.dorm_id || 1;
+    // Booking fee set by the server (never by the page), as for self-booking; the slip must match it exactly
+    const bookingFee = bookingFeeFor(room.room_number);
 
     // 2. SlipOK Verification (Verify ฿1,000 booking slip)
     let isAutoApproved = false;
@@ -108,7 +109,7 @@ export async function POST(req: Request) {
 
     const verifyResult = await verifySlipWithSlipOK(
       slipUrl,
-      Number(depositAmount || 1000),
+      bookingFee,
       {
         name: dormProfile.promptpay_name || dormProfile.name || 'หอพักเกษร 2',
         promptpay: (await getDormPromptPay(sql)) || '',
@@ -166,7 +167,7 @@ export async function POST(req: Request) {
       roomId: room.id,
       startDate: formattedStartDate,
       endDate: formattedEndDate,
-      depositAmount: depositAmount || 1000,
+      depositAmount: bookingFee,
       status: 'PendingOwnerSignature',
       requireRoomFree: true,
       signature: 'WALK_IN_VERIFIED',
@@ -177,7 +178,7 @@ export async function POST(req: Request) {
       parentPhone: cleanParentPhone,
     });
     if (!created.ok) {
-      return NextResponse.json({ success: false, message: CONTRACT_MESSAGES[created.reason] }, { status: 400 });
+      return NextResponse.json({ success: false, message: contractMessage(created) }, { status: 400 });
     }
     const { contractId, tenantId, userId } = created;
 
@@ -209,8 +210,8 @@ export async function POST(req: Request) {
         ${targetDormId},
         ${room.room_number},
         ${bookingTitle},
-        ${depositAmount || 1000},
-        ${depositAmount || 1000},
+        ${bookingFee},
+        ${bookingFee},
         0,
         0,
         0,
@@ -231,7 +232,7 @@ export async function POST(req: Request) {
     // The verified slip pays the booking bill through the single payment entry point (also records income)
     if (billId) {
       const payment = await recordPayment(billId, {
-        amount: verifyResult.amount !== undefined ? Number(verifyResult.amount) : Number(depositAmount || 1000),
+        amount: verifyResult.amount !== undefined ? Number(verifyResult.amount) : bookingFee,
         method: 'slip',
         paidAt: slipPaidAt(verifyResult),
         slipRef: slipokRef,

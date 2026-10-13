@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
-import { renewContract, CONTRACT_MESSAGES } from '@/lib/contracts';
+import { renewContract, contractMessage } from '@/lib/contracts';
 
 export async function POST(req: Request) {
   try {
@@ -13,7 +13,8 @@ export async function POST(req: Request) {
     const guard = await requireRole(['owner', 'manager']);
     if ('response' in guard) return guard.response;
     const body = await req.json();
-    const { contract_id, new_end_date, deposit_amount, contract_file_url } = body;
+    // A renewal keeps the deposit already held (deposit_amount from the page is ignored)
+    const { contract_id, new_end_date, contract_file_url } = body;
 
     if (!contract_id || !new_end_date) {
       return NextResponse.json({ 
@@ -27,11 +28,10 @@ export async function POST(req: Request) {
     // 1. Old contract -> Renewed and the next one opened (Active, from the old end date) in one transaction
     const renewed = await renewContract(Number(contract_id), {
       newEndDate: new_end_date,
-      depositAmount: deposit_amount !== undefined ? Number(deposit_amount) : null,
       contractFileUrl: contract_file_url || null,
     });
     if (!renewed.ok) {
-      return NextResponse.json({ success: false, message: CONTRACT_MESSAGES[renewed.reason] }, { status: renewed.reason === 'not_found' ? 404 : 400 });
+      return NextResponse.json({ success: false, message: contractMessage(renewed) }, { status: renewed.reason === 'not_found' ? 404 : 400 });
     }
     const newContractId = renewed.contractId;
     const oldContract = { tenant_id: renewed.tenantId };

@@ -2,7 +2,7 @@ import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
-import { createContract, temporaryPassword, CONTRACT_MESSAGES } from '@/lib/contracts';
+import { createContract, temporaryPassword, contractMessage } from '@/lib/contracts';
 
 export async function GET(req: Request) {
   try {
@@ -134,6 +134,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'กรุณาระบุเงินประกันเป็นตัวเลขมากกว่า 0' }, { status: 400 });
     }
 
+    // Another deposit amount is allowed only for a tenant who lived here before the system, by the owner, with a reason
+    const outsideSystem = body.deposit_outside_system === true || body.deposit_outside_system === 'true';
+    if (outsideSystem && guard.user.role !== 'owner') {
+      return NextResponse.json({ success: false, message: 'กำหนดเงินประกันเอง (ผู้เช่าเดิม) ทำได้เฉพาะเจ้าของหอ' }, { status: 403 });
+    }
+
     // Account + Active contract through the single contract service (room becomes Occupied).
     // A new account gets a random temporary password, returned once so the owner can pass it on.
     const tempPassword = temporaryPassword();
@@ -158,9 +164,10 @@ export async function POST(req: Request) {
       idCardImage: id_card_image || null,
       tenantAddress: tenant_address?.trim() || null,
       occupants: Number(body.occupants) || 1,
+      depositOutsideSystem: outsideSystem ? { reason: String(body.deposit_note || '') } : null,
     });
     if (!created.ok) {
-      return NextResponse.json({ success: false, message: CONTRACT_MESSAGES[created.reason] }, { status: 400 });
+      return NextResponse.json({ success: false, message: contractMessage(created) }, { status: 400 });
     }
     const { contractId, tenantId, userId, createdUser } = created;
 

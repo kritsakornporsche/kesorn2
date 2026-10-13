@@ -4,7 +4,8 @@
 
 import bcrypt from 'bcryptjs';
 import { randomInt } from 'crypto';
-import { bangkokDate } from '@/lib/billing';
+import { bangkokDate, bookingFeeFor, depositFor } from '@/lib/billing';
+import { formatBaht } from '@/lib/format';
 import { withTransaction, type Client } from '@/lib/bill-status';
 
 // Accounts that run the dorm can never be turned into a tenant (or have their password/role changed here)
@@ -13,7 +14,7 @@ const STAFF_ROLES = new Set(['owner', 'manager', 'keeper', 'admin', 'platform_ad
 const SIGNABLE = new Set(['pendingownersignature', 'pendingcontract', 'pendingfirstbill']);
 
 export type ContractRefusal = 'room_not_found' | 'room_unavailable' | 'room_has_active_contract' | 'staff_account'
-  | 'no_account' | 'not_found' | 'invalid_status';
+  | 'no_account' | 'not_found' | 'invalid_status' | 'deposit_mismatch' | 'deposit_reason_required';
 
 export const CONTRACT_MESSAGES: Record<ContractRefusal, string> = {
   room_not_found: 'ไม่พบข้อมูลห้องพัก',
@@ -23,20 +24,29 @@ export const CONTRACT_MESSAGES: Record<ContractRefusal, string> = {
   no_account: 'ไม่พบบัญชีผู้ใช้',
   not_found: 'ไม่พบข้อมูลสัญญาเช่า',
   invalid_status: 'สัญญานี้อยู่ในสถานะที่เปิดใช้งานไม่ได้',
+  deposit_mismatch: 'เงินประกันไม่ตรงกับกติกาของห้อง',
+  deposit_reason_required: 'กำหนดเงินประกันเองได้เฉพาะผู้เช่าเดิม (ก่อนใช้ระบบ) และต้องระบุเหตุผล',
 };
 
-class Refused extends Error {
-  constructor(public reason: ContractRefusal) { super(reason); }
-}
-function refuse(reason: ContractRefusal): never {
-  throw new Refused(reason);
+/** Message for a refusal; a deposit mismatch says which amount is correct. */
+export function contractMessage(result: { reason: ContractRefusal; expected?: number }) {
+  return result.reason === 'deposit_mismatch' && result.expected !== undefined
+    ? `เงินประกันต้องเป็น ฿${formatBaht(result.expected)} ตามกติกาของห้อง`
+    : CONTRACT_MESSAGES[result.reason];
 }
 
-async function run<T>(work: (client: Client) => Promise<T>): Promise<({ ok: true } & T) | { ok: false; reason: ContractRefusal }> {
+class Refused extends Error {
+  constructor(public reason: ContractRefusal, public expected?: number) { super(reason); }
+}
+function refuse(reason: ContractRefusal, expected?: number): never {
+  throw new Refused(reason, expected);
+}
+
+async function run<T>(work: (client: Client) => Promise<T>): Promise<({ ok: true } & T) | { ok: false; reason: ContractRefusal; expected?: number }> {
   try {
     return { ok: true, ...(await withTransaction(work)) };
   } catch (error) {
-    if (error instanceof Refused) return { ok: false, reason: error.reason };
+    if (error instanceof Refused) return { ok: false, reason: error.reason, ...(error.expected !== undefined ? { expected: error.expected } : {}) };
     throw error;
   }
 }
@@ -144,10 +154,15 @@ export interface CreateContractInput {
   note?: string | null;
   /** Number of people living in the room (water is charged per person); 1 when not given */
   occupants?: number | null;
+  /**
+   * Tenant who was already living here before the system (owner only, checked by the route): the deposit was
+   * received outside the system, so another amount is allowed and the contract is marked deposit_outside_system.
+   */
+  depositOutsideSystem?: { reason: string } | null;
 }
 
 async function createContractTx(client: Client, input: CreateContractInput) {
-  const room = (await client.query('SELECT id, room_number, status, dorm_id FROM rooms WHERE id = ? FOR UPDATE', [input.roomId])).rows[0];
+  const room = (await client.query('SELECT id, room_number, status, dorm_id, deposit_amount FROM rooms WHERE id = ? FOR UPDATE', [input.roomId])).rows[0];
   if (!room) refuse('room_not_found');
   const roomStatus = String(room.status || '').toLowerCase();
   if (input.requireRoomFree && ['occupied', 'reserved', 'ไม่ว่าง'].includes(roomStatus)) refuse('room_unavailable');
@@ -157,6 +172,16 @@ async function createContractTx(client: Client, input: CreateContractInput) {
   if (active) refuse('room_has_active_contract');
 
   const isActive = input.status === 'Active';
+  // The deposit follows the room's rules: a pending booking holds the booking fee, a new active contract the full
+  // deposit. A renewal carries the old contract's deposit. Pre-system tenants may differ, with a reason.
+  const deposit = Math.round(Number(input.depositAmount) * 100) / 100;
+  const outside = input.depositOutsideSystem;
+  if (outside) {
+    if (!isActive || input.parentContractId || !String(outside.reason || '').trim() || !(deposit > 0)) refuse('deposit_reason_required');
+  } else if (!input.parentContractId) {
+    const expected = isActive ? depositFor(room) : bookingFeeFor(room.room_number);
+    if (Math.round(deposit * 100) !== Math.round(expected * 100)) refuse('deposit_mismatch', expected);
+  }
   const dormId = room.dorm_id || 1;
   let tenantId = input.tenantId || 0;
   let userId: number | null = null;
@@ -170,12 +195,14 @@ async function createContractTx(client: Client, input: CreateContractInput) {
 
   const contractId = (await client.query(
     `INSERT INTO contracts (tenant_id, room_id, start_date, end_date, deposit_amount, status, signature_data, owner_signature_data,
-       signed_at, slip_url, contract_file_url, id_card_number, id_card_image, tenant_address, parent_phone, parent_contract_id, renewal_note, occupants)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [tenantId, room.id, input.startDate, input.endDate, input.depositAmount || 0, input.status, input.signature || null,
+       signed_at, slip_url, contract_file_url, id_card_number, id_card_image, tenant_address, parent_phone, parent_contract_id, renewal_note, occupants,
+       deposit_outside_system, deposit_note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [tenantId, room.id, input.startDate, input.endDate, deposit, input.status, input.signature || null,
       input.ownerSignature || null, input.signedAt || null, input.slipUrl || null, input.contractFileUrl || null,
       input.idCardNumber || null, input.idCardImage || null, input.tenantAddress || null, input.parentPhone || null,
-      input.parentContractId || null, input.note || null, Math.max(1, Math.floor(Number(input.occupants) || 1))]
+      input.parentContractId || null, input.note || null, Math.max(1, Math.floor(Number(input.occupants) || 1)),
+      outside ? 1 : 0, outside ? String(outside.reason).trim().slice(0, 500) : null]
   )).rows.insertId;
 
   await client.query('UPDATE rooms SET status = ? WHERE id = ?', [isActive ? 'Occupied' : 'Reserved', room.id]);
@@ -227,7 +254,6 @@ export function signContract(contractId: number, input: SignContractInput = {}) 
 
 export interface RenewContractInput {
   newEndDate: string;
-  depositAmount?: number | null;
   contractFileUrl?: string | null;
 }
 
@@ -242,7 +268,7 @@ export function renewContract(contractId: number, input: RenewContractInput) {
       roomId: old.room_id,
       startDate: old.end_date ? bangkokDate(old.end_date) : bangkokDate(new Date()),
       endDate: input.newEndDate,
-      depositAmount: input.depositAmount ?? Number(old.deposit_amount || 0),
+      depositAmount: Number(old.deposit_amount || 0),
       status: 'Active',
       contractFileUrl: input.contractFileUrl || old.contract_file_url || null,
       idCardNumber: old.id_card_number,
@@ -251,6 +277,11 @@ export function renewContract(contractId: number, input: RenewContractInput) {
       parentContractId: contractId,
       occupants: old.occupants,
     });
+    // The same deposit is held, so where it was received (inside or outside the system) carries over too
+    await client.query(
+      'UPDATE contracts SET deposit_outside_system = ?, deposit_note = ? WHERE id = ?',
+      [old.deposit_outside_system ? 1 : 0, old.deposit_note || null, created.contractId]
+    );
     return { contractId: created.contractId, tenantId: old.tenant_id as number, roomId: old.room_id as number };
   });
 }

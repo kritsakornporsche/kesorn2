@@ -94,6 +94,8 @@ export default function OwnerContractsPage() {
     end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
     deposit_amount: 0,
     occupants: 1,
+    deposit_outside_system: false,
+    deposit_note: '',
     contract_file_url: '',
     contract_file_name: '',
   });
@@ -148,18 +150,6 @@ export default function OwnerContractsPage() {
         });
     }
   }, [authStatus, session, router]);
-
-  useEffect(() => {
-    if (formData.room_id) {
-      const selectedRoom = rooms.find(r => r.id === parseInt(formData.room_id));
-      if (selectedRoom) {
-        setFormData(prev => ({
-          ...prev,
-          deposit_amount: selectedRoom.price * 2
-        }));
-      }
-    }
-  }, [formData.room_id, rooms]);
 
   const processOcrImage = async (base64Data: string, fileName: string) => {
     setIsOcrProcessing(true);
@@ -227,12 +217,12 @@ export default function OwnerContractsPage() {
         tenant_phone: '089-123-4567',
         id_card_number: '1-1002-01384-95-2',
         tenant_address: '99/50 หมู่ 3 ซอยงามวงศ์วาน 54 แขวงลาดยาว เขตจตุจักร กรุงเทพมหานคร 10900',
-        room_id: firstRoom ? firstRoom.id.toString() : '1',
-        deposit_amount: firstRoom ? firstRoom.price * 2 : 7600,
         contract_file_name: 'บัตรประชาชนตัวอย่าง_สมชาย_ใจดี.jpg',
         contract_file_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&q=80',
         id_card_image: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&q=80'
       }));
+      // Room and deposit come from the same path as choosing a room (deposit from the server)
+      if (firstRoom) handleCreateRoomChange(firstRoom.id.toString());
       setIsOcrProcessing(false);
       setOcrSuccessMsg('✓ อ่านข้อมูลบัตรประชาชนตัวอย่างสำเร็จ (นายสมชาย ใจดี, 1-1002-01384-95-2)');
     }, 400);
@@ -302,6 +292,8 @@ export default function OwnerContractsPage() {
           end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
           deposit_amount: 0,
           occupants: 1,
+          deposit_outside_system: false,
+          deposit_note: '',
           contract_file_url: '',
           contract_file_name: '',
         });
@@ -364,7 +356,6 @@ export default function OwnerContractsPage() {
         body: JSON.stringify({
           contract_id: renewingContract.id,
           new_end_date: renewData.new_end_date,
-          deposit_amount: renewData.deposit_amount,
           contract_file_url: renewData.contract_file_url || null,
         }),
       });
@@ -1187,15 +1178,42 @@ export default function OwnerContractsPage() {
                     />
                     <div className="space-y-2">
                       <label className="block text-[10px] font-black text-foreground/50 uppercase tracking-widest">
-                        ค่ามัดจำ (Deposit)
+                        เงินประกัน (ตามกติกาของห้อง)
                       </label>
                       <input
                         type="number"
                         required
+                        readOnly={!formData.deposit_outside_system}
                         value={formData.deposit_amount}
                         onChange={(e) => setFormData({ ...formData, deposit_amount: parseFloat(e.target.value) || 0 })}
-                        className="w-full px-6 py-4 bg-background border border-border rounded-2xl text-foreground font-bold outline-none focus:border-primary transition-all"
+                        className={`w-full px-6 py-4 border border-border rounded-2xl text-foreground font-bold outline-none focus:border-primary transition-all ${formData.deposit_outside_system ? 'bg-background' : 'bg-secondary/60 cursor-not-allowed'}`}
                       />
+                      {(session?.user as any)?.role === 'owner' && (
+                        <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.deposit_outside_system}
+                            onChange={(e) => {
+                              const on = e.target.checked;
+                              setFormData((prev) => ({ ...prev, deposit_outside_system: on, deposit_note: on ? prev.deposit_note : '' }));
+                              // Turning it off puts the room's deposit back
+                              if (!on && formData.room_id) handleCreateRoomChange(formData.room_id);
+                            }}
+                          />
+                          ผู้เช่าเดิม (ก่อนใช้ระบบ) — เงินประกันรับนอกระบบ กำหนดยอดเอง
+                        </label>
+                      )}
+                      {formData.deposit_outside_system && (
+                        <input
+                          type="text"
+                          required
+                          maxLength={500}
+                          placeholder="เหตุผล เช่น ผู้เช่าเดิมจ่ายประกัน 2,000 ตั้งแต่ปี 2567"
+                          value={formData.deposit_note}
+                          onChange={(e) => setFormData({ ...formData, deposit_note: e.target.value })}
+                          className="w-full px-4 py-3 bg-background border border-amber-500/40 rounded-xl text-foreground text-sm outline-none focus:border-amber-500"
+                        />
+                      )}
                     </div>
                   </div>
 
@@ -1254,14 +1272,9 @@ export default function OwnerContractsPage() {
                   onChange={(d) => setRenewData({ ...renewData, new_end_date: d })}
                 />
 
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-foreground/50 uppercase tracking-widest">ค่ามัดจำใหม่ (ถ้ามี)</label>
-                  <input
-                    type="number"
-                    value={renewData.deposit_amount}
-                    onChange={(e) => setRenewData({ ...renewData, deposit_amount: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-6 py-4 bg-background border border-border rounded-2xl text-foreground font-bold outline-none focus:border-primary transition-all"
-                  />
+                <div className="space-y-1 p-4 bg-secondary/60 rounded-2xl border border-border">
+                  <p className="text-[10px] font-black text-foreground/50 uppercase tracking-widest">เงินประกัน</p>
+                  <p className="text-sm font-bold text-foreground">฿{Number(renewData.deposit_amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })} · ใช้เงินประกันเดิมของสัญญานี้ต่อ</p>
                 </div>
 
                 <div className="flex gap-4 pt-4">

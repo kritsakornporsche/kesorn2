@@ -2,7 +2,7 @@ import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
-import { signContract, CONTRACT_MESSAGES } from '@/lib/contracts';
+import { signContract, contractMessage } from '@/lib/contracts';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -26,7 +26,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // 1. Activate through the single contract service (contract Active, room Occupied, tenant active, guest -> tenant)
     const signed = await signContract(Number(id), { ownerSignature: ownerSignatureData });
     if (!signed.ok) {
-      return NextResponse.json({ success: false, message: CONTRACT_MESSAGES[signed.reason] }, { status: signed.reason === 'not_found' ? 404 : 400 });
+      return NextResponse.json({ success: false, message: contractMessage(signed) }, { status: signed.reason === 'not_found' ? 404 : 400 });
     }
     const tenantRows = await sql`SELECT email FROM tenants WHERE id = ${signed.tenantId} LIMIT 1`;
     const tenant_email = tenantRows[0]?.email || '';

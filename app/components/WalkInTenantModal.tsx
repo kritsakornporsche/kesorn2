@@ -269,9 +269,8 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
     setIsSubmitting(true);
     try {
       const selectedRoom = rooms.find((r) => String(r.id) === String(selectedRoomId));
-      const isTestRoom = (selectedRoom?.room_number || '').toUpperCase() === 'T01';
-      const depositAmt = isTestRoom ? 1 : 1000;
 
+      // The booking fee is set by the server (bookingFeeFor), so it is not sent from here
       const res = await fetch('/api/owner/tenants/walk-in', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -279,7 +278,6 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
           roomId: selectedRoomId,
           startDate,
           endDate,
-          depositAmount: depositAmt,
           monthlyRent: selectedRoom?.price || 2800,
           tenantName,
           email,

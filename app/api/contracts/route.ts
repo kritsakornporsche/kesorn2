@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { recordPayment, slipPaidAt } from '@/lib/payments';
 import { bookingFeeFor, getDormPromptPay } from '@/lib/billing';
-import { createContract, CONTRACT_MESSAGES } from '@/lib/contracts';
+import { createContract, contractMessage } from '@/lib/contracts';
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
       parentPhone: parentPhone || null,
     });
     if (!created.ok) {
-      return NextResponse.json({ success: false, message: CONTRACT_MESSAGES[created.reason] }, { status: 400 });
+      return NextResponse.json({ success: false, message: contractMessage(created) }, { status: 400 });
     }
     const { contractId, tenantId, roomNumber, dormId } = created;
 
