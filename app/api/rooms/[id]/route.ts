@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb, getPlatformDb, getDormDb, getDormDbFromSession } from '@/lib/db';
 import { auth } from '@/auth';
+import { expireDueBookings } from '@/lib/bookings';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -8,6 +9,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const id = resolvedParams.id;
     
     const sql = getDb();
+    // No scheduler: bookings past their deadline are expired whenever rooms are read
+    await expireDueBookings().catch((e) => console.warn('[expire bookings]', e));
     
     // Fetch room with dorm info from dormitory_profile and owner from users
     const result = await sql`

@@ -5,6 +5,7 @@ import { requireRole } from '@/lib/authz';
 import { daysPastDue, getRates } from '@/lib/billing';
 import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
 import { formatBaht } from '@/lib/format';
+import { expireDueBookings } from '@/lib/bookings';
 
 // Owner/manager are alerted when a bill is still unpaid this many days after its due date
 const OVERDUE_ALERT_DAYS = 15;
@@ -21,6 +22,8 @@ export async function GET(req: Request) {
     const showIncome = guard.user.role === 'owner';
 
     const sql = getDb();
+    // No scheduler: bookings past their deadline are expired whenever they are read
+    await expireDueBookings().catch((e) => console.warn('[expire bookings]', e));
 
     // 1. Room stats (Kesorn 2: 20 rooms)
     const totalRoomsResult = await sql`SELECT COUNT(*) as count FROM rooms`;
@@ -42,7 +45,7 @@ export async function GET(req: Request) {
     const pendingBookingsRes = await sql`
       SELECT COUNT(*) as count 
       FROM contracts 
-      WHERE status IN ('PendingContract', 'PendingOwnerSignature')
+      WHERE status IN ('BookingRequested', 'BookingApproved', 'PendingContract', 'PendingOwnerSignature')
     `;
     const pendingBookings = Number(pendingBookingsRes[0]?.count || 0);
 

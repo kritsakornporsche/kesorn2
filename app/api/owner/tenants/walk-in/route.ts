@@ -6,6 +6,7 @@ import { verifySlipWithSlipOK } from '@/lib/slipok';
 import { recordPayment, slipPaidAt } from '@/lib/payments';
 import { bookingFeeFor, getDormPromptPay } from '@/lib/billing';
 import { createContract, contractMessage } from '@/lib/contracts';
+import { voidFailedBooking } from '@/lib/bookings';
 
 /**
  * POST /api/owner/tenants/walk-in
@@ -146,9 +147,17 @@ export async function POST(req: Request) {
     isAutoApproved = true;
     slipRaw = JSON.stringify(verifyResult.rawData || {});
 
-    // Save slip image to disk
-    const { saveBase64Image } = await import('@/lib/file-storage');
-    const storedSlipUrl = saveBase64Image(slipUrl, 'slips', `walkin_${Date.now()}_room_${room.room_number}`);
+    // A tenant who already lives here (Active contract) cannot be booked into another room
+    const activeElsewhere = await sql`
+      SELECT c.id, r.room_number FROM contracts c JOIN tenants t ON t.id = c.tenant_id JOIN rooms r ON r.id = c.room_id
+      WHERE LOWER(t.email) = ${cleanEmail} AND c.status = 'Active' LIMIT 1
+    `;
+    if (activeElsewhere.length > 0) {
+      return NextResponse.json({
+        success: false,
+        message: `อีเมลนี้มีสัญญาเช่าที่ใช้งานอยู่แล้ว (ห้อง ${activeElsewhere[0].room_number}) ไม่สามารถจองห้องเพิ่มได้`,
+      }, { status: 400 });
+    }
 
     // 3. Account + contract through the single contract service. A new account's password is the phone
     // number; an existing guest/tenant account keeps its password and role; staff accounts are refused.
@@ -172,7 +181,9 @@ export async function POST(req: Request) {
       requireRoomFree: true,
       signature: 'WALK_IN_VERIFIED',
       signedAt: new Date(),
-      slipUrl: storedSlipUrl || null,
+      // Staff on site counts as the approval
+      approvedAt: new Date(),
+      approvedBy: guard.user.id,
       idCardNumber: cleanIdCard,
       tenantAddress: tenantAddress || null,
       parentPhone: cleanParentPhone,
@@ -219,7 +230,7 @@ export async function POST(req: Request) {
         'ค่าจองห้องพักเพื่อยืนยันสิทธิ์',
         ${formattedStartDate},
         'Unpaid',
-        ${storedSlipUrl || null},
+        ${null},
         'booking',
         0,
         ${null},
@@ -229,16 +240,31 @@ export async function POST(req: Request) {
     `;
     const billId = (billInsertRes as any)?.insertId;
 
-    // The verified slip pays the booking bill through the single payment entry point (also records income)
-    if (billId) {
-      const payment = await recordPayment(billId, {
-        amount: verifyResult.amount !== undefined ? Number(verifyResult.amount) : bookingFee,
-        method: 'slip',
-        paidAt: slipPaidAt(verifyResult),
-        slipRef: slipokRef,
-        recordedBy: guard.user.id,
-      });
-      if (!payment.ok) console.warn('[Walk-in payment not recorded]', billId, payment);
+    await sql`UPDATE contracts SET booking_bill_id = ${billId} WHERE id = ${contractId}`;
+
+    // The verified slip pays the booking bill through the single payment entry point (also records income).
+    // If it cannot be recorded, the contract and bill just created are undone and the room is released.
+    const payment = await recordPayment(billId, {
+      amount: verifyResult.amount !== undefined ? Number(verifyResult.amount) : bookingFee,
+      method: 'slip',
+      paidAt: slipPaidAt(verifyResult),
+      slipRef: slipokRef,
+      recordedBy: guard.user.id,
+    });
+    if (!payment.ok) {
+      await voidFailedBooking(contractId, billId, new Date());
+      const message = payment.reason === 'duplicate_slip' ? 'สลิปนี้ถูกใช้ชำระเงินไปแล้ว ไม่สามารถใช้ซ้ำได้'
+        : payment.reason === 'amount_mismatch' ? `ยอดในสลิปไม่ตรงกับค่าจอง ฿${bookingFee.toLocaleString('th-TH')}`
+        : 'บันทึกการชำระค่าจองไม่สำเร็จ';
+      return NextResponse.json({ success: false, message }, { status: 400 });
+    }
+
+    // Keep the slip image only now that the walk-in succeeded (a refused walk-in leaves no file behind)
+    const { saveBase64Image } = await import('@/lib/file-storage');
+    const storedSlipUrl = saveBase64Image(slipUrl, 'slips', `walkin_${Date.now()}_room_${room.room_number}`);
+    if (storedSlipUrl) {
+      await sql`UPDATE contracts SET slip_url = ${storedSlipUrl} WHERE id = ${contractId}`;
+      await sql`UPDATE bills SET slip_url = ${storedSlipUrl} WHERE id = ${billId}`;
     }
 
     // 9. Send notification to tenant

@@ -9,6 +9,11 @@ import Image from 'next/image';
 interface BookingData {
   contract_id: number;
   status: string;
+  booking_fee?: number;
+  rejection_reason?: string | null;
+  initial_meter_reading?: number | string | null;
+  seconds_to_pay?: number | null;
+  seconds_to_expire?: number | null;
   start_date: string;
   end_date: string;
   deposit_amount: number;
@@ -86,7 +91,7 @@ export default function GuestDashboardPage() {
   const handleCancelBooking = async () => {
     if (!booking) return;
     const confirmCancel = confirm(
-      '⚠️ ยืนยันการยกเลิกการจองห้องพัก?\n\nหมายเหตุ: การยกเลิกจะไม่ได้รับเงินมัดจำคืน และห้องพักจะถูกปรับเป็นสถานะว่างทันที'
+      'ยืนยันยกเลิกการจอง? ค่าจองที่ชำระแล้วจะไม่คืน (เป็นไปตามเงื่อนไขการจอง) และห้องจะเปิดให้ผู้อื่นจองทันที'
     );
     if (!confirmCancel) return;
 
@@ -150,18 +155,15 @@ export default function GuestDashboardPage() {
     }
   };
 
-  const [showPromptPayModal, setShowPromptPayModal] = useState(false);
-  const [promptPayNum, setPromptPayNum] = useState('');
-  const [bankName, setBankName] = useState('พร้อมเพย์ (PromptPay)');
-  const [accountName, setAccountName] = useState('');
-  const [submittingPromptPay, setSubmittingPromptPay] = useState(false);
-  const [promptPaySaved, setPromptPaySaved] = useState(false);
 
   const isPendingContract = booking?.status === 'PendingContract' || booking?.status === 'PendingOwnerSignature';
   const isPendingFirstBill = booking?.status === 'PendingFirstBill';
   const isActive = booking?.status === 'Active';
   const isCancelled = booking?.status === 'Cancelled';
   const isRejected = booking?.status === 'Rejected' || (booking?.status === 'Cancelled' && booking?.rejection_reason?.includes('ปฏิเสธ'));
+  // New approve-then-pay booking: followed (and paid) on /explore/booking-status
+  const isOpenRequest = booking?.status === 'BookingRequested' || booking?.status === 'BookingApproved';
+  const isExpired = booking?.status === 'Expired';
 
   // First bill calculation: Use actual bill amount from DB if available, else roomPrice + extraDeposit
   const isTestBooking = (booking?.room_number || '').toUpperCase() === 'T01';
@@ -198,37 +200,6 @@ export default function GuestDashboardPage() {
       fetchPromptPayQR();
     }
   }, [showSlipModal, booking, firstBillTotal]);
-
-  // Handle PromptPay Refund Submit (Rule 2.1.5)
-  const handlePromptPaySubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!booking) return;
-    setSubmittingPromptPay(true);
-    try {
-      const res = await fetch('/api/booking/refund-promptpay', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contractId: booking.contract_id,
-          promptpayNumber: promptPayNum,
-          bankName,
-          accountName,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToast('✅ บันทึกข้อมูลรับเงินมัดจำคืน 1,000 บาท เรียบร้อยแล้ว', 'success');
-        setPromptPaySaved(true);
-        setShowPromptPayModal(false);
-      } else {
-        showToast(data.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล', 'error');
-      }
-    } catch (err: any) {
-      showToast('เกิดข้อผิดพลาด: ' + err.message, 'error');
-    } finally {
-      setSubmittingPromptPay(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 lg:p-12">
@@ -273,75 +244,23 @@ export default function GuestDashboardPage() {
             กำลังโหลดข้อมูลการจองของคุณ...
           </div>
         ) : isRejected ? (
-          /* 2.1.5 (ถูกปฏิเสธการจองจากเจ้าของหอ): ให้กรอกเลขพร้อมเพย์เพื่อให้เจ้าของหอชดเชยค่ามัดจำคืน */
+          /* Rejected before payment (approve-then-pay): nothing was paid, nothing to refund */
           <div className="p-8 sm:p-10 bg-slate-900/90 border border-rose-500/30 rounded-3xl shadow-2xl space-y-6">
             <div className="flex items-center gap-4 border-b border-white/10 pb-5">
               <div className="w-14 h-14 bg-rose-500/10 border border-rose-500/30 rounded-2xl flex items-center justify-center text-3xl">
                 ⚠️
               </div>
               <div>
-                <h3 className="text-xl font-black text-white">คำขอจองห้องพักไม่ผ่านการอนุมัติ (2.1.5)</h3>
+                <h3 className="text-xl font-black text-white">คำขอจองห้องพักไม่ผ่านการอนุมัติ</h3>
                 <p className="text-xs text-rose-300 mt-0.5">
                   สาเหตุ: {booking?.rejection_reason || 'เจ้าของหอพักปฏิเสธคำขอจองห้องพัก'}
                 </p>
               </div>
             </div>
 
-            <div className="p-5 bg-slate-950/80 rounded-2xl border border-white/5 space-y-3">
-              <h4 className="text-sm font-black text-amber-300 flex items-center gap-2">
-                <span>💰</span>
-                <span>การขอรับเงินมัดจำคืน (1,000 บาท)</span>
-              </h4>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                เนื่องจากคำขอจองห้องพักไม่ผ่านการอนุมัติจากทางหอพัก ท่านมีสิทธิ์ได้รับเงินมัดจำการจองจำนวน <strong>1,000 บาท</strong> คืนเต็มจำนวน กรุณาระบุข้อมูลพร้อมเพย์หรือเลขที่บัญชีเพื่อให้เจ้าของหอพักโอนเงินชดเชยคืนให้ท่าน
-              </p>
-
-              {promptPaySaved ? (
-                <div className="p-4 bg-emerald-950/60 border border-emerald-500/40 rounded-xl text-emerald-200 text-xs font-bold flex items-center gap-2">
-                  <span>✅</span>
-                  <span>บันทึกข้อมูลพร้อมเพย์เรียบร้อยแล้ว รอเจ้าของหอพักตรวจสอบและดำเนินการโอนเงินคืน</span>
-                </div>
-              ) : (
-                <form onSubmit={handlePromptPaySubmit} className="pt-2 space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
-                        หมายเลขพร้อมเพย์ (เบอร์โทร/เลขบัตรประชาชน) *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="08X-XXX-XXXX หรือ 1XXXXXXXXXXXX"
-                        value={promptPayNum}
-                        onChange={(e) => setPromptPayNum(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-sm font-bold text-white focus:outline-none focus:border-amber-400"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
-                        ชื่อบัญชีผู้รับโอน *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="ชื่อ-นามสกุล"
-                        value={accountName}
-                        onChange={(e) => setAccountName(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-sm font-bold text-white focus:outline-none focus:border-amber-400"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={submittingPromptPay}
-                    className="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50"
-                  >
-                    {submittingPromptPay ? 'กำลังบันทึกข้อมูล...' : '💾 บันทึกข้อมูลเพื่อรับเงินมัดจำคืน (1,000 บ.)'}
-                  </button>
-                </form>
-              )}
-            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              คำขอจองถูกปฏิเสธก่อนขั้นตอนชำระค่าจอง จึงไม่มีการเรียกเก็บเงิน · หากมีข้อสงสัยกรุณาติดต่อหอพัก{booking?.dorm_phone ? ` โทร ${booking.dorm_phone}` : ''}
+            </p>
 
             <div className="pt-2 flex justify-end">
               <Link
@@ -353,17 +272,32 @@ export default function GuestDashboardPage() {
               </Link>
             </div>
           </div>
-        ) : !booking || isCancelled ? (
+        ) : isOpenRequest ? (
+          <div className="p-8 sm:p-10 bg-slate-900/90 border border-amber-500/30 rounded-3xl shadow-2xl space-y-4 text-center">
+            <div className="text-4xl">{booking?.status === 'BookingApproved' ? '⏱' : '⏳'}</div>
+            <h3 className="text-xl font-black text-white">
+              {booking?.status === 'BookingApproved' ? 'หอพักอนุมัติการจองแล้ว — กรุณาชำระค่าจองภายในเวลา' : 'ส่งคำขอจองแล้ว รอหอพักอนุมัติ'}
+            </h3>
+            <p className="text-sm text-slate-400">ห้อง {booking?.room_number} · ติดตามสถานะ นับถอยหลัง และชำระค่าจองได้ที่หน้าสถานะการจอง</p>
+            <Link
+              href="/explore/booking-status"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-primary hover:bg-primary/90 text-white font-black text-sm rounded-2xl shadow-xl transition-all"
+            >
+              <span>📋</span>
+              <span>ไปหน้าสถานะการจอง</span>
+            </Link>
+          </div>
+        ) : !booking || isCancelled || isExpired ? (
           <div className="p-12 sm:p-16 text-center bg-slate-900/60 border border-white/10 rounded-3xl shadow-2xl space-y-6">
             <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/30 rounded-3xl flex items-center justify-center text-4xl mx-auto">
               🚪
             </div>
             <div className="space-y-2 max-w-md mx-auto">
               <h3 className="text-2xl font-black text-white">
-                {isCancelled ? 'การจองห้องพักถูกยกเลิกแล้ว' : 'คุณยังไม่มีรายการจองห้องพัก'}
+                {isExpired ? 'การจองหมดเวลาแล้ว' : isCancelled ? 'การจองห้องพักถูกยกเลิกแล้ว' : 'คุณยังไม่มีรายการจองห้องพัก'}
               </h3>
               <p className="text-sm text-slate-400">
-                {isCancelled ? 'คุณได้ยกเลิกการจองห้องพักเรียบร้อยแล้ว (ไม่คืนเงินมัดจำ) หากสนใจเช่าห้องพักใหม่สามารถเลือกดูห้องที่เปิดว่างได้ทันที' : 'ค้นหาและจองห้องพักคุณภาพดีใกล้มหาวิทยาลัยพะเยาได้ง่ายๆ พร้อมระบบสัญญาออนไลน์'}
+                {isExpired ? `ไม่ได้รับการอนุมัติหรือชำระค่าจองภายในเวลา ห้องเปิดให้จองใหม่แล้ว · หากโอนเงินแล้วกรุณาติดต่อหอพัก${booking?.dorm_phone ? ` โทร ${booking.dorm_phone}` : ''}` : isCancelled ? 'การจองถูกยกเลิกแล้ว · ค่าจองที่ชำระแล้ว (ถ้ามี) ไม่คืนตามเงื่อนไขการจอง · หากสนใจเช่าห้องพักใหม่สามารถเลือกดูห้องที่เปิดว่างได้ทันที' : 'ค้นหาและจองห้องพักคุณภาพดีใกล้มหาวิทยาลัยพะเยาได้ง่ายๆ พร้อมระบบสัญญาออนไลน์'}
               </p>
             </div>
             <Link
@@ -388,7 +322,7 @@ export default function GuestDashboardPage() {
                     <span className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center font-black text-sm">1</span>
                     <span className="font-black text-sm">จองสำเร็จ</span>
                   </div>
-                  <p className="text-xs text-slate-400">โอนมัดจำ 1,000 บาทแล้ว รอเจ้าของหอจัดทำสัญญา</p>
+                  <p className="text-xs text-slate-400">ชำระค่าจอง ฿{Number(booking?.booking_fee || 0).toLocaleString('th-TH')} แล้ว รอเจ้าของหอจัดทำสัญญา</p>
                 </div>
 
                 {/* Step 2 */}
@@ -533,7 +467,7 @@ export default function GuestDashboardPage() {
               {/* Actions & Cancel Button (Cancel only visible in 2.1.1) */}
               <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row justify-between items-center gap-4">
                 <div className="text-xs text-slate-400">
-                  {isPendingContract && '📌 ในขั้นตอนนี้ คุณสามารถยกเลิกการจองได้ (ไม่คืนเงินมัดจำ 1,000 บาท)'}
+                  {isPendingContract && '📌 ในขั้นตอนนี้ คุณสามารถยกเลิกการจองได้ (ค่าจองที่ชำระแล้วไม่คืนตามเงื่อนไขการจอง)'}
                   {isPendingFirstBill && 'ℹ️ เมื่อชำระค่าแรกเข้าเรียบร้อย ระบบจะปรับสถานะเข้าสู่ระบบลูกหออัตโนมัติ'}
                 </div>
 

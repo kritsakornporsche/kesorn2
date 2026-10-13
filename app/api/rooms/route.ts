@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { expireDueBookings } from '@/lib/bookings';
 
 export async function GET(req: NextRequest) {
   try {
@@ -20,6 +21,8 @@ export async function GET(req: NextRequest) {
     }
 
     const sql = getDb();
+    // No scheduler: bookings past their deadline are expired whenever rooms are read
+    await expireDueBookings().catch((e) => console.warn('[expire bookings]', e));
 
     // ── Rule 16.4: Auto-recover rooms from Maintenance to Available when ready_to_occupy_date <= CURRENT_DATE ──
     try {

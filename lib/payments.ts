@@ -116,26 +116,41 @@ export async function recordPayment(billId: number, input: PaymentInput): Promis
 }
 
 async function recordPaymentOnce(billId: number, input: PaymentInput): Promise<PaymentResult> {
+  const client = await new Pool({ connectionString: process.env.DATABASE_URL }).connect();
+  try {
+    await client.query('START TRANSACTION', []);
+    const result = await recordPaymentInTransaction(client, billId, input);
+    await client.query(result.ok ? 'COMMIT' : 'ROLLBACK', []);
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK', []).catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+type TxClient = { query: (text: string, params: any[]) => Promise<{ rows: any }> };
+
+/**
+ * Same as recordPayment, inside a transaction the caller has already started (and will commit or roll back).
+ * Used when the payment must be atomic with other changes, e.g. a booking moving to "paid".
+ * A refusal ({ ok: false }) happens before anything is written.
+ */
+export async function recordPaymentInTransaction(client: TxClient, billId: number, input: PaymentInput): Promise<PaymentResult> {
   const validInput = METHODS.includes(input.method)
     && Number.isFinite(Number(input.amount)) && Number(input.amount) > 0
     && input.paidAt instanceof Date && !Number.isNaN(input.paidAt.getTime());
   if (!validInput) return { ok: false, reason: 'invalid_input' };
 
   const rates = await getRates(getDb());
-  const client = await new Pool({ connectionString: process.env.DATABASE_URL }).connect();
-
-  try {
-    await client.query('START TRANSACTION', []);
-
+  {
     const { rows } = await client.query(
       'SELECT id, amount, room_amount, is_first_bill, status, bill_type, due_date, dorm_id, room_number, title, billing_cycle FROM bills WHERE id = ? FOR UPDATE',
       [billId]
     );
     const bill = rows[0];
-    const reject = async (result: PaymentResult) => {
-      await client.query('ROLLBACK', []);
-      return result;
-    };
+    const reject = async (result: PaymentResult) => result;
 
     if (!bill) return reject({ ok: false, reason: 'not_found' });
     if (isStatus(bill.status, 'paid')) return reject({ ok: false, reason: 'already_paid' });
@@ -206,15 +221,9 @@ async function recordPaymentOnce(billId: number, input: PaymentInput): Promise<P
     }
     if (newStatus !== bill.status) await logStatus(client, billId, bill.status, newStatus, null, input.recordedBy || null);
 
-    await client.query('COMMIT', []);
     return {
       ok: true, paymentId, status: newStatus, required, lateFee, daysOverdue,
       outstanding: round2(Math.max(0, required - Number(input.amount))),
     };
-  } catch (error) {
-    await client.query('ROLLBACK', []).catch(() => {});
-    throw error;
-  } finally {
-    client.release();
   }
 }

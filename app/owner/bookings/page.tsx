@@ -34,6 +34,12 @@ interface Booking {
   first_bill_status?: string | null;
   first_bill_due_date?: string | null;
   first_bill_created_at?: string | null;
+  // Booking flow (approve, then pay) — times are computed on the server
+  cancel_reason?: string | null;
+  booking_fee?: number;
+  seconds_to_expire?: number | null;
+  seconds_to_pay?: number | null;
+  no_show_allowed?: boolean;
 }
 
 export default function OwnerBookingsPage() {
@@ -44,7 +50,8 @@ export default function OwnerBookingsPage() {
   const [loading, setLoading] = useState(true);
   
   // Filter tabs: 8.1 PendingContract, 8.2 PendingFirstBill, 8.3 Active, 8.4 Cancelled, All
-  const [activeTab, setActiveTab] = useState<'8.1' | '8.2' | '8.3' | '8.4' | 'ALL'>('8.1');
+  const [activeTab, setActiveTab] = useState<'REQ' | 'PAY' | '8.1' | '8.2' | '8.3' | '8.4' | 'ALL'>('REQ');
+  const [actingId, setActingId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modals state
@@ -131,16 +138,54 @@ export default function OwnerBookingsPage() {
     }
   };
 
+  const runAction = async (action: 'approve' | 'reject' | 'cancel', item: Booking) => {
+    let reason = '';
+    if (action === 'approve' && !confirm(`อนุมัติการจองห้อง ${item.room_number} ของ ${item.guest_name}? ผู้จองจะมีเวลาชำระค่าจอง 10 นาที`)) return;
+    if (action === 'reject') {
+      const input = prompt('เหตุผลที่ปฏิเสธคำขอจอง (ส่งให้ผู้จองเห็น)');
+      if (input === null) return;
+      reason = input.trim();
+    }
+    if (action === 'cancel' && !confirm(`ยืนยัน: ผู้จองไม่มาเข้าพักตามวันนัด? ระบบจะยกเลิกการจอง ริบค่าจอง ฿${Number(item.booking_fee || 0).toLocaleString('th-TH')} เป็นรายได้ และเปิดห้องให้จองใหม่`)) return;
+    setActingId(item.contract_id);
+    try {
+      const res = await fetch('/api/owner/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, contractId: item.contract_id, reason }),
+      });
+      const data = await res.json();
+      showToast(data.message || (data.success ? 'สำเร็จ' : 'ทำรายการไม่สำเร็จ'), data.success ? 'success' : 'error');
+      fetchBookings();
+    } catch (err: any) {
+      showToast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  // Requests waiting / bookings waiting for payment change on their own (expiry): refresh every 15 s while any exist
+  const hasOpen = bookings.some((b) => b.booking_status === 'BookingRequested' || b.booking_status === 'BookingApproved');
+  useEffect(() => {
+    if (!hasOpen) return;
+    const id = setInterval(fetchBookings, 15_000);
+    return () => clearInterval(id);
+  }, [hasOpen]);
+
   const filteredBookings = bookings.filter((b) => {
     // Tab filter
-    if (activeTab === '8.1') {
+    if (activeTab === 'REQ') {
+      if (b.booking_status !== 'BookingRequested') return false;
+    } else if (activeTab === 'PAY') {
+      if (b.booking_status !== 'BookingApproved') return false;
+    } else if (activeTab === '8.1') {
       if (b.booking_status !== 'PendingContract' && b.booking_status !== 'PendingOwnerSignature') return false;
     } else if (activeTab === '8.2') {
       if (b.booking_status !== 'PendingFirstBill') return false;
     } else if (activeTab === '8.3') {
       if (b.booking_status !== 'Active') return false;
     } else if (activeTab === '8.4') {
-      if (b.booking_status !== 'Cancelled') return false;
+      if (!['Cancelled', 'Rejected', 'Expired'].includes(b.booking_status)) return false;
     }
 
     // Search query
@@ -158,7 +203,9 @@ export default function OwnerBookingsPage() {
   const count81 = bookings.filter((b) => b.booking_status === 'PendingContract' || b.booking_status === 'PendingOwnerSignature').length;
   const count82 = bookings.filter((b) => b.booking_status === 'PendingFirstBill').length;
   const count83 = bookings.filter((b) => b.booking_status === 'Active').length;
-  const count84 = bookings.filter((b) => b.booking_status === 'Cancelled').length;
+  const count84 = bookings.filter((b) => ['Cancelled', 'Rejected', 'Expired'].includes(b.booking_status)).length;
+  const countReq = bookings.filter((b) => b.booking_status === 'BookingRequested').length;
+  const countPay = bookings.filter((b) => b.booking_status === 'BookingApproved').length;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 lg:p-10 space-y-8">
@@ -200,12 +247,32 @@ export default function OwnerBookingsPage() {
         {/* Horizontal Filter Tabs */}
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 md:pb-0">
           <button
+            onClick={() => setActiveTab('REQ')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 ${
+              activeTab === 'REQ' ? 'bg-orange-500 text-white shadow-lg' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
+            }`}
+          >
+            <span>🟠 รออนุมัติ</span>
+            <span className="px-2 py-0.5 rounded-full bg-black/30 text-[10px] font-mono">{countReq}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('PAY')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 ${
+              activeTab === 'PAY' ? 'bg-sky-500 text-white shadow-lg' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
+            }`}
+          >
+            <span>⏱ รอชำระค่าจอง</span>
+            <span className="px-2 py-0.5 rounded-full bg-black/30 text-[10px] font-mono">{countPay}</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('8.1')}
             className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 ${
               activeTab === '8.1' ? 'bg-amber-500 text-white shadow-lg' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
             }`}
           >
-            <span>🟡 8.1 ชำระมัดจำแล้ว รอทำสัญญา</span>
+            <span>🟡 8.1 ชำระค่าจองแล้ว รอทำสัญญา</span>
             <span className="px-2 py-0.5 rounded-full bg-black/30 text-[10px] font-mono">{count81}</span>
           </button>
 
@@ -235,7 +302,7 @@ export default function OwnerBookingsPage() {
               activeTab === '8.4' ? 'bg-rose-500 text-white shadow-lg' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
             }`}
           >
-            <span>🔴 8.4 ยกเลิกการจอง</span>
+            <span>🔴 8.4 ยกเลิก / ปฏิเสธ / หมดเวลา</span>
             <span className="px-2 py-0.5 rounded-full bg-black/30 text-[10px] font-mono">{count84}</span>
           </button>
 
@@ -286,7 +353,9 @@ export default function OwnerBookingsPage() {
             const is81 = item.booking_status === 'PendingContract' || item.booking_status === 'PendingOwnerSignature';
             const is82 = item.booking_status === 'PendingFirstBill';
             const is83 = item.booking_status === 'Active';
-            const is84 = item.booking_status === 'Cancelled';
+            const is84 = ['Cancelled', 'Rejected', 'Expired'].includes(item.booking_status);
+            const isReq = item.booking_status === 'BookingRequested';
+            const isPay = item.booking_status === 'BookingApproved';
 
             return (
               <div
@@ -425,7 +494,45 @@ export default function OwnerBookingsPage() {
                   </div>
 
                   {/* Primary Actions based on stage */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {isReq && (
+                      <>
+                        <span className="text-[11px] text-orange-300 font-bold">
+                          หมดอายุใน {Math.floor(Number(item.seconds_to_expire || 0) / 60)} นาที (20:00 น.)
+                        </span>
+                        <button
+                          onClick={() => runAction('approve', item)}
+                          disabled={actingId === item.contract_id}
+                          className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-white font-black text-xs rounded-xl shadow-lg disabled:opacity-50"
+                        >
+                          ✓ อนุมัติ
+                        </button>
+                        <button
+                          onClick={() => runAction('reject', item)}
+                          disabled={actingId === item.contract_id}
+                          className="px-5 py-2.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-black text-xs rounded-xl disabled:opacity-50"
+                        >
+                          ✕ ปฏิเสธ
+                        </button>
+                      </>
+                    )}
+
+                    {isPay && (
+                      <span className="text-xs text-sky-300 font-bold">
+                        รอผู้จองชำระค่าจอง ฿{Number(item.booking_fee || 0).toLocaleString('th-TH')} · เหลือเวลาโอนประมาณ {Math.ceil(Number(item.seconds_to_pay || 0) / 60)} นาที
+                      </span>
+                    )}
+
+                    {item.no_show_allowed && (
+                      <button
+                        onClick={() => runAction('cancel', item)}
+                        disabled={actingId === item.contract_id}
+                        className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl shadow-lg disabled:opacity-50"
+                      >
+                        ไม่มาตามนัด (ริบค่าจอง)
+                      </button>
+                    )}
+
                     {is81 && (
                       <button
                         onClick={() => setUploadContractBooking(item)}
@@ -453,7 +560,7 @@ export default function OwnerBookingsPage() {
 
                     {is84 && (
                       <span className="px-4 py-2 bg-rose-500/10 text-rose-400 border border-rose-500/30 text-xs font-bold rounded-xl">
-                        ยกเลิกแล้ว (ไม่คืนเงินมัดจำ)
+                        {item.booking_status === 'Rejected' ? 'ปฏิเสธแล้ว' : item.booking_status === 'Expired' ? 'หมดเวลา' : 'ยกเลิกแล้ว'}{item.cancel_reason ? ` · ${item.cancel_reason}` : ''}
                       </span>
                     )}
                   </div>

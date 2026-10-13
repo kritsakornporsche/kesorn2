@@ -12,6 +12,8 @@ import { withTransaction, type Client } from '@/lib/bill-status';
 const STAFF_ROLES = new Set(['owner', 'manager', 'keeper', 'admin', 'platform_admin', 'researcher']);
 // Statuses a contract can be signed (activated) from
 const SIGNABLE = new Set(['pendingownersignature', 'pendingcontract', 'pendingfirstbill']);
+// Contracts that hold a room: a new booking or walk-in for that room is refused while one exists
+export const ROOM_HOLDING_STATUSES = ['BookingRequested', 'BookingApproved', 'PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active'];
 
 export type ContractRefusal = 'room_not_found' | 'room_unavailable' | 'room_has_active_contract' | 'staff_account'
   | 'no_account' | 'not_found' | 'invalid_status' | 'deposit_mismatch' | 'deposit_reason_required';
@@ -35,7 +37,7 @@ export function contractMessage(result: { reason: ContractRefusal; expected?: nu
     : CONTRACT_MESSAGES[result.reason];
 }
 
-class Refused extends Error {
+export class Refused extends Error {
   constructor(public reason: ContractRefusal, public expected?: number) { super(reason); }
 }
 function refuse(reason: ContractRefusal, expected?: number): never {
@@ -138,7 +140,12 @@ export interface CreateContractInput {
   endDate: string;
   depositAmount: number;
   /** Waiting for the owner, or active right away (owner-created and renewed contracts) */
-  status: 'PendingOwnerSignature' | 'Active';
+  /** BookingRequested: a guest's request waiting for approval (no payment yet) */
+  status: 'BookingRequested' | 'PendingOwnerSignature' | 'Active';
+  /** Booking timing (Thai time via the pool; always from the app's clock) */
+  approvedAt?: Date | null;
+  approvedBy?: number | null;
+  expiresAt?: Date | null;
   /** Walk-in: the room must not already be occupied or reserved */
   requireRoomFree?: boolean;
   signature?: string | null;
@@ -161,11 +168,20 @@ export interface CreateContractInput {
   depositOutsideSystem?: { reason: string } | null;
 }
 
-async function createContractTx(client: Client, input: CreateContractInput) {
+/** createContract inside a transaction the caller has started (refusals throw Refused). */
+export async function createContractTx(client: Client, input: CreateContractInput) {
   const room = (await client.query('SELECT id, room_number, status, dorm_id, deposit_amount FROM rooms WHERE id = ? FOR UPDATE', [input.roomId])).rows[0];
   if (!room) refuse('room_not_found');
   const roomStatus = String(room.status || '').toLowerCase();
-  if (input.requireRoomFree && ['occupied', 'reserved', 'ไม่ว่าง'].includes(roomStatus)) refuse('room_unavailable');
+  if (input.requireRoomFree) {
+    // Bookings and walk-ins: the room row is locked above, so two requests for the same room cannot both pass
+    if (['occupied', 'reserved', 'ไม่ว่าง'].includes(roomStatus)) refuse('room_unavailable');
+    const holding = (await client.query(
+      `SELECT id FROM contracts WHERE room_id = ? AND status IN (${ROOM_HOLDING_STATUSES.map(() => '?').join(', ')}) LIMIT 1`,
+      [input.roomId, ...ROOM_HOLDING_STATUSES]
+    )).rows[0];
+    if (holding) refuse('room_unavailable');
+  }
   const active = (await client.query(
     "SELECT id FROM contracts WHERE room_id = ? AND status = 'Active' AND id <> ? LIMIT 1", [input.roomId, input.parentContractId || 0]
   )).rows[0];
@@ -196,13 +212,14 @@ async function createContractTx(client: Client, input: CreateContractInput) {
   const contractId = (await client.query(
     `INSERT INTO contracts (tenant_id, room_id, start_date, end_date, deposit_amount, status, signature_data, owner_signature_data,
        signed_at, slip_url, contract_file_url, id_card_number, id_card_image, tenant_address, parent_phone, parent_contract_id, renewal_note, occupants,
-       deposit_outside_system, deposit_note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       deposit_outside_system, deposit_note, approved_at, approved_by, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [tenantId, room.id, input.startDate, input.endDate, deposit, input.status, input.signature || null,
       input.ownerSignature || null, input.signedAt || null, input.slipUrl || null, input.contractFileUrl || null,
       input.idCardNumber || null, input.idCardImage || null, input.tenantAddress || null, input.parentPhone || null,
       input.parentContractId || null, input.note || null, Math.max(1, Math.floor(Number(input.occupants) || 1)),
-      outside ? 1 : 0, outside ? String(outside.reason).trim().slice(0, 500) : null]
+      outside ? 1 : 0, outside ? String(outside.reason).trim().slice(0, 500) : null,
+      input.approvedAt || null, input.approvedBy || null, input.expiresAt || null]
   )).rows.insertId;
 
   await client.query('UPDATE rooms SET status = ? WHERE id = ?', [isActive ? 'Occupied' : 'Reserved', room.id]);

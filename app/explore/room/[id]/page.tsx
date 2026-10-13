@@ -100,9 +100,8 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
   const streamRef = useRef<MediaStream | null>(null);
 
   // QR Code & Slip Payment States
-  const [qrData, setQrData] = useState<{ qrImage: string; amount: number; promptpayNumber: string; promptpayName: string } | null>(null);
-  const [qrLoading, setQrLoading] = useState(false);
-  const [slipData, setSlipData] = useState<string | null>(null);
+  // Requests are accepted 08:00–20:00 (decided by the server)
+  const [bookingOpen, setBookingOpen] = useState(true);
   const [contractSignature, setContractSignature] = useState<string>('CONFIRMED_E_CONTRACT');
 
   const router = useRouter();
@@ -137,7 +136,10 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     if (!room?.room_number) return;
     fetch(`/api/rates?roomNumber=${encodeURIComponent(room.room_number)}`)
       .then((res) => res.json())
-      .then((json) => { if (json.success && json.room) setCosts(json.room); })
+      .then((json) => {
+        if (json.success && json.room) setCosts(json.room);
+        if (json.success && typeof json.booking_open === 'boolean') setBookingOpen(json.booking_open);
+      })
       .catch(() => {});
   }, [room?.room_number]);
 
@@ -189,7 +191,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
           const data = await res.json();
           if (data.success && data.data) {
             if (data.data.current_step > 2) {
-              setStep(data.data.current_step);
+              setStep(Math.min(3, Number(data.data.current_step)));
             } else {
               setStep(1);
             }
@@ -225,30 +227,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     return () => clearTimeout(timer);
   }, [step, bookingData, sessionStatus, roomId]);
 
-  // Fetch QR code when reaching Step 4 (Payment)
-  useEffect(() => {
-    async function fetchQr() {
-      if (step === 4 && room) {
-        setQrLoading(true);
-        try {
-          const isTestRoom = (room.room_number || '').toUpperCase() === 'T01';
-          const depositAmount = isTestRoom ? 1 : 1000; // T01 = 1 บาท สำหรับทดสอบการโอน
-          const res = await fetch(`/api/booking/qr?roomId=${roomId}&dormId=${room.dorm_id}&amount=${depositAmount}`);
-          const data = await res.json();
-          if (data.success) {
-            setQrData(data);
-          } else {
-            console.error('QR fetch error:', data.message);
-          }
-        } catch (e) {
-          console.error('[Fetch QR Error]', e);
-        } finally {
-          setQrLoading(false);
-        }
-      }
-    }
-    fetchQr();
-  }, [step, room, roomId]);
 
   // Camera controls for ID Card Scanner
   const startCamera = async (mode: 'environment' | 'user' = facingMode) => {
@@ -560,32 +538,10 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
       console.error(e);
     }
     setStep(1);
-    setSlipData(null);
   };
 
   // Handle Slip Upload
-  const handleSlipUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert('ไฟล์มีขนาดใหญ่เกินไป (จำกัดไม่เกิน 5MB)');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSlipData(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  // Final Submit with Slip, ID Card OCR, & Contract Details
   const handleFinalSubmit = async () => {
-    if (!slipData) {
-      alert('กรุณาแนบรูปภาพสลิปการโอนเงินก่อนส่งคำขอจอง');
-      return;
-    }
-
     setIsProcessing(true);
     try {
       const res = await fetch('/api/contracts', {
@@ -596,20 +552,24 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
           signature: 'CONFIRMED_E_CONTRACT',
           startDate: bookingData.start_date,
           endDate: bookingData.end_date,
-          depositAmount: totalDeposit, // ค่าจองห้องพักเพื่อยืนยันสิทธิ์ (T01 = 1 บาท, ห้องทั่วไป = 1,000 บาท)
-          monthlyRent: Number(room.price),
           tenantName: bookingData.name,
           phone: bookingData.phone,
           parentPhone: bookingData.parent_phone,
           idCardNumber: bookingData.id_card_number,
           tenantAddress: bookingData.id_card_address,
           idCardImage: bookingData.id_card_image,
-          slipUrl: slipData
         })
       });
 
       const data = await res.json();
-      if (!data.success) throw new Error(data.message);
+      if (!data.success) {
+        if (data.reason === 'outside_hours') setBookingOpen(false);
+        if (data.reason === 'has_open_booking' && data.statusUrl) {
+          if (confirm(`${data.message}\n\nไปหน้าสถานะการจองตอนนี้?`)) router.push(data.statusUrl);
+          return;
+        }
+        throw new Error(data.message);
+      }
 
       // Clear booking progress
       try {
@@ -655,8 +615,9 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
   const images = getImagesArray(room.images || room.image_url);
   const isTestRoom = (room.room_number || '').toUpperCase() === 'T01';
-  const totalDeposit = isTestRoom ? 1 : 1000; // ค่าจองห้องพักเพื่อยืนยันสิทธิ์ (T01 = 1 บาท, ห้องทั่วไป = 1,000 บาท)
-  const fullDeposit = isTestRoom ? 20 : (room.deposit_amount ? Number(room.deposit_amount) : 3000);
+  // Booking fee and total deposit come from the server (/api/rates?roomNumber=)
+  const totalDeposit = costs?.bookingFee ?? 0;
+  const fullDeposit = costs?.deposit ?? 0;
   const securityDeposit = Math.max(0, fullDeposit - totalDeposit); // เงินประกันส่วนที่เหลือชำระวันทำสัญญา
   const contractStartDate = new Date().toLocaleDateString('th-TH');
   const contractEndDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toLocaleDateString('th-TH');
@@ -884,7 +845,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     <div className="text-xs">
                       <span className="font-bold block">การจองและเงินประกัน</span>
                       <span className="text-muted-foreground text-[11px]">
-                        จองเพียง {totalDeposit.toLocaleString()} บาท (เงินประกันรวม {fullDeposit.toLocaleString()} บาท ชำระส่วนที่เหลือวันทำสัญญา คืนเมื่อสิ้นสุดสัญญา)
+                        ค่าจอง {totalDeposit.toLocaleString()} บาท ชำระหลังหอพักอนุมัติ (เป็นส่วนหนึ่งของเงินประกันรวม {fullDeposit.toLocaleString()} บาท ชำระส่วนที่เหลือวันเข้าพัก)
                       </span>
                     </div>
                   </div>
@@ -956,7 +917,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
             {step === 1 && (
               <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-xl space-y-6 animate-in fade-in duration-300">
                 <div className="space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 1 จาก 4</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 1 จาก 3</span>
                   <h2 className="text-2xl font-black tracking-tight">สรุปค่าใช้จ่ายการจองห้องพัก</h2>
                 </div>
 
@@ -1090,7 +1051,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
             {step === 2 && (
               <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-xl space-y-6 animate-in fade-in duration-300">
                 <div className="space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 2 จาก 4</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 2 จาก 3</span>
                   <h2 className="text-2xl font-black tracking-tight">ข้อมูลผู้จองและระยะเวลาเข้าพัก</h2>
                   <p className="text-xs text-muted-foreground">ข้อมูลจะถูกนำไปใช้กรอกลงในแบบฟอร์มสัญญาเช่าหอพักเกษร 2 อัตโนมัติ</p>
                 </div>
@@ -1228,7 +1189,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
             {step === 3 && (
               <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-xl space-y-6 animate-in fade-in duration-300">
                 <div className="space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 3 จาก 4</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 3 จาก 3</span>
                   <h2 className="text-2xl font-black tracking-tight">สแกนบัตรประชาชนและข้อมูลสัญญา</h2>
                   <p className="text-xs text-muted-foreground">
                     ระบบ AI OCR (Google Gemini Vision AI) จะอ่านข้อมูลบัตรประชาชนและนำไปกรอกลงในแบบฟอร์มสัญญาเช่าหอพักเกษรฉบับจริงให้อัตโนมัติ
@@ -1591,7 +1552,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   <div className="text-[11px] text-muted-foreground space-y-1 bg-background/50 p-3 rounded-xl border border-border max-h-32 overflow-y-auto leading-relaxed">
                     <p>1. ค่าเช่าห้องพักเดือนละ ฿{Number(room.price).toLocaleString()} กำหนดชำระภายในวันที่ 5 ของทุกเดือน</p>
                     <p>2. ค่าน้ำประปาเหมาจ่าย {costs ? `฿${formatBaht(costs.rates.waterPerPerson)}` : '-'}/คน/เดือน • ค่าส่วนกลาง {costs ? `฿${formatBaht(costs.rates.commonFee)}` : '-'}/เดือน • ค่าไฟฟ้าหน่วยละ {costs ? `฿${formatBaht(costs.rates.electricityPerUnit)}` : '-'}/ยูนิต</p>
-                    <p>3. ค่าจอง {costs ? `฿${formatBaht(costs.bookingFee)}` : '-'} เป็นส่วนหนึ่งของเงินประกันรวม {costs ? `฿${formatBaht(costs.deposit)}` : '-'} · ค่าจองไม่คืนกรณียกเลิกการจอง · วันเข้าอยู่ชำระค่าเช่าเดือนแรกเต็มเดือน + เงินประกันส่วนที่เหลือ · เงินประกันคืนตามเงื่อนไขในสัญญา</p>
+                    <p>3. ค่าจอง {costs ? `฿${formatBaht(costs.bookingFee)}` : '-'} เป็นส่วนหนึ่งของเงินประกันรวม {costs ? `฿${formatBaht(costs.deposit)}` : '-'} · ชำระหลังหอพักอนุมัติคำขอ · ไม่คืนหากยกเลิกการจองหรือไม่มาเข้าพักตามวันนัด · วันเข้าอยู่ชำระค่าเช่าเดือนแรกเต็มเดือน + เงินประกันส่วนที่เหลือ · เงินประกันคืนตามเงื่อนไขในสัญญา</p>
                     <p>4. ห้ามส่งเสียงดังรบกวนยามวิกาล, ห้ามเสพสิ่งเสพติด, รักษาความสะอาดห้องพักสม่ำเสมอ</p>
                     <p>5. สัญญาเช่าฉบับจริงจะลงลายมือชื่อทั้งสองฝ่ายต่อหน้าในวันเข้าพักจริง</p>
                   </div>
@@ -1603,12 +1564,20 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
                 {/* Next & Back Actions */}
                 <div className="space-y-3 pt-2">
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-400 leading-relaxed">
+                    ค่าจอง ฿{totalDeposit.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ชำระหลังหอพักอนุมัติคำขอ และเป็นส่วนหนึ่งของเงินประกันรวม ฿{fullDeposit.toLocaleString('th-TH', { minimumFractionDigits: 2 })} · ไม่คืนหากยกเลิกการจองหรือไม่มาเข้าพักตามวันนัด
+                  </div>
+                  {!bookingOpen && (
+                    <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-[11px] text-rose-400 leading-relaxed">
+                      รับคำขอจองทุกวัน 08:00–20:00 น. — ตอนนี้นอกเวลา กรุณาส่งคำขอใหม่ในช่วงเวลาดังกล่าว
+                    </div>
+                  )}
                   <button
-                    onClick={() => setStep(4)}
-                    disabled={!bookingData.id_card_number || !bookingData.id_card_address}
+                    onClick={handleFinalSubmit}
+                    disabled={!bookingData.id_card_number || !bookingData.id_card_address || !bookingOpen || isProcessing || !costs}
                     className="w-full py-5 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-sm transition-all shadow-xl shadow-primary/25 hover:scale-[1.02] active:scale-95 disabled:opacity-40 cursor-pointer"
                   >
-                    ถัดไป: ชำระเงินค่าจอง ฿{totalDeposit.toLocaleString()} →
+                    {isProcessing ? 'กำลังส่งคำขอจอง...' : 'ส่งคำขอจอง →'}
                   </button>
                   <div className="flex items-center gap-3">
                     <button
@@ -1628,121 +1597,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
               </div>
             )}
 
-            {/* Step 4: PromptPay QR Payment & Transfer Slip Upload */}
-            {step === 4 && (
-              <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-xl space-y-6 animate-in fade-in duration-300">
-                <div className="space-y-2 text-center">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-500">ขั้นตอนที่ 4 จาก 4</span>
-                  <h2 className="text-2xl font-black tracking-tight">โอนเงินค่าจองและแนบสลิป</h2>
-                  <p className="text-xs text-muted-foreground">ชำระเงินจอง {totalDeposit.toLocaleString()} บาท เพื่อล็อกห้องพักและยืนยันสิทธิ์</p>
-                </div>
-
-                {/* QR Code Container */}
-                <div className="p-6 bg-slate-950/80 rounded-3xl border border-white/10 text-center space-y-4">
-                  {qrLoading ? (
-                    <div className="h-56 flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-                    </div>
-                  ) : qrData?.qrImage ? (
-                    <div className="space-y-3">
-                      <div className="w-52 h-52 mx-auto bg-white p-3 rounded-2xl shadow-xl flex items-center justify-center">
-                        <img src={qrData.qrImage} alt="PromptPay QR Code" className="w-full h-full object-contain" />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-sm font-bold text-white">{qrData.promptpayName}</p>
-                        <p className="text-xs text-white/50 font-mono">พร้อมเพย์: {qrData.promptpayNumber}</p>
-                        <div className="pt-1">
-                          <span className="text-[10px] uppercase font-bold text-white/50 block">ยอดชำระเงินจองห้องพัก</span>
-                          <span className="text-2xl font-black text-amber-400">฿{totalDeposit.toLocaleString()}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="py-8 text-center text-xs text-muted-foreground">
-                      ไม่สามารถโหลด QR Code ได้ กรุณาติดต่อผู้ดูแลหอพัก
-                    </div>
-                  )}
-                </div>
-
-                {qrData && (
-                  <PromptPayBankSelector
-                    qrImage={qrData.qrImage}
-                    promptpayNumber={qrData.promptpayNumber}
-                    promptpayName={qrData.promptpayName}
-                    amount={totalDeposit}
-                    fileName={`deposit-qr-room-${room.room_number}.png`}
-                  />
-                )}
-
-                <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-300 leading-relaxed">
-                  💡 <strong>หมายเหตุ:</strong> ชำระเฉพาะเงินจองเพื่อยืนยันสิทธิ์ 1,000 บาท สำหรับเงินประกันความเสียหาย ฿2,000 และค่าเช่าเดือนแรก เจ้าของหอพักจะคิดคำนวณและเรียกเก็บในวันทำสัญญาเข้าพักจริง
-                </div>
-
-                {/* Slip Upload Area */}
-                <div className="space-y-3">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
-                    แนบรูปภาพสลิปการโอนเงิน (Transfer Slip) <span className="text-rose-500">*</span>
-                  </label>
-
-                  {slipData ? (
-                    <div className="p-4 bg-secondary rounded-2xl border border-border flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-16 rounded-xl overflow-hidden bg-slate-900 border border-border shrink-0">
-                          <img src={slipData} alt="Slip Preview" className="w-full h-full object-cover" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold text-emerald-500">✓ แนบสลิปเรียบร้อยแล้ว</p>
-                          <p className="text-[11px] text-muted-foreground">พร้อมส่งให้เจ้าของหอพักตรวจสอบ</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setSlipData(null)}
-                        className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                      >
-                        เปลี่ยนรูป
-                      </button>
-                    </div>
-                  ) : (
-                    <label className="flex flex-col items-center justify-center p-8 bg-secondary/60 hover:bg-secondary border-2 border-dashed border-border rounded-2xl cursor-pointer transition-all hover:border-primary group">
-                      <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xl mb-2 group-hover:scale-110 transition-transform">
-                        📷
-                      </div>
-                      <span className="text-xs font-bold text-foreground">คลิกเพื่ออัปโหลดสลิปโอนเงิน</span>
-                      <span className="text-[10px] text-muted-foreground mt-1">รองรับไฟล์ JPG, PNG (ไม่เกิน 5MB)</span>
-                      <input type="file" accept="image/*" className="hidden" onChange={handleSlipUpload} />
-                    </label>
-                  )}
-                </div>
-
-                {/* Submit Actions */}
-                <div className="space-y-3 pt-2">
-                  <button
-                    onClick={handleFinalSubmit}
-                    disabled={!slipData || isProcessing}
-                    className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl text-sm transition-all shadow-xl shadow-emerald-500/25 hover:scale-[1.02] active:scale-95 disabled:opacity-40 cursor-pointer"
-                  >
-                    {isProcessing ? 'กำลังส่งคำขอจองและสร้างสัญญา...' : '✓ ยืนยันการโอนเงินและส่งคำขอจอง'}
-                  </button>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setStep(3)}
-                      disabled={isProcessing}
-                      className="flex-1 py-3 text-xs font-bold text-muted-foreground hover:text-foreground cursor-pointer"
-                    >
-                      ← ย้อนกลับ
-                    </button>
-                    <button
-                      onClick={handleCancelCurrentBooking}
-                      disabled={isProcessing}
-                      className="py-3 px-3 text-xs font-bold text-rose-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all cursor-pointer"
-                    >
-                      ยกเลิกการจอง
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Step 5: Finished & Contract Documents Ready */}
             {step === 5 && (
               <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-xl space-y-6 text-center animate-in fade-in duration-300">
@@ -1750,10 +1604,10 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   ✓
                 </div>
                 <div className="space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500">จองห้องพักสำเร็จ</span>
-                  <h3 className="text-2xl font-black tracking-tight">ส่งคำขอจองและจัดทำสัญญาเช่าสำเร็จ</h3>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500">ส่งคำขอจองแล้ว</span>
+                  <h3 className="text-2xl font-black tracking-tight">ส่งคำขอจองแล้ว รอหอพักอนุมัติ</h3>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    ระบบได้กรอกข้อมูลของคุณลงในฟอร์มสัญญาเช่าหอพักเกษร 2 เรียบร้อยแล้ว พร้อมส่งสลิปและร่างสัญญาให้เจ้าของหอพักตรวจสอบ
+                    หากไม่ได้รับการอนุมัติภายใน 20:00 น. วันนี้ คำขอจะหมดอายุ · เมื่อหอพักอนุมัติแล้ว กรุณาชำระค่าจองภายใน 10 นาทีที่หน้าสถานะการจอง
                   </p>
                 </div>
 
@@ -1787,7 +1641,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                 </div>
 
                 <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-[11px] text-amber-400 text-left leading-relaxed">
-                  📌 <strong>ขั้นตอนถัดไปในวันเข้าพัก:</strong> เมื่อเจ้าของหอพักตรวจสอบยอดเงินจอง ฿1,000 เรียบร้อย จะพิมพ์สัญญาเช่ากระดาษฉบับนี้เพื่อลงลายมือชื่อจริงร่วมกับท่านในวันรับกุญแจเข้าพัก และถ่ายรูปสัญญาตัวจริงบันทึกลงระบบเป็นหลักฐาน
+                  📌 <strong>ขั้นตอนถัดไป:</strong> หอพักอนุมัติ → ชำระค่าจองภายใน 10 นาที (หน้าสถานะการจอง) → ในวันเข้าพักเจ้าของหอพักจะพิมพ์สัญญาเช่าฉบับนี้ให้ลงลายมือชื่อร่วมกัน
                 </div>
 
                 <div className="pt-2 space-y-2.5">

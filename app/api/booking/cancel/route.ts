@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import { forfeitBookingFee } from '@/lib/deposits';
+import { cancelUnpaidBooking } from '@/lib/bookings';
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
         FROM contracts c
         JOIN tenants t ON c.tenant_id = t.id
         WHERE (t.email = ${session.user.email} OR t.user_id = ${(session.user as any).id || 0})
-        AND c.status IN ('PendingContract', 'PendingOwnerSignature')
+        AND c.status IN ('BookingRequested', 'BookingApproved', 'PendingContract', 'PendingOwnerSignature')
         ORDER BY c.id DESC
         LIMIT 1
       `;
@@ -46,6 +47,27 @@ export async function POST(req: Request) {
     }
 
     const currentStatus = contractData[0].status;
+
+    // Only the booker can cancel their own booking (paid or not)
+    const owner = await sql`
+      SELECT t.id FROM tenants t
+      WHERE t.id = ${contractData[0].tenant_id}
+        AND (LOWER(t.email) = LOWER(${session.user.email}) OR t.user_id = ${(session.user as any).id || 0})
+      LIMIT 1
+    `;
+    if (owner.length === 0) {
+      return NextResponse.json({ success: false, message: 'ไม่พบรายการจองที่สามารถยกเลิกได้' }, { status: 404 });
+    }
+
+    // Not paid yet (waiting for approval / for the booking fee): cancel without forfeiting anything
+    if (currentStatus === 'BookingRequested' || currentStatus === 'BookingApproved') {
+      const cancelled = await cancelUnpaidBooking(Number(targetContractId), Number((session.user as any).id) || null, new Date());
+      if (!cancelled.ok) {
+        return NextResponse.json({ success: false, message: cancelled.message }, { status: 400 });
+      }
+      return NextResponse.json({ success: true, message: 'ยกเลิกคำขอจองแล้ว ห้องเปิดให้ผู้อื่นจองแล้ว' });
+    }
+
     if (currentStatus !== 'PendingContract' && currentStatus !== 'PendingOwnerSignature') {
       return NextResponse.json({
         success: false,

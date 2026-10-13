@@ -216,15 +216,6 @@ export default async function TenantDashboard() {
                   contractId={pendingContract.contract_id} 
                   roomId={pendingContract.room_id} 
                 />
-                {pendingContract.deposit_amount > 0 && (
-                  <Link
-                    href="/tenant/refund-request"
-                    className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl text-xs transition-all border border-rose-500/40 hover:border-rose-400/60 hover:scale-105 active:scale-95 flex items-center gap-2"
-                  >
-                    <span>💰</span>
-                    <span>ขอคืนเงินมัดจำ</span>
-                  </Link>
-                )}
                 <Link
                   href="/tenant/chat"
                   className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-2xl text-xs transition-all shadow-lg hover:scale-105 active:scale-95 flex items-center gap-2"
