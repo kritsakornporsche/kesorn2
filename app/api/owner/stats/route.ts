@@ -54,10 +54,12 @@ export async function GET(req: Request) {
     `;
     const pendingMaintenance = Number(pendingMaintRes[0]?.count || 0);
 
+    // Partially paid bills count with what is still owed (late fees are shown per bill, not here)
     const unpaidBillsRes = await sql`
-      SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as total 
-      FROM bills 
-      WHERE status IN ('Unpaid', 'Overdue')
+      SELECT COUNT(*) as count,
+             COALESCE(SUM(b.amount - COALESCE((SELECT SUM(p.amount) FROM bill_payments p WHERE p.bill_id = b.id AND p.voided_at IS NULL), 0)), 0) as total
+      FROM bills b
+      WHERE LOWER(b.status) IN ('unpaid', 'overdue', 'partial')
     `;
     const unpaidBillsCount = Number(unpaidBillsRes[0]?.count || 0);
     const unpaidBillsAmount = Number(unpaidBillsRes[0]?.total || 0);

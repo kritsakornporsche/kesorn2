@@ -46,7 +46,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (existing.length === 0) {
       return NextResponse.json({ success: false, message: 'ไม่พบบิล' }, { status: 404 });
     }
-    if (isStatus(existing[0].status, 'paid')) {
+    if (isStatus(existing[0].status, 'paid') || isStatus(existing[0].status, 'partial')) {
       return NextResponse.json({ success: false, message: 'บิลที่ชำระแล้วแก้ไขไม่ได้' }, { status: 400 });
     }
 
@@ -168,7 +168,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 
   try {
     const existing = await sql`SELECT status FROM bills WHERE id = ${billId} LIMIT 1`;
-    if (existing.length > 0 && isStatus(existing[0].status, 'paid')) {
+    if (existing.length > 0 && (isStatus(existing[0].status, 'paid') || isStatus(existing[0].status, 'partial'))) {
       return NextResponse.json({ success: false, message: 'บิลที่ชำระแล้วลบไม่ได้' }, { status: 400 });
     }
 

@@ -3,7 +3,7 @@
 
 import { getDb } from '@/lib/db';
 import { Pool } from '@/lib/mysql-adapter';
-import { bangkokDate, calcLateFee, getRates } from '@/lib/billing';
+import { bangkokDate, calcLateFee, getRates, type Rates } from '@/lib/billing';
 import { isStatus, logStatus } from '@/lib/bill-status';
 
 export type PaymentMethod = 'slip' | 'cash' | 'transfer';
@@ -17,12 +17,15 @@ export interface PaymentInput {
   slipData?: string | null;
   recordedBy?: number | null;
   note?: string | null;
+  /** Staff-recorded cash/transfer may cover part of the bill; slip payments must cover it all. */
+  allowPartial?: boolean;
 }
 
 export type PaymentResult =
-  | { ok: true; paymentId: number; required: number; lateFee: number; daysOverdue: number }
+  | { ok: true; paymentId: number; status: 'Paid' | 'Partial'; required: number; outstanding: number; lateFee: number; daysOverdue: number }
   | { ok: false; reason: 'invalid_input' | 'not_found' | 'already_paid' | 'cancelled' | 'not_sent' }
-  | { ok: false; reason: 'insufficient'; required: number };
+  | { ok: false; reason: 'insufficient'; required: number }
+  | { ok: false; reason: 'exceeds'; outstanding: number };
 
 // Validated here because MySQL may run without strict mode and silently coerce bad values
 const METHODS: PaymentMethod[] = ['slip', 'cash', 'transfer'];
@@ -30,6 +33,45 @@ const METHODS: PaymentMethod[] = ['slip', 'cash', 'transfer'];
 const ACCOUNTING_CATEGORY: Record<string, string> = { service: 'Service', booking: 'Deposit' };
 
 const toSatang = (n: number) => Math.round(Number(n) * 100);
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Amount still owed at `asOf`: bill amount + late fee at that time − payments already received (not voided).
+ * The late fee is a flat daily rate, so it does not depend on how much has been paid.
+ */
+export function outstandingFor(
+  bill: { amount: number | string; bill_type?: string | null; status?: string | null; due_date?: Date | string | null },
+  paidTotal: number,
+  asOf: Date | string | number,
+  rates: Rates
+) {
+  const { lateFee, daysOverdue } = calcLateFee(bill, asOf, rates);
+  const due = round2(Number(bill.amount) + lateFee);
+  return { due, lateFee, daysOverdue, paidTotal: round2(paidTotal), outstanding: round2(Math.max(0, due - paidTotal)) };
+}
+
+export interface PaymentSummary {
+  paid_total: number;
+  payments: { id: number; amount: number; method: string; paid_at: Date; voided: boolean }[];
+}
+
+/** Payments per bill (voided ones included for history, excluded from paid_total). */
+export async function getPaymentSummaries(sql: any, billIds: number[]): Promise<Map<number, PaymentSummary>> {
+  const map = new Map<number, PaymentSummary>();
+  if (billIds.length === 0) return map;
+  const rows = await sql`
+    SELECT id, bill_id, amount, method, paid_at, voided_at FROM bill_payments
+    WHERE bill_id IN (${billIds}) ORDER BY id
+  `;
+  for (const r of rows) {
+    const s = map.get(r.bill_id) || { paid_total: 0, payments: [] };
+    const voided = r.voided_at !== null;
+    if (!voided) s.paid_total = round2(s.paid_total + Number(r.amount));
+    s.payments.push({ id: r.id, amount: Number(r.amount), method: r.method, paid_at: r.paid_at, voided });
+    map.set(r.bill_id, s);
+  }
+  return map;
+}
 
 /**
  * Time of a transfer from a SlipOK result. SlipOK reports Thai local time, so +07:00 is added when the
@@ -44,8 +86,9 @@ export function slipPaidAt(verifyResult: any): Date {
 }
 
 /**
- * Record a full payment for a bill. The amount must cover the bill plus the late fee at `paidAt`;
- * otherwise nothing is written and the required amount is returned (partial payments come later).
+ * Record a payment for a bill. What is owed is the bill plus the late fee at `paidAt`, minus earlier payments.
+ * Covering it marks the bill Paid. Less than that: with `allowPartial` the bill becomes Partial, otherwise
+ * nothing is written and the required amount is returned. With `allowPartial`, more than owed is refused.
  */
 export async function recordPayment(billId: number, input: PaymentInput): Promise<PaymentResult> {
   const validInput = METHODS.includes(input.method)
@@ -75,25 +118,35 @@ export async function recordPayment(billId: number, input: PaymentInput): Promis
     // A draft has not been sent to the tenant yet
     if (isStatus(bill.status, 'draft')) return reject({ ok: false, reason: 'not_sent' });
 
-    const { lateFee, daysOverdue } = calcLateFee(bill, input.paidAt, rates);
-    const required = Math.round((Number(bill.amount) + lateFee) * 100) / 100;
-    if (toSatang(input.amount) < toSatang(required)) return reject({ ok: false, reason: 'insufficient', required });
+    const paidBefore = (await client.query(
+      'SELECT COALESCE(SUM(amount), 0) AS total FROM bill_payments WHERE bill_id = ? AND voided_at IS NULL', [billId]
+    )).rows[0];
+    const { lateFee, daysOverdue, outstanding: required } = outstandingFor(bill, Number(paidBefore?.total || 0), input.paidAt, rates);
+
+    const coversAll = toSatang(input.amount) >= toSatang(required);
+    if (!coversAll && !input.allowPartial) return reject({ ok: false, reason: 'insufficient', required });
+    if (input.allowPartial && toSatang(input.amount) > toSatang(required)) return reject({ ok: false, reason: 'exceeds', outstanding: required });
 
     const paymentRes = await client.query(
       'INSERT INTO bill_payments (bill_id, amount, method, paid_at, slip_ref, recorded_by, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [billId, input.amount, input.method, input.paidAt, input.slipRef || null, input.recordedBy || null, input.note || null]
     );
 
-    await client.query(
-      `UPDATE bills
-       SET status = 'Paid', paid_at = ?, payment_method = ?, penalty_amount = ?, days_overdue = ?,
-           slip_url = COALESCE(?, slip_url), slip_data = COALESCE(?, slip_data), slipok_trans_ref = COALESCE(?, slipok_trans_ref),
-           slip_verified = IF(? = 'slip', 1, slip_verified), slip_verified_at = IF(? = 'slip', NOW(), slip_verified_at)
-       WHERE id = ?`,
-      [input.paidAt, input.method, lateFee, daysOverdue,
-        input.slipUrl || null, input.slipData || null, input.slipRef || null,
-        input.method, input.method, billId]
-    );
+    const newStatus = coversAll ? 'Paid' : 'Partial';
+    if (coversAll) {
+      await client.query(
+        `UPDATE bills
+         SET status = 'Paid', paid_at = ?, payment_method = ?, penalty_amount = ?, days_overdue = ?,
+             slip_url = COALESCE(?, slip_url), slip_data = COALESCE(?, slip_data), slipok_trans_ref = COALESCE(?, slipok_trans_ref),
+             slip_verified = IF(? = 'slip', 1, slip_verified), slip_verified_at = IF(? = 'slip', NOW(), slip_verified_at)
+         WHERE id = ?`,
+        [input.paidAt, input.method, lateFee, daysOverdue,
+          input.slipUrl || null, input.slipData || null, input.slipRef || null,
+          input.method, input.method, billId]
+      );
+    } else {
+      await client.query("UPDATE bills SET status = 'Partial' WHERE id = ?", [billId]);
+    }
 
     // One income row per payment, so a bill can be paid again after an unpay reversed the first payment
     const paymentId = paymentRes.rows.insertId;
@@ -109,10 +162,13 @@ export async function recordPayment(billId: number, input: PaymentInput): Promis
         bangkokDate(input.paidAt),
       ]
     );
-    await logStatus(client, billId, bill.status, 'Paid', null, input.recordedBy || null);
+    if (newStatus !== bill.status) await logStatus(client, billId, bill.status, newStatus, null, input.recordedBy || null);
 
     await client.query('COMMIT', []);
-    return { ok: true, paymentId, required, lateFee, daysOverdue };
+    return {
+      ok: true, paymentId, status: newStatus, required, lateFee, daysOverdue,
+      outstanding: round2(Math.max(0, required - Number(input.amount))),
+    };
   } catch (error) {
     await client.query('ROLLBACK', []).catch(() => {});
     throw error;

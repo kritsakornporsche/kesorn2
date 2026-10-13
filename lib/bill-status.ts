@@ -6,7 +6,7 @@ import { Pool } from '@/lib/mysql-adapter';
 import { bangkokDate, calcDueDate } from '@/lib/billing';
 
 /** Case-insensitive status check; older code paths wrote statuses in different cases. */
-export function isStatus(status: unknown, name: 'draft' | 'unpaid' | 'paid' | 'cancelled') {
+export function isStatus(status: unknown, name: 'draft' | 'unpaid' | 'partial' | 'paid' | 'cancelled') {
   const s = String(status || '').toLowerCase();
   return name === 'cancelled' ? s === 'cancelled' || s === 'canceled' : s === name;
 }
@@ -114,7 +114,8 @@ export async function unpayBill(billId: number, reason: string, by: number | nul
     );
     const bill = rows[0];
     if (!bill) return { ok: false, reason: 'not_found' } as UnpayResult;
-    if (!isStatus(bill.status, 'paid')) return { ok: false, reason: 'not_paid' } as UnpayResult;
+    // Partial bills are reversed the same way (every payment voided)
+    if (!isStatus(bill.status, 'paid') && !isStatus(bill.status, 'partial')) return { ok: false, reason: 'not_paid' } as UnpayResult;
 
     const now = new Date();
     const today = bangkokDate(now);

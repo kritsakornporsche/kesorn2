@@ -1,7 +1,8 @@
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
-import { bangkokDate, calcLateFee, getRates, priceMonthlyBill } from '@/lib/billing';
+import { bangkokDate, getRates, priceMonthlyBill } from '@/lib/billing';
+import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
 import { NextResponse } from 'next/server';
 
 export async function GET(req: Request) {
@@ -29,6 +30,8 @@ export async function GET(req: Request) {
         COALESCE(b.bill_type, 'monthly') as bill_type,
         COALESCE(b.slip_verified, 0) as slip_verified,
         b.slipok_trans_ref,
+        b.paid_at,
+        b.payment_method,
         COALESCE(b.room_number, r.room_number, '-') as room_number,
         COALESCE(b.water_units, 0) as water_units,
         COALESCE(b.electric_units, 0) as electric_units,
@@ -76,14 +79,19 @@ export async function GET(req: Request) {
     const rates = await getRates(sql);
     const now = new Date();
 
+    const summaries = await getPaymentSummaries(sql, bills.map((b: any) => b.id));
     const enrichedBills = bills.map((b: any) => {
-      const { daysOverdue, lateFee } = calcLateFee(b, now, rates);
+      const s = summaries.get(b.id) || { paid_total: 0, payments: [] };
+      const owed = outstandingFor(b, s.paid_total, now, rates);
       return {
         ...b,
-        days_overdue: daysOverdue,
-        late_fee: lateFee,
+        days_overdue: owed.daysOverdue,
+        late_fee: owed.lateFee,
         base_amount: Number(b.amount),
-        total_amount: Number(b.amount) + lateFee
+        total_amount: owed.due,
+        paid_total: s.paid_total,
+        outstanding: owed.outstanding,
+        payments: s.payments,
       };
     });
 

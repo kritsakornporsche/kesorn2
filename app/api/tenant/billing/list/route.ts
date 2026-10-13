@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { calcLateFee, getRates } from '@/lib/billing';
+import { getRates } from '@/lib/billing';
+import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
 import { auth } from '@/auth';
 
 export async function GET(req: Request) {
@@ -89,14 +90,19 @@ export async function GET(req: Request) {
     const rates = await getRates(sql);
     const now = new Date();
 
+    const summaries = await getPaymentSummaries(sql, bills.map((b: any) => b.id));
     const enrichedBills = bills.map((b: any) => {
-      const { daysOverdue, lateFee } = calcLateFee(b, now, rates);
+      const s = summaries.get(b.id) || { paid_total: 0, payments: [] };
+      const owed = outstandingFor(b, s.paid_total, now, rates);
       return {
         ...b,
-        days_overdue: daysOverdue,
-        late_fee: lateFee,
+        days_overdue: owed.daysOverdue,
+        late_fee: owed.lateFee,
         base_amount: Number(b.amount),
-        total_amount: Number(b.amount) + lateFee
+        total_amount: owed.due,
+        paid_total: s.paid_total,
+        outstanding: owed.outstanding,
+        payments: s.payments,
       };
     });
 

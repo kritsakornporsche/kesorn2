@@ -22,7 +22,7 @@ const DEMO_ROOM_RATES = { electricityPerUnit: 1, waterPerPerson: 5, commonFee: 5
 
 // Late fees accrue only while the bill is payable (compared in lower case; older code wrote mixed case).
 // PendingCorrection is frozen by a dispute and Draft has not been sent yet.
-const LATE_FEE_STATUSES = new Set(['unpaid', 'overdue', 'pending']);
+const LATE_FEE_STATUSES = new Set(['unpaid', 'overdue', 'pending', 'partial']);
 
 const TIME_ZONE = 'Asia/Bangkok';
 const DAY_MS = 24 * 60 * 60 * 1000;

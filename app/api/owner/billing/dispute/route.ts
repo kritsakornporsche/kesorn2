@@ -141,7 +141,7 @@ export async function POST(req: Request) {
     const bill = billRes[0];
 
     // Rule: Cannot edit if bill is already Paid
-    if (bill.status === 'Paid') {
+    if (['paid', 'partial'].includes(String(bill.status || '').toLowerCase())) {
       return NextResponse.json({ success: false, message: 'ไม่สามารถขอแก้ไขบิลที่ชำระเงินเรียบร้อยแล้วได้' }, { status: 400 });
     }
 

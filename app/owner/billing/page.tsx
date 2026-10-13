@@ -5,6 +5,16 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useRates } from '@/lib/use-rates';
+import { bangkokDate } from '@/lib/billing';
+import { formatBaht, formatThaiDate, formatThaiDateTime, PAYMENT_METHOD_LABEL } from '@/lib/format';
+
+interface BillPayment {
+  id: number;
+  amount: number;
+  method: string;
+  paid_at: string;
+  voided: boolean;
+}
 
 interface MonthlyBill {
   id: number;
@@ -28,6 +38,11 @@ interface MonthlyBill {
   late_fee?: number;
   penalty_amount?: number;
   total_amount?: number;
+  paid_total?: number;
+  outstanding?: number;
+  paid_at?: string | null;
+  payment_method?: string | null;
+  payments?: BillPayment[];
 }
 
 interface MeterReadyRoom {
@@ -66,6 +81,10 @@ export default function OwnerMonthlyBillingPage() {
   const [verifying, setVerifying] = useState<number | null>(null);
   const [batchIssuing, setBatchIssuing] = useState(false);
   const [disputeModalBill, setDisputeModalBill] = useState<MonthlyBill | null>(null);
+  // Record cash / transfer received (owner + manager)
+  const [receiveBill, setReceiveBill] = useState<MonthlyBill | null>(null);
+  const [receiveForm, setReceiveForm] = useState({ method: 'cash', amount: '', paidAt: '', note: '' });
+  const [receiving, setReceiving] = useState(false);
   const [disputeReading, setDisputeReading] = useState('');
   const [disputeReason, setDisputeReason] = useState('');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -104,7 +123,8 @@ export default function OwnerMonthlyBillingPage() {
           (billsData.data || []).map((b: any) => `${b.room_number}_${b.billing_cycle}`)
         );
 
-        const currentCycle = new Date().toISOString().substring(0, 7);
+        // Billing cycle of "now" in Thai time (UTC would still be last month until 07:00 on the 1st)
+        const currentCycle = bangkokDate(new Date()).slice(0, 7);
         const ready: MeterReadyRoom[] = [];
 
         (metersData.data || []).forEach((m: any) => {
@@ -257,6 +277,55 @@ export default function OwnerMonthlyBillingPage() {
   };
 
   // Owner only: reverse a payment, reason required (history is kept)
+  const openReceive = (bill: MonthlyBill) => {
+    // Default: the remaining amount, received now (Thai local time for the datetime-local input)
+    const nowThai = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 16);
+    setReceiveForm({ method: 'cash', amount: String(bill.outstanding ?? bill.total_amount ?? bill.amount), paidAt: nowThai, note: '' });
+    setReceiveBill(bill);
+  };
+
+  // Shown under the field so a disabled button always has a visible reason (the server checks again)
+  const receiveOutstanding = receiveBill ? Number(receiveBill.outstanding ?? receiveBill.total_amount ?? receiveBill.amount) : 0;
+  const receiveAmount = Number(receiveForm.amount);
+  const receiveAmountError = receiveForm.amount === '' || !(receiveAmount > 0)
+    ? 'กรอกยอดมากกว่า 0'
+    : Math.round(receiveAmount * 100) > Math.round(receiveOutstanding * 100)
+      ? `ยอดเกินคงเหลือ ฿${formatBaht(receiveOutstanding)}`
+      : '';
+  const receivePaidAtError = !receiveForm.paidAt
+    ? 'ระบุวันเวลาที่รับเงิน'
+    : receiveForm.paidAt > new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 16)
+      ? 'วันเวลาต้องไม่เกินปัจจุบัน'
+      : '';
+
+  const handleReceive = async () => {
+    if (!receiveBill || receiveAmountError || receivePaidAtError) return;
+    setReceiving(true);
+    try {
+      const res = await fetch('/api/owner/billing/receive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          billId: receiveBill.id,
+          amount: Number(receiveForm.amount),
+          method: receiveForm.method,
+          paidAt: receiveForm.paidAt,
+          note: receiveForm.note,
+        }),
+      });
+      const d = await res.json();
+      showToast(d.message || (d.success ? 'บันทึกรับเงินแล้ว' : 'บันทึกไม่สำเร็จ'), d.success ? 'success' : 'error');
+      if (d.success) {
+        setReceiveBill(null);
+        fetchBillingData();
+      }
+    } catch (e: any) {
+      showToast('เกิดข้อผิดพลาด: ' + e.message, 'error');
+    } finally {
+      setReceiving(false);
+    }
+  };
+
   const handleUnpay = async (billId: number) => {
     const reason = prompt('เหตุผลที่ยกเลิกการชำระ (บังคับกรอก)');
     if (reason === null) return;
@@ -352,7 +421,7 @@ export default function OwnerMonthlyBillingPage() {
   };
 
   const draftBills = bills.filter((b) => String(b.status).toLowerCase() === 'draft');
-  const unpaidBills = bills.filter((b) => b.status === 'Unpaid' || b.status === 'Overdue' || b.status === 'PendingCorrection');
+  const unpaidBills = bills.filter((b) => ['unpaid', 'overdue', 'pendingcorrection', 'partial'].includes(String(b.status).toLowerCase()));
   const paidBills = bills.filter((b) => b.status === 'Paid');
 
   const filteredBills = (activeTab === 'unpaid' ? unpaidBills : activeTab === 'draft' ? draftBills : paidBills).filter((b) => {
@@ -441,7 +510,7 @@ export default function OwnerMonthlyBillingPage() {
               activeTab === 'paid' ? 'bg-emerald-500 text-white shadow-lg' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
             }`}
           >
-            <span>🟢 15.3 บิลชำระแล้ว (SlipOK)</span>
+            <span>🟢 บิลชำระแล้ว</span>
             <span className="px-2 py-0.5 rounded-full bg-black/30 text-[10px] font-mono">{paidBills.length}</span>
           </button>
 
@@ -510,23 +579,23 @@ export default function OwnerMonthlyBillingPage() {
                     </div>
                     <div className="flex justify-between text-slate-300">
                       <span>ค่าห้องพัก:</span>
-                      <span className="font-mono">฿{r.room_price.toLocaleString()}</span>
+                      <span className="font-mono">฿{formatBaht(r.room_price)}</span>
                     </div>
                     <div className="flex justify-between text-slate-300">
                       <span>ค่าไฟ ({r.lines.find(l => l.key === 'electric')?.detail}):</span>
-                      <span className="font-mono">฿{r.elec_amount.toFixed(2)}</span>
+                      <span className="font-mono">฿{formatBaht(r.elec_amount)}</span>
                     </div>
                     <div className="flex justify-between text-slate-300">
                       <span>ค่าน้ำประปา ({r.lines.find(l => l.key === 'water')?.detail}):</span>
-                      <span className="font-mono">฿{r.water_amount.toFixed(2)}</span>
+                      <span className="font-mono">฿{formatBaht(r.water_amount)}</span>
                     </div>
                     <div className="flex justify-between text-slate-300">
                       <span>ค่าส่วนกลาง (เหมาจ่าย):</span>
-                      <span className="font-mono">฿{r.common_fee.toFixed(2)}</span>
+                      <span className="font-mono">฿{formatBaht(r.common_fee)}</span>
                     </div>
                     <div className="pt-2 border-t border-white/10 flex justify-between font-black text-emerald-400 text-sm">
                       <span>ยอดรวมทั้งสิ้น:</span>
-                      <span className="font-mono">฿{r.total_amount.toLocaleString()}</span>
+                      <span className="font-mono">฿{formatBaht(r.total_amount)}</span>
                     </div>
                   </div>
 
@@ -567,8 +636,11 @@ export default function OwnerMonthlyBillingPage() {
               </div>
             ) : (
               filteredBills.map((bill) => {
-                const isOverdue = bill.days_overdue && bill.days_overdue > 0;
+                // Number(...) > 0, not `days && …`: a 0 would otherwise render as a stray "0"
+                const isOverdue = Number(bill.days_overdue) > 0;
                 const isPendingCorrection = bill.status === 'PendingCorrection';
+                const isPartial = String(bill.status).toLowerCase() === 'partial';
+                const activePayments = (bill.payments || []).filter((p) => !p.voided);
 
                 return (
                   <div key={bill.id} className="bg-slate-900/90 border border-white/10 rounded-2xl p-5 shadow-xl space-y-4">
@@ -588,7 +660,8 @@ export default function OwnerMonthlyBillingPage() {
                         'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                       }`}>
                         {isPendingCorrection ? '⚖️ ระงับชั่วคราว (ขอแก้)' :
-                         isOverdue ? `⚠️ เกินกำหนด ${bill.days_overdue} วัน` : '⏳ รอชำระ'}
+                         isOverdue ? `⚠️ เกินกำหนด ${bill.days_overdue} วัน` :
+                         isPartial ? '🟠 ชำระบางส่วน' : '⏳ รอชำระ'}
                       </span>
                     </div>
 
@@ -598,20 +671,55 @@ export default function OwnerMonthlyBillingPage() {
                         <span className="font-mono text-white">{bill.billing_cycle}</span>
                       </div>
                       <div className="flex justify-between text-slate-300">
+                        <span>ครบกำหนดชำระ:</span>
+                        <span className="text-white">{formatThaiDate(bill.due_date)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-300">
                         <span>ยอดบิลหลัก:</span>
-                        <span className="font-mono text-white">฿{Number(bill.amount).toLocaleString()}</span>
+                        <span className="font-mono text-white">฿{formatBaht(bill.amount)}</span>
                       </div>
                       {isOverdue && (
                         <div className="flex justify-between text-rose-400 font-bold">
                           <span>ค่าปรับล่าช้า ({bill.days_overdue} วัน x {rates.lateFeePerDay} บ.):</span>
-                          <span className="font-mono">+฿{Number(bill.late_fee ?? 0).toLocaleString()}</span>
+                          <span className="font-mono">+฿{formatBaht(bill.late_fee)}</span>
                         </div>
                       )}
                       <div className="pt-2 border-t border-white/10 flex justify-between font-black text-emerald-400 text-sm">
                         <span>ยอดชำระรวม:</span>
-                        <span className="font-mono">฿{Number(bill.total_amount ?? bill.amount).toLocaleString()}</span>
+                        <span className="font-mono">฿{formatBaht(bill.total_amount ?? bill.amount)}</span>
                       </div>
+                      {Number(bill.paid_total) > 0 && (
+                        <>
+                          <div className="flex justify-between text-slate-300">
+                            <span>ชำระแล้ว:</span>
+                            <span className="font-mono">−฿{formatBaht(bill.paid_total)}</span>
+                          </div>
+                          <div className="flex justify-between font-black text-amber-300 text-sm">
+                            <span>คงเหลือ:</span>
+                            <span className="font-mono">฿{formatBaht(bill.outstanding)}</span>
+                          </div>
+                        </>
+                      )}
+                      {activePayments.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {activePayments.map((p) => (
+                            <a key={p.id} href={`/receipt/${p.id}`} target="_blank" rel="noreferrer"
+                              className="px-2 py-0.5 rounded-md bg-white/5 text-slate-300 text-[10px] border border-white/10 hover:bg-white/10">
+                              🧾 ใบเสร็จ ฿{formatBaht(p.amount)}
+                            </a>
+                          ))}
+                        </div>
+                      )}
                     </div>
+
+                    {!isPendingCorrection && (
+                      <button
+                        onClick={() => openReceive(bill)}
+                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl"
+                      >
+                        💵 บันทึกรับเงิน (เงินสด/โอน)
+                      </button>
+                    )}
 
                     {/* Slip Attachment or Actions */}
                     <div className="pt-3 border-t border-white/10 flex flex-col gap-2">
@@ -697,7 +805,7 @@ export default function OwnerMonthlyBillingPage() {
                     </div>
                     <div className="flex justify-between text-slate-300">
                       <span>ยอดรวม:</span>
-                      <span className="font-mono font-black text-white text-sm">฿{Number(bill.amount).toLocaleString()}</span>
+                      <span className="font-mono font-black text-white text-sm">฿{formatBaht(bill.amount)}</span>
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -761,14 +869,33 @@ export default function OwnerMonthlyBillingPage() {
                       <div className="flex justify-between text-slate-300">
                         <span>ยอดชำระสุทธิ:</span>
                         <span className="font-mono font-black text-emerald-400 text-sm">
-                          ฿{Number(bill.amount).toLocaleString()}
+                          ฿{formatBaht(Number(bill.paid_total) > 0 ? bill.paid_total : bill.amount)}
                         </span>
                       </div>
-                      {slipInfo?.transDate && (
+                      <div className="flex justify-between text-slate-300">
+                        <span>ชำระครบเมื่อ:</span>
+                        <span className="text-white">{formatThaiDateTime(bill.paid_at)}</span>
+                      </div>
+                      {bill.payment_method && (
+                        <div className="flex justify-between text-slate-300">
+                          <span>วิธีชำระ:</span>
+                          <span className="text-white">{PAYMENT_METHOD_LABEL[bill.payment_method] || bill.payment_method}</span>
+                        </div>
+                      )}
+                      {(slipInfo?.sender?.name || slipInfo?.transRef) && (
                         <div className="p-2.5 bg-slate-950 rounded-xl border border-white/5 space-y-1 text-[11px]">
                           <p className="text-slate-400">ผู้โอน: <span className="text-white font-bold">{slipInfo.sender?.name || bill.tenant_name}</span></p>
-                          <p className="text-slate-400">วัน-เวลาโอน: <span className="text-white font-mono">{slipInfo.transDate} {slipInfo.transTime}</span></p>
                           <p className="text-slate-400">Ref: <span className="text-slate-300 font-mono text-[10px]">{slipInfo.transRef || '-'}</span></p>
+                        </div>
+                      )}
+                      {(bill.payments || []).filter((p) => !p.voided).length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {(bill.payments || []).filter((p) => !p.voided).map((p) => (
+                            <a key={p.id} href={`/receipt/${p.id}`} target="_blank" rel="noreferrer"
+                              className="px-2 py-0.5 rounded-md bg-white/5 text-slate-300 text-[10px] border border-white/10 hover:bg-white/10">
+                              🧾 ใบเสร็จ ฿{formatBaht(p.amount)}
+                            </a>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -839,7 +966,7 @@ export default function OwnerMonthlyBillingPage() {
                           {d.old_electric_reading} ➔ <strong className="text-emerald-400">{d.new_electric_reading}</strong>
                         </td>
                         <td className="px-6 py-4 text-xs font-mono font-bold text-emerald-400">
-                          ฿{Number(d.new_total_amount).toLocaleString()}
+                          ฿{formatBaht(d.new_total_amount)}
                         </td>
                         <td className="px-6 py-4 text-xs">
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -987,6 +1114,89 @@ export default function OwnerMonthlyBillingPage() {
                 ส่งคำขอแก้ไข (ระงับบิลชั่วคราว)
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Record cash/transfer payment */}
+      {receiveBill && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center pb-3 border-b border-white/10">
+              <div>
+                <h3 className="text-base font-black text-white">💵 บันทึกรับเงิน — ห้อง {receiveBill.room_number}</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  รอบ {receiveBill.billing_cycle} · คงเหลือ ฿{formatBaht(receiveBill.outstanding ?? receiveBill.total_amount ?? receiveBill.amount)}
+                </p>
+              </div>
+              <button
+                onClick={() => setReceiveBill(null)}
+                className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <label className="block space-y-1">
+                <span className="text-slate-400">วิธีรับเงิน</span>
+                <select
+                  value={receiveForm.method}
+                  onChange={(e) => setReceiveForm({ ...receiveForm, method: e.target.value })}
+                  className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white"
+                >
+                  <option value="cash">เงินสด</option>
+                  <option value="transfer">โอนเงิน</option>
+                </select>
+              </label>
+              <label className="block space-y-1">
+                <span className="text-slate-400">จำนวนเงิน (บาท) — น้อยกว่ายอดคงเหลือได้ (ชำระบางส่วน)</span>
+                <input
+                  type="number" min="0.01" step="0.01"
+                  value={receiveForm.amount}
+                  onChange={(e) => setReceiveForm({ ...receiveForm, amount: e.target.value })}
+                  className={`w-full bg-slate-950 border rounded-xl px-3 py-2 text-white font-mono ${receiveAmountError ? 'border-red-500/70' : 'border-white/10'}`}
+                />
+                {receiveAmountError && <span className="block text-red-400 font-bold">{receiveAmountError}</span>}
+              </label>
+              <label className="block space-y-1">
+                <span className="text-slate-400">วันเวลาที่รับเงิน</span>
+                <input
+                  type="datetime-local"
+                  value={receiveForm.paidAt}
+                  onChange={(e) => setReceiveForm({ ...receiveForm, paidAt: e.target.value })}
+                  className={`w-full bg-slate-950 border rounded-xl px-3 py-2 text-white ${receivePaidAtError ? 'border-red-500/70' : 'border-white/10'}`}
+                />
+                {receivePaidAtError && <span className="block text-red-400 font-bold">{receivePaidAtError}</span>}
+              </label>
+              <label className="block space-y-1">
+                <span className="text-slate-400">หมายเหตุ (ไม่บังคับ)</span>
+                <input
+                  type="text" maxLength={255}
+                  value={receiveForm.note}
+                  onChange={(e) => setReceiveForm({ ...receiveForm, note: e.target.value })}
+                  className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white"
+                />
+              </label>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setReceiveBill(null)}
+                className="flex-1 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl text-xs cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleReceive}
+                disabled={receiving || !!receiveAmountError || !!receivePaidAtError}
+                className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white font-black rounded-xl text-xs cursor-pointer"
+              >
+                {receiving ? 'กำลังบันทึก...' : 'บันทึกรับเงิน'}
+              </button>
+            </div>
           </div>
         </div>
       )}

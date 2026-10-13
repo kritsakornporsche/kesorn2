@@ -172,7 +172,7 @@ export async function PATCH(request: Request) {
                 await sql`
                   UPDATE bills 
                   SET amount = ${cost}, title = ${title}, bill_type = 'service', billing_cycle = ${billingCycle}
-                  WHERE id = ${m.bill_id} AND LOWER(status) <> 'paid'
+                  WHERE id = ${m.bill_id} AND LOWER(status) NOT IN ('paid', 'partial')
                 `;
                 createdBillId = m.bill_id;
               } else {

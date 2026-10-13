@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { calcLateFee, getRates } from '@/lib/billing';
+import { getRates } from '@/lib/billing';
+import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
 import { auth } from '@/auth';
 import generatePayload from 'promptpay-qr';
 import qrcode from 'qrcode';
@@ -37,8 +38,9 @@ export async function GET(req: Request) {
       }
 
       const bill = billRes[0];
-      const { lateFee } = calcLateFee(bill, new Date(), await getRates(sql));
-      amount = Number(bill.amount) + lateFee;
+      // QR asks for what is still owed (partial payments already received are deducted)
+      const paid = (await getPaymentSummaries(sql, [bill.id])).get(bill.id)?.paid_total || 0;
+      amount = outstandingFor(bill, paid, new Date(), await getRates(sql)).outstanding;
       dormId = bill.dorm_id || bill.tenant_dorm_id || 1;
       billTitle = bill.title;
     } else {

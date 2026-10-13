@@ -1,8 +1,8 @@
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
-import { calcLateFee, getRates } from '@/lib/billing';
-import { recordPayment, slipPaidAt } from '@/lib/payments';
+import { getRates } from '@/lib/billing';
+import { getPaymentSummaries, outstandingFor, recordPayment, slipPaidAt } from '@/lib/payments';
 import { NextResponse } from 'next/server';
 import { verifySlipWithSlipOK } from '@/lib/slipok';
 
@@ -77,8 +77,11 @@ export async function POST(req: Request) {
     }
 
     // 3. Late fee counted up to the actual transfer time (monthly rent bills only, no cap)
-    const { daysOverdue, lateFee: penaltyAmount } = calcLateFee(bill, slipDateTime, await getRates(sql));
-    const expectedTotal = Number(bill.amount) + penaltyAmount;
+    // Expected = what is still owed at the transfer time (partial payments deducted)
+    const paidSoFar = (await getPaymentSummaries(sql, [Number(billId)])).get(Number(billId))?.paid_total || 0;
+    const owed = outstandingFor(bill, paidSoFar, slipDateTime, await getRates(sql));
+    const { daysOverdue, lateFee: penaltyAmount } = owed;
+    const expectedTotal = owed.outstanding;
 
     // 4. Verify Amount match
     const actualAmount = Number(verifyResult.amount || 0);

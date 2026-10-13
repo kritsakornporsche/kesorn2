@@ -434,7 +434,7 @@ export async function PUT(req: Request) {
       const existingBills = await sql`
         SELECT id FROM bills 
         WHERE tenant_id = ${contract.tenant_id} AND (is_first_bill = 1 OR bill_type = 'booking')
-          AND LOWER(status) NOT IN ('paid', 'cancelled')
+          AND LOWER(status) NOT IN ('paid', 'partial', 'cancelled')
         LIMIT 1
       `;
 

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { calcLateFee, getRates } from '@/lib/billing';
-import { recordPayment, slipPaidAt } from '@/lib/payments';
+import { getRates } from '@/lib/billing';
+import { getPaymentSummaries, outstandingFor, recordPayment, slipPaidAt } from '@/lib/payments';
 import { auth } from '@/auth';
 
 export async function POST(req: Request) {
@@ -75,9 +75,12 @@ export async function POST(req: Request) {
     `;
     const expectedDorm = dormProfileRes[0] || {};
 
-    const baseAmount = Number(bill.amount);
-    // Slip time is unknown before verification; verify-slip recounts against the transfer time
-    const { lateFee } = calcLateFee(bill, new Date(), await getRates(sql));
+    // What is still owed (partial payments deducted); baseAmount excludes the late fee
+    const paidSoFar = (await getPaymentSummaries(sql, [bill.id])).get(bill.id)?.paid_total || 0;
+    const owed = outstandingFor(bill, paidSoFar, new Date(), await getRates(sql));
+    const baseAmount = Math.max(0, owed.outstanding - owed.lateFee);
+    // Slip time is unknown before verification; recordPayment recounts against the transfer time
+    const lateFee = owed.lateFee;
 
     const dormConfig = {
       name: expectedDorm.promptpay_name || expectedDorm.name || 'หอพักเกษร 2',
