@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import { getPaymentSummaries, outstandingFor, recordPayment, slipPaidAt } from '@/lib/payments';
-import { getDormPromptPay, getRates } from '@/lib/billing';
+import { depositFor, getDormPromptPay, getRates } from '@/lib/billing';
+import { signContract } from '@/lib/contracts';
 import { formatBaht } from '@/lib/format';
 
 export async function POST(req: Request) {
@@ -120,38 +121,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message }, { status: 400 });
     }
 
-    // 3.1 Update contract: deposit_amount = totalRequiredDeposit (20 for T01, room.deposit_amount / 3000 for standard), status = 'Active' (Rule 2.1.3)
-    const isTestRoom = (contract.room_number || '').toUpperCase() === 'T01';
-    const totalDepositAmount = isTestRoom ? 20.00 : (Number(contract.room_deposit_amount) || 3000.00);
-
-    await sql`
-      UPDATE contracts 
-      SET 
-        deposit_amount = ${totalDepositAmount},
-        status = 'Active',
-        slip_url = COALESCE(${storedSlipUrl}, slip_url)
-      WHERE id = ${contractId}
-    `;
-
-    // 5. Update room status to Occupied
-    if (contract.room_id) {
-      await sql`UPDATE rooms SET status = 'Occupied' WHERE id = ${contract.room_id}`;
-    }
-
-    // 6. Update user role to 'tenant' in users table & tenants table
-    const targetEmail = contract.tenant_email || session.user.email;
-    await sql`
-      UPDATE users 
-      SET role = 'tenant', primary_role = 'tenant'
-      WHERE LOWER(email) = LOWER(${targetEmail}) OR id = ${contract.user_id || 0}
-    `;
-
-    if (contract.tenant_id) {
-      await sql`
-        UPDATE tenants 
-        SET status = 'active', room_id = ${contract.room_id}
-        WHERE id = ${contract.tenant_id}
-      `;
+    // 3.1 Paid: activate the contract through the single contract service with the full deposit now held
+    // (contract Active, room Occupied, tenant active, guest -> tenant)
+    const signed = await signContract(Number(contractId), {
+      depositAmount: depositFor({ room_number: contract.room_number, deposit_amount: contract.room_deposit_amount }),
+      slipUrl: storedSlipUrl || null,
+    });
+    if (!signed.ok) {
+      // The payment is recorded; the contract could not be activated (e.g. already active)
+      console.warn('[Pay first bill] contract not activated', contractId, signed.reason);
     }
 
     return NextResponse.json({

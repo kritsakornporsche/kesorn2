@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { createContract, temporaryPassword, CONTRACT_MESSAGES } from '@/lib/contracts';
 
 export async function GET(req: Request) {
   try {
@@ -127,104 +128,41 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // Check if room already has an active contract
-    const existingActiveContract = await sql`
-      SELECT id FROM contracts WHERE room_id = ${room_id} AND status = 'Active' LIMIT 1
-    `;
-    if (existingActiveContract.length > 0) {
-      return NextResponse.json({ 
-        success: false, 
-        message: 'ห้องพักนี้มีสัญญาที่มีสถานะ Active อยู่แล้ว ไม่สามารถสร้างสัญญาใหม่ซ้อนได้ กรุณายกเลิกหรือสิ้นสุดสัญญาเดิมก่อน' 
-      }, { status: 400 });
+    // The deposit is required: a number above zero (the form fills in the room's deposit from the server)
+    const depositNum = Number(deposit_amount);
+    if (deposit_amount === undefined || deposit_amount === null || deposit_amount === '' || !Number.isFinite(depositNum) || depositNum <= 0) {
+      return NextResponse.json({ success: false, message: 'กรุณาระบุเงินประกันเป็นตัวเลขมากกว่า 0' }, { status: 400 });
     }
 
-    const bcrypt = require('bcryptjs');
-
-    // 1. Check or create User account in `users` table
-    let users = await sql`SELECT id, primary_role FROM users WHERE email = ${tenantEmail.trim()} LIMIT 1`;
-    let userId: number;
-
-    if (users.length === 0) {
-      const defaultPasswordHash = await bcrypt.hash('smartdom', 12);
-      const userInsert = await sql`
-        INSERT INTO users (name, email, password, phone, role, primary_role)
-        VALUES (${tenantName.trim()}, ${tenantEmail.trim()}, ${defaultPasswordHash}, ${tenantPhone?.trim() || null}, 'tenant', 'tenant')
-      `;
-      userId = (userInsert as any).insertId;
-    } else {
-      userId = users[0].id;
-      // Upgrade role to tenant if current role is guest/user
-      await sql`
-        UPDATE users 
-        SET role = 'tenant',
-            primary_role = 'tenant', 
-            name = COALESCE(${tenantName.trim()}, name),
-            phone = COALESCE(${tenantPhone?.trim() || null}, phone)
-        WHERE id = ${userId}
-      `;
+    // Account + Active contract through the single contract service (room becomes Occupied).
+    // A new account gets a random temporary password, returned once so the owner can pass it on.
+    const tempPassword = temporaryPassword();
+    const created = await createContract({
+      account: {
+        email: tenantEmail.trim(),
+        name: tenantName.trim(),
+        phone: tenantPhone?.trim() || null,
+        idCardNumber: id_card_number?.trim() || null,
+        idCardImage: id_card_image || null,
+        address: tenant_address?.trim() || null,
+        role: 'tenant',
+        newPassword: tempPassword,
+      },
+      roomId: Number(room_id),
+      startDate: start_date,
+      endDate: end_date,
+      depositAmount: depositNum,
+      status: 'Active',
+      contractFileUrl: contract_file_url || null,
+      idCardNumber: id_card_number?.trim() || null,
+      idCardImage: id_card_image || null,
+      tenantAddress: tenant_address?.trim() || null,
+      occupants: Number(body.occupants) || 1,
+    });
+    if (!created.ok) {
+      return NextResponse.json({ success: false, message: CONTRACT_MESSAGES[created.reason] }, { status: 400 });
     }
-
-    const targetDormId = dormId || 1;
-
-    // 2. Check or create Tenant record in `tenants` table
-    let tenants = await sql`SELECT id FROM tenants WHERE email = ${tenantEmail.trim()} OR user_id = ${userId} LIMIT 1`;
-    let tenantId: number;
-
-    if (tenants.length === 0) {
-      const tenantInsert = await sql`
-        INSERT INTO tenants (name, email, phone, room_id, user_id, id_card_number, id_card_image, address, status, move_in_date, dorm_id)
-        VALUES (${tenantName.trim()}, ${tenantEmail.trim()}, ${tenantPhone?.trim() || null}, ${room_id}, ${userId}, ${id_card_number?.trim() || null}, ${id_card_image || null}, ${tenant_address?.trim() || null}, 'active', ${start_date}, ${targetDormId})
-      `;
-      tenantId = (tenantInsert as any).insertId;
-    } else {
-      tenantId = tenants[0].id;
-      await sql`
-        UPDATE tenants 
-        SET room_id = ${room_id}, 
-            name = ${tenantName.trim()}, 
-            phone = ${tenantPhone?.trim() || null},
-            user_id = ${userId},
-            status = 'active',
-            move_in_date = ${start_date},
-            move_out_date = NULL,
-            dorm_id = ${targetDormId},
-            id_card_number = COALESCE(${id_card_number?.trim() || null}, id_card_number),
-            id_card_image = COALESCE(${id_card_image || null}, id_card_image),
-            address = COALESCE(${tenant_address?.trim() || null}, address)
-        WHERE id = ${tenantId}
-      `;
-    }
-
-    // 3. Assign role in `user_dorm_roles` table
-    const existingRoles = await sql`
-      SELECT id FROM user_dorm_roles WHERE user_id = ${userId} AND dorm_id = ${targetDormId} LIMIT 1
-    `;
-    if (existingRoles.length === 0) {
-      await sql`
-        INSERT INTO user_dorm_roles (user_id, dorm_id, role)
-        VALUES (${userId}, ${targetDormId}, 'tenant')
-      `;
-    }
-
-    // 4. Save Contract with id_card_number, tenant_address, id_card_image, contract_file_url and status 'Active'
-    const contractInsert = await sql`
-      INSERT INTO contracts (
-        tenant_id, room_id, start_date, end_date, deposit_amount, status, contract_file_url,
-        id_card_number, tenant_address, id_card_image
-      )
-      VALUES (
-        ${tenantId}, ${room_id}, ${start_date}, ${end_date}, ${deposit_amount || 0}, 'Active', ${contract_file_url || null},
-        ${id_card_number?.trim() || null}, ${tenant_address?.trim() || null}, ${id_card_image || null}
-      )
-    `;
-    const contractId = (contractInsert as any).insertId;
-
-    // 5. Update room status to 'Occupied'
-    await sql`
-      UPDATE rooms 
-      SET status = 'Occupied' 
-      WHERE id = ${room_id}
-    `;
+    const { contractId, tenantId, userId, createdUser } = created;
 
     // 6. Send welcome notification to tenant
     try {
@@ -249,7 +187,9 @@ export async function POST(req: Request) {
       message: 'บันทึกสัญญาเช่าและปรับสถานะผู้เช่าสำเร็จเรียบร้อยแล้ว',
       contractId,
       tenantId,
-      userId
+      userId,
+      // Only for an account created now; never stored or logged
+      ...(createdUser ? { tempPassword } : {}),
     });
   } catch (err: any) {
     console.error('[Contracts API POST] Error:', err);
@@ -375,7 +315,11 @@ export async function PUT(req: Request) {
       }
     }
 
-    const nextStatus = status || 'PendingFirstBill';
+    // Only the move to "waiting for the first bill" is allowed here; activating a contract goes through signContract
+    if (status && status !== 'PendingFirstBill') {
+      return NextResponse.json({ success: false, message: 'เปลี่ยนสถานะสัญญาผ่านช่องทางนี้ได้เฉพาะ PendingFirstBill' }, { status: 400 });
+    }
+    const nextStatus = 'PendingFirstBill';
 
     // 2. Update Contract status and file url
     await sql`

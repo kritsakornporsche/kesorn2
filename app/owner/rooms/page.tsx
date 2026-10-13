@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
+import { formatBaht } from '@/lib/format';
 
 interface Room {
   id: number;
@@ -59,6 +60,11 @@ export default function RoomsManagement() {
   });
 
   const [ownerDormId, setOwnerDormId] = useState<number | null>(1);
+  // The rates monthly bills actually use (dormitory_profile via /api/rates), not per-room columns
+  const [billingRates, setBillingRates] = useState<{ waterPerPerson: number; commonFee: number } | null>(null);
+  useEffect(() => {
+    fetch('/api/rates').then((res) => res.json()).then((json) => { if (json.success) setBillingRates(json.data); }).catch(() => {});
+  }, []);
 
   const fetchRooms = async (dormId: number = 1) => {
     setLoading(true);
@@ -508,13 +514,13 @@ export default function RoomsManagement() {
                    {/* Fee Breakdown Badges */}
                    <div className="flex flex-wrap gap-1.5 mb-6">
                       <span className="px-2.5 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded-lg border border-primary/20">
-                        🛡️ ประกัน ฿{Number(room.deposit_amount || 3000).toLocaleString()}
+                        🛡️ ประกัน {room.deposit_amount ? `฿${formatBaht(room.deposit_amount)}` : '-'}
                       </span>
                       <span className="px-2.5 py-1 bg-cyan-500/10 text-cyan-400 text-[10px] font-bold rounded-lg border border-cyan-500/20">
-                        💧 น้ำ ฿{Number(room.water_rate || 100).toLocaleString()}
+                        💧 น้ำ {billingRates ? `฿${formatBaht(billingRates.waterPerPerson)}/คน` : '-'}
                       </span>
                       <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 text-[10px] font-bold rounded-lg border border-amber-500/20">
-                        🧹 ส่วนกลาง ฿{Number(room.common_fee || 150).toLocaleString()}
+                        🧹 ส่วนกลาง {billingRates ? `฿${formatBaht(billingRates.commonFee)}` : '-'}
                       </span>
                    </div>
 

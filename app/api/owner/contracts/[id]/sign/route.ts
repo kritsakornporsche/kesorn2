@@ -2,6 +2,7 @@ import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
+import { signContract, CONTRACT_MESSAGES } from '@/lib/contracts';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -22,51 +23,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
     } catch (e) {}
 
-    // 1. Get contract and tenant details
-    const contracts = await sql`
-      SELECT c.room_id, t.email as tenant_email 
-      FROM contracts c
-      JOIN tenants t ON c.tenant_id = t.id
-      WHERE c.id = ${id}
-    `;
-
-    if (contracts.length === 0) {
-      return NextResponse.json({ success: false, message: 'Contract not found' }, { status: 404 });
+    // 1. Activate through the single contract service (contract Active, room Occupied, tenant active, guest -> tenant)
+    const signed = await signContract(Number(id), { ownerSignature: ownerSignatureData });
+    if (!signed.ok) {
+      return NextResponse.json({ success: false, message: CONTRACT_MESSAGES[signed.reason] }, { status: signed.reason === 'not_found' ? 404 : 400 });
     }
-
-    const { room_id, tenant_email } = contracts[0];
-
-    // 2. Update contract status to Active and save owner approval
-    await sql`
-      UPDATE contracts 
-      SET 
-        status = 'Active',
-        owner_signature_data = ${ownerSignatureData}
-      WHERE id = ${id}
-    `;
-
-    // 3. Update room status to Occupied
-    await sql`
-      UPDATE rooms 
-      SET status = 'Occupied' 
-      WHERE id = ${room_id}
-    `;
-
-    // 4. Update user role from 'guest' to 'tenant'
-    if (tenant_email) {
-      await sql`
-        UPDATE users 
-        SET role = 'tenant', primary_role = 'tenant' 
-        WHERE email = ${tenant_email} AND (role = 'guest' OR primary_role = 'guest' OR role IS NULL)
-      `;
-    }
-
-    // 5. Update room_id and status for the tenant record
-    await sql`
-      UPDATE tenants
-      SET room_id = ${room_id}, status = 'active'
-      WHERE email = ${tenant_email}
-    `;
+    const tenantRows = await sql`SELECT email FROM tenants WHERE id = ${signed.tenantId} LIMIT 1`;
+    const tenant_email = tenantRows[0]?.email || '';
 
     // 6. Notify tenant
     try {

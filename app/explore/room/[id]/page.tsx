@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import ChatWidget from '@/app/components/ChatWidget';
 import ContractSimulator from '@/app/components/ContractSimulator';
+import { formatBaht } from '@/lib/format';
 import PrintableContractModal from '@/components/PrintableContractModal';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
 import { PdpaOcrConsentModal } from '@/app/components/PdpaOcrConsentModal';
@@ -52,6 +53,8 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
   const { data: session, status: sessionStatus } = useSession();
   
   const [room, setRoom] = useState<any>(null);
+  // Rates, deposit and booking fee for this room from the server (lib/billing moveInCosts) — no amounts in the page
+  const [costs, setCosts] = useState<{ rent: number; deposit: number; bookingFee: number; dueAtMoveIn: number; rates: { electricityPerUnit: number; waterPerPerson: number; commonFee: number } } | null>(null);
   const [step, setStep] = useState(1); // 1: Info, 2: Info & Dates, 3: ID Card OCR & Contract Review, 4: QR Payment & Slip, 5: Finished
   const [loading, setLoading] = useState(true);
   const [bookingData, setBookingData] = useState({
@@ -129,6 +132,14 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
       btn.click();
     }
   };
+
+  useEffect(() => {
+    if (!room?.room_number) return;
+    fetch(`/api/rates?roomNumber=${encodeURIComponent(room.room_number)}`)
+      .then((res) => res.json())
+      .then((json) => { if (json.success && json.room) setCosts(json.room); })
+      .catch(() => {});
+  }, [room?.room_number]);
 
   useEffect(() => {
     async function fetchRoom() {
@@ -798,7 +809,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     <div>
                       <span className="text-[10px] uppercase font-bold text-muted-foreground block">ค่าน้ำประปา</span>
                       <span className="text-base font-black text-cyan-500">
-                        {Number(room.water_rate) === 0 ? 'ฟรี (รวมในค่าห้อง)' : `฿${Number(room.water_rate)} / เดือน`}
+                        {!costs ? '-' : costs.rates.waterPerPerson === 0 ? 'ฟรี (รวมในค่าห้อง)' : `฿${formatBaht(costs.rates.waterPerPerson)} / คน / เดือน`}
                       </span>
                     </div>
                   </div>
@@ -810,7 +821,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     <div>
                       <span className="text-[10px] uppercase font-bold text-muted-foreground block">ค่าไฟฟ้า</span>
                       <span className="text-lg font-black text-amber-500">
-                        ฿{room.electricity_rate !== undefined && room.electricity_rate !== null ? Number(room.electricity_rate) : 7}{' '}
+                        {costs ? `฿${formatBaht(costs.rates.electricityPerUnit)}` : '-'}{' '}
                         <span className="text-xs font-bold text-muted-foreground">/ ยูนิต</span>
                       </span>
                     </div>
@@ -954,7 +965,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     <div>
                       <span className="text-muted-foreground block">ค่าเช่ารายเดือน</span>
                       <span className="text-[11px] text-cyan-500 font-semibold">
-                        ค่าน้ำ ฿{Number(room.water_rate || 100).toLocaleString()}/ด. • ส่วนกลาง ฿{Number(room.common_fee || 150).toLocaleString()}/ด.
+                        {costs ? `ค่าน้ำ ฿${formatBaht(costs.rates.waterPerPerson)}/คน/ด. • ส่วนกลาง ฿${formatBaht(costs.rates.commonFee)}/ด.` : '-'}
                       </span>
                     </div>
                     <span className="font-bold">฿{Number(room.price).toLocaleString()} / เดือน</span>
@@ -962,7 +973,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">อัตราค่าไฟฟ้า</span>
-                    <span className="font-bold text-amber-500">฿{room.electricity_rate || 7} / ยูนิต</span>
+                    <span className="font-bold text-amber-500">{costs ? `฿${formatBaht(costs.rates.electricityPerUnit)}` : '-'} / ยูนิต</span>
                   </div>
 
                   <div className="flex justify-between items-center text-sm pt-2 border-t border-border/50">
@@ -1579,8 +1590,8 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
                   <div className="text-[11px] text-muted-foreground space-y-1 bg-background/50 p-3 rounded-xl border border-border max-h-32 overflow-y-auto leading-relaxed">
                     <p>1. ค่าเช่าห้องพักเดือนละ ฿{Number(room.price).toLocaleString()} กำหนดชำระภายในวันที่ 5 ของทุกเดือน</p>
-                    <p>2. ค่าน้ำประปาเหมาจ่าย ฿100/คน/เดือน • ค่าไฟฟ้าหน่วยละ ฿{room.electricity_rate || 8}/ยูนิต</p>
-                    <p>3. ค่ามัดจำสัญญาเช่า ฿1,000 จะคืนให้ตอนออก เมื่อพักครบสัญญาอย่างน้อย 1 ปี</p>
+                    <p>2. ค่าน้ำประปาเหมาจ่าย {costs ? `฿${formatBaht(costs.rates.waterPerPerson)}` : '-'}/คน/เดือน • ค่าส่วนกลาง {costs ? `฿${formatBaht(costs.rates.commonFee)}` : '-'}/เดือน • ค่าไฟฟ้าหน่วยละ {costs ? `฿${formatBaht(costs.rates.electricityPerUnit)}` : '-'}/ยูนิต</p>
+                    <p>3. ค่าจอง {costs ? `฿${formatBaht(costs.bookingFee)}` : '-'} เป็นส่วนหนึ่งของเงินประกันรวม {costs ? `฿${formatBaht(costs.deposit)}` : '-'} · ค่าจองไม่คืนกรณียกเลิกการจอง · วันเข้าอยู่ชำระค่าเช่าเดือนแรกเต็มเดือน + เงินประกันส่วนที่เหลือ · เงินประกันคืนตามเงื่อนไขในสัญญา</p>
                     <p>4. ห้ามส่งเสียงดังรบกวนยามวิกาล, ห้ามเสพสิ่งเสพติด, รักษาความสะอาดห้องพักสม่ำเสมอ</p>
                     <p>5. สัญญาเช่าฉบับจริงจะลงลายมือชื่อทั้งสองฝ่ายต่อหน้าในวันเข้าพักจริง</p>
                   </div>
@@ -1835,7 +1846,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
         <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center p-4 sm:p-6 lg:p-8 overflow-y-auto bg-black/60 backdrop-blur-xl animate-in fade-in duration-300">
           <div className="max-w-4xl w-full my-auto">
             <ContractSimulator
-              initialPrice={Number(room.price)}
               roomNumber={room.room_number}
               onClose={() => setShowSimulator(false)}
             />

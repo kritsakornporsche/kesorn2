@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { recordPayment, slipPaidAt } from '@/lib/payments';
 import { bookingFeeFor, getDormPromptPay } from '@/lib/billing';
+import { createContract, CONTRACT_MESSAGES } from '@/lib/contracts';
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -31,64 +32,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: 'Room ID is required' }, { status: 400 });
     }
 
-    // Check if room already has an active contract
-    const existingActiveContract = await sql`
-      SELECT id FROM contracts WHERE room_id = ${roomId} AND status = 'Active' LIMIT 1
-    `;
-    if (existingActiveContract.length > 0) {
-      return NextResponse.json({ 
-        success: false, 
-        message: 'ห้องพักนี้มีสัญญาที่มีสถานะ Active อยู่แล้ว ไม่สามารถสร้างสัญญาใหม่ได้' 
-      }, { status: 400 });
-    }
-
     // The booking fee is set by the server (never by the client), and the slip must match it exactly
     const feeRoom = await sql`SELECT room_number FROM rooms WHERE id = ${roomId} LIMIT 1`;
     if (feeRoom.length === 0) {
       return NextResponse.json({ success: false, message: 'ไม่พบห้องพัก' }, { status: 404 });
     }
     const bookingFee = bookingFeeFor(feeRoom[0].room_number);
-
-    // 1. Resolve tenant identity (find existing or create new)
     const userEmail = session.user.email;
-    let tenants = await sql`SELECT id FROM tenants WHERE email = ${userEmail} LIMIT 1`;
-    let tenantId: number;
-
-    if (tenants.length > 0) {
-      tenantId = tenants[0].id;
-      await sql`
-        UPDATE tenants 
-        SET 
-          name = COALESCE(${tenantName}, name),
-          phone = COALESCE(${phone}, phone),
-          emergency_contact = COALESCE(${parentPhone}, emergency_contact),
-          id_card_number = COALESCE(${idCardNumber}, id_card_number),
-          address = COALESCE(${tenantAddress}, address),
-          id_card_image = COALESCE(${idCardImage}, id_card_image)
-        WHERE id = ${tenantId}
-      `;
-    } else {
-      await sql`
-        INSERT INTO tenants (name, email, phone, emergency_contact, id_card_number, address, id_card_image, status)
-        VALUES (
-          ${tenantName || session.user.name || 'Tenant'}, 
-          ${userEmail}, 
-          ${phone || null},
-          ${parentPhone || null},
-          ${idCardNumber || null},
-          ${tenantAddress || null},
-          ${idCardImage || null},
-          'Active'
-        )
-      `;
-      const created = await sql`SELECT id FROM tenants WHERE email = ${userEmail} ORDER BY id DESC LIMIT 1`;
-      if (!created || created.length === 0) {
-        return NextResponse.json({ success: false, message: 'Failed to create tenant record' }, { status: 500 });
-      }
-      tenantId = created[0].id;
+    if (!userEmail) {
+      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
-    // 2. Automated Slip Verification with SlipOK
+    // 1. Automated Slip Verification with SlipOK
     let isAutoApproved = false;
     let slipokRef: string | null = null;
     let slipRaw: string | null = null;
@@ -149,63 +104,39 @@ export async function POST(req: NextRequest) {
 
     // 2.05 Persist slip Base64 image to uploads directory (Do not store idCardImage)
     const { saveBase64Image } = await import('@/lib/file-storage');
-    const storedSlipUrl = saveBase64Image(slipUrl, 'slips', `slip_${tenantId}_${roomId}`);
+    const storedSlipUrl = saveBase64Image(slipUrl, 'slips', `slip_booking_${roomId}`);
 
-    // 2.1 Create Contract record (Booking deposit only reserves the room, Rule 2.1.1)
-    // Contract status stays PendingOwnerSignature / PendingContract until owner uploads lease contract
-    const contractStatus = 'PendingOwnerSignature';
-    const ownerSig = null;
+    // 2.1 Contract + tenant account through the single contract service (room becomes Reserved,
+    // account stays guest until the contract is active; a staff account cannot book)
+    const created = await createContract({
+      account: {
+        email: userEmail,
+        name: tenantName || session.user.name || null,
+        phone: phone || null,
+        idCardNumber: idCardNumber || null,
+        idCardImage: idCardImage || null,
+        address: tenantAddress || null,
+        emergencyContact: parentPhone || null,
+        role: 'guest',
+      },
+      roomId: Number(roomId),
+      startDate,
+      endDate,
+      depositAmount: bookingFee,
+      status: 'PendingOwnerSignature',
+      signature: signature || 'CONFIRMED_E_CONTRACT',
+      signedAt: isAutoApproved ? new Date() : null,
+      slipUrl: storedSlipUrl || null,
+      idCardNumber: idCardNumber || null,
+      tenantAddress: tenantAddress || null,
+      parentPhone: parentPhone || null,
+    });
+    if (!created.ok) {
+      return NextResponse.json({ success: false, message: CONTRACT_MESSAGES[created.reason] }, { status: 400 });
+    }
+    const { contractId, tenantId, roomNumber, dormId } = created;
 
-    await sql`
-      INSERT INTO contracts (
-        tenant_id, 
-        room_id, 
-        start_date, 
-        end_date, 
-        deposit_amount, 
-        signature_data, 
-        owner_signature_data,
-        signed_at,
-        slip_url,
-        id_card_number,
-        tenant_address,
-        id_card_image,
-        parent_phone,
-        status
-      ) VALUES (
-        ${tenantId}, 
-        ${roomId}, 
-        ${startDate}, 
-        ${endDate}, 
-        ${bookingFee}, 
-        ${signature || 'CONFIRMED_E_CONTRACT'}, 
-        ${ownerSig},
-        ${isAutoApproved ? new Date() : null},
-        ${storedSlipUrl || null},
-        ${idCardNumber || null},
-        ${tenantAddress || null},
-        NULL,
-        ${parentPhone || null},
-        ${contractStatus}
-      )
-    `;
-
-    const contracts = await sql`
-      SELECT id FROM contracts 
-      WHERE tenant_id = ${tenantId} AND room_id = ${roomId} 
-      ORDER BY id DESC LIMIT 1
-    `;
-    const contractId = contracts.length > 0 ? contracts[0].id : null;
-
-    // 2.2 Create booking fee bill in bills table (Deposit 1,000 THB)
-    const roomInfo = await sql`
-      SELECT r.room_number, COALESCE(r.dorm_id, 1) as dorm_id 
-      FROM rooms r 
-      WHERE r.id = ${roomId} 
-      LIMIT 1
-    `;
-    const roomNumber = roomInfo.length > 0 ? roomInfo[0].room_number : String(roomId);
-    const dormId = roomInfo.length > 0 ? (roomInfo[0].dorm_id || 1) : 1;
+    // 2.2 Create booking fee bill in bills table
     const bookingDueDate = startDate ? new Date(startDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
     const bookingTitle = `ค่าจองห้องพัก (ห้อง ${roomNumber})`;
 
@@ -264,30 +195,6 @@ export async function POST(req: NextRequest) {
         recordedBy: Number((session.user as any)?.id) || null,
       });
       if (!payment.ok) console.warn('[Booking payment not recorded]', billId, payment);
-    }
-
-    // 3. Update room and tenant status for 2.1.1 (Room becomes Reserved/Pending, user remains guest until 2.1.3)
-    if (isAutoApproved) {
-      await sql`UPDATE rooms SET status = 'Reserved' WHERE id = ${roomId}`;
-      await sql`UPDATE tenants SET room_id = ${roomId}, status = 'Pending' WHERE id = ${tenantId}`;
-      await sql`UPDATE users SET role = 'guest', primary_role = 'guest' WHERE LOWER(email) = LOWER(${userEmail})`;
-
-      // Link user_dorm_roles
-      try {
-        const uRes = await sql`SELECT id FROM users WHERE LOWER(email) = LOWER(${userEmail}) LIMIT 1`;
-        if (uRes.length > 0) {
-          const uId = uRes[0].id;
-          const existingRole = await sql`SELECT id FROM user_dorm_roles WHERE user_id = ${uId} AND dorm_id = ${dormId} LIMIT 1`;
-          if (existingRole.length === 0) {
-            await sql`INSERT INTO user_dorm_roles (user_id, dorm_id, role) VALUES (${uId}, ${dormId}, 'guest')`;
-          }
-        }
-      } catch (re) {
-        console.warn('user_dorm_roles sync error:', re);
-      }
-
-    } else {
-      await sql`UPDATE rooms SET status = 'Reserved' WHERE id = ${roomId}`;
     }
 
     // 4. Send Notification to Dorm Owner and staff

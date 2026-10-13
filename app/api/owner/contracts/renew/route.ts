@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
+import { renewContract, CONTRACT_MESSAGES } from '@/lib/contracts';
 
 export async function POST(req: Request) {
   try {
@@ -23,47 +24,17 @@ export async function POST(req: Request) {
 
     const sql = getDb();
 
-    // 1. Fetch existing contract
-    const existingContracts = await sql`
-      SELECT * FROM contracts WHERE id = ${contract_id} LIMIT 1
-    `;
-
-    if (existingContracts.length === 0) {
-      return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลสัญญาเดิมในระบบ' }, { status: 404 });
+    // 1. Old contract -> Renewed and the next one opened (Active, from the old end date) in one transaction
+    const renewed = await renewContract(Number(contract_id), {
+      newEndDate: new_end_date,
+      depositAmount: deposit_amount !== undefined ? Number(deposit_amount) : null,
+      contractFileUrl: contract_file_url || null,
+    });
+    if (!renewed.ok) {
+      return NextResponse.json({ success: false, message: CONTRACT_MESSAGES[renewed.reason] }, { status: renewed.reason === 'not_found' ? 404 : 400 });
     }
-
-    const oldContract = existingContracts[0];
-
-    // 2. Mark old contract as 'Renewed' and clear renewal flag
-    await sql`
-      UPDATE contracts 
-      SET status = 'Renewed', renewal_requested = 0 
-      WHERE id = ${contract_id}
-    `;
-
-    // 3. Create new contract entry linked via parent_contract_id
-    const startDate = oldContract.end_date 
-      ? new Date(oldContract.end_date).toISOString().split('T')[0] 
-      : new Date().toISOString().split('T')[0];
-
-    const finalFileUrl = contract_file_url || oldContract.contract_file_url || null;
-    const finalDeposit = deposit_amount !== undefined ? deposit_amount : oldContract.deposit_amount;
-
-    const newContractRes = await sql`
-      INSERT INTO contracts (
-        tenant_id, room_id, start_date, end_date, deposit_amount, status, contract_file_url, parent_contract_id, id_card_number, tenant_address, id_card_image
-      )
-      VALUES (
-        ${oldContract.tenant_id}, ${oldContract.room_id}, ${startDate}, ${new_end_date}, ${finalDeposit}, 'Active', ${finalFileUrl}, ${contract_id}, ${oldContract.id_card_number || null}, ${oldContract.tenant_address || null}, ${oldContract.id_card_image || null}
-      )
-    `;
-
-    const newContractId = (newContractRes as any).insertId;
-
-    // 4. Ensure room remains Occupied
-    if (oldContract.room_id) {
-      await sql`UPDATE rooms SET status = 'Occupied' WHERE id = ${oldContract.room_id}`;
-    }
+    const newContractId = renewed.contractId;
+    const oldContract = { tenant_id: renewed.tenantId };
 
     // 5. Notify tenant
     try {

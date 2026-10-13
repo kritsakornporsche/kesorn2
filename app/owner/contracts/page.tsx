@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
@@ -47,6 +48,8 @@ export default function OwnerContractsPage() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [moveOutRequests, setMoveOutRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // Temporary password of an account created with a new contract: shown once, never stored in the page
+  const [newAccount, setNewAccount] = useState<{ email: string; password: string } | null>(null);
   const [ownerDormId, setOwnerDormId] = useState<number | null>(null);
 
   // Modals state
@@ -54,7 +57,7 @@ export default function OwnerContractsPage() {
   const [renewingContract, setRenewingContract] = useState<Contract | null>(null);
   const [previewingFileUrl, setPreviewingFileUrl] = useState<string | null>(null);
   const [previewingTitle, setPreviewingTitle] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'Active' | 'Renewal' | 'History' | 'MoveOut'>('Active');
+  const [activeTab, setActiveTab] = useState<'Active' | 'Pending' | 'Renewal' | 'History' | 'MoveOut'>('Active');
   const [rejectingContract, setRejectingContract] = useState<Contract | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -90,6 +93,7 @@ export default function OwnerContractsPage() {
     start_date: new Date().toISOString().split('T')[0],
     end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
     deposit_amount: 0,
+    occupants: 1,
     contract_file_url: '',
     contract_file_name: '',
   });
@@ -280,7 +284,11 @@ export default function OwnerContractsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert('🎉 บันทึกสัญญาเช่าและปรับสถานะผู้เช่าสำเร็จเรียบร้อยแล้ว! สามารถกดพิมพ์เอกสารสัญญาเช่า (PDF) ได้ทันที');
+        if (data.tempPassword) {
+          setNewAccount({ email: formData.tenant_email.trim(), password: data.tempPassword });
+        } else {
+          alert('🎉 บันทึกสัญญาเช่าเรียบร้อยแล้ว (ผู้เช่ามีบัญชีอยู่แล้ว ใช้รหัสผ่านเดิม) สามารถกดพิมพ์เอกสารสัญญาเช่า (PDF) ได้ทันที');
+        }
         setIsCreateModalOpen(false);
         setFormData({
           tenant_name: '',
@@ -293,6 +301,7 @@ export default function OwnerContractsPage() {
           start_date: new Date().toISOString().split('T')[0],
           end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
           deposit_amount: 0,
+          occupants: 1,
           contract_file_url: '',
           contract_file_name: '',
         });
@@ -307,6 +316,20 @@ export default function OwnerContractsPage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Selecting a room fills in its deposit from the server (lib/billing moveInCosts), never a page default
+  const handleCreateRoomChange = async (roomId: string) => {
+    setFormData((prev) => ({ ...prev, room_id: roomId }));
+    const room = rooms.find((r) => String(r.id) === roomId);
+    if (!room) return;
+    try {
+      const res = await fetch(`/api/rates?roomNumber=${encodeURIComponent(room.room_number)}`);
+      const json = await res.json();
+      if (json.success && json.room) {
+        setFormData((prev) => (prev.room_id === roomId ? { ...prev, deposit_amount: json.room.deposit } : prev));
+      }
+    } catch {}
   };
 
   // Renewal Submission
@@ -443,8 +466,11 @@ export default function OwnerContractsPage() {
     }
   };
 
+  // Contracts waiting for the owner (signed by the tenant / walk-in, or waiting for the first bill)
+  const isPendingContract = (status: string) => ['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill'].includes(status);
   const activeContracts = contracts.filter(c => c.status === 'Active');
-  const historyContracts = contracts.filter(c => c.status !== 'Active');
+  const pendingContracts = contracts.filter(c => isPendingContract(c.status));
+  const historyContracts = contracts.filter(c => c.status !== 'Active' && !isPendingContract(c.status));
   const renewalRequestedContracts = activeContracts.filter(c => c.renewal_requested === 1);
   const renewalRequestedCount = renewalRequestedContracts.length;
   const pendingMoveOutCount = moveOutRequests.filter(m => m.status === 'Pending').length;
@@ -452,10 +478,41 @@ export default function OwnerContractsPage() {
   const displayedContracts = 
     activeTab === 'Renewal' ? renewalRequestedContracts :
     activeTab === 'Active' ? activeContracts :
+    activeTab === 'Pending' ? pendingContracts :
     historyContracts;
 
   return (
     <div className="flex-1 overflow-y-auto bg-secondary/40 p-8 lg:p-12">
+      {newAccount && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="text-lg font-black text-foreground">🎉 บันทึกสัญญาเช่าและสร้างบัญชีผู้เช่าแล้ว</h3>
+            <p className="text-sm text-muted-foreground">
+              ส่งข้อมูลเข้าสู่ระบบนี้ให้ผู้เช่า แล้วให้เปลี่ยนรหัสผ่านหลังล็อกอิน · <strong>รหัสนี้จะแสดงครั้งเดียว</strong>
+            </p>
+            <div className="bg-secondary/60 rounded-2xl p-4 space-y-2 text-sm">
+              <p><span className="text-muted-foreground">อีเมล:</span> <span className="font-mono">{newAccount.email}</span></p>
+              <p><span className="text-muted-foreground">รหัสผ่านชั่วคราว:</span> <span className="font-mono font-black text-lg tracking-wider">{newAccount.password}</span></p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => navigator.clipboard?.writeText(`${newAccount.email}\n${newAccount.password}`)}
+                className="flex-1 py-2.5 bg-secondary hover:bg-secondary/80 text-foreground font-bold rounded-xl text-sm cursor-pointer"
+              >
+                คัดลอก
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewAccount(null)}
+                className="flex-1 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-black rounded-xl text-sm cursor-pointer"
+              >
+                ส่งให้ผู้เช่าแล้ว ปิด
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="max-w-7xl mx-auto space-y-10">
         
         {/* Header */}
@@ -471,6 +528,13 @@ export default function OwnerContractsPage() {
               ตรวจสอบสัญญาเช่า จัดการคำขอต่อสัญญา พิมพ์สัญญา A4 และคืนค่ามัดจำด้วย Dynamic PromptPay QR
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setIsCreateModalOpen(true)}
+            className="px-6 py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-black rounded-2xl text-sm shadow-lg shadow-primary/20 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+          >
+            + สร้างสัญญาใหม่
+          </button>
         </div>
 
         {/* Dashboard Stats Cards */}
@@ -549,6 +613,17 @@ export default function OwnerContractsPage() {
             }`}
           >
             🟢 สัญญาปัจจุบัน ({activeContracts.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab('Pending')}
+            className={`pb-4 font-black text-sm transition-all border-b-2 whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+              activeTab === 'Pending'
+                ? 'border-amber-500 text-amber-400'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <span>📝 รออนุมัติ ({pendingContracts.length})</span>
           </button>
 
           <button
@@ -702,6 +777,17 @@ export default function OwnerContractsPage() {
 
                         <td className="px-8 py-6 text-center">
                           <div className="flex flex-wrap items-center justify-center gap-2">
+                            {/* Open the contract page (view, upload the signed paper, approve) */}
+                            <Link
+                              href={`/owner/contracts/${c.id}`}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 hover:scale-105 active:scale-95 ${
+                                isPendingContract(c.status)
+                                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-black shadow-lg shadow-amber-500/20'
+                                  : 'bg-white/5 hover:bg-white/10 text-foreground border border-border'
+                              }`}
+                            >
+                              {isPendingContract(c.status) ? '📝 ดู/อนุมัติ' : '📄 ดูสัญญา'}
+                            </Link>
                             {/* Renew / Approve / Reject Contract Buttons */}
                             {c.status === 'Active' && (
                               <>
@@ -988,7 +1074,7 @@ export default function OwnerContractsPage() {
                     <select
                       required
                       value={formData.room_id}
-                      onChange={(e) => setFormData({ ...formData, room_id: e.target.value })}
+                      onChange={(e) => handleCreateRoomChange(e.target.value)}
                       className="w-full px-6 py-4 bg-background border border-border rounded-2xl text-foreground font-bold outline-none focus:border-primary transition-all cursor-pointer"
                     >
                       <option value="" className="bg-card">-- เลือกห้องพัก --</option>
@@ -1072,6 +1158,19 @@ export default function OwnerContractsPage() {
                         className="w-full px-6 py-4 bg-background border border-border rounded-2xl text-foreground font-bold outline-none focus:border-primary transition-all"
                       />
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-foreground/50 uppercase tracking-widest">
+                      จำนวนผู้พัก
+                    </label>
+                    <select
+                      value={formData.occupants}
+                      onChange={(e) => setFormData({ ...formData, occupants: Number(e.target.value) })}
+                      className="w-full px-6 py-4 bg-background border border-border rounded-2xl text-foreground font-bold outline-none focus:border-primary transition-all cursor-pointer"
+                    >
+                      {[1, 2].map((n) => <option key={n} value={n} className="bg-card">{n} คน</option>)}
+                    </select>
                   </div>
 
                   {/* Dates & Deposit */}

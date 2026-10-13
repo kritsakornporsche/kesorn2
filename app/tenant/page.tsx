@@ -1,5 +1,8 @@
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { daysPastDue, getRates } from '@/lib/billing';
+import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
+import { formatBaht, formatThaiDate } from '@/lib/format';
 import Link from 'next/link';
 import AnnouncementsSection from '../components/AnnouncementsSection';
 import DormRulesCard from './components/DormRulesCard';
@@ -63,9 +66,20 @@ async function getDashboardData() {
          OR user_id = ${userId}
          OR user_id IN (SELECT id FROM users WHERE email = ${userEmail})
     ) 
-    AND LOWER(status) NOT IN ('paid', 'draft')
+    AND LOWER(status) IN ('unpaid', 'overdue', 'pending', 'partial', 'pendingcorrection')
     ORDER BY due_date ASC
   `;
+
+  // What is owed is computed on the server (late fee to today, partial payments deducted), never in the page
+  const rates = await getRates(sql);
+  const now = new Date();
+  const summaries = await getPaymentSummaries(sql, unpaidBills.map((b: any) => b.id));
+  const unpaidSummary = {
+    total: unpaidBills.reduce((sum: number, b: any) => sum + outstandingFor(b, summaries.get(b.id)?.paid_total || 0, now, rates).outstanding, 0),
+    overdue: unpaidBills.some((b: any) => b.due_date && daysPastDue(b.due_date, now) > 0),
+    lateFeePerDay: rates.lateFeePerDay,
+    nextDue: unpaidBills[0]?.due_date || null,
+  };
 
   // Find recent maintenance requests
   const recentMaintenance = await sql`
@@ -82,6 +96,7 @@ async function getDashboardData() {
 
   return { 
     unpaidBills, 
+    unpaidSummary,
     recentMaintenance, 
     roomInfo: (isActive || hasRoom) ? latestRecord : null,
     pendingContract: isPending ? latestRecord : null
@@ -89,7 +104,7 @@ async function getDashboardData() {
 }
 
 export default async function TenantDashboard() {
-  const { unpaidBills, recentMaintenance, roomInfo, pendingContract } = await getDashboardData();
+  const { unpaidBills, unpaidSummary, recentMaintenance, roomInfo, pendingContract } = await getDashboardData();
 
   return (
     <div className="p-6 sm:p-8 lg:p-10 hidden-scrollbar">
@@ -303,10 +318,10 @@ export default async function TenantDashboard() {
               <div>
                 <h2 className="text-xl font-black text-primary mb-1.5">คุณมียอดค้างชำระ ({unpaidBills.length} รายการ)</h2>
                 <p className="text-primary/80 font-medium max-w-xl">
-                    กรุณาชำระยอดรวม ฿{unpaidBills.reduce((acc: number, curr: any) => acc + Number(curr.amount), 0).toLocaleString()} 
-                    {new Date(unpaidBills[0].due_date) < new Date() 
-                      ? ' (เกินกำหนดชำระแล้ว - คิดค่าปรับวันละ 100 บาท)' 
-                      : ` (ภายในวันที่ ${new Date(unpaidBills[0].due_date).toLocaleDateString('th-TH')})`}
+                    กรุณาชำระยอดรวม ฿{formatBaht(unpaidSummary?.total)}
+                    {unpaidSummary?.overdue
+                      ? ` (เกินกำหนดชำระแล้ว - ค่าเช่ารายเดือนคิดค่าปรับวันละ ${formatBaht(unpaidSummary.lateFeePerDay)} บาท)`
+                      : ` (ภายในวันที่ ${formatThaiDate(unpaidSummary?.nextDue)})`}
                 </p>
               </div>
             </div>
@@ -388,18 +403,6 @@ export default async function TenantDashboard() {
               </div>
               
               <div className="grid gap-6 md:grid-cols-2">
-                <Link href="/tenant/contract/simulate" className="group bg-card rounded-[2.5rem] border border-border p-8 shadow-sm hover:border-primary/30 hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden relative">
-                  <div className="flex items-start gap-5 relative z-10">
-                    <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all shadow-inner shrink-0">
-                      <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M11 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-black text-foreground mb-1.5">จำลองสัญญาเช่า</h3>
-                      <p className="text-xs text-muted-foreground leading-relaxed font-medium">คำนวณเงินประกันและค่างวดล่วงหน้า เพื่อวางแผนการย้ายเข้าหรืออาศัยอยู่ต่อ</p>
-                    </div>
-                  </div>
-                </Link>
-                
                 <Link href="/tenant/maintenance" className="group bg-card rounded-[2.5rem] border border-border p-8 shadow-sm hover:border-accent/30 hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
                   <div className="flex items-start gap-5 relative z-10">
                     <div className="w-14 h-14 bg-accent/10 rounded-2xl flex items-center justify-center text-accent group-hover:bg-accent group-hover:text-white transition-all shrink-0">

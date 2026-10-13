@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 import { verifySlipWithSlipOK } from '@/lib/slipok';
 import { recordPayment, slipPaidAt } from '@/lib/payments';
 import { getDormPromptPay } from '@/lib/billing';
-import bcrypt from 'bcryptjs';
+import { createContract, CONTRACT_MESSAGES } from '@/lib/contracts';
 
 /**
  * POST /api/owner/tenants/walk-in
@@ -149,120 +149,37 @@ export async function POST(req: Request) {
     const { saveBase64Image } = await import('@/lib/file-storage');
     const storedSlipUrl = saveBase64Image(slipUrl, 'slips', `walkin_${Date.now()}_room_${room.room_number}`);
 
-    // 3. User Account Creation / Update (Username = Full Name from ID card, Password = Phone)
-    const passwordHash = await bcrypt.hash(cleanPhone, 12);
-    let userId: number;
-
-    const existingUsers = await sql`
-      SELECT id, role FROM users 
-      WHERE LOWER(email) = ${cleanEmail}
-      LIMIT 1
-    `;
-
-    if (existingUsers.length > 0) {
-      userId = existingUsers[0].id;
-      // Update info and set password to phone
-      await sql`
-        UPDATE users 
-        SET name = ${cleanName},
-            phone = ${cleanPhone},
-            password = ${passwordHash},
-            role = 'guest',
-            primary_role = 'guest'
-        WHERE id = ${userId}
-      `;
-    } else {
-      const userInsert = await sql`
-        INSERT INTO users (name, email, password, phone, role, primary_role)
-        VALUES (${cleanName}, ${cleanEmail}, ${passwordHash}, ${cleanPhone}, 'guest', 'guest')
-      `;
-      userId = (userInsert as any).insertId;
-    }
-
-    // Assign dorm role
-    try {
-      const existingRole = await sql`
-        SELECT id FROM user_dorm_roles 
-        WHERE user_id = ${userId} AND dorm_id = ${targetDormId} 
-        LIMIT 1
-      `;
-      if (existingRole.length === 0) {
-        await sql`INSERT INTO user_dorm_roles (user_id, dorm_id, role) VALUES (${userId}, ${targetDormId}, 'guest')`;
-      }
-    } catch (e) {}
-
-    // 4. Tenant record creation / update
-    let tenantId: number;
-    const existingTenants = await sql`
-      SELECT id FROM tenants 
-      WHERE user_id = ${userId} OR LOWER(email) = ${cleanEmail}
-      LIMIT 1
-    `;
-
+    // 3. Account + contract through the single contract service. A new account's password is the phone
+    // number; an existing guest/tenant account keeps its password and role; staff accounts are refused.
     const formattedStartDate = startDate || new Date().toISOString().slice(0, 10);
     const formattedEndDate = endDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10);
-
-    if (existingTenants.length > 0) {
-      tenantId = existingTenants[0].id;
-      await sql`
-        UPDATE tenants 
-        SET name = ${cleanName},
-            phone = ${cleanPhone},
-            room_id = ${room.id},
-            user_id = ${userId},
-            id_card_number = ${cleanIdCard},
-            address = ${tenantAddress || null},
-            status = 'Pending',
-            move_in_date = ${formattedStartDate},
-            dorm_id = ${targetDormId}
-        WHERE id = ${tenantId}
-      `;
-    } else {
-      const tenantInsert = await sql`
-        INSERT INTO tenants (
-          name, email, phone, room_id, user_id, id_card_number, address, status, move_in_date, dorm_id
-        ) VALUES (
-          ${cleanName}, ${cleanEmail}, ${cleanPhone}, ${room.id}, ${userId}, ${cleanIdCard}, ${tenantAddress || null}, 'Pending', ${formattedStartDate}, ${targetDormId}
-        )
-      `;
-      tenantId = (tenantInsert as any).insertId;
+    const created = await createContract({
+      account: {
+        email: cleanEmail,
+        name: cleanName,
+        phone: cleanPhone,
+        idCardNumber: cleanIdCard,
+        address: tenantAddress || null,
+        role: 'guest',
+        newPassword: cleanPhone,
+      },
+      roomId: room.id,
+      startDate: formattedStartDate,
+      endDate: formattedEndDate,
+      depositAmount: depositAmount || 1000,
+      status: 'PendingOwnerSignature',
+      requireRoomFree: true,
+      signature: 'WALK_IN_VERIFIED',
+      signedAt: new Date(),
+      slipUrl: storedSlipUrl || null,
+      idCardNumber: cleanIdCard,
+      tenantAddress: tenantAddress || null,
+      parentPhone: cleanParentPhone,
+    });
+    if (!created.ok) {
+      return NextResponse.json({ success: false, message: CONTRACT_MESSAGES[created.reason] }, { status: 400 });
     }
-
-    // 5. Contract Record Creation (Status = PendingOwnerSignature)
-    const contractInsert = await sql`
-      INSERT INTO contracts (
-        tenant_id, 
-        room_id, 
-        start_date, 
-        end_date, 
-        deposit_amount, 
-        signature_data, 
-        owner_signature_data,
-        signed_at,
-        slip_url,
-        id_card_number,
-        tenant_address,
-        id_card_image,
-        parent_phone,
-        status
-      ) VALUES (
-        ${tenantId}, 
-        ${room.id}, 
-        ${formattedStartDate}, 
-        ${formattedEndDate}, 
-        ${depositAmount || 1000}, 
-        'WALK_IN_VERIFIED', 
-        NULL,
-        ${new Date()},
-        ${storedSlipUrl || null},
-        ${cleanIdCard},
-        ${tenantAddress || null},
-        NULL,
-        ${cleanParentPhone},
-        'PendingOwnerSignature'
-      )
-    `;
-    const contractId = (contractInsert as any).insertId;
+    const { contractId, tenantId, userId } = created;
 
     // 6. Create Booking Bill (Status = Paid)
     const bookingTitle = `ค่าจองห้องพัก Walk-in (ห้อง ${room.room_number})`;
@@ -322,9 +239,6 @@ export async function POST(req: Request) {
       });
       if (!payment.ok) console.warn('[Walk-in payment not recorded]', billId, payment);
     }
-
-    // 7. Update Room status to 'Reserved'
-    await sql`UPDATE rooms SET status = 'Reserved' WHERE id = ${room.id}`;
 
     // 9. Send notification to tenant
     try {

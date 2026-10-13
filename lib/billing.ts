@@ -22,6 +22,8 @@ const DEMO_ROOM_RATES = { electricityPerUnit: 1, waterPerPerson: 5, commonFee: 5
 
 const BOOKING_FEE = 1000;
 const DEMO_BOOKING_FEE = 1;
+const DEMO_DEPOSIT = 20;
+const DEFAULT_DEPOSIT = 3000;
 
 // Late fees accrue only while the bill is payable (compared in lower case; older code wrote mixed case).
 // PendingCorrection is frozen by a dispute and Draft has not been sent yet.
@@ -190,6 +192,34 @@ export function daysPastDue(dueDate: Date | string, asOf: Date | string | number
 /** Booking fee (it becomes part of the deposit). Set by the server, never taken from the client. */
 export function bookingFeeFor(roomNumber?: string | null): number {
   return String(roomNumber || '').toUpperCase() === DEMO_ROOM_NUMBER ? DEMO_BOOKING_FEE : BOOKING_FEE;
+}
+
+/** Total deposit held for a room (the booking fee is part of it). */
+export function depositFor(room: { room_number?: string | null; deposit_amount?: number | string | null }): number {
+  if (String(room.room_number || '').toUpperCase() === DEMO_ROOM_NUMBER) return DEMO_DEPOSIT;
+  return toNumber(room.deposit_amount, DEFAULT_DEPOSIT) || DEFAULT_DEPOSIT;
+}
+
+/**
+ * What a new tenant pays for a room: the booking fee now, then at move-in the first month of rent in full
+ * (not pro-rated) plus the rest of the deposit. Monthly utility rates are included for estimates.
+ */
+export async function moveInCosts(sql: any, roomNumber: string) {
+  const rows = await sql`SELECT room_number, price, deposit_amount FROM rooms WHERE room_number = ${roomNumber} LIMIT 1`;
+  const room = rows[0];
+  if (!room) return null;
+  const rent = round2(Number(room.price || 0));
+  const deposit = depositFor(room);
+  const bookingFee = bookingFeeFor(room.room_number);
+  const rates = ratesForRoom(await getRates(sql), room.room_number);
+  return {
+    roomNumber: String(room.room_number),
+    rent,
+    deposit,
+    bookingFee,
+    dueAtMoveIn: round2(rent + Math.max(0, deposit - bookingFee)),
+    rates: { electricityPerUnit: rates.electricityPerUnit, waterPerPerson: rates.waterPerPerson, commonFee: rates.commonFee },
+  };
 }
 
 /**
