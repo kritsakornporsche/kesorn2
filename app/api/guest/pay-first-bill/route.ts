@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
-import { recordPayment, slipPaidAt } from '@/lib/payments';
+import { getPaymentSummaries, outstandingFor, recordPayment, slipPaidAt } from '@/lib/payments';
+import { getDormPromptPay, getRates } from '@/lib/billing';
+import { formatBaht } from '@/lib/format';
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -41,23 +43,32 @@ export async function POST(req: Request) {
 
     const contract = contracts[0];
 
-    // Find first bill
-    let targetBill: any = null;
-    if (billId) {
-      const bRes = await sql`SELECT * FROM bills WHERE id = ${billId} LIMIT 1`;
-      if (bRes.length > 0) targetBill = bRes[0];
-    } else {
-      const bRes = await sql`SELECT * FROM bills WHERE tenant_id = ${contract.tenant_id} AND (is_first_bill = 1 OR bill_type = 'booking') LIMIT 1`;
-      if (bRes.length > 0) targetBill = bRes[0];
+    // Only the tenant of this contract can pay its first bill
+    const sessionUserId = Number((session.user as any)?.id) || 0;
+    const ownsContract = (contract.tenant_email && String(contract.tenant_email).toLowerCase() === session.user.email.toLowerCase())
+      || (contract.user_id && Number(contract.user_id) === sessionUserId);
+    if (!ownsContract) {
+      return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลสัญญาเช่า' }, { status: 404 });
     }
 
-    const expectedAmount = targetBill ? Number(targetBill.amount) : 1.00;
+    // The first bill must belong to this contract's tenant
+    const bRes = billId
+      ? await sql`SELECT * FROM bills WHERE id = ${billId} AND tenant_id = ${contract.tenant_id} LIMIT 1`
+      : await sql`SELECT * FROM bills WHERE tenant_id = ${contract.tenant_id} AND (is_first_bill = 1 OR bill_type = 'booking') AND LOWER(status) NOT IN ('paid', 'cancelled') ORDER BY id DESC LIMIT 1`;
+    const targetBill: any = bRes[0] || null;
+    if (!targetBill) {
+      return NextResponse.json({ success: false, message: 'ไม่พบบิลแรกเข้าที่ต้องชำระ' }, { status: 404 });
+    }
+
+    // What is still owed on the bill (partial payments deducted)
+    const paidSoFar = (await getPaymentSummaries(sql, [targetBill.id])).get(targetBill.id)?.paid_total || 0;
+    const expectedAmount = outstandingFor(targetBill, paidSoFar, new Date(), await getRates(sql)).outstanding;
 
     // 2. Automated Slip Verification with SlipOK
     const { verifySlipWithSlipOK } = await import('@/lib/slipok');
     const dormProfileRes = await sql`
-      SELECT name, promptpay_name, promptpay_number 
-      FROM dormitory_profile 
+      SELECT name, promptpay_name
+      FROM dormitory_profile
       LIMIT 1
     `;
     const expectedDorm = dormProfileRes[0] || {};
@@ -68,7 +79,7 @@ export async function POST(req: Request) {
         expectedAmount,
         expectedReceiver: {
           name: expectedDorm.promptpay_name || expectedDorm.name || 'หอพักเกษร 2',
-          promptpay: expectedDorm.promptpay_number || '0636040550',
+          promptpay: (await getDormPromptPay(sql)) || '',
           dormName: expectedDorm.name || 'หอพักเกษร 2',
           isBooking: true,
           checkPromptPayOnly: true
@@ -91,7 +102,25 @@ export async function POST(req: Request) {
     const { saveBase64Image } = await import('@/lib/file-storage');
     const storedSlipUrl = saveBase64Image(slipUrl, 'slips', `first_bill_${contract.tenant_id}_${contract.room_id}`) || slipUrl;
 
-    // 3. Update contract: deposit_amount = totalRequiredDeposit (20 for T01, room.deposit_amount / 3000 for standard), status = 'Active' (Rule 2.1.3)
+    // 3. Pay the first bill through the single payment entry point first; nothing else changes if it fails
+    const payment = await recordPayment(targetBill.id, {
+      amount: Number(verifyResult.amount),
+      method: 'slip',
+      paidAt: slipPaidAt(verifyResult),
+      slipRef: slipokRef,
+      slipUrl: storedSlipUrl,
+      slipData: slipRaw,
+      recordedBy: sessionUserId || null,
+    });
+    if (!payment.ok) {
+      const message = payment.reason === 'amount_mismatch'
+        ? `ยอดในสลิปไม่ตรงกับยอดที่ต้องชำระ ฿${formatBaht(payment.required)}`
+        : payment.reason === 'duplicate_slip' ? 'สลิปนี้ถูกใช้ชำระเงินไปแล้ว ไม่สามารถใช้ซ้ำได้'
+        : payment.reason === 'already_paid' ? 'บิลนี้ชำระเรียบร้อยแล้ว' : 'ไม่สามารถชำระบิลนี้ได้';
+      return NextResponse.json({ success: false, message }, { status: 400 });
+    }
+
+    // 3.1 Update contract: deposit_amount = totalRequiredDeposit (20 for T01, room.deposit_amount / 3000 for standard), status = 'Active' (Rule 2.1.3)
     const isTestRoom = (contract.room_number || '').toUpperCase() === 'T01';
     const totalDepositAmount = isTestRoom ? 20.00 : (Number(contract.room_deposit_amount) || 3000.00);
 
@@ -103,20 +132,6 @@ export async function POST(req: Request) {
         slip_url = COALESCE(${storedSlipUrl}, slip_url)
       WHERE id = ${contractId}
     `;
-
-    // 4. Mark the first bill as Paid through the single payment entry point (also records income)
-    if (targetBill) {
-      const payment = await recordPayment(targetBill.id, {
-        amount: verifyResult.amount !== undefined ? Number(verifyResult.amount) : expectedAmount,
-        method: 'slip',
-        paidAt: slipPaidAt(verifyResult),
-        slipRef: slipokRef,
-        slipUrl: storedSlipUrl,
-        slipData: slipRaw,
-        recordedBy: Number((session.user as any)?.id) || null,
-      });
-      if (!payment.ok) console.warn('[First bill payment not recorded]', targetBill.id, payment);
-    }
 
     // 5. Update room status to Occupied
     if (contract.room_id) {

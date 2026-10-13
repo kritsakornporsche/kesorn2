@@ -1,7 +1,8 @@
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
-import { getRates } from '@/lib/billing';
+import { getDormPromptPay, getRates } from '@/lib/billing';
+import { formatBaht } from '@/lib/format';
 import { getPaymentSummaries, outstandingFor, recordPayment, slipPaidAt } from '@/lib/payments';
 import { NextResponse } from 'next/server';
 import { verifySlipWithSlipOK } from '@/lib/slipok';
@@ -43,17 +44,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'ไม่พบรูปภาพสลิปสำหรับตรวจสอบ' }, { status: 400 });
     }
 
-    const dormProfileRes = await sql`SELECT name, promptpay_name, promptpay_number FROM dormitory_profile LIMIT 1`;
+    const dormProfileRes = await sql`SELECT name, promptpay_name FROM dormitory_profile LIMIT 1`;
     const expectedDorm = dormProfileRes[0] || {};
 
     // 1. Run SlipOK Verification
     const verifyResult = await verifySlipWithSlipOK(targetSlip, {
       expectedReceiver: {
         name: expectedDorm.promptpay_name || expectedDorm.name || 'หอพักเกษร 2',
-        promptpay: expectedDorm.promptpay_number || '0636040550',
+        promptpay: (await getDormPromptPay(sql)) || '',
         dormName: expectedDorm.name || 'หอพักเกษร 2'
       },
-      billCreatedAt: bill.created_at
+      billCreatedAt: bill.created_at,
+      // The tenant usually sent this slip already; it may still pay once (recordPayment refuses a used reference)
+      allowRepeat: true,
     });
 
     if (!verifyResult.success || !verifyResult.readSuccess) {
@@ -83,17 +86,8 @@ export async function POST(req: Request) {
     const { daysOverdue, lateFee: penaltyAmount } = owed;
     const expectedTotal = owed.outstanding;
 
-    // 4. Verify Amount match
+    // 4. Mark Paid through the single payment entry point (the slip amount must match exactly)
     const actualAmount = Number(verifyResult.amount || 0);
-    if (Math.abs(actualAmount - expectedTotal) > 1) { // Allow minor rounding
-      return NextResponse.json({
-        success: false,
-        message: `❌ ยอดเงินในสลิป (฿${actualAmount.toLocaleString()}) ไม่ตรงกับยอดที่ต้องชำระ (฿${expectedTotal.toLocaleString()}) รวมค่าปรับ ${daysOverdue} วัน (฿${penaltyAmount})`,
-        data: verifyResult
-      }, { status: 400 });
-    }
-
-    // 5. Mark Paid (and record income) through the single payment entry point
     const payment = await recordPayment(Number(billId), {
       amount: actualAmount,
       method: 'slip',
@@ -103,8 +97,9 @@ export async function POST(req: Request) {
       recordedBy: guard.user.id,
     });
     if (!payment.ok) {
-      const message = payment.reason === 'insufficient'
-        ? `❌ ยอดในสลิป (฿${actualAmount.toLocaleString()}) ไม่ครบ ต้องชำระ ฿${payment.required.toLocaleString()}`
+      const message = payment.reason === 'amount_mismatch'
+        ? `❌ ยอดเงินในสลิป (฿${formatBaht(actualAmount)}) ไม่ตรงกับยอดที่ต้องชำระ (฿${formatBaht(payment.required)}) รวมค่าปรับ ${daysOverdue} วัน (฿${formatBaht(penaltyAmount)})`
+        : payment.reason === 'duplicate_slip' ? '❌ สลิปนี้ถูกใช้ชำระเงินไปแล้ว ไม่สามารถใช้ซ้ำได้'
         : payment.reason === 'already_paid' ? 'บิลนี้ชำระเรียบร้อยแล้ว' : 'ไม่สามารถบันทึกการชำระบิลนี้ได้';
       return NextResponse.json({ success: false, message, data: verifyResult }, { status: 400 });
     }

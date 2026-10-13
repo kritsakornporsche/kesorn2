@@ -4,6 +4,7 @@ import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { verifySlipWithSlipOK } from '@/lib/slipok';
 import { recordPayment, slipPaidAt } from '@/lib/payments';
+import { getDormPromptPay } from '@/lib/billing';
 import bcrypt from 'bcryptjs';
 
 /**
@@ -99,18 +100,18 @@ export async function POST(req: Request) {
     let slipokRef: string | null = null;
 
     const dormProfiles = await sql`
-      SELECT name, promptpay_number, promptpay_name 
-      FROM dormitory_profile 
+      SELECT name, promptpay_name
+      FROM dormitory_profile
       LIMIT 1
     `;
-    const dormProfile = dormProfiles.length > 0 ? dormProfiles[0] : { name: 'หอพักเกษร 2', promptpay_number: '0636040550' };
+    const dormProfile = dormProfiles.length > 0 ? dormProfiles[0] : { name: 'หอพักเกษร 2' };
 
     const verifyResult = await verifySlipWithSlipOK(
       slipUrl,
       Number(depositAmount || 1000),
       {
         name: dormProfile.promptpay_name || dormProfile.name || 'หอพักเกษร 2',
-        promptpay: dormProfile.promptpay_number || '0636040550',
+        promptpay: (await getDormPromptPay(sql)) || '',
         dormName: dormProfile.name || 'หอพักเกษร 2',
         isBooking: true,
         checkPromptPayOnly: true

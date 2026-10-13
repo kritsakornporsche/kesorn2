@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
-import { getRates, ratesForRoom } from '@/lib/billing';
+import { getDormPromptPay, getRates, ratesForRoom } from '@/lib/billing';
 import generatePayload from 'promptpay-qr';
 import qrcode from 'qrcode';
 
@@ -49,6 +49,8 @@ export async function GET(req: Request) {
     `;
 
     // Process each request with latest meter reading and dynamic QR
+    // The tenant pays the dorm's own PromptPay number (no QR when it is not configured)
+    const dormPromptPay = await getDormPromptPay(sql);
     const enhanced = await Promise.all(requests.map(async (item: any) => {
       const targetRoomId = item.resolved_room_id || item.room_id;
 
@@ -91,12 +93,11 @@ export async function GET(req: Request) {
             qrImage = await qrcode.toDataURL(payload, { type: 'image/png', margin: 2, scale: 6 });
           } catch (e) {}
         }
-      } else if ((item.settlement_type === 'TenantPay' || item.move_out_type === 'Early') && item.total_expenses > 0) {
-        const ownerPhone = '0812345678';
+      } else if ((item.settlement_type === 'TenantPay' || item.move_out_type === 'Early') && item.total_expenses > 0 && dormPromptPay) {
         try {
           const payAmt = item.move_out_type === 'Early' ? Number(item.total_expenses) : Math.max(0, Number(item.total_expenses) - 3000);
           if (payAmt > 0) {
-            const payload = generatePayload(ownerPhone, { amount: payAmt });
+            const payload = generatePayload(dormPromptPay, { amount: payAmt });
             qrImage = await qrcode.toDataURL(payload, { type: 'image/png', margin: 2, scale: 6 });
           }
         } catch (e) {}
@@ -467,14 +468,14 @@ async function executeMoveOutCompletion(sql: any, moveReq: any, readyDate: strin
     await sql`UPDATE users SET role = 'guest', primary_role = 'guest' WHERE email = ${moveReq.t_email}`;
   }
 
-  // 6. Record in accounting_transactions if there is refund or income
+  // 6. A deposit refund lowers the deposit held (a liability), it is not an expense
   if (moveReq.settlement_type === 'OwnerRefund' && moveReq.net_refund_amount > 0) {
     try {
       await sql`
         INSERT INTO accounting_transactions (dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date)
         VALUES (
-          1, 'Expense', 'Deposit Refund',
-          ${moveReq.net_refund_amount},
+          1, 'Liability', 'Deposit Refund',
+          ${-Number(moveReq.net_refund_amount)},
           ${'คืนเงินประกันห้อง ' + (moveReq.room_id || '-') + ' (คำร้อง #' + moveReq.id + ')'},
           ${moveReq.id}, 'move_out_refund', ${new Date().toISOString().slice(0, 10)}
         )

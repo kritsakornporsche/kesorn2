@@ -1,5 +1,5 @@
-// The only place that marks a bill as Paid. Every payment is recorded in bill_payments
-// and as one income row in accounting_transactions, inside a single transaction.
+// The only place that marks a bill as Paid. Every payment is recorded in bill_payments and in
+// accounting_transactions (deposit part as Liability, the rest as Income), inside a single transaction.
 
 import { getDb } from '@/lib/db';
 import { Pool } from '@/lib/mysql-adapter';
@@ -24,16 +24,27 @@ export interface PaymentInput {
 export type PaymentResult =
   | { ok: true; paymentId: number; status: 'Paid' | 'Partial'; required: number; outstanding: number; lateFee: number; daysOverdue: number }
   | { ok: false; reason: 'invalid_input' | 'not_found' | 'already_paid' | 'cancelled' | 'not_sent' }
-  | { ok: false; reason: 'insufficient'; required: number }
+  | { ok: false; reason: 'duplicate_slip' }
+  | { ok: false; reason: 'insufficient' | 'amount_mismatch'; required: number }
   | { ok: false; reason: 'exceeds'; outstanding: number };
 
 // Validated here because MySQL may run without strict mode and silently coerce bad values
 const METHODS: PaymentMethod[] = ['slip', 'cash', 'transfer'];
 
-const ACCOUNTING_CATEGORY: Record<string, string> = { service: 'Service', booking: 'Deposit' };
+// Income category of the non-deposit part (a move-in bill's first month of rent is Rent)
+const ACCOUNTING_CATEGORY: Record<string, string> = { service: 'Service' };
 
 const toSatang = (n: number) => Math.round(Number(n) * 100);
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Part of a bill that is a deposit (held for the tenant, a liability, not income):
+ * a booking bill is all deposit; a move-in bill is its amount minus the first month of rent.
+ */
+export function depositPortion(bill: { bill_type?: string | null; is_first_bill?: number | boolean | null; amount: number | string; room_amount?: number | string | null }) {
+  if (Number(bill.is_first_bill) === 1) return round2(Math.max(0, Number(bill.amount) - Number(bill.room_amount || 0)));
+  return bill.bill_type === 'booking' ? round2(Number(bill.amount)) : 0;
+}
 
 /**
  * Amount still owed at `asOf`: bill amount + late fee at that time − payments already received (not voided).
@@ -89,8 +100,22 @@ export function slipPaidAt(verifyResult: any): Date {
  * Record a payment for a bill. What is owed is the bill plus the late fee at `paidAt`, minus earlier payments.
  * Covering it marks the bill Paid. Less than that: with `allowPartial` the bill becomes Partial, otherwise
  * nothing is written and the required amount is returned. With `allowPartial`, more than owed is refused.
+ * A slip must match what is owed exactly, and a slip reference can pay only once (voided payments excepted).
  */
 export async function recordPayment(billId: number, input: PaymentInput): Promise<PaymentResult> {
+  try {
+    return await recordPaymentOnce(billId, input);
+  } catch (error: any) {
+    // The same slip sent twice at the same moment: MySQL rolls one back as a deadlock victim. Retrying once
+    // waits for the other payment to commit, then finds the reference used and answers duplicate_slip.
+    if (input.slipRef && (error?.code === 'ER_LOCK_DEADLOCK' || error?.errno === 1213)) {
+      return recordPaymentOnce(billId, input);
+    }
+    throw error;
+  }
+}
+
+async function recordPaymentOnce(billId: number, input: PaymentInput): Promise<PaymentResult> {
   const validInput = METHODS.includes(input.method)
     && Number.isFinite(Number(input.amount)) && Number(input.amount) > 0
     && input.paidAt instanceof Date && !Number.isNaN(input.paidAt.getTime());
@@ -103,7 +128,7 @@ export async function recordPayment(billId: number, input: PaymentInput): Promis
     await client.query('START TRANSACTION', []);
 
     const { rows } = await client.query(
-      'SELECT id, amount, status, bill_type, due_date, dorm_id, room_number, title, billing_cycle FROM bills WHERE id = ? FOR UPDATE',
+      'SELECT id, amount, room_amount, is_first_bill, status, bill_type, due_date, dorm_id, room_number, title, billing_cycle FROM bills WHERE id = ? FOR UPDATE',
       [billId]
     );
     const bill = rows[0];
@@ -118,11 +143,26 @@ export async function recordPayment(billId: number, input: PaymentInput): Promis
     // A draft has not been sent to the tenant yet
     if (isStatus(bill.status, 'draft')) return reject({ ok: false, reason: 'not_sent' });
 
+    if (input.slipRef) {
+      // Locks the index range, so the same slip sent twice at once cannot pay twice
+      const used = (await client.query(
+        'SELECT id FROM bill_payments WHERE slip_ref = ? AND voided_at IS NULL FOR UPDATE', [input.slipRef]
+      )).rows;
+      // Bills paid before bill_payments existed keep the reference on the bill only
+      const usedLegacy = (await client.query(
+        "SELECT id FROM bills WHERE slipok_trans_ref = ? AND id <> ? AND LOWER(status) = 'paid' LIMIT 1", [input.slipRef, billId]
+      )).rows;
+      if (used.length > 0 || usedLegacy.length > 0) return reject({ ok: false, reason: 'duplicate_slip' });
+    }
+
     const paidBefore = (await client.query(
       'SELECT COALESCE(SUM(amount), 0) AS total FROM bill_payments WHERE bill_id = ? AND voided_at IS NULL', [billId]
     )).rows[0];
     const { lateFee, daysOverdue, outstanding: required } = outstandingFor(bill, Number(paidBefore?.total || 0), input.paidAt, rates);
 
+    if (input.method === 'slip' && toSatang(input.amount) !== toSatang(required)) {
+      return reject({ ok: false, reason: 'amount_mismatch', required });
+    }
     const coversAll = toSatang(input.amount) >= toSatang(required);
     if (!coversAll && !input.allowPartial) return reject({ ok: false, reason: 'insufficient', required });
     if (input.allowPartial && toSatang(input.amount) > toSatang(required)) return reject({ ok: false, reason: 'exceeds', outstanding: required });
@@ -148,20 +188,22 @@ export async function recordPayment(billId: number, input: PaymentInput): Promis
       await client.query("UPDATE bills SET status = 'Partial' WHERE id = ?", [billId]);
     }
 
-    // One income row per payment, so a bill can be paid again after an unpay reversed the first payment
+    // Deposit is filled first, the rest is income. One set of rows per payment, so an unpay can reverse it.
     const paymentId = paymentRes.rows.insertId;
-    await client.query(
-      `INSERT INTO accounting_transactions (dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date)
-       VALUES (?, 'Income', ?, ?, ?, ?, 'bill_payment', ?)`,
-      [
-        bill.dorm_id || 1,
-        ACCOUNTING_CATEGORY[bill.bill_type] || 'Rent',
-        input.amount,
-        `ชำระบิลห้อง ${bill.room_number || '-'} (${bill.title || bill.billing_cycle || 'ค่าเช่าและบริการ'}) [${input.method}${input.slipRef ? ' Ref: ' + input.slipRef : ''}]`,
-        paymentId,
-        bangkokDate(input.paidAt),
-      ]
-    );
+    const paidBeforeTotal = Number(paidBefore?.total || 0);
+    const depositPart = round2(Math.min(Number(input.amount), Math.max(0, depositPortion(bill) - paidBeforeTotal)));
+    const incomePart = round2(Number(input.amount) - depositPart);
+    const description = `ชำระบิลห้อง ${bill.room_number || '-'} (${bill.title || bill.billing_cycle || 'ค่าเช่าและบริการ'}) [${input.method}${input.slipRef ? ' Ref: ' + input.slipRef : ''}]`;
+    const entries: [string, string, number][] = [];
+    if (depositPart > 0) entries.push(['Liability', 'Deposit', depositPart]);
+    if (incomePart > 0) entries.push(['Income', ACCOUNTING_CATEGORY[bill.bill_type] || 'Rent', incomePart]);
+    for (const [type, category, amount] of entries) {
+      await client.query(
+        `INSERT INTO accounting_transactions (dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date)
+         VALUES (?, ?, ?, ?, ?, ?, 'bill_payment', ?)`,
+        [bill.dorm_id || 1, type, category, amount, description, paymentId, bangkokDate(input.paidAt)]
+      );
+    }
     if (newStatus !== bill.status) await logStatus(client, billId, bill.status, newStatus, null, input.recordedBy || null);
 
     await client.query('COMMIT', []);

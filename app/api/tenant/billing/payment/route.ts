@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { getRates } from '@/lib/billing';
+import { getDormPromptPay, getRates } from '@/lib/billing';
 import { getPaymentSummaries, outstandingFor, recordPayment, slipPaidAt } from '@/lib/payments';
+import { formatBaht } from '@/lib/format';
 import { auth } from '@/auth';
 
 export async function POST(req: Request) {
@@ -69,60 +70,49 @@ export async function POST(req: Request) {
     // 2. Automated Verification with SlipOK
     const { verifySlipWithSlipOK } = await import('@/lib/slipok');
     const dormProfileRes = await sql`
-      SELECT name, promptpay_name, promptpay_number 
-      FROM dormitory_profile 
+      SELECT name, promptpay_name
+      FROM dormitory_profile
       LIMIT 1
     `;
     const expectedDorm = dormProfileRes[0] || {};
 
-    // What is still owed (partial payments deducted); baseAmount excludes the late fee
-    const paidSoFar = (await getPaymentSummaries(sql, [bill.id])).get(bill.id)?.paid_total || 0;
-    const owed = outstandingFor(bill, paidSoFar, new Date(), await getRates(sql));
-    const baseAmount = Math.max(0, owed.outstanding - owed.lateFee);
-    // Slip time is unknown before verification; recordPayment recounts against the transfer time
-    const lateFee = owed.lateFee;
-
     const dormConfig = {
       name: expectedDorm.promptpay_name || expectedDorm.name || 'หอพักเกษร 2',
-      promptpay: expectedDorm.promptpay_number || '0636040550',
+      promptpay: (await getDormPromptPay(sql)) || '',
       dormName: expectedDorm.name || 'หอพักเกษร 2'
     };
 
-    // Try total amount (including late fee if any)
-    let verifyRes = await verifySlipWithSlipOK(slipData, {
-      expectedAmount: baseAmount + lateFee,
+    // Expected = what is owed now. If only the amount differs, recordPayment makes the final check against
+    // what was owed at the transfer time (a slip from before midnight owes one day less late fee).
+    const paidSoFar = (await getPaymentSummaries(sql, [bill.id])).get(bill.id)?.paid_total || 0;
+    const owedNow = outstandingFor(bill, paidSoFar, new Date(), await getRates(sql));
+    const verifyRes = await verifySlipWithSlipOK(slipData, {
+      expectedAmount: owedNow.outstanding,
       expectedReceiver: dormConfig,
       billCreatedAt: bill.created_at,
     });
+    const slipUsable = verifyRes.success || verifyRes.failedCheck === 'amount';
 
-    // If verification failed and late fee > 0, also check if tenant transferred exact base amount
-    if (!verifyRes.success && lateFee > 0 && verifyRes.reason !== 'เวลาที่ทำรายการในสลิปเกิดขึ้นก่อนวันที่ออกบิล') {
-      const baseVerifyRes = await verifySlipWithSlipOK(slipData, {
-        expectedAmount: baseAmount,
-        expectedReceiver: dormConfig,
-        billCreatedAt: bill.created_at,
-      });
-      if (baseVerifyRes.success) {
-        verifyRes = baseVerifyRes;
-      }
-    }
-
-    // "แต่ถ้าไม่ตรง ไม่ว่าชื่อหรือยอดเงินให้ปฎิเสธ"
-    if (!verifyRes.success) {
+    // A rejected slip is kept on the bill so the owner can review it
+    const saveRejectedSlip = async (details: any) => {
       try {
         const { saveBase64Image } = await import('@/lib/file-storage');
         const storedSlipUrl = saveBase64Image(slipData, 'slips', `bill_${billId}_failed_${Date.now()}`) || slipData;
         await sql`
-          UPDATE bills 
+          UPDATE bills
           SET slip_url = ${storedSlipUrl},
               slip_verified = 0,
-              slip_data = ${JSON.stringify(verifyRes)}
+              slip_data = ${JSON.stringify(details)}
           WHERE id = ${billId}
         `;
       } catch (err) {
         console.warn('Failed to save rejected slip record:', err);
       }
+    };
 
+    // "แต่ถ้าไม่ตรง ไม่ว่าชื่อหรือยอดเงินให้ปฎิเสธ"
+    if (!slipUsable || verifyRes.amount === undefined) {
+      await saveRejectedSlip(verifyRes);
       return NextResponse.json({
         success: false,
         message: `สลิปไม่ผ่านการตรวจสอบ: ${verifyRes.message || 'ข้อมูลชื่อผู้รับเงินหรือยอดเงินไม่ถูกต้อง กรุณาตรวจสอบสลิปแล้วลองใหม่อีกครั้ง'}`,
@@ -139,7 +129,7 @@ export async function POST(req: Request) {
     const storedSlipUrl = saveBase64Image(slipData, 'slips', `bill_${billId}_${Date.now()}`) || slipData;
 
     // Mark Paid (and record income) through the single payment entry point
-    const amountNum = verifyRes.amount !== undefined ? Number(verifyRes.amount) : baseAmount + lateFee;
+    const amountNum = Number(verifyRes.amount);
     const payment = await recordPayment(Number(billId), {
       amount: amountNum,
       method: 'slip',
@@ -150,9 +140,11 @@ export async function POST(req: Request) {
       recordedBy: Number((session.user as any)?.id) || null,
     });
     if (!payment.ok) {
-      const message = payment.reason === 'insufficient'
-        ? `ยอดในสลิป ฿${amountNum.toLocaleString('th-TH')} ไม่ครบ ต้องชำระ ฿${payment.required.toLocaleString('th-TH')} (รวมค่าปรับ)`
+      const message = payment.reason === 'amount_mismatch'
+        ? `ยอดในสลิป ฿${formatBaht(amountNum)} ไม่ตรงกับยอดที่ต้องชำระ ฿${formatBaht(payment.required)} (รวมค่าปรับ ณ เวลาโอน)`
+        : payment.reason === 'duplicate_slip' ? 'สลิปนี้ถูกใช้ชำระเงินไปแล้ว ไม่สามารถใช้ซ้ำได้'
         : payment.reason === 'already_paid' ? 'บิลนี้ชำระเรียบร้อยแล้ว' : 'ไม่สามารถชำระบิลนี้ได้';
+      if (payment.reason === 'amount_mismatch') await saveRejectedSlip({ ...verifyRes, success: false, reason: message });
       return NextResponse.json({ success: false, message }, { status: 400 });
     }
 

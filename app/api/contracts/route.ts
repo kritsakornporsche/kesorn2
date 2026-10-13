@@ -2,6 +2,7 @@ import { getDb } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { recordPayment, slipPaidAt } from '@/lib/payments';
+import { bookingFeeFor, getDormPromptPay } from '@/lib/billing';
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -16,7 +17,6 @@ export async function POST(req: NextRequest) {
       signature, 
       startDate, 
       endDate, 
-      depositAmount, 
       monthlyRent, 
       tenantName,
       phone,
@@ -41,6 +41,13 @@ export async function POST(req: NextRequest) {
         message: 'ห้องพักนี้มีสัญญาที่มีสถานะ Active อยู่แล้ว ไม่สามารถสร้างสัญญาใหม่ได้' 
       }, { status: 400 });
     }
+
+    // The booking fee is set by the server (never by the client), and the slip must match it exactly
+    const feeRoom = await sql`SELECT room_number FROM rooms WHERE id = ${roomId} LIMIT 1`;
+    if (feeRoom.length === 0) {
+      return NextResponse.json({ success: false, message: 'ไม่พบห้องพัก' }, { status: 404 });
+    }
+    const bookingFee = bookingFeeFor(feeRoom[0].room_number);
 
     // 1. Resolve tenant identity (find existing or create new)
     const userEmail = session.user.email;
@@ -85,7 +92,7 @@ export async function POST(req: NextRequest) {
     let isAutoApproved = false;
     let slipokRef: string | null = null;
     let slipRaw: string | null = null;
-    let slipAmount = Number(depositAmount || 1000);
+    let slipAmount = bookingFee;
     let slipTime = new Date();
 
     if (slipUrl) {
@@ -99,10 +106,10 @@ export async function POST(req: NextRequest) {
 
       const verifyResult = await verifySlipWithSlipOK(
         slipUrl, 
-        Number(depositAmount || 1000), 
+        bookingFee, 
         {
           name: expectedDorm.promptpay_name || expectedDorm.name || 'หอพักเกษร 2',
-          promptpay: expectedDorm.promptpay_number || '0636040550',
+          promptpay: (await getDormPromptPay(sql)) || '',
           dormName: expectedDorm.name || 'หอพักเกษร 2',
           isBooking: true,
           checkPromptPayOnly: true
@@ -170,7 +177,7 @@ export async function POST(req: NextRequest) {
         ${roomId}, 
         ${startDate}, 
         ${endDate}, 
-        ${depositAmount || 1000}, 
+        ${bookingFee}, 
         ${signature || 'CONFIRMED_E_CONTRACT'}, 
         ${ownerSig},
         ${isAutoApproved ? new Date() : null},
@@ -228,8 +235,8 @@ export async function POST(req: NextRequest) {
         ${dormId},
         ${roomNumber},
         ${bookingTitle},
-        ${depositAmount || 1000},
-        ${depositAmount || 1000},
+        ${bookingFee},
+        ${bookingFee},
         0,
         0,
         0,
@@ -313,7 +320,7 @@ export async function POST(req: NextRequest) {
 
         const guestDisplay = tenantName || session.user.name || 'ผู้เช่า';
         const notifTitle = '🛎️ มีรายการจองห้องพักใหม่!';
-        const notifMsg = `คุณ ${guestDisplay} ได้ทำการจองห้อง ${room_number} (${dorm_name}) มัดจำ ฿${Number(depositAmount || 0).toLocaleString()} กรุณาตรวจสอบสลิปและอนุมัติการจอง`;
+        const notifMsg = `คุณ ${guestDisplay} ได้ทำการจองห้อง ${room_number} (${dorm_name}) มัดจำ ฿${bookingFee.toLocaleString()} กรุณาตรวจสอบสลิปและอนุมัติการจอง`;
 
         for (const targetUserId of Array.from(recipientUserIds)) {
           await sql`

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { getRates } from '@/lib/billing';
+import { getDormPromptPay, getRates } from '@/lib/billing';
 import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
 import { auth } from '@/auth';
 import generatePayload from 'promptpay-qr';
@@ -47,32 +47,18 @@ export async function GET(req: Request) {
       amount = parseFloat(amountParam!);
     }
 
-    // 2. Get owner's PromptPay number from dormitory_profile or dormitory_registry
+    // 2. Same PromptPay number that slips are checked against; no fallback number
+    const promptpayNumber = await getDormPromptPay(sql);
+    if (!promptpayNumber) {
+      return NextResponse.json({ success: false, message: 'หอพักยังไม่ได้ตั้งค่าพร้อมเพย์สำหรับรับเงิน' }, { status: 400 });
+    }
     const profileRes = await sql`
-      SELECT promptpay_number, promptpay_name, name 
-      FROM dormitory_profile 
+      SELECT promptpay_name, name
+      FROM dormitory_profile
       WHERE dorm_id = ${dormId} OR id = ${dormId}
       LIMIT 1
     `;
-    
-    let promptpayNumber = profileRes.length > 0 ? profileRes[0].promptpay_number : null;
-    let dormDisplayName = profileRes.length > 0 ? (profileRes[0].name || profileRes[0].promptpay_name) : null;
-    
-    if (!promptpayNumber) {
-      // Check dormitory_registry (use phone as promptpay number)
-      const regRes = await sql`SELECT dorm_name, phone FROM dormitory_registry WHERE id = ${dormId} LIMIT 1`;
-      if (regRes.length > 0) {
-        if (regRes[0].phone) promptpayNumber = regRes[0].phone;
-        if (!dormDisplayName && regRes[0].dorm_name) dormDisplayName = regRes[0].dorm_name;
-      }
-    }
-
-    if (!promptpayNumber) {
-      promptpayNumber = '0829853519'; // Kesorn 2 verified PromptPay
-    }
-
-    // Clean PromptPay number (remove dashes, spaces)
-    promptpayNumber = promptpayNumber.replace(/[\s-]/g, '');
+    const dormDisplayName = profileRes.length > 0 ? (profileRes[0].name || profileRes[0].promptpay_name) : null;
 
     // 3. Generate PromptPay Payload & QR Code
     const payload = generatePayload(promptpayNumber, { amount });

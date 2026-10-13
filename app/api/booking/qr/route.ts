@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { getDormPromptPay } from '@/lib/billing';
 import generatePayload from 'promptpay-qr';
 import qrcode from 'qrcode';
 
@@ -19,24 +20,19 @@ export async function GET(req: Request) {
       targetAmount = 1000; // จองห้องพักเพียง 1,000 บาท ตามเงื่อนไขหอพักเกษร 2
     }
 
-    // Get owner's PromptPay number from dormitory_profile
+    // Same PromptPay number that slips are checked against; no fallback number
+    const cleanPromptPay = await getDormPromptPay(sql);
+    if (!cleanPromptPay) {
+      return NextResponse.json({ success: false, message: 'หอพักยังไม่ได้ตั้งค่าพร้อมเพย์สำหรับรับเงิน' }, { status: 400 });
+    }
     const profileRes = await sql`
-      SELECT promptpay_number, promptpay_name, name 
-      FROM dormitory_profile 
+      SELECT promptpay_name, name
+      FROM dormitory_profile
       LIMIT 1
     `;
-    
-    let promptpayNumber = profileRes.length > 0 ? profileRes[0].promptpay_number : null;
-    const promptpayName = profileRes.length > 0 
-      ? (profileRes[0].promptpay_name || profileRes[0].name) 
+    const promptpayName = profileRes.length > 0
+      ? (profileRes[0].promptpay_name || profileRes[0].name)
       : 'SmartDom PromptPay';
-
-    if (!promptpayNumber) {
-      promptpayNumber = '0812345678'; // Standard fallback promptpay
-    }
-
-    // Clean PromptPay number (remove dashes, spaces)
-    const cleanPromptPay = promptpayNumber.replace(/[\s-]/g, '');
 
     // Generate PromptPay Payload
     const payload = generatePayload(cleanPromptPay, { amount: targetAmount });

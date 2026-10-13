@@ -20,6 +20,9 @@ export const DEFAULT_RATES: Rates = {
 const DEMO_ROOM_NUMBER = 'T01';
 const DEMO_ROOM_RATES = { electricityPerUnit: 1, waterPerPerson: 5, commonFee: 5 };
 
+const BOOKING_FEE = 1000;
+const DEMO_BOOKING_FEE = 1;
+
 // Late fees accrue only while the bill is payable (compared in lower case; older code wrote mixed case).
 // PendingCorrection is frozen by a dispute and Draft has not been sent yet.
 const LATE_FEE_STATUSES = new Set(['unpaid', 'overdue', 'pending', 'partial']);
@@ -175,6 +178,26 @@ export function calcLateFee(
   if (bill.bill_type !== 'monthly' || !bill.due_date || !LATE_FEE_STATUSES.has(String(bill.status || '').toLowerCase())) {
     return { daysOverdue: 0, lateFee: 0 };
   }
-  const daysOverdue = Math.max(0, dayNumber(bangkokDate(asOf)) - dayNumber(bangkokDate(bill.due_date)));
+  const daysOverdue = daysPastDue(bill.due_date, asOf);
   return { daysOverdue, lateFee: round2(daysOverdue * rates.lateFeePerDay) };
+}
+
+/** Whole days after the due date, counted in Asia/Bangkok (0 on or before the due date). */
+export function daysPastDue(dueDate: Date | string, asOf: Date | string | number): number {
+  return Math.max(0, dayNumber(bangkokDate(asOf)) - dayNumber(bangkokDate(dueDate)));
+}
+
+/** Booking fee (it becomes part of the deposit). Set by the server, never taken from the client. */
+export function bookingFeeFor(roomNumber?: string | null): number {
+  return String(roomNumber || '').toUpperCase() === DEMO_ROOM_NUMBER ? DEMO_BOOKING_FEE : BOOKING_FEE;
+}
+
+/**
+ * The dorm's PromptPay number, used both to build payment QR codes and to check the receiver on slips.
+ * There is no fallback number: null means it is not configured and payments by QR/slip must be refused.
+ */
+export async function getDormPromptPay(sql: any): Promise<string | null> {
+  const rows = await sql`SELECT promptpay_number FROM dormitory_profile LIMIT 1`;
+  const clean = String(rows[0]?.promptpay_number || '').replace(/[\s-]/g, '');
+  return clean || null;
 }

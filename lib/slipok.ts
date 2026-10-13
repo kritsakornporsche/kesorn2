@@ -20,6 +20,8 @@ export interface SlipVerificationResult {
   transRef?: string;
   amount?: number;
   expectedAmount?: number;
+  /** 'amount' when the slip passed every check except the expected amount */
+  failedCheck?: 'amount';
   dateTime?: string;
   sender?: SlipParty;
   receiver?: SlipParty;
@@ -33,6 +35,8 @@ export interface SlipVerificationOptions {
   expectedAmount?: number;
   expectedReceiver?: { name?: string; promptpay?: string; dormName?: string; isBooking?: boolean; checkPromptPayOnly?: boolean };
   billCreatedAt?: string | Date;
+  /** Owner re-check: a slip SlipOK has seen before (code 1012) is still checked when SlipOK returns its data */
+  allowRepeat?: boolean;
 }
 
 const BANK_NAMES: Record<string, string> = {
@@ -167,6 +171,7 @@ export async function verifySlipWithSlipOK(
   let expectedReceiver: { name?: string; promptpay?: string; dormName?: string; isBooking?: boolean; checkPromptPayOnly?: boolean } | undefined;
   let billCreatedAt: string | Date | undefined;
   let logParam: boolean = true;
+  let allowRepeat = false;
 
   if (typeof optionsOrAmount === 'number') {
     expectedAmount = optionsOrAmount;
@@ -175,6 +180,7 @@ export async function verifySlipWithSlipOK(
     expectedAmount = optionsOrAmount.expectedAmount;
     expectedReceiver = optionsOrAmount.expectedReceiver || legacyExpectedReceiver;
     billCreatedAt = optionsOrAmount.billCreatedAt;
+    allowRepeat = Boolean(optionsOrAmount.allowRepeat);
     if (optionsOrAmount.log !== undefined) {
       logParam = optionsOrAmount.log;
     }
@@ -372,8 +378,9 @@ export async function verifySlipWithSlipOK(
 
     // 1. Handle Duplicate Slip (code 1012) - Enforce Anti-Replay Duplicate Check
     if (result.code === 1012) {
-      if (logParam === false && hasData) {
-        // Only in explicit log=false sandbox test mode
+      if ((logParam === false || allowRepeat) && hasData) {
+        // log=false sandbox test mode, or an owner re-check: continue with the normal checks below.
+        // The app itself refuses a reference that already paid (bill_payments) in recordPayment.
       } else {
         return {
           success: false,
@@ -422,45 +429,28 @@ export async function verifySlipWithSlipOK(
       }
     }
 
-    // 2. Validate expected amount if provided
-    if (expectedAmount !== undefined && slipAmount !== undefined) {
-      const isExpected = Math.abs(slipAmount - expectedAmount) <= 0.5;
-      const isTestAmount = isBooking && (Math.abs(slipAmount - 1) <= 0.05 || Math.abs(slipAmount - 1000) <= 0.5);
-      if (!isExpected && !isTestAmount) {
+    // 3. Validate receiver
+    if (expectedReceiver) {
+      // Only the dorm's own PromptPay number (from dormitory_profile) is accepted
+      const targetPromptPay = (expectedReceiver.promptpay || '').replace(/[\s-]/g, '');
+      if (!targetPromptPay) {
         return {
           success: false,
           readSuccess: true,
           transRef,
           amount: slipAmount,
           expectedAmount,
-          dateTime: slipDate,
-          fromBank: fromBankDisplay,
-          toBank: toBankDisplay,
-          sender: { name: senderName, account: senderAccount, bank: senderBank },
-          receiver: { name: receiverName, account: receiverAccount, bank: receiverBank },
-          reason: 'ยอดเงินไม่ตรงกับยอดที่ต้องชำระ',
-          message: `❌ ยอดเงินไม่ตรง: สลิปนี้อ่านได้สำเร็จ โอนจาก ${senderName || 'ผู้โอน'} (${fromBankDisplay}) ไปยัง ${receiverName || 'ผู้รับ'} (${toBankDisplay}) เวลา ${formattedTime} แต่ยอดเงินในสลิปคือ ฿${slipAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ซึ่งไม่ตรงกับยอดที่ต้องชำระ (฿${expectedAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })})`,
+          reason: 'หอพักยังไม่ได้ตั้งค่าพร้อมเพย์',
+          message: '❌ หอพักยังไม่ได้ตั้งค่าหมายเลขพร้อมเพย์สำหรับรับเงิน กรุณาติดต่อเจ้าของหอพัก',
           rawData: payload,
         };
       }
-    }
-
-    // 3. Validate receiver
-    if (expectedReceiver) {
-      const targetPromptPay = (expectedReceiver.promptpay || '0636040550').replace(/[\s-]/g, '');
       const last4 = targetPromptPay.slice(-4);
       const cleanAccounts = receiverAccounts.map((a) => (a || '').replace(/[\s-]/g, ''));
       if (receiverAccount) cleanAccounts.push(receiverAccount.replace(/[\s-]/g, ''));
 
-      // Check PromptPay number match (Dorm number or developer test account)
-      const accountMatches = cleanAccounts.some((acc) =>
-        (targetPromptPay && acc.includes(targetPromptPay)) ||
-        (last4 && acc.includes(last4)) ||
-        acc.includes('0829853519') ||
-        acc.includes('3519') ||
-        acc.includes('0636040550') ||
-        acc.includes('0550')
-      );
+      // Full number, or its last 4 digits when the bank masks the rest
+      const accountMatches = cleanAccounts.some((acc) => acc.includes(targetPromptPay) || acc.includes(last4));
 
       if (isBooking) {
         // For booking: verify only PromptPay number & amount (do not reject by name or date)
@@ -477,7 +467,7 @@ export async function verifySlipWithSlipOK(
             sender: { name: senderName, account: senderAccount, bank: senderBank },
             receiver: { name: receiverName, account: receiverAccount, bank: receiverBank },
             reason: 'หมายเลขพร้อมเพย์ผู้รับไม่ตรงกับหอพัก',
-            message: `❌ พร้อมเพย์ผู้รับไม่ตรง: สลิปนี้อ่านข้อมูลได้สำเร็จ โอนจาก ${senderName || 'ผู้โอน'} (${fromBankDisplay}) แต่โอนไปยังพร้อมเพย์ ${receiverAccounts.join(' / ') || receiverAccount || '-'} (${toBankDisplay}) ยอด ฿${slipAmount?.toLocaleString('th-TH') || '-'} เมื่อ ${formattedTime} ไม่ตรงกับพร้อมเพย์หอพัก (${expectedReceiver.promptpay || '0636040550'})`,
+            message: `❌ พร้อมเพย์ผู้รับไม่ตรง: สลิปนี้อ่านข้อมูลได้สำเร็จ โอนจาก ${senderName || 'ผู้โอน'} (${fromBankDisplay}) แต่โอนไปยังพร้อมเพย์ ${receiverAccounts.join(' / ') || receiverAccount || '-'} (${toBankDisplay}) ยอด ฿${slipAmount?.toLocaleString('th-TH') || '-'} เมื่อ ${formattedTime} ไม่ตรงกับพร้อมเพย์หอพัก (${targetPromptPay})`,
             rawData: payload,
           };
         }
@@ -518,10 +508,33 @@ export async function verifySlipWithSlipOK(
             sender: { name: senderName, account: senderAccount, bank: senderBank },
             receiver: { name: receiverName, account: receiverAccount, bank: receiverBank },
             reason: 'ชื่อหรือบัญชีผู้รับเงินไม่ตรงกับบัญชีหอพัก',
-            message: `❌ บัญชีผู้รับไม่ตรง: สลิปนี้อ่านข้อมูลได้สำเร็จ โอนจาก ${senderName || 'ผู้โอน'} (${fromBankDisplay}) แต่โอนไปยัง "${receiverName || receiverAccount || 'ไม่ระบุ'}" (${toBankDisplay} / ${receiverAccount || '-'}) ยอด ฿${slipAmount?.toLocaleString('th-TH') || '-'} เมื่อ ${formattedTime} ซึ่งไม่ตรงกับบัญชีหอพัก (${expectedReceiver.name || 'หอพักเกษร 2'}) หรือพร้อมเพย์ ${expectedReceiver.promptpay || '0636040550'}`,
+            message: `❌ บัญชีผู้รับไม่ตรง: สลิปนี้อ่านข้อมูลได้สำเร็จ โอนจาก ${senderName || 'ผู้โอน'} (${fromBankDisplay}) แต่โอนไปยัง "${receiverName || receiverAccount || 'ไม่ระบุ'}" (${toBankDisplay} / ${receiverAccount || '-'}) ยอด ฿${slipAmount?.toLocaleString('th-TH') || '-'} เมื่อ ${formattedTime} ซึ่งไม่ตรงกับบัญชีหอพัก (${expectedReceiver.name || 'หอพักเกษร 2'}) หรือพร้อมเพย์ ${targetPromptPay}`,
             rawData: payload,
           };
         }
+      }
+    }
+
+    // 4. Validate expected amount last, so a failure here means every other check passed
+    if (expectedAmount !== undefined && slipAmount !== undefined) {
+      // Exact to the satang: no tolerance and no special amounts
+      if (Math.round(slipAmount * 100) !== Math.round(expectedAmount * 100)) {
+        return {
+          success: false,
+          readSuccess: true,
+          transRef,
+          amount: slipAmount,
+          expectedAmount,
+          dateTime: slipDate,
+          fromBank: fromBankDisplay,
+          toBank: toBankDisplay,
+          sender: { name: senderName, account: senderAccount, bank: senderBank },
+          receiver: { name: receiverName, account: receiverAccount, bank: receiverBank },
+          failedCheck: 'amount',
+          reason: 'ยอดเงินไม่ตรงกับยอดที่ต้องชำระ',
+          message: `❌ ยอดเงินไม่ตรง: สลิปนี้อ่านได้สำเร็จ โอนจาก ${senderName || 'ผู้โอน'} (${fromBankDisplay}) ไปยัง ${receiverName || 'ผู้รับ'} (${toBankDisplay}) เวลา ${formattedTime} แต่ยอดเงินในสลิปคือ ฿${slipAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ซึ่งไม่ตรงกับยอดที่ต้องชำระ (฿${expectedAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })})`,
+          rawData: payload,
+        };
       }
     }
 

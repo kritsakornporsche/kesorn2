@@ -659,14 +659,14 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                       <img src={qrData.qrImage} alt="PromptPay QR" className="w-full h-full object-contain p-2" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs">
-                        พร้อมเพย์ 0636040550
+                        สร้าง QR ไม่สำเร็จ
                       </div>
                     )}
                   </div>
                   <div>
                     <span className="text-xl font-black text-white">฿{depositAmount.toLocaleString()}</span>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      {qrData?.promptpayName || 'หอพักเกษร 2'} • พร้อมเพย์ {qrData?.promptpayNumber || '0636040550'}
+                      {qrData?.promptpayName || 'หอพักเกษร 2'} • พร้อมเพย์ {qrData?.promptpayNumber || '-'}
                     </p>
                   </div>
 

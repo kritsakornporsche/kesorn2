@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
+import { daysPastDue, getRates } from '@/lib/billing';
+import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
+import { formatBaht } from '@/lib/format';
+
+// Owner/manager are alerted when a bill is still unpaid this many days after its due date
+const OVERDUE_ALERT_DAYS = 15;
 
 export async function GET(req: Request) {
   try {
@@ -41,9 +47,10 @@ export async function GET(req: Request) {
     const pendingBookings = Number(pendingBookingsRes[0]?.count || 0);
 
     const pendingSlipsRes = await sql`
-      SELECT COUNT(*) as count 
-      FROM bills 
-      WHERE status = 'Pending' OR (slip_url IS NOT NULL AND status = 'Unpaid')
+      SELECT COUNT(*) as count
+      FROM bills
+      WHERE LOWER(status) = 'pending'
+         OR (slip_url IS NOT NULL AND LOWER(status) IN ('unpaid', 'overdue', 'partial'))
     `;
     const pendingSlips = Number(pendingSlipsRes[0]?.count || 0);
 
@@ -75,6 +82,57 @@ export async function GET(req: Request) {
     `;
     const paidBillsCount = Number(paidBillsRes[0]?.count || 0);
     const paidBillsAmount = Number(paidBillsRes[0]?.total || 0);
+
+    // 3.1 Bills still unpaid more than 15 days after the due date (any bill type; drafts,
+    // cancelled bills and bills held by a correction request are excluded)
+    const overdueCandidates = await sql`
+      SELECT b.id, b.title, b.amount, b.bill_type, b.status, b.due_date, b.room_number, COALESCE(t.name, '-') as tenant_name
+      FROM bills b
+      LEFT JOIN tenants t ON t.id = b.tenant_id
+      WHERE LOWER(b.status) IN ('unpaid', 'overdue', 'pending', 'partial') AND b.due_date IS NOT NULL
+    `;
+    const now = new Date();
+    const longOverdue = overdueCandidates.filter((b: any) => daysPastDue(b.due_date, now) > OVERDUE_ALERT_DAYS);
+    const rates = await getRates(sql);
+    const summaries = await getPaymentSummaries(sql, longOverdue.map((b: any) => b.id));
+    const overdueBills = longOverdue
+      .map((b: any) => ({
+        id: b.id,
+        title: b.title,
+        room_number: b.room_number,
+        tenant_name: b.tenant_name,
+        days_overdue: daysPastDue(b.due_date, now),
+        outstanding: outstandingFor(b, summaries.get(b.id)?.paid_total || 0, now, rates).outstanding,
+      }))
+      .sort((a: any, b: any) => b.days_overdue - a.days_overdue);
+
+    // One notification per bill per active owner/manager (the link identifies the bill, so it is not repeated)
+    if (overdueBills.length > 0) {
+      try {
+        const staff = await sql`SELECT id FROM users WHERE role IN ('owner', 'manager') AND COALESCE(is_active, 1) = 1`;
+        for (const bill of overdueBills) {
+          const link = `/owner/billing?bill=${bill.id}`;
+          for (const u of staff) {
+            const exists = await sql`SELECT id FROM notifications WHERE user_id = ${u.id} AND type = 'overdue_alert' AND link = ${link} LIMIT 1`;
+            if (exists.length > 0) continue;
+            await sql`
+              INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+              VALUES (
+                ${u.id},
+                'บิลค้างชำระเกิน 15 วัน',
+                ${`ห้อง ${bill.room_number || '-'} (${bill.tenant_name}) ค้างชำระ ${bill.days_overdue} วัน คงเหลือ ฿${formatBaht(bill.outstanding)}`},
+                'overdue_alert',
+                0,
+                ${link},
+                NOW()
+              )
+            `;
+          }
+        }
+      } catch (e) {
+        console.warn('[Overdue alert notify]', e);
+      }
+    }
 
     // 4. Expiring contracts within 30 days
     const expiringContractsRes = await sql`
@@ -157,6 +215,7 @@ export async function GET(req: Request) {
         unpaidBillsCount,
         unpaidBillsAmount,
         draftBillsCount,
+        overdueBills,
         paidBillsCount,
         paidBillsAmount: showIncome ? paidBillsAmount : null,
         expiringContracts,

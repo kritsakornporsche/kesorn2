@@ -11,7 +11,7 @@ export function isStatus(status: unknown, name: 'draft' | 'unpaid' | 'partial' |
   return name === 'cancelled' ? s === 'cancelled' || s === 'canceled' : s === name;
 }
 
-type Client = { query: (text: string, params: any[]) => Promise<{ rows: any }> };
+export type Client = { query: (text: string, params: any[]) => Promise<{ rows: any }> };
 
 export async function logStatus(client: Client, billId: number, from: string | null, to: string, reason: string | null, by: number | null) {
   await client.query(
@@ -20,7 +20,7 @@ export async function logStatus(client: Client, billId: number, from: string | n
   );
 }
 
-async function withTransaction<T>(work: (client: Client) => Promise<T>): Promise<T> {
+export async function withTransaction<T>(work: (client: Client) => Promise<T>): Promise<T> {
   const client = await new Pool({ connectionString: process.env.DATABASE_URL }).connect();
   try {
     await client.query('START TRANSACTION', []);
@@ -129,11 +129,19 @@ export async function unpayBill(billId: number, reason: string, by: number | nul
     let reversedAmount = 0;
     for (const p of payments) {
       await client.query('UPDATE bill_payments SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ?', [now, by, cleanReason, p.id]);
-      await client.query(
-        `INSERT INTO accounting_transactions (dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date)
-         VALUES (?, 'Income', 'Reversal', ?, ?, ?, 'bill_payment_reversal', ?)`,
-        [bill.dorm_id || 1, -Number(p.amount), description(Number(p.amount)), p.id, today]
-      );
+      // Reverse each part with its own type (deposit part stays a liability, the rest income)
+      const parts = (await client.query(
+        "SELECT type, SUM(amount) AS total FROM accounting_transactions WHERE reference_type = 'bill_payment' AND reference_id = ? GROUP BY type",
+        [p.id]
+      )).rows;
+      const reversals = parts.length > 0 ? parts.map((r: any) => [r.type, Number(r.total)]) : [['Income', Number(p.amount)]];
+      for (const [type, total] of reversals) {
+        await client.query(
+          `INSERT INTO accounting_transactions (dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date)
+           VALUES (?, ?, 'Reversal', ?, ?, ?, 'bill_payment_reversal', ?)`,
+          [bill.dorm_id || 1, type, -total, description(total), p.id, today]
+        );
+      }
       reversedAmount += Number(p.amount);
     }
 

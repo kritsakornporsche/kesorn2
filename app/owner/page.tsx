@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
+import { formatBaht } from '@/lib/format';
 
 interface DashboardStats {
   totalRooms: number;
@@ -19,6 +20,7 @@ interface DashboardStats {
   paidBillsCount: number;
   paidBillsAmount: number | null;
   expiringContracts: number;
+  overdueBills?: { id: number; title: string; room_number: string; tenant_name: string; days_overdue: number; outstanding: number }[];
   occupancyRate: number;
   collectionRate: number;
   recentActivities: {
@@ -99,6 +101,27 @@ export default function OwnerDashboardPage() {
             </button>
           </div>
         </div>
+
+        {/* Bills unpaid more than 15 days after the due date */}
+        {(stats.overdueBills?.length ?? 0) > 0 && (
+          <div className="p-4 bg-rose-500/10 border border-rose-500/40 rounded-2xl space-y-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-black text-rose-400">🚨 บิลค้างชำระเกิน 15 วัน ({stats.overdueBills!.length})</p>
+              <Link href="/owner/billing" className="px-3 py-1.5 bg-rose-500 hover:bg-rose-400 text-white text-xs font-black rounded-lg shrink-0">
+                ไปหน้าบิล ➔
+              </Link>
+            </div>
+            <div className="space-y-1.5">
+              {stats.overdueBills!.map((b) => (
+                <div key={b.id} className="flex flex-wrap items-center justify-between gap-2 text-xs bg-slate-950/40 rounded-xl px-3 py-2 border border-white/5">
+                  <span className="text-white font-bold">ห้อง {b.room_number || '-'} · {b.tenant_name}</span>
+                  <span className="text-slate-400 truncate">{b.title}</span>
+                  <span className="text-rose-300 font-black">ค้าง {b.days_overdue} วัน · ฿{formatBaht(b.outstanding)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 🔔 ส่วนที่ 1: แถบงานเร่งด่วนประจำวัน (Action Required / To-Do Bar) */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
