@@ -57,11 +57,14 @@ export async function GET(req: Request) {
     `;
     const pendingSlips = Number(pendingSlipsRes[0]?.count || 0);
 
+    // Open jobs: the board's states (commit 13), or the status of older jobs; before migration 013 only status
     const pendingMaintRes = await sql`
-      SELECT COUNT(*) as count 
-      FROM maintenance_requests 
-      WHERE status IN ('Pending', 'In Progress')
-    `;
+      SELECT COUNT(*) as count FROM maintenance_requests
+      WHERE state IN ('Requested', 'Assigned', 'InProgress')
+         OR (state IS NULL AND status IN ('Pending', 'In Progress', 'InProgress'))
+    `.catch(() => sql`
+      SELECT COUNT(*) as count FROM maintenance_requests WHERE status IN ('Pending', 'In Progress', 'InProgress')
+    `);
     const pendingMaintenance = Number(pendingMaintRes[0]?.count || 0);
 
     // Partially paid bills count with what is still owed (late fees are shown per bill, not here)

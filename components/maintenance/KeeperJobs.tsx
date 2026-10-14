@@ -1,0 +1,133 @@
+'use client';
+
+// Keeper (maid / technician): "งานของฉัน" and "งานที่รอมอบ" of their kind (lib/maintenance.ts through /api/keeper/jobs).
+// Only the assigned keeper starts and finishes a job; finishing takes a note, photos and an optional proposed charge
+// (the owner decides it). Unassigned jobs are shown without the tenant's name / phone and cannot be taken here.
+
+import { useEffect, useState } from 'react';
+import KeeperSidebar from '@/app/keeper/components/KeeperSidebar';
+import { KIND_TEXT, PhotoPicker, PhotoStrip, StateBadge, baht, postJson, thaiDateTime, type Job, type Kind } from '@/components/maintenance/shared';
+
+const inputClass = 'bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white';
+
+export default function KeeperJobs({ kind }: { kind: Kind }) {
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [subRole, setSubRole] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [tab, setTab] = useState<'mine' | 'open' | 'done'>('mine');
+
+  const load = async () => {
+    setLoadError(null);
+    try {
+      const res = await fetch('/api/keeper/jobs');
+      const d = await res.json();
+      if (!d.success) setLoadError(d.message || 'โหลดงานไม่สำเร็จ');
+      else { setJobs(d.data); setSubRole(d.subRole || null); }
+    } catch {
+      setLoadError('โหลดงานไม่สำเร็จ');
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { load(); }, []);
+
+  const expected = kind === 'repair' ? 'technician' : 'maid';
+  const wrongPage = subRole !== null && subRole !== expected;
+  const mine = jobs.filter((j) => j.assigned_to !== null && ['Assigned', 'InProgress'].includes(String(j.state)));
+  const open = jobs.filter((j) => j.state === 'Requested');
+  const done = jobs.filter((j) => j.assigned_to !== null && !['Assigned', 'InProgress', 'Requested'].includes(String(j.state)));
+  const shown = tab === 'mine' ? mine : tab === 'open' ? open : done;
+
+  return (
+    <div className="flex flex-col h-screen bg-[#080F1E]">
+      <KeeperSidebar />
+      <main className="flex-1 overflow-y-auto p-4 sm:p-8 max-w-4xl w-full mx-auto space-y-5 pb-28 md:pb-12">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-white">{kind === 'repair' ? '🔧 งานซ่อมของฉัน' : '🧹 งานทำความสะอาดของฉัน'}</h1>
+          <p className="text-xs text-slate-400">เจ้าของหอ/ผู้จัดการเป็นผู้มอบงาน · เริ่มงานและปิดงานได้เฉพาะงานที่มอบให้คุณ</p>
+        </div>
+        {wrongPage && (
+          <p className="text-sm text-rose-400 font-bold">✕ บัญชีของคุณเป็น{subRole === 'maid' ? 'แม่บ้าน' : subRole === 'technician' ? 'ช่าง' : 'พนักงานที่ยังไม่กำหนดประเภท'} — หน้านี้สำหรับ{KIND_TEXT[kind]}</p>
+        )}
+        <div className="flex flex-wrap gap-1.5 bg-slate-900/60 p-2 rounded-2xl border border-white/5">
+          {([['mine', `งานของฉัน (${mine.length})`], ['open', `รอมอบงาน (${open.length})`], ['done', `ปิดแล้ว (${done.length})`]] as const).map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)} className={`px-4 py-2 rounded-xl text-xs font-black ${tab === id ? 'bg-primary text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>{label}</button>
+          ))}
+        </div>
+        {loading ? <p className="text-sm text-slate-400 text-center py-12">กำลังโหลด...</p>
+          : loadError ? <p className="text-sm text-rose-400 font-bold text-center py-12">✕ {loadError}</p>
+          : shown.length === 0 ? <p className="text-sm text-slate-500 text-center py-12">ไม่มีงานในแท็บนี้</p>
+          : <div className="space-y-3">{shown.map((j) => <KeeperJobCard key={j.id} job={j} onDone={load} />)}</div>}
+      </main>
+    </div>
+  );
+}
+
+function KeeperJobCard({ job, onDone }: { job: Job; onDone: () => void }) {
+  const [note, setNote] = useState('');
+  const [photos, setPhotos] = useState<{ dataUrl: string; bytes: number }[]>([]);
+  const [charge, setCharge] = useState('');
+  const [chargeNote, setChargeNote] = useState('');
+  const [finishing, setFinishing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const act = async (body: any) => {
+    setBusy(true); setError(null);
+    const r = await postJson('/api/keeper/jobs', body);
+    setBusy(false);
+    if (!r.ok) return setError(r.message);
+    onDone();
+  };
+  const finish = () => {
+    if (charge !== '' && !(Number(charge) >= 0)) return setError('ยอดค่าใช้จ่ายที่เสนอไม่ถูกต้อง');
+    if (Number(charge) > 0 && !chargeNote.trim()) return setError('กรุณาระบุเหตุผลของค่าใช้จ่ายที่เสนอ');
+    act({ action: 'finish', id: job.id, note, photos: photos.map((p) => p.dataUrl), chargeProposed: charge === '' ? 0 : Number(charge), chargeNote });
+  };
+
+  return (
+    <div className="bg-slate-900/90 border border-white/10 rounded-2xl p-4 space-y-2 text-xs">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="font-black text-white text-sm">#{job.id} · ห้อง {job.room_number || '-'}</p>
+          <p className="text-[11px] text-slate-400">{job.issue_type || '-'} · แจ้ง {thaiDateTime(job.requested_at)}</p>
+        </div>
+        <StateBadge job={job} />
+      </div>
+      {job.move_out_settlement_id && <p className="text-[11px] text-amber-300 font-bold">งานตอนผู้เช่าย้ายออก</p>}
+      <p className="text-slate-300">{job.description}</p>
+      {(job.tenant_name || job.tenant_phone) && <p className="text-[11px] text-slate-400">ผู้เช่า: {job.tenant_name || '-'} {job.tenant_phone ? `· 📞 ${job.tenant_phone}` : ''}</p>}
+      {job.state === 'Requested' && <p className="text-[11px] text-slate-500">รอเจ้าของหอ/ผู้จัดการมอบงาน</p>}
+      <PhotoStrip photos={job.photos} />
+      {job.done_note && <p className="text-[11px] text-emerald-300">บันทึกปิดงาน: {job.done_note}</p>}
+      {job.charge && job.charge.proposed !== null && job.state === 'Done' && (
+        <p className="text-[11px] text-amber-300">เสนอค่าใช้จ่าย {baht(job.charge.proposed)}{job.charge.decided ? ` · เจ้าของหอตัดสินแล้ว ${baht(job.charge.amount)}` : ' · รอเจ้าของหอตัดสิน'}</p>
+      )}
+
+      {job.state === 'Assigned' && (
+        <button onClick={() => act({ action: 'start', id: job.id })} disabled={busy} className="px-4 py-2 bg-sky-500 text-white font-black rounded-xl disabled:opacity-50">
+          {busy ? 'กำลังบันทึก...' : '▶ เริ่มงาน'}
+        </button>
+      )}
+      {job.state === 'InProgress' && !finishing && (
+        <button onClick={() => setFinishing(true)} className="px-4 py-2 bg-emerald-500 text-slate-950 font-black rounded-xl">✓ ปิดงาน</button>
+      )}
+      {job.state === 'InProgress' && finishing && (
+        <div className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 space-y-2">
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="บันทึกสิ่งที่ทำ" className={`${inputClass} w-full`} />
+          <PhotoPicker value={photos} onChange={setPhotos} />
+          <div className="flex flex-wrap gap-1.5">
+            <input type="number" min="0" step="0.01" value={charge} onChange={(e) => setCharge(e.target.value)} placeholder="เสนอค่าใช้จ่าย (ว่าง = ไม่มี)" className={`${inputClass} w-48`} />
+            <input value={chargeNote} onChange={(e) => setChargeNote(e.target.value)} placeholder="เหตุผล เช่น ผู้เช่าทำแตก / ค่าอะไหล่" className={`${inputClass} flex-1 min-w-[200px]`} />
+          </div>
+          <p className="text-[11px] text-slate-400">ค่าใช้จ่ายเป็นเพียงข้อเสนอ เจ้าของหอเป็นผู้ตัดสินว่าจะเรียกเก็บผู้เช่าหรือไม่</p>
+          <div className="flex gap-2">
+            <button onClick={() => setFinishing(false)} className="px-4 py-2 bg-white/10 text-white font-bold rounded-xl">ยกเลิก</button>
+            <button onClick={finish} disabled={busy} className="px-4 py-2 bg-emerald-500 text-slate-950 font-black rounded-xl disabled:opacity-50">{busy ? 'กำลังบันทึก...' : 'ยืนยันปิดงาน'}</button>
+          </div>
+        </div>
+      )}
+      {error && <p className="text-xs text-rose-400 font-bold">✕ {error}</p>}
+    </div>
+  );
+}

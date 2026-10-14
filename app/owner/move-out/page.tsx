@@ -25,7 +25,8 @@ interface Settlement {
   contract_start: string;
   contract_end: string;
   final_bill_id: number | null;
-  damage_items: { amount: number; reason: string }[];
+  damage_items: { amount: number; reason: string; job_id?: number }[];
+  jobs: { id: number; kind: string | null; issue_type: string | null; state: string | null; charge_proposed: number | null; charge_amount: number | null; charge_reason: string | null; charge_decided: boolean }[];
   clause13: null | { early: boolean; half: boolean; notice: boolean; noArrears: boolean; refundable: boolean; stayedDays: number; contractDays: number; noticeDays: number };
   outstanding: { id: number; title: string; bill_type: string; outstanding: number; late_fee: number }[];
   outstanding_total: number;
@@ -289,6 +290,7 @@ function MoveOutCard({ row, onDone }: { row: Row; onDone: () => void }) {
       )}
 
       {s.state === 'Notified' && <ReturnForm s={s} act={act} url={url} />}
+      <MoveOutJobs s={s} onDone={onDone} />
       {s.state === 'Returned' && money && <DamagesForm s={s} act={act} url={url} />}
       {s.state !== 'Notified' && money && <MoneyBlock s={s} act={act} url={url} />}
       {!money && s.state !== 'Notified' && (
@@ -343,9 +345,77 @@ function ReturnForm({ s, act, url }: { s: Settlement; act: ReturnType<typeof use
   );
 }
 
+const JOB_STATE_TEXT: Record<string, string> = {
+  Requested: 'รอมอบงาน', Assigned: 'มอบงานแล้ว', InProgress: 'กำลังดำเนินการ', Done: 'เสร็จแล้ว', Cancelled: 'ยกเลิก', Rejected: 'ไม่รับงาน',
+};
+
+/**
+ * Repair / cleaning jobs of this move-out (lib/maintenance.ts): their proposed and decided charges, so the same damage
+ * is not entered again from the inspection. A decided charge becomes a damage item of this settlement by itself.
+ */
+function MoveOutJobs({ s, onDone }: { s: Settlement; onDone: () => void }) {
+  const [kind, setKind] = useState<'cleaning' | 'repair'>('cleaning');
+  const [description, setDescription] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canCreate = s.state === 'Notified' || s.state === 'Returned';
+  const create = async () => {
+    setError(null);
+    if (!description.trim()) return setError('กรุณาระบุรายละเอียดงาน');
+    setBusy(true);
+    try {
+      const res = await fetch('/api/owner/maintenance', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, description, settlementId: s.id }),
+      });
+      const d = await res.json();
+      if (!d.success) return setError(d.message || 'สร้างงานไม่สำเร็จ');
+      setDescription('');
+      onDone();
+    } catch {
+      setError('สร้างงานไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!canCreate && s.jobs.length === 0) return null;
+  const open = s.jobs.filter((j) => ['Requested', 'Assigned', 'InProgress'].includes(String(j.state)));
+  return (
+    <div className="p-4 rounded-2xl border border-sky-500/30 bg-sky-500/5 space-y-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-black text-white">งานซ่อม / ทำความสะอาดของการย้ายออกนี้</p>
+        <a href="/owner/maintenance" className="text-[11px] text-sky-300 underline">ไปบอร์ดงาน</a>
+      </div>
+      {s.jobs.length === 0 && <p className="text-slate-500">ยังไม่มีงาน</p>}
+      {s.jobs.map((j) => (
+        <div key={j.id} className="flex flex-wrap justify-between gap-2">
+          <span className="text-slate-300">#{j.id} {j.kind === 'repair' ? 'งานซ่อม' : 'งานทำความสะอาด'} · {j.issue_type || '-'} · {JOB_STATE_TEXT[String(j.state)] || '-'}</span>
+          <span className="font-mono text-white">
+            {j.charge_decided ? `ตัดสินแล้ว ${baht(j.charge_amount)}${j.charge_reason === 'wear_and_tear' ? ' (ไม่เก็บ)' : ''}`
+              : j.charge_proposed !== null ? `เสนอ ${baht(j.charge_proposed)} · รอตัดสิน` : '-'}
+          </span>
+        </div>
+      ))}
+      {open.length > 0 && <p className="text-amber-300 font-bold">มีงานที่ยังไม่เสร็จ {open.length} งาน — ค่าใช้จ่ายของงานจะเข้าค่าเสียหายเมื่อเจ้าของหอตัดสินหลังงานเสร็จ (หักเงินประกันได้แม้งานยังไม่เสร็จ)</p>}
+      {canCreate && (
+        <div className="flex flex-wrap gap-1.5">
+          <select value={kind} onChange={(e) => setKind(e.target.value as any)} className={inputClass}>
+            <option value="cleaning">งานทำความสะอาด</option>
+            <option value="repair">งานซ่อม</option>
+          </select>
+          <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="รายละเอียดงาน" className={`${inputClass} flex-1 min-w-[200px]`} />
+          <button onClick={create} disabled={busy} className="px-3 py-2 bg-sky-500 text-white font-black rounded-xl disabled:opacity-50">{busy ? 'กำลังสร้าง...' : '+ สร้างงานของการย้ายออก'}</button>
+        </div>
+      )}
+      {error && <p className="text-rose-400 font-bold">✕ {error}</p>}
+    </div>
+  );
+}
+
 function DamagesForm({ s, act, url }: { s: Settlement; act: ReturnType<typeof useAction>; url: string }) {
   const [items, setItems] = useState<{ amount: string; reason: string }[]>(
-    s.damage_items.length ? s.damage_items.map((d) => ({ amount: String(d.amount), reason: d.reason })) : []
+    // Items from repair / cleaning jobs are kept by the server and shown below, not edited here
+    s.damage_items.filter((d) => !d.job_id).map((d) => ({ amount: String(d.amount), reason: d.reason }))
   );
   const [pullError, setPullError] = useState<string | null>(null);
   const pull = async () => {
@@ -378,7 +448,13 @@ function DamagesForm({ s, act, url }: { s: Settlement; act: ReturnType<typeof us
         <button onClick={pull} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold rounded-xl">ดึงรายการชำรุด/สูญหายจากผลตรวจห้อง</button>
       </div>
       {pullError && <p className="text-xs text-rose-400 font-bold">✕ {pullError}</p>}
-      {items.length === 0 && <p className="text-xs text-slate-500">ไม่มีค่าเสียหาย</p>}
+      {s.damage_items.filter((d) => d.job_id).map((d) => (
+        <div key={`job-${d.job_id}`} className="flex flex-wrap justify-between gap-2 text-xs text-sky-200">
+          <span>🔧 {d.reason} (จากงาน #{d.job_id} — แก้ที่บอร์ดงานไม่ได้หลังตัดสิน)</span>
+          <span className="font-mono">{baht(d.amount)}</span>
+        </div>
+      ))}
+      {items.length === 0 && <p className="text-xs text-slate-500">ไม่มีค่าเสียหายที่ระบุเอง</p>}
       {items.map((it, i) => (
         <div key={i} className="flex flex-wrap items-center gap-2">
           <input value={it.reason} onChange={(e) => setItems((l) => l.map((x, j) => (j === i ? { ...x, reason: e.target.value } : x)))} placeholder="เหตุผล" className={`${inputClass} flex-1 min-w-[200px]`} />

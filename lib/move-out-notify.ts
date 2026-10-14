@@ -3,13 +3,13 @@
 
 import { getDb } from '@/lib/db';
 
-export async function notifyUser(userId: number | null | undefined, title: string, message: string, link: string, now: Date) {
+export async function notifyUser(userId: number | null | undefined, title: string, message: string, link: string, now: Date, type = 'move_out') {
   if (!userId) return;
   try {
     const sql = getDb();
     await sql`
       INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-      VALUES (${userId}, ${title}, ${message}, 'move_out', 0, ${link}, ${now})
+      VALUES (${userId}, ${title}, ${message}, ${type}, 0, ${link}, ${now})
     `;
   } catch (error) {
     console.warn('[move-out notify]', error);

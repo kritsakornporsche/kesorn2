@@ -346,8 +346,10 @@ export default async function TenantDashboard() {
                       <Link href="/tenant/maintenance" className="mt-3 inline-block text-primary font-bold text-xs">แจ้งซ่อม / ทำความสะอาด →</Link>
                     </div>
                 ) : recentMaintenance.map((maint: any) => {
-                    const isPending = maint.status === 'Pending' || maint.status === 'pending';
-                    const isInProgress = maint.status === 'InProgress' || maint.status === 'in_progress' || maint.status === 'In Progress';
+                    // Jobs from commit 13 have state (lib/maintenance.ts); older ones only status
+                    const closedText = maint.state === 'Cancelled' ? 'ยกเลิก' : maint.state === 'Rejected' ? 'ไม่รับงาน' : 'เสร็จสิ้น';
+                    const isPending = maint.state ? ['Requested', 'Assigned'].includes(maint.state) : (maint.status === 'Pending' || maint.status === 'pending');
+                    const isInProgress = maint.state ? maint.state === 'InProgress' : (maint.status === 'InProgress' || maint.status === 'in_progress' || maint.status === 'In Progress');
                     return (
                     <div key={maint.id} className="bg-card rounded-[2rem] border border-border p-6 sm:p-8 shadow-sm hover:shadow-lg transition-all group">
                       <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-4">
@@ -374,7 +376,7 @@ export default async function TenantDashboard() {
                             isInProgress ? 'bg-[#E3F2FD] text-[#2196F3] border-[#BBDEFB]' :
                             'bg-[#E8F5E9] text-[#4CAF50] border-[#C8E6C9]'
                         }`}>
-                            {isPending ? 'รอดำเนินการ' : isInProgress ? 'กำลังดำเนินการ' : 'เสร็จสิ้น'}
+                            {isPending ? (maint.state === 'Assigned' ? 'มอบงานแล้ว' : 'รอดำเนินการ') : isInProgress ? 'กำลังดำเนินการ' : closedText}
                         </span>
                       </div>
                       <p className="text-white/80 leading-relaxed text-sm italic border-l-4 border-white/20 pl-4">"{maint.description}"</p>

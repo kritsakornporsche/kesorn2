@@ -35,7 +35,7 @@ export type PaymentResult =
 const METHODS: PaymentMethod[] = ['slip', 'cash', 'transfer', 'deposit_offset'];
 
 // Income category of the non-deposit part (a move-in bill's first month of rent is Rent)
-const ACCOUNTING_CATEGORY: Record<string, string> = { service: 'Service', move_out_damage: 'Damage' };
+const ACCOUNTING_CATEGORY: Record<string, string> = { service: 'Service', move_out_damage: 'Damage', damage: 'Damage' };
 
 const toSatang = (n: number) => Math.round(Number(n) * 100);
 const round2 = (n: number) => Math.round(n * 100) / 100;

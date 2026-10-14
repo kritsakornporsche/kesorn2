@@ -69,6 +69,11 @@ function refuse(reason: MoveOutRefusal, detail?: string): never {
   throw new MoveOutRefused(reason, detail);
 }
 
+/** For callers that run lib/moveOut.ts work inside their own transaction: the message of a refusal, or null. */
+export function moveOutRefusalMessage(error: unknown): string | null {
+  return error instanceof MoveOutRefused ? error.detail || MESSAGES[error.reason] : null;
+}
+
 /** A refusal answered before any database work (role checks). */
 function deny<T>(reason: MoveOutRefusal, detail?: string): Promise<MoveOutResult<T>> {
   return Promise.resolve({ ok: false, reason, message: detail || MESSAGES[reason] });
@@ -520,12 +525,26 @@ export function recordReturn(settlementId: number, input: ReturnInput, by: Actor
 
 export interface DamageItem { amount: unknown; reason: unknown }
 
-/** Owner sets the damage charges (amount + reason each); one damage bill, replaced until the settlement is done. */
+type DamageEntry = { amount: number; reason: string; job_id?: number };
+
+const parseDamageItems = (value: unknown): DamageEntry[] => {
+  try {
+    const list = typeof value === 'string' && value ? JSON.parse(value) : [];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Owner sets the damage charges (amount + reason each); one damage bill, replaced until the settlement is done.
+ * Items that come from an approved repair / cleaning job (job_id, lib/maintenance.ts) are kept as they are.
+ */
 export function setDamages(settlementId: number, items: unknown, by: Actor, now: Date) {
   if (!by || !isOwner(by)) return deny<never>('forbidden', 'ค่าเสียหายต้องให้เจ้าของหอเป็นผู้ระบุ');
   return run(async (client) => {
     if (!Array.isArray(items) || items.length > MAX_DAMAGE_ITEMS) refuse('bad_damage');
-    const clean = (items as DamageItem[]).map((it) => {
+    const clean = (items as DamageItem[]).filter((it: any) => !it?.job_id).map((it) => {
       const amount = Number(it?.amount);
       const reason = text(it?.reason, 200);
       const wholeSatang = Math.abs(amount * 100 - Math.round(amount * 100)) < 1e-6;
@@ -534,40 +553,57 @@ export function setDamages(settlementId: number, items: unknown, by: Actor, now:
     });
     const s = await lockSettlement(client, settlementId);
     if (s.state !== 'Returned') refuse('invalid_state', 'ระบุค่าเสียหายได้หลังบันทึกการคืนห้อง และก่อนหักเงินประกัน');
+    const fromJobs = parseDamageItems(s.damage_items).filter((it) => it.job_id);
+    return writeDamages(client, s, [...fromJobs, ...clean], by, now);
+  });
+}
 
-    const total = round2(clean.reduce((sum, it) => sum + it.amount, 0));
-    const title = `ค่าเสียหายตรวจห้องตอนย้ายออก ห้อง ${s.room_number}: ${clean.map((it) => `${it.reason} ฿${formatBaht(it.amount)}`).join(', ')}`.slice(0, 250);
-    let damageBillId: number | null = s.damage_bill_id ? Number(s.damage_bill_id) : null;
-    if (damageBillId) {
-      const bill = (await client.query('SELECT id, status FROM bills WHERE id = ? FOR UPDATE', [damageBillId])).rows[0];
-      if (bill && String(bill.status).toLowerCase() !== 'unpaid') refuse('invalid_state', 'บิลค่าเสียหายมีการชำระแล้ว แก้ไขไม่ได้');
-      if (clean.length === 0) {
-        await client.query("UPDATE bills SET status = 'Cancelled' WHERE id = ?", [damageBillId]);
-        await client.query(
-          "INSERT INTO bill_status_history (bill_id, from_status, to_status, reason, changed_by, changed_at) VALUES (?, 'Unpaid', 'Cancelled', 'ไม่มีค่าเสียหาย', ?, ?)",
-          [damageBillId, by.id, now]
-        );
-        damageBillId = null;
-      } else {
-        await client.query('UPDATE bills SET amount = ?, title = ? WHERE id = ?', [total, title, damageBillId]);
-      }
-    } else if (clean.length > 0) {
-      damageBillId = Number((await client.query(
-        `INSERT INTO bills (tenant_id, dorm_id, room_number, title, amount, room_amount, water_amount, electric_amount, water_units, electric_units,
-           common_fee, billing_cycle, due_date, status, is_first_bill, bill_type, slip_verified, sent_at, created_at)
-         VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, ?, ?, 'Unpaid', 0, 'move_out_damage', 0, ?, ?)`,
-        [s.tenant_id, s.dorm_id, s.room_number, title, total, String(bangkokDate(s.return_date)).slice(0, 7), bangkokDate(s.return_date), now, now]
-      )).rows.insertId);
+/**
+ * The approved charge of a repair / cleaning job of this move-out becomes one of its damage items (replacing an earlier
+ * one of the same job), inside the caller's transaction. Only while the room is returned and the deposit not settled.
+ */
+export async function addJobDamage(client: Client, settlementId: number, item: { jobId: number; amount: number; reason: string }, by: Actor, now: Date) {
+  const s = await lockSettlement(client, settlementId);
+  if (s.state !== 'Returned') refuse('invalid_state');
+  const others = parseDamageItems(s.damage_items).filter((it) => Number(it.job_id) !== item.jobId);
+  if (others.length >= MAX_DAMAGE_ITEMS) refuse('bad_damage');
+  const entry: DamageEntry = { amount: round2(item.amount), reason: String(item.reason).slice(0, 200), job_id: item.jobId };
+  return writeDamages(client, s, [...others, entry], by, now);
+}
+
+async function writeDamages(client: Client, s: any, items: DamageEntry[], by: Actor, now: Date) {
+  const total = round2(items.reduce((sum, it) => sum + it.amount, 0));
+  const title = `ค่าเสียหายตรวจห้องตอนย้ายออก ห้อง ${s.room_number}: ${items.map((it) => `${it.reason} ฿${formatBaht(it.amount)}`).join(', ')}`.slice(0, 250);
+  let damageBillId: number | null = s.damage_bill_id ? Number(s.damage_bill_id) : null;
+  if (damageBillId) {
+    const bill = (await client.query('SELECT id, status FROM bills WHERE id = ? FOR UPDATE', [damageBillId])).rows[0];
+    if (bill && String(bill.status).toLowerCase() !== 'unpaid') refuse('invalid_state', 'บิลค่าเสียหายมีการชำระแล้ว แก้ไขไม่ได้');
+    if (items.length === 0) {
+      await client.query("UPDATE bills SET status = 'Cancelled' WHERE id = ?", [damageBillId]);
       await client.query(
-        "INSERT INTO bill_status_history (bill_id, from_status, to_status, reason, changed_by, changed_at) VALUES (?, NULL, 'Unpaid', 'ค่าเสียหายตอนย้ายออก', ?, ?)",
+        "INSERT INTO bill_status_history (bill_id, from_status, to_status, reason, changed_by, changed_at) VALUES (?, 'Unpaid', 'Cancelled', 'ไม่มีค่าเสียหาย', ?, ?)",
         [damageBillId, by.id, now]
       );
+      damageBillId = null;
+    } else {
+      await client.query('UPDATE bills SET amount = ?, title = ? WHERE id = ?', [total, title, damageBillId]);
     }
-    await client.query('UPDATE move_out_settlements SET damage_bill_id = ?, damage_items = ? WHERE id = ?', [damageBillId, JSON.stringify(clean), s.id]);
-    await client.query('UPDATE move_out_requests SET extra_damage_amount = ?, extra_damage_note = ? WHERE id = ?',
-      [total, clean.map((it) => it.reason).join(', ') || null, s.request_id]);
-    return { damageBillId, damageTotal: total };
-  });
+  } else if (items.length > 0) {
+    damageBillId = Number((await client.query(
+      `INSERT INTO bills (tenant_id, dorm_id, room_number, title, amount, room_amount, water_amount, electric_amount, water_units, electric_units,
+         common_fee, billing_cycle, due_date, status, is_first_bill, bill_type, slip_verified, sent_at, created_at)
+       VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, ?, ?, 'Unpaid', 0, 'move_out_damage', 0, ?, ?)`,
+      [s.tenant_id, s.dorm_id, s.room_number, title, total, String(bangkokDate(s.return_date)).slice(0, 7), bangkokDate(s.return_date), now, now]
+    )).rows.insertId);
+    await client.query(
+      "INSERT INTO bill_status_history (bill_id, from_status, to_status, reason, changed_by, changed_at) VALUES (?, NULL, 'Unpaid', 'ค่าเสียหายตอนย้ายออก', ?, ?)",
+      [damageBillId, by.id, now]
+    );
+  }
+  await client.query('UPDATE move_out_settlements SET damage_bill_id = ?, damage_items = ? WHERE id = ?', [damageBillId, JSON.stringify(items), s.id]);
+  await client.query('UPDATE move_out_requests SET extra_damage_amount = ?, extra_damage_note = ? WHERE id = ?',
+    [total, items.map((it) => it.reason).join(', ') || null, s.request_id]);
+  return { damageBillId, damageTotal: total };
 }
 
 // ── Deposit of an older contract ─────────────────────────────────────────────────────
@@ -807,7 +843,9 @@ export interface SettlementView {
   contract_start: string;
   contract_end: string;
   final_bill_id: number | null;
-  damage_items: { amount: number; reason: string }[];
+  damage_items: { amount: number; reason: string; job_id?: number }[];
+  /** repair / cleaning jobs of this move-out (lib/maintenance.ts) with the charge proposed and decided */
+  jobs: SettlementJob[];
   clause13: Clause13 | null;
   outstanding: { id: number; title: string; bill_type: string; outstanding: number; late_fee: number }[];
   outstanding_total: number;
@@ -889,7 +927,7 @@ function viewOf(s: any, base: Awaited<ReturnType<typeof depositBase>>, held: num
     return_date: returnDate, notice_days: daysBetween(effectiveNotice, returnDate || (ymdOf(s.planned_return_date) as string)),
     contract_start: startDate, contract_end: endDate,
     final_bill_id: s.final_bill_id ? Number(s.final_bill_id) : null,
-    damage_items: damageItems, clause13: check,
+    damage_items: damageItems, jobs: [], clause13: check,
     outstanding: outstanding.map((b) => ({ id: b.id, title: b.title, bill_type: b.bill_type, outstanding: b.outstanding, late_fee: b.late_fee })),
     outstanding_total: outstandingTotal, money,
   };
@@ -912,8 +950,31 @@ export async function getSettlement(settlementId: number, viewer: Actor, now: Da
     const held = base.kind === 'system' ? await liabilityHeld(client, base.billIds, s.id) : 0;
     // Before settling: as the settlement will count them (late fees up to the return date). After: what is owed now.
     const outstanding = s.state === 'Cancelled' ? [] : await outstandingBills(client, s.tenant_id, s.state === 'Returned' ? lateFeeDate(s, now) : now, false);
-    return viewOf(s, base, held, outstanding, viewer, now);
+    return { ...viewOf(s, base, held, outstanding, viewer, now), jobs: await settlementJobs(client, Number(s.id)) };
   });
+}
+
+export interface SettlementJob {
+  id: number; kind: string | null; issue_type: string | null; state: string | null;
+  charge_proposed: number | null; charge_amount: number | null; charge_reason: string | null; charge_decided: boolean;
+}
+
+/** Jobs linked to a settlement; empty before migration 013 is run. */
+async function settlementJobs(client: Client, settlementId: number): Promise<SettlementJob[]> {
+  try {
+    const rows = (await client.query(
+      `SELECT id, kind, issue_type, state, charge_proposed, charge_amount, charge_reason, charge_decided_at
+       FROM maintenance_requests WHERE move_out_settlement_id = ? ORDER BY id`, [settlementId]
+    )).rows as any[];
+    return rows.map((r) => ({
+      id: Number(r.id), kind: r.kind, issue_type: r.issue_type, state: r.state,
+      charge_proposed: r.charge_proposed === null ? null : Number(r.charge_proposed),
+      charge_amount: r.charge_amount === null ? null : Number(r.charge_amount),
+      charge_reason: r.charge_reason, charge_decided: !!r.charge_decided_at,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 /** The tenant's latest settlement that is not cancelled (null when none). */
