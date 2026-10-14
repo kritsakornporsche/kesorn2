@@ -363,7 +363,7 @@ export default function Home() {
               <div>
                 <span className="text-[10px] font-bold text-muted-foreground uppercase block">เงินประกัน</span>
                 <span className="text-sm font-black text-blue-500">
-                  ฿2,000 <span className="text-[11px] font-medium text-muted-foreground">(คืนครบสัญญา)</span>
+                  ฿2,000 <span className="text-[11px] font-medium text-muted-foreground">(คืนตามเงื่อนไขสัญญา)</span>
                 </span>
               </div>
             </div>
@@ -408,7 +408,7 @@ export default function Home() {
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center font-bold text-xs shrink-0">ℹ</span>
-                  <span><strong>เงื่อนไขเข้าพัก:</strong> ค่าจอง 1,000 บาท • ค่ามัดจำรวม 3,000 บาท (ส่วนที่เหลือ 2,000 บาท ชำระวันทำสัญญาเข้าพัก)</span>
+                  <span><strong>เงื่อนไขเข้าพัก:</strong> ค่าจอง 1,000 บาท • เงินประกันรวม 3,000 บาท (ส่วนที่เหลือ 2,000 บาท ชำระวันทำสัญญาเข้าพัก)</span>
                 </li>
               </ul>
             </div>

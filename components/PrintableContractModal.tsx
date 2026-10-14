@@ -20,6 +20,7 @@ interface PrintableContractModalProps {
     start_date: string;
     end_date: string;
     deposit_amount: number;
+    form_deposit?: number;
     monthly_rent?: number;
     created_at?: string;
   } | null;
@@ -54,7 +55,10 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
     ? `${thaiMonths[new Date(contract.start_date).getMonth()]} ${new Date(contract.start_date).getFullYear() + 543}`
     : '....................................................';
 
-  const depositStr = Number(contract.deposit_amount || 0) > 0 ? Number(contract.deposit_amount).toLocaleString() : '';
+  // Deposit in total for the room while the contract is being prepared (form_deposit from the server, lib/contract-files
+  // formDeposit); pages that already pass the room's total (explore) have no form_deposit
+  const formDepositValue = Number(contract.form_deposit ?? contract.deposit_amount ?? 0);
+  const depositStr = formDepositValue > 0 ? formDepositValue.toLocaleString() : '';
   const rentStr = Number(contract.monthly_rent || 0) > 0 ? Number(contract.monthly_rent).toLocaleString() : '';
   const floorStr = (contract as any).floor || (contract.room_number?.length >= 2 ? contract.room_number[0] : '1');
 
@@ -308,7 +312,7 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
                     </p>
                     <div className="pl-6 pt-1 space-y-1">
                       <p>
-                        • ค่ามัดจำจำนวน <Blank value={depositStr} dots={22} minW="min-w-[90px]" /> บาท ค่ามัดจำจะคืนให้ตอนออก เมื่อพักครบสัญญา อย่างน้อย 1 ปี หักค่าเสียหายภายในห้องและค่าทำความสะอาด
+                        • ผู้เช่าได้วางเงินประกันจำนวน <Blank value={depositStr} dots={22} minW="min-w-[90px]" /> บาท ผู้ให้เช่าจะคืนเงินประกันภายใน 7 วันนับแต่วันที่ผู้เช่าส่งมอบห้องคืน หากมีการหักค่าเสียหายหรือค่าใช้จ่ายที่ค้างชำระ ผู้ให้เช่าจะแจ้งรายการหักเป็นหนังสือ และคืนเงินส่วนที่เหลือภายใน 14 วันนับแต่วันที่ผู้เช่าส่งมอบห้องคืน
                       </p>
                       <p>
                         • ค่าเช่าจำนวน <Blank value={rentStr} dots={29} minW="min-w-[90px]" /> บาท เป็นค่าเช่าของเดือน <Blank value={startMonthStr} dots={52} minW="min-w-[180px]" />
@@ -438,7 +442,7 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
                   <p>• ค่าไฟหน่วยละ {rates ? `${rateText(rates.electricityPerUnit)} บาท` : 'ตามอัตราที่หอพักกำหนด'}</p>
                   <p>• ติดต่อเจ้าของหอพัก นายขันแก้ว คำบัว 09-3048-0607</p>
                   <p>• ติดต่อเจ้าของหอพัก นายวรรธนันท์ คำบัว 081-842-4948</p>
-                  <p>• หากพักไม่ ครบ 12 เดือน ผู้เช่าขอสงวนสิทธิ์ไม่คืนเงินมัดจำ</p>
+                  <p>• กรณีผู้เช่าเลิกสัญญาก่อนครบกำหนด ผู้ให้เช่ามีสิทธิ์ไม่คืนเงินประกัน เว้นแต่ผู้เช่าได้เช่ามาแล้วไม่น้อยกว่ากึ่งหนึ่งของระยะเวลาเช่า ได้แจ้งเลิกสัญญาเป็นหนังสือล่วงหน้าไม่น้อยกว่า 30 วัน และไม่ค้างชำระค่าเช่าหรือค่าใช้จ่ายอื่น</p>
                   <p>• ห้ามทิ้งขยะลงโถชักโครก</p>
                   <p>• ห้ามเสียงดัง ห้ามดื่มเหล้า สูบบุหรี่ ให้รักษาความสะอาดห้องพักสม่ำเสมอ</p>
                   <p>• โปรดแยกขยะและทิ้งขยะบริเวณที่เตรียมไว้</p>

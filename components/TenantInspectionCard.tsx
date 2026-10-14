@@ -1,7 +1,7 @@
 'use client';
 
-// Tenant: the move-in room inspection of their contract, with photos, and the "รับทราบผลตรวจห้อง" button
-// (lib/inspections.ts). Not shown until the owner/manager has recorded an inspection.
+// Tenant: a room inspection of their contract (move-in, or move-out compared with move-in), with photos, and the
+// "รับทราบผลตรวจห้อง" button (lib/inspections.ts). Not shown until the owner/manager has recorded the inspection.
 
 import { useEffect, useState } from 'react';
 
@@ -23,8 +23,9 @@ interface Inspection {
   items: { id: number; item_name: string; condition_status: Condition; note: string | null; photo_url: string | null }[];
 }
 
-export default function TenantInspectionCard({ contractId }: { contractId: number }) {
+export default function TenantInspectionCard({ contractId, kind = 'move_in' }: { contractId: number; kind?: 'move_in' | 'move_out' }) {
   const [inspection, setInspection] = useState<Inspection | null>(null);
+  const [moveIn, setMoveIn] = useState<Inspection | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [sending, setSending] = useState(false);
@@ -32,14 +33,14 @@ export default function TenantInspectionCard({ contractId }: { contractId: numbe
   const [preview, setPreview] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`/api/tenant/inspection?contractId=${contractId}`)
+    fetch(`/api/tenant/inspection?contractId=${contractId}&kind=${kind}`)
       .then((r) => r.json())
       .then((d) => {
-        if (d.success) setInspection(d.inspection);
+        if (d.success) { setInspection(d.inspection); setMoveIn(d.move_in || null); }
         else setLoadError(d.message || 'โหลดผลตรวจห้องไม่สำเร็จ');
       })
       .catch(() => setLoadError('โหลดผลตรวจห้องไม่สำเร็จ'));
-  }, [contractId]);
+  }, [contractId, kind]);
 
   const acknowledge = async () => {
     setError(null);
@@ -52,7 +53,7 @@ export default function TenantInspectionCard({ contractId }: { contractId: numbe
       const res = await fetch('/api/tenant/inspection/acknowledge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contractId }),
+        body: JSON.stringify({ contractId, kind }),
       });
       const data = await res.json();
       if (!data.success) {
@@ -75,7 +76,7 @@ export default function TenantInspectionCard({ contractId }: { contractId: numbe
     <div className="p-8 bg-white/5 rounded-3xl border border-border space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h3 className="text-lg font-black text-white">🔍 ผลตรวจสภาพห้องก่อนเข้าอยู่</h3>
+          <h3 className="text-lg font-black text-white">🔍 {kind === 'move_out' ? 'ผลตรวจสภาพห้องตอนย้ายออก' : 'ผลตรวจสภาพห้องก่อนเข้าอยู่'}</h3>
           <p className="text-xs text-muted-foreground mt-1">
             ตรวจเมื่อ {new Date(inspection.inspected_at).toLocaleString('th-TH')}
             {inspection.inspected_by_name ? ` · โดย ${inspection.inspected_by_name}` : ''}
@@ -95,6 +96,16 @@ export default function TenantInspectionCard({ contractId }: { contractId: numbe
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-white">{it.item_name}</p>
               {it.note && <p className="text-xs text-muted-foreground">{it.note}</p>}
+              {kind === 'move_out' && moveIn && (() => {
+                const before = moveIn.items.find((m) => m.item_name.trim().toLowerCase() === it.item_name.trim().toLowerCase());
+                if (!before) return <p className="text-[11px] text-muted-foreground">ตอนเข้าอยู่: ไม่มีรายการนี้</p>;
+                const changed = before.condition_status !== it.condition_status;
+                return (
+                  <p className={`text-[11px] ${changed ? 'text-amber-300 font-bold' : 'text-muted-foreground'}`}>
+                    ตอนเข้าอยู่: {CONDITION_TEXT[before.condition_status]}{changed ? ' → เปลี่ยนไป' : ''}
+                  </p>
+                );
+              })()}
             </div>
             <span className={`text-xs font-bold ${CONDITION_STYLE[it.condition_status]}`}>{CONDITION_TEXT[it.condition_status]}</span>
             {it.photo_url ? (

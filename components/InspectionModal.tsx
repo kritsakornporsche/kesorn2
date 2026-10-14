@@ -1,12 +1,14 @@
 'use client';
 
-// Owner/manager: move-in room inspection (lib/inspections.ts). Items start from the room's inventory or a default
-// list; each item has a condition, a note and one photo. Editable until the tenant acknowledges it.
+// Owner/manager: room inspection (lib/inspections.ts) before move-in, or at move-out (kind 'move_out', compared item
+// by item with the move-in result). Items start from the room's inventory, a default list, or the move-in items; each
+// item has a condition, a note and one photo. Editable until the tenant acknowledges it.
 
 import { useEffect, useState } from 'react';
 import { PHOTOS_TOTAL_MAX_BYTES, preparePhoto } from '@/lib/inspection-photo-check';
 
 type Condition = 'Good' | 'Damaged' | 'Missing';
+export type InspectionKind = 'move_in' | 'move_out';
 export type InspectionStatus = 'none' | 'pending_ack' | 'acknowledged';
 
 export const INSPECTION_STATUS_TEXT: Record<InspectionStatus, string> = {
@@ -15,7 +17,11 @@ export const INSPECTION_STATUS_TEXT: Record<InspectionStatus, string> = {
   acknowledged: 'รับทราบแล้ว',
 };
 
-const CONDITION_TEXT: Record<Condition, string> = { Good: 'ปกติ', Damaged: 'ชำรุด', Missing: 'สูญหาย' };
+export const CONDITION_TEXT: Record<Condition, string> = { Good: 'ปกติ', Damaged: 'ชำรุด', Missing: 'สูญหาย' };
+export const KIND_TITLE: Record<InspectionKind, string> = { move_in: 'ตรวจห้องก่อนเข้าอยู่', move_out: 'ตรวจห้องตอนย้ายออก' };
+
+type MoveInItem = { condition_status: Condition; note: string | null; photo_url: string | null };
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 interface Row {
   key: number;
@@ -51,8 +57,9 @@ export function InspectionStatusBadge({ status }: { status: InspectionStatus }) 
   );
 }
 
-export default function InspectionModal({ contractId, onClose, onSaved }: {
+export default function InspectionModal({ contractId, kind = 'move_in', onClose, onSaved }: {
   contractId: number;
+  kind?: InspectionKind;
   onClose: () => void;
   /** called with the status after loading and after saving */
   onSaved?: (status: InspectionStatus) => void;
@@ -69,12 +76,14 @@ export default function InspectionModal({ contractId, onClose, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  // Move-out: the move-in result by item name, to compare
+  const [moveIn, setMoveIn] = useState<{ name: string; item: MoveInItem }[] | null>(null);
 
   const load = async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch(`/api/owner/contracts/${contractId}/inspection`);
+      const res = await fetch(`/api/owner/contracts/${contractId}/inspection?kind=${kind}`);
       const data = await res.json();
       if (!data.success) {
         setLoadError(data.message || 'โหลดผลตรวจห้องไม่สำเร็จ');
@@ -87,6 +96,7 @@ export default function InspectionModal({ contractId, onClose, onSaved }: {
       setMaxItems(data.max_items || 30);
       setAckAt(data.inspection?.tenant_ack_at || null);
       setNote(data.inspection?.note || '');
+      setMoveIn(data.move_in ? data.move_in.items.map((it: any) => ({ name: it.item_name, item: it })) : null);
       if (data.inspection) {
         setRows(data.inspection.items.map((it: any) => ({
           ...blankRow(it.item_name, it.note),
@@ -104,7 +114,9 @@ export default function InspectionModal({ contractId, onClose, onSaved }: {
     }
   };
 
-  useEffect(() => { load(); }, [contractId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [contractId, kind]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const moveInOf = (name: string) => moveIn?.find((m) => sameName(m.name, name))?.item || null;
 
   const update = (key: number, change: Partial<Row>) => setRows((list) => list.map((r) => (r.key === key ? { ...r, ...change } : r)));
 
@@ -147,6 +159,7 @@ export default function InspectionModal({ contractId, onClose, onSaved }: {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          kind,
           note,
           items: toSave.map((r) => ({
             name: r.name,
@@ -175,7 +188,7 @@ export default function InspectionModal({ contractId, onClose, onSaved }: {
       <div className="max-w-3xl w-full bg-slate-900 rounded-3xl p-6 border border-white/20 space-y-4 max-h-[92vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-start gap-3 pb-2 border-b border-white/10">
           <div>
-            <p className="font-black text-white text-base">🔍 ตรวจห้องก่อนเข้าอยู่ {info?.room_number ? `· ห้อง ${info.room_number}` : ''}</p>
+            <p className="font-black text-white text-base">🔍 {KIND_TITLE[kind]} {info?.room_number ? `· ห้อง ${info.room_number}` : ''}</p>
             {info?.tenant_name && <p className="text-xs text-slate-400">ผู้เช่า: {info.tenant_name}</p>}
           </div>
           <div className="flex items-center gap-2">
@@ -196,7 +209,12 @@ export default function InspectionModal({ contractId, onClose, onSaved }: {
               </p>
             )}
             {!editable && status !== 'acknowledged' && (
-              <p className="text-xs text-rose-400 font-bold">สัญญานี้อยู่ในสถานะที่ตรวจห้องไม่ได้</p>
+              <p className="text-xs text-rose-400 font-bold">
+                {kind === 'move_out' ? 'ตรวจห้องตอนย้ายออกได้ตั้งแต่แจ้งย้ายออกจนก่อนสรุปเงินประกันเท่านั้น' : 'สัญญานี้อยู่ในสถานะที่ตรวจห้องไม่ได้'}
+              </p>
+            )}
+            {kind === 'move_out' && moveIn === null && (
+              <p className="text-xs text-slate-400">ไม่มีผลตรวจห้องตอนเข้าอยู่ให้เทียบ</p>
             )}
 
             {rows.map((row, index) => (
@@ -261,6 +279,21 @@ export default function InspectionModal({ contractId, onClose, onSaved }: {
                     </button>
                   )}
                 </div>
+                {kind === 'move_out' && moveIn && (() => {
+                  const before = moveInOf(row.name);
+                  if (!before) return row.name.trim() ? <p className="pl-7 text-[11px] text-slate-500">ตอนเข้าอยู่: ไม่มีรายการนี้</p> : null;
+                  const changed = before.condition_status !== row.condition;
+                  return (
+                    <div className={`pl-7 flex items-center gap-2 text-[11px] ${changed ? 'text-amber-300 font-bold' : 'text-slate-400'}`}>
+                      <span>ตอนเข้าอยู่: {CONDITION_TEXT[before.condition_status]}{before.note ? ` · ${before.note}` : ''}{changed ? ' → เปลี่ยนไป' : ''}</span>
+                      {before.photo_url && (
+                        <button onClick={() => setPreview(before.photo_url)} className="w-8 h-8 rounded overflow-hidden border border-white/20 shrink-0">
+                          <img src={before.photo_url} alt={`${row.name} ตอนเข้าอยู่`} className="w-full h-full object-cover" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
                 {row.error && <p className="pl-7 text-xs text-rose-400 font-bold">✕ {row.error}</p>}
               </div>
             ))}
@@ -316,18 +349,18 @@ export default function InspectionModal({ contractId, onClose, onSaved }: {
   );
 }
 
-/** Status badge + "ตรวจห้องก่อนเข้าอยู่" button, for the bookings list and the contract page. */
-export function InspectionButton({ contractId, initialStatus }: { contractId: number; initialStatus?: InspectionStatus }) {
+/** Status badge + "ตรวจห้องก่อนเข้าอยู่" / "ตรวจห้องตอนย้ายออก" button (bookings, contract and move-out pages). */
+export function InspectionButton({ contractId, initialStatus, kind = 'move_in' }: { contractId: number; initialStatus?: InspectionStatus; kind?: InspectionKind }) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<InspectionStatus | null>(initialStatus ?? null);
 
   useEffect(() => {
     if (initialStatus) return;
-    fetch(`/api/owner/contracts/${contractId}/inspection`)
+    fetch(`/api/owner/contracts/${contractId}/inspection?kind=${kind}`)
       .then((r) => r.json())
       .then((d) => { if (d.success) setStatus(d.status); })
       .catch(() => {});
-  }, [contractId, initialStatus]);
+  }, [contractId, initialStatus, kind]);
 
   return (
     <>
@@ -336,11 +369,12 @@ export function InspectionButton({ contractId, initialStatus }: { contractId: nu
         onClick={() => setOpen(true)}
         className="px-4 py-2.5 bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 border border-sky-500/40 font-black text-xs rounded-xl"
       >
-        🔍 ตรวจห้องก่อนเข้าอยู่
+        🔍 {KIND_TITLE[kind]}
       </button>
       {open && (
         <InspectionModal
           contractId={contractId}
+          kind={kind}
           onClose={() => setOpen(false)}
           onSaved={(s) => setStatus(s)}
         />

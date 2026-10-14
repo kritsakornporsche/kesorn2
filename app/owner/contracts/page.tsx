@@ -7,7 +7,6 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import PremiumDatePicker from '@/app/components/PremiumDatePicker';
 import PrintableContractModal from '@/components/PrintableContractModal';
-import DepositRefundModal from '@/components/DepositRefundModal';
 import { PdpaOcrConsentModal } from '@/app/components/PdpaOcrConsentModal';
 import { checkPaperFile } from '@/lib/paper-file-check';
 
@@ -69,8 +68,6 @@ export default function OwnerContractsPage() {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
 
   // Deposit Refund Modal
-  const [selectedMoveOut, setSelectedMoveOut] = useState<any | null>(null);
-  const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
 
   // Upload Signed Paper Contract Modal State
   const [uploadingContract, setUploadingContract] = useState<Contract | null>(null);
@@ -477,7 +474,8 @@ export default function OwnerContractsPage() {
   const historyContracts = contracts.filter(c => c.status !== 'Active' && !isPendingContract(c.status));
   const renewalRequestedContracts = activeContracts.filter(c => c.renewal_requested === 1);
   const renewalRequestedCount = renewalRequestedContracts.length;
-  const pendingMoveOutCount = moveOutRequests.filter(m => m.status === 'Pending').length;
+  // Move-outs not closed yet (lib/moveOut.ts states, or an older request still open)
+  const pendingMoveOutCount = moveOutRequests.filter((m) => m.legacy_open || ['Notified', 'Returned', 'Settled'].includes(m.settlement?.state)).length;
 
   const displayedContracts = 
     activeTab === 'Renewal' ? renewalRequestedContracts :
@@ -584,10 +582,10 @@ export default function OwnerContractsPage() {
             }`}
           >
             <div className="flex justify-between items-start mb-2">
-              <h3 className="text-xs font-black text-amber-400 uppercase tracking-widest">คำร้องย้ายออก & คืนค่ามัดจำ</h3>
+              <h3 className="text-xs font-black text-amber-400 uppercase tracking-widest">คำร้องย้ายออก & เงินประกัน</h3>
               <span className="text-xl">💰</span>
             </div>
-            <p className="text-4xl font-black text-amber-400">{pendingMoveOutCount} <span className="text-xs text-amber-300/60 font-medium">รอคืนเงิน</span></p>
+            <p className="text-4xl font-black text-amber-400">{pendingMoveOutCount} <span className="text-xs text-amber-300/60 font-medium">ยังไม่ปิด</span></p>
           </div>
 
           <div 
@@ -654,7 +652,7 @@ export default function OwnerContractsPage() {
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            <span>💰 คำขอย้ายออก & คืนค่ามัดจำ ({moveOutRequests.length})</span>
+            <span>💰 คำขอย้ายออก & เงินประกัน ({moveOutRequests.length})</span>
             {pendingMoveOutCount > 0 && (
               <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500 text-slate-950 font-black animate-pulse">
                 {pendingMoveOutCount}
@@ -875,122 +873,14 @@ export default function OwnerContractsPage() {
           </div>
         )}
 
-        {/* TAB 3: Move-Out & Deposit Refund Management */}
+        {/* TAB 3: Move-outs are handled on /owner/move-out (lib/moveOut.ts) */}
         {activeTab === 'MoveOut' && (
-          <div className="space-y-6">
-            <div className="bg-amber-500/10 border border-amber-500/20 p-6 rounded-3xl flex items-center justify-between gap-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-2xl">
-                  ⚡
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white">
-                    ระบบคำนวณและคืนเงินประกันอัตโนมัติ (Automated Deposit Refund)
-                  </h3>
-                  <p className="text-xs text-white/70 mt-1">
-                    ระบบตรวจสอบอัตโนมัติ 2 ขั้นตอน: (1) ครบสัญญา 1 ปีหรือไม่ (2) มีค่าใช้จ่ายค้างชำระหรือไม่ พร้อมออก Dynamic QR Code ล็อคยอดเงินโอนคืนเป๊ะ
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-card rounded-3xl border border-border shadow-xl overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-secondary/60 border-b border-border">
-                    <tr>
-                      <th className="px-6 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ห้อง / ผู้เช่า</th>
-                      <th className="px-6 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">วันที่แจ้งย้ายออก</th>
-                      <th className="px-6 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">การตรวจสอบสัญญา</th>
-                      <th className="px-6 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">บิลค้างชำระ</th>
-                      <th className="px-6 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ยอดเงินประกันสุทธิที่ต้องคืน</th>
-                      <th className="px-6 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest text-center">สถานะ</th>
-                      <th className="px-6 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest text-center">การดำเนินการ</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5 text-sm font-medium">
-                    {moveOutRequests.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="py-20 text-center text-muted-foreground font-bold">
-                          ยังไม่มีคำร้องขอย้ายออกในขณะนี้
-                        </td>
-                      </tr>
-                    ) : (
-                      moveOutRequests.map((m) => (
-                        <tr key={m.id} className="hover:bg-white/5 transition-colors">
-                          <td className="px-6 py-6">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-amber-500/20 text-amber-400 font-black rounded-xl flex items-center justify-center text-sm border border-amber-500/30">
-                                {m.room_number}
-                              </div>
-                              <div>
-                                <p className="font-black text-foreground">{m.tenant_name}</p>
-                                <p className="text-xs text-muted-foreground">{m.tenant_phone || m.promptpay_target || '-'}</p>
-                              </div>
-                            </div>
-                          </td>
-
-                          <td className="px-6 py-6 font-bold text-foreground">
-                            {new Date(m.desired_date).toLocaleDateString('th-TH')}
-                          </td>
-
-                          <td className="px-6 py-6">
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1.5 ${
-                              m.is_completed_calculated || m.is_contract_completed
-                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                                : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                            }`}>
-                              {m.is_completed_calculated || m.is_contract_completed ? '✓ ครบกำหนด 1 ปี' : '⚠️ ย้ายออกก่อนครบสัญญา'}
-                            </span>
-                          </td>
-
-                          <td className="px-6 py-6">
-                            {m.live_unpaid_total > 0 ? (
-                              <span className="font-mono font-bold text-rose-400">
-                                ฿{Number(m.live_unpaid_total).toLocaleString()}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-emerald-400 font-semibold">✓ ไม่มีบิลค้าง</span>
-                            )}
-                          </td>
-
-                          <td className="px-6 py-6 font-mono font-black text-emerald-400 text-lg">
-                            ฿{Number(m.live_net_refund !== undefined ? m.live_net_refund : m.net_refund_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-
-                          <td className="px-6 py-6 text-center">
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1.5 ${
-                              m.status === 'Completed'
-                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                                : 'bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse'
-                            }`}>
-                              {m.status === 'Completed' ? '✓ เคลียร์เงินแล้ว' : '⏳ รอเคลียร์เงิน'}
-                            </span>
-                          </td>
-
-                          <td className="px-6 py-6 text-center">
-                            <button
-                              onClick={() => {
-                                setSelectedMoveOut(m);
-                                setIsRefundModalOpen(true);
-                              }}
-                              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2 mx-auto cursor-pointer hover:scale-105 active:scale-95 ${
-                                m.status === 'Completed'
-                                  ? 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
-                                  : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black'
-                              }`}
-                            >
-                              <span>{m.status === 'Completed' ? '🔍' : '💰'}</span>
-                              <span>{m.status === 'Completed' ? 'ดูรายละเอียด / สลิป' : 'สแกน QR คืนเงินประกัน'}</span>
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+          <div className="bg-card rounded-3xl border border-border p-8 space-y-3">
+            <h3 className="text-base font-bold text-white">คำขอย้ายออก & เงินประกัน</h3>
+            <p className="text-sm text-muted-foreground">
+              มีคำขอที่ยังไม่ปิด {pendingMoveOutCount} รายการ — บันทึกคืนห้อง ตรวจห้อง หักและคืนเงินประกันได้ที่หน้าย้ายออก
+            </p>
+            <a href="/owner/move-out" className="inline-block px-6 py-3 bg-primary text-white font-black text-xs rounded-xl">ไปหน้าย้ายออก →</a>
           </div>
         )}
 
@@ -1372,15 +1262,6 @@ export default function OwnerContractsPage() {
           contract={printingContract}
         />
 
-        {/* Deposit Refund Modal */}
-        <DepositRefundModal
-          isOpen={isRefundModalOpen}
-          onClose={() => setIsRefundModalOpen(false)}
-          request={selectedMoveOut}
-          onConfirmSuccess={() => {
-            if (ownerDormId) fetchData(ownerDormId);
-          }}
-        />
 
         {/* Upload Signed Paper Contract Modal */}
         {uploadingContract && (

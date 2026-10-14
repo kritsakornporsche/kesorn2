@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
-import { withPaperLink } from '@/lib/contract-files';
+import { formDeposit, withPaperLink } from '@/lib/contract-files';
 
 export async function GET(req: Request) {
   try {
@@ -75,7 +75,8 @@ export async function GET(req: Request) {
           COALESCE(t.email, '') as tenant_email,
           r.room_number,
           r.room_type,
-          r.price as monthly_rent
+          r.price as monthly_rent,
+          r.deposit_amount as room_deposit_amount
         FROM contracts c
         JOIN rooms r ON c.room_id = r.id
         LEFT JOIN tenants t ON c.tenant_id = t.id
@@ -87,7 +88,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       success: true,
       data: tenantInfo,
-      contracts: contracts.map((c) => withPaperLink(c))
+      contracts: contracts.map((c) => ({ ...withPaperLink(c), form_deposit: formDeposit(c) }))
     });
   } catch (error: any) {
     console.error('[GET /api/tenant/me] Error:', error);

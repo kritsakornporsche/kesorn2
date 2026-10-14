@@ -4,7 +4,7 @@ import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { createContract, temporaryPassword, contractMessage } from '@/lib/contracts';
 import { issueMoveInBill, missingMessage, recordSignedPaper } from '@/lib/moveIn';
-import { withPaperLink } from '@/lib/contract-files';
+import { formDeposit, withPaperLink } from '@/lib/contract-files';
 import { formatBaht, formatThaiDate } from '@/lib/format';
 
 export async function GET(req: Request) {
@@ -63,7 +63,8 @@ export async function GET(req: Request) {
         COALESCE(t.phone, u.phone, '') as tenant_phone,
         r.room_number,
         r.room_type,
-        r.price as monthly_rent
+        r.price as monthly_rent,
+        r.deposit_amount as room_deposit_amount
       FROM contracts c
       LEFT JOIN tenants t ON c.tenant_id = t.id
       LEFT JOIN users u ON t.user_id = u.id OR t.email = u.email
@@ -72,7 +73,7 @@ export async function GET(req: Request) {
       ORDER BY c.id DESC
     `;
 
-    return NextResponse.json({ success: true, data: contracts.map((c: any) => withPaperLink(c)) });
+    return NextResponse.json({ success: true, data: contracts.map((c: any) => ({ ...withPaperLink(c), form_deposit: formDeposit(c) })) });
   } catch (err: any) {
     console.error('[Contracts API GET] Error:', err);
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });

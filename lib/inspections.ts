@@ -2,7 +2,8 @@
 // the tenant acknowledges it. Items start from the room's room_inventory (read only) or a default list, and more can
 // be added. The inspection can be edited until the tenant acknowledges it, then it is locked. It does not hold up
 // the contract taking effect (lib/moveIn.ts is unchanged). Every function takes `now` from the app; MySQL NOW() is
-// never used for these times. 'move_out' exists in the table for later; only 'move_in' is used here.
+// never used for these times. The same inspection is done at move-out (kind 'move_out', commit 12): possible while
+// the move-out is open and before the deposit is settled, compared with the move-in result, acknowledged the same way.
 
 import { getDb } from '@/lib/db';
 import { type Client } from '@/lib/bill-status';
@@ -11,6 +12,10 @@ import { PHOTOS_TOTAL_MAX_BYTES, deletePhoto, isPhotoName, parsePhotoUpload, pho
 
 /** Booking fee paid up to the contract in effect */
 export const INSPECTABLE = ['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active'];
+export type InspectionKind = 'move_in' | 'move_out';
+export const KINDS: InspectionKind[] = ['move_in', 'move_out'];
+/** Move-out settlement states in which the move-out inspection can be done (lib/moveOut.ts) */
+const MOVE_OUT_INSPECTABLE = ['Notified', 'Returned'];
 export const CONDITIONS = ['Good', 'Damaged', 'Missing'] as const;
 export type Condition = (typeof CONDITIONS)[number];
 export const MAX_ITEMS = 30;
@@ -31,7 +36,7 @@ export const STATUS_TEXT: Record<InspectionStatus, string> = {
 };
 
 export type InspectionRefusal = 'not_found' | 'forbidden' | 'invalid_status' | 'locked' | 'bad_items' | 'bad_photo'
-  | 'too_large' | 'not_inspected' | 'already_acknowledged';
+  | 'too_large' | 'not_inspected' | 'already_acknowledged' | 'move_out_closed';
 
 export type InspectionResult<T> = ({ ok: true } & T) | { ok: false; reason: InspectionRefusal; message: string; item?: number };
 
@@ -45,6 +50,7 @@ const MESSAGES: Record<InspectionRefusal, string> = {
   too_large: `รูปรวมกันต้องไม่เกิน ${PHOTOS_TOTAL_MAX_BYTES / 1024 / 1024}MB ต่อการบันทึกหนึ่งครั้ง`,
   not_inspected: 'ยังไม่มีผลตรวจห้องให้รับทราบ',
   already_acknowledged: 'รับทราบผลตรวจห้องไปแล้ว',
+  move_out_closed: 'ตรวจห้องตอนย้ายออกได้ตั้งแต่แจ้งย้ายออกจนก่อนสรุปเงินประกันเท่านั้น',
 };
 
 class InspectionRefused extends Error {
@@ -86,6 +92,21 @@ async function lockContract(client: Client, contractId: number) {
   if (!c) refuse('not_found');
   return c;
 }
+
+/** Whether the contract can be inspected now: move-in from booking paid to Active; move-out while the move-out is open. */
+async function canInspect(client: Client, c: { id: number; status: string }, kind: InspectionKind) {
+  if (kind === 'move_in') {
+    if (!INSPECTABLE.includes(c.status)) refuse('invalid_status');
+    return;
+  }
+  const open = (await client.query(
+    `SELECT id FROM move_out_settlements WHERE contract_id = ? AND state IN (${MOVE_OUT_INSPECTABLE.map(() => '?').join(', ')}) LIMIT 1`,
+    [c.id, ...MOVE_OUT_INSPECTABLE]
+  )).rows[0];
+  if (!open) refuse('move_out_closed');
+}
+
+const kindOf = (kind: unknown): InspectionKind => (kind === 'move_out' ? 'move_out' : 'move_in');
 
 export function statusOf(row: { tenant_ack_at?: unknown } | null | undefined): InspectionStatus {
   if (!row) return 'none';
@@ -148,16 +169,23 @@ function cleanItems(raw: unknown): CleanItem[] {
   return items;
 }
 
+/** Record (or replace) the move-in inspection of a contract (see saveInspection). */
+export function saveMoveInInspection(contractId: number, input: InspectionInput, by: Actor, now: Date) {
+  return saveInspection(contractId, 'move_in', input, by, now);
+}
+
 /**
- * Record (or replace) the move-in inspection of a contract. Owner/manager only; refused once the tenant has
+ * Record (or replace) an inspection of a contract. Owner/manager only; refused once the tenant has
  * acknowledged it. Items are replaced as a whole; photos no longer used are removed from storage.
  */
-export async function saveMoveInInspection(
+export async function saveInspection(
   contractId: number,
+  kindInput: InspectionKind,
   input: InspectionInput,
   by: Actor,
   now: Date
 ): Promise<InspectionResult<{ inspectionId: number }>> {
+  const kind = kindOf(kindInput);
   if (!by || !isStaff(by)) return { ok: false, reason: 'forbidden', message: MESSAGES.forbidden };
 
   let items: CleanItem[];
@@ -180,11 +208,11 @@ export async function saveMoveInInspection(
 
     const result = await run(async (client) => {
       const c = await lockContract(client, contractId);
-      if (!INSPECTABLE.includes(c.status)) refuse('invalid_status');
+      await canInspect(client, c, kind);
 
       const existing = (await client.query(
-        "SELECT id, tenant_ack_at FROM contract_inspections WHERE contract_id = ? AND kind = 'move_in' FOR UPDATE",
-        [contractId]
+        'SELECT id, tenant_ack_at FROM contract_inspections WHERE contract_id = ? AND kind = ? FOR UPDATE',
+        [contractId, kind]
       )).rows[0];
       if (existing?.tenant_ack_at) refuse('locked');
 
@@ -203,8 +231,8 @@ export async function saveMoveInInspection(
         await client.query('DELETE FROM contract_inspection_items WHERE inspection_id = ?', [inspectionId]);
       } else {
         const inserted = await client.query(
-          "INSERT INTO contract_inspections (contract_id, kind, inspected_by, inspected_at, note) VALUES (?, 'move_in', ?, ?, ?)",
-          [contractId, by.id, now, note]
+          'INSERT INTO contract_inspections (contract_id, kind, inspected_by, inspected_at, note) VALUES (?, ?, ?, ?, ?)',
+          [contractId, kind, by.id, now, note]
         );
         inspectionId = Number(inserted.rows.insertId);
       }
@@ -232,18 +260,20 @@ export async function saveMoveInInspection(
   }
 }
 
-/** The contract's own tenant acknowledges the move-in inspection; it is locked from then on. */
-export async function acknowledgeInspection(contractId: number, user: Actor, now: Date): Promise<InspectionResult<{ acknowledgedAt: Date }>> {
+/** The contract's own tenant acknowledges an inspection (move-in by default); it is locked from then on. */
+export async function acknowledgeInspection(contractId: number, user: Actor, now: Date, kindInput: InspectionKind = 'move_in'): Promise<InspectionResult<{ acknowledgedAt: Date }>> {
   if (!user) return { ok: false, reason: 'forbidden', message: MESSAGES.forbidden };
+  const kind = kindOf(kindInput);
   return run(async (client) => {
     const c = await lockContract(client, contractId);
     // Someone else's contract reads as not found, so contract ids cannot be probed
     if (isStaff(user) || !isContractTenant(c, user)) refuse('not_found');
-    if (!INSPECTABLE.includes(c.status)) refuse('invalid_status');
+    // A move-out inspection can still be acknowledged after the room is returned (contract Ended)
+    if (kind === 'move_in') await canInspect(client, c, kind);
 
     const inspection = (await client.query(
-      "SELECT id, tenant_ack_at FROM contract_inspections WHERE contract_id = ? AND kind = 'move_in' FOR UPDATE",
-      [contractId]
+      'SELECT id, tenant_ack_at FROM contract_inspections WHERE contract_id = ? AND kind = ? FOR UPDATE',
+      [contractId, kind]
     )).rows[0];
     if (!inspection) refuse('not_inspected');
     if (inspection.tenant_ack_at) refuse('already_acknowledged');
@@ -260,6 +290,7 @@ export async function acknowledgeInspection(contractId: number, user: Actor, now
 export interface InspectionView {
   id: number;
   contract_id: number;
+  kind: InspectionKind;
   status: InspectionStatus;
   status_text: string;
   inspected_at: string;
@@ -267,6 +298,15 @@ export interface InspectionView {
   note: string | null;
   tenant_ack_at: string | null;
   items: { id: number; item_name: string; condition_status: Condition; note: string | null; photo_file: string | null; photo_url: string | null }[];
+}
+
+/** Starting items for a move-out inspection: the move-in items (same names and notes), else as for move-in. */
+export async function defaultItemsFor(contractId: number, roomId: number, kind: InspectionKind) {
+  if (kind === 'move_out') {
+    const moveIn = await getInspection(contractId, 'move_in');
+    if (moveIn && moveIn.items.length > 0) return moveIn.items.map((it) => ({ name: it.item_name, note: null as string | null }));
+  }
+  return defaultItems(roomId);
 }
 
 /** Starting items for a new inspection: the room's room_inventory, or the default list. */
@@ -286,12 +326,18 @@ export async function defaultItems(roomId: number): Promise<{ name: string; note
 }
 
 /** The move-in inspection of a contract, with photo links; null when not inspected yet. */
-export async function getMoveInInspection(contractId: number): Promise<InspectionView | null> {
+export function getMoveInInspection(contractId: number): Promise<InspectionView | null> {
+  return getInspection(contractId, 'move_in');
+}
+
+/** An inspection of a contract, with photo links; null when not done yet. */
+export async function getInspection(contractId: number, kindInput: InspectionKind): Promise<InspectionView | null> {
+  const kind = kindOf(kindInput);
   const sql = getDb();
   const rows = await sql`
-    SELECT i.id, i.contract_id, i.inspected_at, i.note, i.tenant_ack_at, u.name AS inspected_by_name
+    SELECT i.id, i.contract_id, i.kind, i.inspected_at, i.note, i.tenant_ack_at, u.name AS inspected_by_name
     FROM contract_inspections i LEFT JOIN users u ON u.id = i.inspected_by
-    WHERE i.contract_id = ${contractId} AND i.kind = 'move_in' LIMIT 1
+    WHERE i.contract_id = ${contractId} AND i.kind = ${kind} LIMIT 1
   `;
   const row = rows[0];
   if (!row) return null;
@@ -309,15 +355,16 @@ export async function getMoveInInspection(contractId: number): Promise<Inspectio
 }
 
 /** Status of several contracts at once (for lists). Contracts without an inspection are 'none'. */
-export async function inspectionStatuses(contractIds: number[]): Promise<Record<number, InspectionStatus>> {
+export async function inspectionStatuses(contractIds: number[], kindInput: InspectionKind = 'move_in'): Promise<Record<number, InspectionStatus>> {
+  const kind = kindOf(kindInput);
   const ids = contractIds.filter((id) => Number.isInteger(id) && id > 0);
   const result: Record<number, InspectionStatus> = {};
   for (const id of ids) result[id] = 'none';
   if (ids.length === 0) return result;
   const sql = getDb();
   const rows = await sql(
-    `SELECT contract_id, tenant_ack_at FROM contract_inspections WHERE kind = 'move_in' AND contract_id IN (${ids.map(() => '?').join(',')})`,
-    ids
+    `SELECT contract_id, tenant_ack_at FROM contract_inspections WHERE kind = ? AND contract_id IN (${ids.map(() => '?').join(',')})`,
+    [kind, ...ids]
   );
   for (const r of rows as any[]) result[r.contract_id] = statusOf(r);
   return result;
@@ -356,7 +403,7 @@ export async function tenantContract(user: Actor, contractId?: number | null): P
 export function refusalStatus(reason: InspectionRefusal): number {
   if (reason === 'not_found') return 404;
   if (reason === 'forbidden') return 403;
-  if (reason === 'locked' || reason === 'already_acknowledged') return 409;
+  if (reason === 'locked' || reason === 'already_acknowledged' || reason === 'move_out_closed') return 409;
   if (reason === 'too_large') return 413;
   return 400;
 }

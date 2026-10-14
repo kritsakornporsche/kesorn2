@@ -940,7 +940,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   <div className="flex justify-between items-center text-sm pt-2 border-t border-border/50">
                     <div>
                       <span className="font-semibold block">เงินประกันความเสียหาย</span>
-                      <span className="text-[11px] text-muted-foreground">ชำระวันทำสัญญา/ย้ายเข้า (คืนเมื่อครบสัญญา)</span>
+                      <span className="text-[11px] text-muted-foreground">ชำระวันทำสัญญา/ย้ายเข้า (คืนภายใน 7–14 วันหลังคืนห้อง ตามเงื่อนไขสัญญา)</span>
                     </div>
                     <span className="font-bold text-muted-foreground">฿{securityDeposit.toLocaleString()}</span>
                   </div>
