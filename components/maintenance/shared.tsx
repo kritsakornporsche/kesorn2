@@ -39,6 +39,14 @@ export interface Job {
 }
 
 export const KIND_TEXT: Record<Kind, string> = { repair: 'งานซ่อม', cleaning: 'งานทำความสะอาด' };
+
+/** Kind and topic, without repeating the kind when the topic already says it (a job opened without a topic) */
+export function kindAndTopic(kind: string | null | undefined, topic: string | null | undefined) {
+  const k = kind === 'repair' || kind === 'cleaning' ? KIND_TEXT[kind] : '';
+  const t = (topic || '').trim();
+  if (t && k && t.startsWith(k)) return t;
+  return [k, t].filter(Boolean).join(' · ') || '-';
+}
 export const CHARGE_REASON_TEXT: Record<ChargeReason, string> = {
   tenant_damage: 'ผู้เช่าทำเสียหาย (บิลค่าเสียหาย)', wear_and_tear: 'เสื่อมตามสภาพ (ไม่เก็บเงิน)', service: 'ค่าบริการ (บิลค่าบริการ)',
 };

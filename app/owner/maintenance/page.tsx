@@ -8,7 +8,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import {
-  CHARGE_REASON_TEXT, KIND_TEXT, PhotoPicker, PhotoStrip, StateBadge, baht, postJson, thaiDateTime,
+  CHARGE_REASON_TEXT, KIND_TEXT, PhotoPicker, kindAndTopic, PhotoStrip, StateBadge, baht, postJson, thaiDateTime,
   type ChargeReason, type Job, type Kind,
 } from '@/components/maintenance/shared';
 
@@ -133,7 +133,7 @@ function CreateForm({ rooms, initialKind, onDone }: { rooms: { id: number; room_
     onDone();
   };
   return (
-    <div className="p-5 rounded-2xl border border-primary/30 bg-primary/5 space-y-3">
+    <div className="p-5 rounded-2xl border border-primary/30 bg-primary/5 space-y-3" onInput={() => error && setError(null)}>
       <p className="text-sm font-black text-white">สร้างงานใหม่</p>
       <p className="text-[11px] text-slate-400">งานของการย้ายออกให้สร้างจากหน้าย้ายออก เพื่อให้ค่าใช้จ่ายไปอยู่ในการหักเงินประกัน</p>
       <div className="flex flex-wrap gap-2">
@@ -177,11 +177,11 @@ function JobCard({ job, keepers, isOwner, onDone }: { job: Job; keepers: Keeper[
   const canAssign = job.state === 'Requested' || job.state === 'Assigned';
 
   return (
-    <div className="bg-slate-950/70 border border-white/10 rounded-2xl p-3 space-y-2 text-xs">
+    <div className="bg-slate-950/70 border border-white/10 rounded-2xl p-3 space-y-2 text-xs" onInput={() => error && setError(null)}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="font-black text-white">#{job.id} · ห้อง {job.room_number || '-'}</p>
-          <p className="text-[11px] text-slate-400">{job.kind ? KIND_TEXT[job.kind] : ''} · {job.issue_type || '-'}</p>
+          <p className="text-[11px] text-slate-400">{kindAndTopic(job.kind, job.issue_type)}</p>
         </div>
         <StateBadge job={job} />
       </div>
@@ -289,7 +289,7 @@ function LegacyRow({ id, title, detail, table, isOwner, onDone, photos }: { id: 
     onDone();
   };
   return (
-    <div className="bg-slate-900/80 border border-slate-500/30 rounded-2xl p-4 space-y-2 text-xs">
+    <div className="bg-slate-900/80 border border-slate-500/30 rounded-2xl p-4 space-y-2 text-xs" onInput={() => error && setError(null)}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-black text-white">{title}</p>
         <span className="px-3 py-1 rounded-xl border border-slate-500/40 text-slate-300 text-[11px] font-black">งานแบบเดิม — จัดการด้วยมือ</span>

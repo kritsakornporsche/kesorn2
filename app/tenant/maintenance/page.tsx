@@ -41,7 +41,7 @@ export default function TenantMaintenancePage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-black text-white">🛠️ แจ้งซ่อม & ทำความสะอาด</h1>
-          <p className="text-sm text-muted-foreground mt-1">แจ้งได้เฉพาะห้องตามสัญญาเช่าที่ใช้งานอยู่ · เจ้าของหอจะมอบงานให้ช่างหรือแม่บ้าน</p>
+          <p className="text-sm text-muted-foreground mt-1">แจ้งได้เฉพาะห้องตามสัญญาเช่าที่ใช้งานอยู่ · ช่าง/แม่บ้านรับงาน หรือเจ้าของหอมอบงาน</p>
         </div>
         <button onClick={() => setShowForm((v) => !v)} className="px-6 py-3 bg-primary text-white font-black rounded-xl text-sm">+ แจ้งเรื่องใหม่</button>
       </div>
@@ -74,7 +74,7 @@ function ReportForm({ onDone }: { onDone: () => void }) {
   };
   const input = 'w-full bg-secondary/40 border border-border rounded-xl px-4 py-3 text-sm text-white';
   return (
-    <div className="bg-card rounded-3xl border border-border p-6 space-y-4">
+    <div className="bg-card rounded-3xl border border-border p-6 space-y-4" onInput={() => error && setError(null)}>
       <div className="flex gap-2">
         {(['repair', 'cleaning'] as Kind[]).map((k) => (
           <button key={k} onClick={() => { setKind(k); setIssueType(ISSUE_TYPES[k][0]); }}
@@ -110,7 +110,7 @@ function JobItem({ job, onChanged }: { job: Job; onChanged: () => void }) {
   const steps = STEPS.filter((st) => st !== 'Done' || job.state === 'Done' || !!job.charge?.decided);
   const step = job.state ? steps.indexOf(job.state as any) : -1;
   return (
-    <div className="bg-card rounded-3xl border border-border p-6 space-y-3">
+    <div className="bg-card rounded-3xl border border-border p-6 space-y-3" onInput={() => error && setError(null)}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="font-black text-white">{job.issue_type || (job.kind ? KIND_TEXT[job.kind] : 'รายการแจ้ง')} · ห้อง {job.room_number || '-'}</p>

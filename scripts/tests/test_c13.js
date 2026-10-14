@@ -290,7 +290,10 @@ async function main() {
     await q('UPDATE maintenance_requests SET contract_id = ?, tenant_id = ?, move_out_settlement_id = ? WHERE id = ?', [M.contractId, M.tenantId, sid, mj2.id]);
     await mt.assignJob(mj2.id, tech.id, owner, at('2026-10-02'));
     await mt.startJob(mj2.id, tech, at('2026-10-02'));
-    await mt.finishJob(mj2.id, tech, { chargeProposed: 150 }, at('2026-10-02'));
+    const bare = await mt.finishJob(mj2.id, tech, { chargeProposed: 150 }, at('2026-10-02'));
+    check('proposed charge without a note or photo refused (job stays InProgress)', !bare.ok && bare.reason === 'bad_input' && (await job(mj2.id)).state === 'InProgress', bare);
+    const withPhoto = await mt.finishJob(mj2.id, tech, { chargeProposed: 150, photos: [png] }, at('2026-10-02'));
+    check('proposed charge with a photo only: Done', withPhoto.ok && (await job(mj2.id)).state === 'Done', withPhoto);
     const after = await mt.decideCharge(mj2.id, { amount: 150, reason: 'tenant_damage' }, owner, at('2026-10-03'));
     const afterBill = after.ok && after.billId ? (await q('SELECT tenant_id, bill_type, status FROM bills WHERE id = ?', [after.billId]))[0] : null;
     check('after settling: a damage bill to the same contract tenant', after.ok && !after.toSettlement && afterBill && Number(afterBill.tenant_id) === M.tenantId && afterBill.bill_type === 'damage', afterBill || after);

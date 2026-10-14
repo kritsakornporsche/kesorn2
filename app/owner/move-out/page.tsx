@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { InspectionButton } from '@/components/InspectionModal';
 import { checkPaperFile } from '@/lib/paper-file-check';
+import { kindAndTopic } from '@/components/maintenance/shared';
 
 type State = 'Notified' | 'Returned' | 'Settled' | 'Closed' | 'Cancelled';
 
@@ -390,7 +391,7 @@ function MoveOutJobs({ s, onDone }: { s: Settlement; onDone: () => void }) {
       {s.jobs.length === 0 && <p className="text-slate-500">ยังไม่มีงาน</p>}
       {s.jobs.map((j) => (
         <div key={j.id} className="flex flex-wrap justify-between gap-2">
-          <span className="text-slate-300">#{j.id} {j.kind === 'repair' ? 'งานซ่อม' : 'งานทำความสะอาด'} · {j.issue_type || '-'} · {JOB_STATE_TEXT[String(j.state)] || '-'}</span>
+          <span className="text-slate-300">#{j.id} {kindAndTopic(j.kind, j.issue_type)} · {JOB_STATE_TEXT[String(j.state)] || '-'}</span>
           <span className="font-mono text-white">
             {j.charge_decided ? `ตัดสินแล้ว ${baht(j.charge_amount)}${j.charge_reason === 'wear_and_tear' ? ' (ไม่เก็บ)' : ''}`
               : j.charge_proposed !== null ? `เสนอ ${baht(j.charge_proposed)} · รอตัดสิน` : '-'}

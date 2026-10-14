@@ -846,6 +846,11 @@ export interface SettlementView {
   damage_items: { amount: number; reason: string; job_id?: number }[];
   /** repair / cleaning jobs of this move-out (lib/maintenance.ts) with the charge proposed and decided */
   jobs: SettlementJob[];
+  /** The bills this move-out issued, as recorded (for the history / receipt screens; nothing recalculated) */
+  final_bill: null | { id: number; amount: number; room_amount: number; electric_amount: number; electric_units: number; water_amount: number; common_fee: number };
+  damage_bill: null | { id: number; amount: number };
+  prev_meter: number | null;
+  final_meter: number | null;
   clause13: Clause13 | null;
   outstanding: { id: number; title: string; bill_type: string; outstanding: number; late_fee: number }[];
   outstanding_total: number;
@@ -927,7 +932,10 @@ function viewOf(s: any, base: Awaited<ReturnType<typeof depositBase>>, held: num
     return_date: returnDate, notice_days: daysBetween(effectiveNotice, returnDate || (ymdOf(s.planned_return_date) as string)),
     contract_start: startDate, contract_end: endDate,
     final_bill_id: s.final_bill_id ? Number(s.final_bill_id) : null,
-    damage_items: damageItems, jobs: [], clause13: check,
+    damage_items: damageItems, jobs: [], final_bill: null, damage_bill: null,
+    prev_meter: s.prev_meter === null || s.prev_meter === undefined ? null : Number(s.prev_meter),
+    final_meter: s.final_meter === null || s.final_meter === undefined ? null : Number(s.final_meter),
+    clause13: check,
     outstanding: outstanding.map((b) => ({ id: b.id, title: b.title, bill_type: b.bill_type, outstanding: b.outstanding, late_fee: b.late_fee })),
     outstanding_total: outstandingTotal, money,
   };
@@ -950,7 +958,20 @@ export async function getSettlement(settlementId: number, viewer: Actor, now: Da
     const held = base.kind === 'system' ? await liabilityHeld(client, base.billIds, s.id) : 0;
     // Before settling: as the settlement will count them (late fees up to the return date). After: what is owed now.
     const outstanding = s.state === 'Cancelled' ? [] : await outstandingBills(client, s.tenant_id, s.state === 'Returned' ? lateFeeDate(s, now) : now, false);
-    return { ...viewOf(s, base, held, outstanding, viewer, now), jobs: await settlementJobs(client, Number(s.id)) };
+    const billOf = async (id: unknown) => (id ? (await client.query(
+      'SELECT id, amount, room_amount, electric_amount, electric_units, water_amount, common_fee FROM bills WHERE id = ?', [Number(id)]
+    )).rows[0] : null);
+    const fb = await billOf(s.final_bill_id);
+    const db = await billOf(s.damage_bill_id);
+    return {
+      ...viewOf(s, base, held, outstanding, viewer, now),
+      jobs: await settlementJobs(client, Number(s.id)),
+      final_bill: fb ? {
+        id: Number(fb.id), amount: Number(fb.amount), room_amount: Number(fb.room_amount || 0), electric_amount: Number(fb.electric_amount || 0),
+        electric_units: Number(fb.electric_units || 0), water_amount: Number(fb.water_amount || 0), common_fee: Number(fb.common_fee || 0),
+      } : null,
+      damage_bill: db ? { id: Number(db.id), amount: Number(db.amount) } : null,
+    };
   });
 }
 

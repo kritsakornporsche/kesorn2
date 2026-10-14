@@ -317,7 +317,8 @@ export interface FinishInput { note?: unknown; photos?: unknown; chargeProposed?
 
 /**
  * The assigned keeper finishes the job with a note, photos and an optional proposed charge. Without a charge (0 or
- * empty) the job is Closed at once; with one it is Done, waiting for the owner to decide the charge.
+ * empty) the job is Closed at once; with one it is Done, waiting for the owner to decide the charge, and the keeper must
+ * leave a note or at least one photo as the reason (none needed without a charge).
  */
 export function finishJob(id: number, keeper: Actor, input: FinishInput, now: Date) {
   if (!keeper || keeper.role !== 'keeper') return deny<never>('forbidden');
@@ -329,6 +330,7 @@ export function finishJob(id: number, keeper: Actor, input: FinishInput, now: Da
     if (Number(job.assigned_to) !== Number(keeper.id)) refuse('not_assignee');
     if (!keeperFits(await keeperRow(client, keeper.id), job.kind)) refuse('forbidden');
     if (job.state !== 'InProgress') refuse('invalid_state', 'ปิดงานได้เฉพาะงานที่กำลังดำเนินการ');
+    if (round2(proposed) > 0 && !text(input.note) && files.length === 0) refuse('bad_input', 'เสนอค่าใช้จ่ายต้องมีบันทึกสิ่งที่ทำหรือรูปอย่างน้อย 1 อย่าง');
     const charged = round2(proposed) > 0;
     await client.query(
       `UPDATE maintenance_requests SET state = ?, status = 'Completed', done_at = ?, done_note = ?,

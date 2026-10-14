@@ -84,11 +84,12 @@ function KeeperJobCard({ job, onDone }: { job: Job; onDone: () => void }) {
   const finish = () => {
     if (charge !== '' && !(Number(charge) >= 0)) return setError('ยอดค่าใช้จ่ายที่เสนอไม่ถูกต้อง');
     if (Number(charge) > 0 && !chargeNote.trim()) return setError('กรุณาระบุเหตุผลของค่าใช้จ่ายที่เสนอ');
+    if (Number(charge) > 0 && !note.trim() && photos.length === 0) return setError('เสนอค่าใช้จ่ายต้องมีบันทึกสิ่งที่ทำหรือรูปอย่างน้อย 1 อย่าง');
     act({ action: 'finish', id: job.id, note, photos: photos.map((p) => p.dataUrl), chargeProposed: charge === '' ? 0 : Number(charge), chargeNote });
   };
 
   return (
-    <div className="bg-slate-900/90 border border-white/10 rounded-2xl p-4 space-y-2 text-xs">
+    <div className="bg-slate-900/90 border border-white/10 rounded-2xl p-4 space-y-2 text-xs" onInput={() => error && setError(null)}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="font-black text-white text-sm">#{job.id} · ห้อง {job.room_number || '-'}</p>

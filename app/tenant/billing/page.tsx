@@ -7,9 +7,17 @@ import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
 import Image from 'next/image';
 import { formatBaht, formatThaiDateTime, PAYMENT_METHOD_LABEL } from '@/lib/format';
 
+// One-line label of a bill that is not split into rent / utilities (same rule as the receipt: lines only when they add up)
+const BILL_TYPE_LINE: Record<string, string> = {
+  damage: '🛠️ ค่าเสียหาย', move_out_damage: '🛠️ ค่าเสียหายตอนย้ายออก', service: '🧹 ค่าบริการ',
+  booking: '📝 ค่าจอง / ค่าแรกเข้า', move_out: '📦 บิลสุดท้ายก่อนย้ายออก',
+};
+
 interface Bill {
   id: number;
   title: string;
+  bill_type?: string | null;
+  is_first_bill?: number | boolean;
   amount: string;
   room_amount?: number | string;
   water_units?: number | string;
@@ -262,6 +270,9 @@ export default function TenantBillingPage() {
               const waterAmt = Number(bill.water_amount || 0);
               const commonFee = Number(bill.common_fee || 0);
               const lateFee = Number(bill.late_fee || 0);
+              // Split into lines only when they add up to the bill; otherwise one line named by the bill type
+              const itemised = Math.abs(roomAmt + elecAmt + waterAmt + commonFee - Number(bill.amount || 0)) < 0.01;
+              const singleLabel = BILL_TYPE_LINE[String(bill.bill_type || '')] || (bill.title ? `🧾 ${bill.title}` : '🧾 ค่าบริการ');
               const isPendingCorrection = bill.status === 'PendingCorrection' || bill.correction_status === 'Pending';
 
               return (
@@ -346,16 +357,26 @@ export default function TenantBillingPage() {
                            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">จำนวนเงิน</span>
                          </div>
 
-                         {/* Room Rent */}
-                         <div className="flex items-center justify-between text-xs sm:text-sm">
-                           <span className="font-semibold text-foreground/90 flex items-center gap-2">
-                             🏠 ค่าเช่าห้องพัก
-                           </span>
-                           <span className="font-black text-foreground">฿{formatBaht(roomAmt > 0 ? roomAmt : bill.amount)}</span>
-                         </div>
+                         {/* Room Rent, or the whole amount of a bill that is not split (damage / service / booking ...) */}
+                         {!itemised ? (
+                           <div className="flex items-center justify-between text-xs sm:text-sm">
+                             <div className="flex flex-col">
+                               <span className="font-semibold text-foreground/90 flex items-center gap-2">{singleLabel}</span>
+                               {BILL_TYPE_LINE[String(bill.bill_type || '')] && bill.title && <span className="text-[11px] text-muted-foreground pl-6">{bill.title}</span>}
+                             </div>
+                             <span className="font-black text-foreground">฿{formatBaht(bill.amount)}</span>
+                           </div>
+                         ) : roomAmt > 0 && (
+                           <div className="flex items-center justify-between text-xs sm:text-sm">
+                             <span className="font-semibold text-foreground/90 flex items-center gap-2">
+                               🏠 ค่าเช่าห้องพัก
+                             </span>
+                             <span className="font-black text-foreground">฿{formatBaht(roomAmt)}</span>
+                           </div>
+                         )}
 
                          {/* Electricity */}
-                         {(elecAmt > 0 || elecUnits > 0) && (
+                         {itemised && (elecAmt > 0 || elecUnits > 0) && (
                            <div className="flex items-center justify-between text-xs sm:text-sm">
                              <div className="flex flex-col">
                                <span className="font-semibold text-foreground/90 flex items-center gap-2">
@@ -371,7 +392,7 @@ export default function TenantBillingPage() {
                          )}
 
                          {/* Water */}
-                         {waterAmt > 0 && (
+                         {itemised && waterAmt > 0 && (
                            <div className="flex items-center justify-between text-xs sm:text-sm">
                              <div className="flex flex-col">
                                <span className="font-semibold text-foreground/90 flex items-center gap-2">
@@ -384,7 +405,7 @@ export default function TenantBillingPage() {
                          )}
 
                          {/* Common Fee */}
-                         {commonFee > 0 && (
+                         {itemised && commonFee > 0 && (
                            <div className="flex items-center justify-between text-xs sm:text-sm">
                              <span className="font-semibold text-foreground/90 flex items-center gap-2">
                                🧹 ค่าส่วนกลาง / ค่าบริการ
