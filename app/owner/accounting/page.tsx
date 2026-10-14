@@ -11,6 +11,7 @@ interface Transaction {
   description: string;
   transaction_date: string;
   legacy?: boolean;
+  category_label?: string;
 }
 
 interface MonthlySummary {
@@ -26,7 +27,7 @@ export default function OwnerAccounting() {
   const { data: session } = useSession();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [monthly, setMonthly] = useState<MonthlySummary[]>([]);
-  const [totals, setTotals] = useState({ income: 0, expense: 0, profit: 0, depositsHeld: 0 });
+  const [totals, setTotals] = useState({ income: 0, expense: 0, profit: 0, depositsHeld: 0, depositReclass: 0 });
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ type: 'Income', category: 'Rent', amount: 0, description: '', transaction_date: new Date().toISOString().split('T')[0] });
@@ -105,6 +106,11 @@ export default function OwnerAccounting() {
             <div className="bg-card border border-white/20/10 shadow-sm rounded-2xl p-6">
               <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider mb-1">รายรับรวม</p>
               <p className="text-3xl font-black text-[#10B981]">฿{fmt(totals.income)}</p>
+              {totals.depositReclass !== 0 && (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  รวมปรับปรุงเงินประกันแบบเดิม {totals.depositReclass < 0 ? '-' : '+'}฿{fmt(Math.abs(totals.depositReclass))}
+                </p>
+              )}
             </div>
             <div className="bg-card border border-white/20/10 shadow-sm rounded-2xl p-6">
               <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider mb-1">รายจ่ายรวม</p>
@@ -155,7 +161,7 @@ export default function OwnerAccounting() {
                           <span className="ml-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-white/60" title="บันทึกก่อนแยกเงินประกันเป็นหนี้สิน">ข้อมูลแบบเดิม</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-white/80">{t.category}</td>
+                      <td className="px-6 py-4 text-white/80">{t.category_label || t.category}</td>
                       <td className="px-6 py-4 text-white">{t.description || '-'}</td>
                       {(() => {
                         // Income adds, expense subtracts; a reversal has a negative amount.

@@ -27,6 +27,7 @@ export async function GET(req: Request) {
     const transactions = rows.map((t: any) => ({
       ...t,
       legacy: (t.type === 'Income' && t.category === 'Deposit') || (t.type === 'Expense' && t.category === 'Deposit Refund'),
+      category_label: t.category === 'deposit_reclass' ? 'ปรับปรุงเงินประกันแบบเดิม' : t.category,
     }));
 
     // Monthly summary
@@ -34,7 +35,8 @@ export async function GET(req: Request) {
       SELECT 
         YEAR(transaction_date) as year,
         MONTH(transaction_date) as month,
-        SUM(CASE WHEN type = 'Income' AND COALESCE(category, '') <> 'deposit_reclass' THEN amount ELSE 0 END) as income,
+        SUM(CASE WHEN type = 'Income' THEN amount ELSE 0 END) as income,
+        SUM(CASE WHEN type = 'Income' AND category = 'deposit_reclass' THEN amount ELSE 0 END) as deposit_reclass,
         SUM(CASE WHEN type = 'Expense' THEN amount ELSE 0 END) as expense
       FROM accounting_transactions
       WHERE dorm_id = ${dormId}
@@ -44,10 +46,12 @@ export async function GET(req: Request) {
     `;
 
     // Income and profit never include deposits (Liability); deposits held = sum of Liability rows only.
-    // deposit_reclass rows (an old deposit booked as Income moved to Liability at move-out, lib/moveOut.ts) are not income either
+    // deposit_reclass rows are included in income: an old deposit once booked as Income is taken back out (negative) when
+    // it is moved to Liability at move-out (lib/moveOut.ts), so after the refund it adds nothing to income. Shown as its own line.
     const [sums] = await sql`
       SELECT
-        COALESCE(SUM(CASE WHEN type = 'Income' AND COALESCE(category, '') <> 'deposit_reclass' THEN amount ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN type = 'Income' THEN amount ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN type = 'Income' AND category = 'deposit_reclass' THEN amount ELSE 0 END), 0) as deposit_reclass,
         COALESCE(SUM(CASE WHEN type = 'Expense' THEN amount ELSE 0 END), 0) as expense,
         COALESCE(SUM(CASE WHEN type = 'Liability' THEN amount ELSE 0 END), 0) as liability
       FROM accounting_transactions
@@ -66,6 +70,8 @@ export async function GET(req: Request) {
         expense: totalExpense,
         profit: round2(totalIncome - totalExpense),
         depositsHeld: round2(Number(sums?.liability || 0)),
+        // Part of income: old deposits moved back out of income ("ปรับปรุงเงินประกันแบบเดิม")
+        depositReclass: round2(Number(sums?.deposit_reclass || 0)),
       },
     });
   } catch (err: any) {

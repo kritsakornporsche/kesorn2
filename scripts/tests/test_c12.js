@@ -306,8 +306,12 @@ async function main() {
     // ── G: older contract (no Liability) → owner must confirm; booked as income → deposit_reclass ──
     console.log('G. Older contract, deposit confirmed by hand');
     const G = await tenancy('g', { start: '2025-10-01', end: '2026-09-30', deposit: 'legacy' });
+    // The deposit as booked before deposits were a Liability: Income / Deposit
+    await q("INSERT INTO accounting_transactions (dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date) VALUES (1, 'Income', 'Deposit', 3000, ?, ?, 'zz_test_legacy', '2025-10-01')", [TAG, G.contractId]);
     const gNotice = await notice(G.user, '2026-09-30', '2026-08-20');
     await mo.recordReturn(gNotice.settlementId, { returnDate: '2026-09-30', finalMeter: 100 }, owner, at('2026-09-30'));
+    const gView = await mo.getSettlement(gNotice.settlementId, owner, at('2026-10-01'));
+    check('contract deposit offered as the starting value, not applied', gView.money.deposit_needs_confirmation && near(gView.money.suggested_deposit, 3000) && gView.money.deposit === null, gView.money);
     const gEarly = await mo.settleMoveOut(gNotice.settlementId, owner, at('2026-10-01'));
     check('settle refused before the owner confirms', !gEarly.ok && gEarly.reason === 'deposit_unconfirmed', gEarly);
     const gMgr = await mo.confirmLegacyDeposit(gNotice.settlementId, { amount: 3000, recordedAs: 'income', note: 'ใบเสร็จ 123' }, manager, at('2026-10-01'));
@@ -324,6 +328,11 @@ async function main() {
     const reclassCat = await q("SELECT DISTINCT category FROM accounting_transactions WHERE reference_type = 'settlement_opening' AND type = 'Income' AND reference_id = ?", [gNotice.settlementId]);
     check('reclass row uses category deposit_reclass', reclassCat.length === 1 && reclassCat[0].category === 'deposit_reclass');
     if (gSettle.ok && gSettle.refund > 0) await mo.recordRefund(gNotice.settlementId, { file: pdfUrl }, owner, at('2026-10-02'));
+    const gIncome = await q(
+      "SELECT COALESCE(SUM(amount), 0) AS s FROM accounting_transactions WHERE type = 'Income' AND ((reference_type = 'zz_test_legacy' AND reference_id = ?) OR (reference_type = 'settlement_opening' AND reference_id = ?))",
+      [G.contractId, gNotice.settlementId]
+    );
+    check('old deposit adds nothing to income after the refund (Income +3,000 − 3,000 = 0)', near(gIncome[0].s, 0), gIncome[0]);
     check('G: Liability 0 after close', (await liability([G.contractId], gNotice.settlementId)) === 0);
 
     // ── H: renewed contract → deposit found through parent_contract_id ──
@@ -345,6 +354,27 @@ async function main() {
     const I = await tenancy('i', { start: '2025-10-01', end: '2026-10-31' });
     const iNotice = await notice(I.user, '2026-10-31', '2026-10-21');
     check('less than 30 days allowed with a warning', iNotice.ok && iNotice.warnings.some((w) => w.includes('30')), iNotice);
+
+    // ── L: tenant with a second contract keeps that contract's room ──
+    console.log('L. Tenant with another contract');
+    const L = await tenancy('l', { start: '2025-10-01', end: '2026-09-30' });
+    const lRoom2 = await room(1000);
+    const lSecond = await q("INSERT INTO contracts (tenant_id, room_id, start_date, end_date, deposit_amount, status) VALUES (?, ?, '2026-10-01', '2027-09-30', 3000, 'PendingContract')", [L.tenantId, lRoom2.id]);
+    created.contracts.push(lSecond.insertId);
+    const lNotice = await notice(L.user, '2026-09-30', '2026-08-20');
+    const lRet = await mo.recordReturn(lNotice.settlementId, { returnDate: '2026-09-30', finalMeter: 100 }, owner, at('2026-09-30'));
+    const lTenant = (await q('SELECT room_id, status FROM tenants WHERE id = ?', [L.tenantId]))[0];
+    check('first contract ended: tenant room_id = room of the second contract', lRet.ok && Number(lTenant.room_id) === lRoom2.id && lTenant.status !== 'past', lTenant);
+    check('room of the ended contract released', (await q('SELECT status FROM rooms WHERE id = ?', [L.room.id]))[0].status === 'Available');
+
+    // ── M: move-in bill still unpaid → settle refused ──
+    console.log('M. Move-in bill unpaid');
+    const M = await tenancy('m', { start: '2025-10-01', end: '2026-09-30' });
+    await q("UPDATE bills SET status = 'Unpaid' WHERE id = (SELECT move_in_bill_id FROM contracts WHERE id = ?)", [M.contractId]);
+    const mNotice = await notice(M.user, '2026-09-30', '2026-08-20');
+    await mo.recordReturn(mNotice.settlementId, { returnDate: '2026-09-30', finalMeter: 100 }, owner, at('2026-09-30'));
+    const mSettle = await mo.settleMoveOut(mNotice.settlementId, owner, at('2026-10-01'));
+    check('settle refused: บิลเข้าอยู่ยังไม่ชำระ', !mSettle.ok && mSettle.reason === 'move_in_unpaid' && mSettle.message.includes('บิลเข้าอยู่ยังไม่ชำระ'), mSettle);
 
     // ── J: request from before commit 12 (no settlement) on a MoveOutPending contract ──
     console.log('J. Older move-out request');
@@ -372,6 +402,7 @@ async function main() {
     await q("DELETE FROM accounting_transactions WHERE reference_type IN ('bill_payment','bill_payment_reversal') AND reference_id IN (?)", [ids(payments)]);
     await q("DELETE FROM accounting_transactions WHERE reference_type LIKE 'settlement\\_%' AND reference_id IN (?)", [ids(settlements.map((s) => s.id))]);
     await q("DELETE FROM accounting_transactions WHERE reference_type = 'booking_forfeit' AND reference_id IN (?)", [ids(bills)]);
+    await q("DELETE FROM accounting_transactions WHERE reference_type = 'zz_test_legacy' AND description = ?", [TAG]);
     await q('DELETE FROM bill_status_history WHERE bill_id IN (?)', [ids(bills)]);
     await q('DELETE FROM bill_payments WHERE bill_id IN (?)', [ids(bills)]);
     await q('DELETE FROM bills WHERE id IN (?)', [ids(bills)]);

@@ -36,7 +36,7 @@ export type DepositSource = 'system' | 'outside' | 'legacy_income' | 'legacy_out
 
 export type MoveOutRefusal = 'not_found' | 'forbidden' | 'no_contract' | 'already_requested' | 'legacy_request' | 'bad_date'
   | 'invalid_state' | 'meter_required' | 'meter_lower' | 'prev_meter_required' | 'bad_damage' | 'deposit_unconfirmed'
-  | 'bad_deposit' | 'drafts' | 'offset_failed' | 'bad_file' | 'liability_not_zero' | 'note_required';
+  | 'bad_deposit' | 'drafts' | 'offset_failed' | 'bad_file' | 'liability_not_zero' | 'note_required' | 'move_in_unpaid';
 
 export type MoveOutResult<T> = ({ ok: true } & T) | { ok: false; reason: MoveOutRefusal; message: string };
 
@@ -59,6 +59,7 @@ const MESSAGES: Record<MoveOutRefusal, string> = {
   bad_file: 'ไฟล์สลิปไม่ถูกต้อง',
   liability_not_zero: 'ยอดเงินประกันของสัญญานี้ยังไม่เป็น 0 — ปิดเรื่องไม่ได้',
   note_required: 'กรุณาระบุบันทึกการจัดการ',
+  move_in_unpaid: 'บิลเข้าอยู่ยังไม่ชำระ กรุณาจัดการก่อน',
 };
 
 class MoveOutRefused extends Error {
@@ -182,7 +183,8 @@ async function contractChain(client: Client, contractId: number) {
  * Where the deposit of a contract is recorded:
  * system  — Liability rows of the booking / move-in bill payments (renewals follow parent_contract_id);
  * outside — received outside the system (deposit_outside_system): contract deposit_amount;
- * legacy  — before deposits were a Liability (no linked bills): the owner confirms the amount by hand.
+ * legacy  — no linked bills (before deposits were a Liability, or a contract the owner created): the owner confirms the
+ *           amount by hand (the contract's deposit_amount is offered as the starting value).
  */
 async function depositBase(client: Client, contractId: number) {
   const chain = await contractChain(client, contractId);
@@ -257,13 +259,29 @@ async function roomHeldByOther(client: Client, roomId: number, contractId: numbe
   return !!row;
 }
 
-/** End the contract and free the room unless another contract holds it; the tenant record no longer has a room. */
+/**
+ * End the contract and free the room unless another contract holds it. The tenant record follows its other contract
+ * that has not ended (room_id points to that contract's room); with none, it is marked past and its room cleared when
+ * it was the room of the contract that ended.
+ */
 async function endContract(client: Client, contractId: number, roomId: number, tenantId: number, returnDate: string) {
   await client.query("UPDATE contracts SET status = 'Ended' WHERE id = ?", [contractId]);
   if (!(await roomHeldByOther(client, roomId, contractId))) {
     await client.query("UPDATE rooms SET status = 'Available', tenant_id = NULL WHERE id = ?", [roomId]);
   }
-  await client.query("UPDATE tenants SET status = 'past', room_id = NULL, move_out_date = ? WHERE id = ?", [returnDate, tenantId]);
+  const other = (await client.query(
+    `SELECT room_id FROM contracts WHERE tenant_id = ? AND id <> ? AND status IN (${ROOM_HOLDING_STATUSES.map(() => '?').join(', ')})
+     ORDER BY (status = 'Active') DESC, id DESC LIMIT 1`,
+    [tenantId, contractId, ...ROOM_HOLDING_STATUSES]
+  )).rows[0];
+  if (other) {
+    await client.query('UPDATE tenants SET room_id = ? WHERE id = ?', [other.room_id, tenantId]);
+  } else {
+    await client.query(
+      "UPDATE tenants SET status = 'past', room_id = IF(room_id = ?, NULL, room_id), move_out_date = ? WHERE id = ?",
+      [roomId, returnDate, tenantId]
+    );
+  }
 }
 
 /** Back to guest when the account has no other contract that holds a room. Staff accounts are never changed. */
@@ -633,6 +651,14 @@ export function settleMoveOut(settlementId: number, by: Actor, now: Date) {
     if (s.state !== 'Returned') refuse('invalid_state');
     const drafts = (await client.query("SELECT id FROM bills WHERE tenant_id = ? AND LOWER(status) = 'draft' LIMIT 1", [s.tenant_id])).rows[0];
     if (drafts) refuse('drafts');
+    // The move-in bill holds part of the deposit: settling while it is unpaid would leave the deposit wrong
+    const chainBills = (await contractChain(client, s.contract_id)).map((c) => c.move_in_bill_id).filter(Boolean).map(Number);
+    if (chainBills.length > 0) {
+      const unpaidMoveIn = (await client.query(
+        "SELECT id FROM bills WHERE id IN (?) AND LOWER(status) NOT IN ('paid', 'cancelled', 'canceled') LIMIT 1", [chainBills]
+      )).rows[0];
+      if (unpaidMoveIn) refuse('move_in_unpaid');
+    }
 
     const deposit = await depositFor(client, s);
     if (deposit.source === null) refuse('deposit_unconfirmed');
@@ -789,6 +815,8 @@ export interface SettlementView {
   money: null | {
     deposit_source: DepositSource | null;
     deposit_needs_confirmation: boolean;
+    /** starting value for the owner's confirmation: the deposit written on the contract (never applied by itself) */
+    suggested_deposit: number | null;
     deposit: number | null;
     offset: number;
     forfeit: number;
@@ -839,6 +867,7 @@ function viewOf(s: any, base: Awaited<ReturnType<typeof depositBase>>, held: num
     money = {
       deposit_source: source,
       deposit_needs_confirmation: base.kind === 'legacy' && !s.deposit_source,
+      suggested_deposit: base.kind === 'legacy' && s.contract_deposit !== null && s.contract_deposit !== undefined ? round2(Number(s.contract_deposit)) : null,
       deposit,
       offset: settled ? round2(Number(s.offset_total || 0)) : projectedOffset,
       forfeit: settled ? round2(Number(s.forfeit_total || 0)) : refundable ? 0 : rest,
@@ -870,7 +899,7 @@ function viewOf(s: any, base: Awaited<ReturnType<typeof depositBase>>, held: num
 export async function getSettlement(settlementId: number, viewer: Actor, now: Date): Promise<SettlementView | null> {
   return withRetry(async (client) => {
     const s = (await client.query(
-      `SELECT s.*, c.start_date, c.end_date, r.room_number, t.name AS tenant_name
+      `SELECT s.*, c.start_date, c.end_date, c.deposit_amount AS contract_deposit, r.room_number, t.name AS tenant_name
        FROM move_out_settlements s JOIN contracts c ON c.id = s.contract_id JOIN rooms r ON r.id = s.room_id
        LEFT JOIN tenants t ON t.id = s.tenant_id WHERE s.id = ?`, [settlementId]
     )).rows[0];
