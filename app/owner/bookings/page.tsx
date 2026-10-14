@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { checkPaperFile } from '@/lib/paper-file-check';
+import { InspectionButton, type InspectionStatus } from '@/components/InspectionModal';
 
 interface Booking {
   contract_id: number;
@@ -51,6 +52,8 @@ interface Booking {
   move_in_overdue_partial?: boolean;
   can_issue_move_in?: boolean;
   contract_file_is_pdf?: boolean;
+  // Move-in inspection (lib/inspections.ts); null when it cannot be inspected or migration 011 is not run
+  inspection_status?: InspectionStatus | null;
 }
 
 export default function OwnerBookingsPage() {
@@ -602,6 +605,10 @@ export default function OwnerBookingsPage() {
                           📤 อัปโหลดสัญญาที่เซ็นแล้ว
                         </button>
                       </>
+                    )}
+
+                    {(is81 || is82 || is83) && !item.legacy && item.inspection_status && (
+                      <InspectionButton contractId={item.contract_id} initialStatus={item.inspection_status} />
                     )}
 
                     {is81 && item.can_issue_move_in && (

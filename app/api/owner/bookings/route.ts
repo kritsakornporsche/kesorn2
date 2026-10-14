@@ -7,6 +7,7 @@ import { bangkokDate, bookingFeeFor, capCheck, moveInAmounts } from '@/lib/billi
 import { expireDueMoveIns } from '@/lib/moveIn';
 import { isPaper, withPaperLink } from '@/lib/contract-files';
 import { formatBaht } from '@/lib/format';
+import { INSPECTABLE, inspectionStatuses, type InspectionStatus } from '@/lib/inspections';
 
 export async function GET(req: Request) {
   try {
@@ -100,6 +101,14 @@ export async function GET(req: Request) {
       ORDER BY room_number ASC
     `;
 
+    // Move-in inspection status (lib/inspections.ts); left out when migration 011 has not been run
+    let inspections: Record<number, InspectionStatus> | null = null;
+    try {
+      inspections = await inspectionStatuses(bookings.filter((b: any) => INSPECTABLE.includes(b.booking_status)).map((b: any) => Number(b.contract_id)));
+    } catch (e) {
+      console.warn('[Owner bookings inspection status]', e);
+    }
+
     // Time left, computed with the server clock (the page counts down from these, not from the browser clock)
     const withTimers = bookings.map((b: any) => {
       const deadlines = b.approved_at ? bookingDeadlines(new Date(b.approved_at)) : null;
@@ -111,6 +120,7 @@ export async function GET(req: Request) {
       return {
         ...withPaperLink(b, 'contract_id'),
         booking_fee: bookingFeeFor(b.room_number),
+        inspection_status: inspections?.[Number(b.contract_id)] ?? null,
         // Move-in (lib/moveIn.ts): amounts from the room on the server; contracts without move_in_bill_id are older ones
         move_in: { ...moveIn, cap_ok: cap.ok, cap_message: cap.ok ? null : cap.message },
         legacy: b.booking_status === 'PendingFirstBill' && !b.move_in_bill_id,

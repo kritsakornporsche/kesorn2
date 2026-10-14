@@ -8,6 +8,7 @@ import Image from 'next/image';
 
 import PrintableContractModal from '@/components/PrintableContractModal';
 import { checkPaperFile } from '@/lib/paper-file-check';
+import { InspectionButton } from '@/components/InspectionModal';
 
 interface ContractDetail {
   id: number;
@@ -400,6 +401,20 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             </div>
           )}
         </div>
+
+        {/* Move-in room inspection (does not hold up the contract taking effect) */}
+        {['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active'].includes(contract.status) && (
+          <div className="space-y-3 pt-2">
+            <h3 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+              <span>🔍</span>
+              <span>ตรวจสภาพห้องและทรัพย์สินก่อนเข้าอยู่</span>
+            </h3>
+            <div className="p-5 bg-slate-950/60 border border-white/10 rounded-3xl flex flex-wrap items-center gap-3">
+              <InspectionButton contractId={contract.id} />
+              <span className="text-[11px] text-white/40">บันทึกสภาพและรูปถ่ายแต่ละรายการ ผู้เช่ากดรับทราบผ่านหน้าสัญญาของตน (แก้ไขได้จนผู้เช่ารับทราบ)</span>
+            </div>
+          </div>
+        )}
 
         {/* Confirmation and Approval Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">

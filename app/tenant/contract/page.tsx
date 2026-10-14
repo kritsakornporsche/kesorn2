@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import PrintableContractModal from '@/components/PrintableContractModal';
+import TenantInspectionCard from '@/components/TenantInspectionCard';
 
 interface Contract {
   id: number;
@@ -244,6 +245,9 @@ export default function TenantContractPage() {
                   </div>
                 )}
               </div>
+
+              {/* Move-in room inspection: shown once the owner has recorded it */}
+              <TenantInspectionCard key={activeContract.id} contractId={activeContract.id} />
 
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-border">
