@@ -6,6 +6,7 @@ const MESSAGES = {
   reason_required: 'กรุณาระบุเหตุผลในการยกเลิกการชำระ',
   not_found: 'ไม่พบบิล',
   not_paid: 'บิลนี้ยังไม่ได้ชำระ',
+  deposit_offset: 'บิลนี้ชำระด้วยเงินประกันตอนย้ายออก ยกเลิกการชำระไม่ได้',
 };
 
 // POST { billId, reason } — reverse a payment (owner only, reason required, history kept)

@@ -5,7 +5,7 @@
 
 import { bangkokDate, bookingFeeFor, getDormPromptPay } from '@/lib/billing';
 import { type Client } from '@/lib/bill-status';
-import { createContractTx, Refused, contractMessage, withRetry, type ContractRefusal } from '@/lib/contracts';
+import { ROOM_HOLDING_STATUSES, createContractTx, Refused, contractMessage, withRetry, type ContractRefusal } from '@/lib/contracts';
 import { recordPaymentInTransaction, slipPaidAt } from '@/lib/payments';
 import { forfeitBookingFee } from '@/lib/deposits';
 import { formatBaht } from '@/lib/format';
@@ -94,8 +94,8 @@ export function slipTimeAllowed(slipAt: Date, approvedAt: Date) {
 /** The room goes back to Available when no contract holds it any more. */
 export async function releaseRoom(client: Client, roomId: number) {
   const holding = (await client.query(
-    `SELECT id FROM contracts WHERE room_id = ? AND status IN ('BookingRequested', 'BookingApproved', 'PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active') LIMIT 1`,
-    [roomId]
+    `SELECT id FROM contracts WHERE room_id = ? AND status IN (${ROOM_HOLDING_STATUSES.map(() => '?').join(', ')}) LIMIT 1`,
+    [roomId, ...ROOM_HOLDING_STATUSES]
   )).rows[0];
   if (!holding) await client.query("UPDATE rooms SET status = 'Available' WHERE id = ? AND status = 'Reserved'", [roomId]);
 }

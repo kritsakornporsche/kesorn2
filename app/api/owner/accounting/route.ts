@@ -34,7 +34,7 @@ export async function GET(req: Request) {
       SELECT 
         YEAR(transaction_date) as year,
         MONTH(transaction_date) as month,
-        SUM(CASE WHEN type = 'Income' THEN amount ELSE 0 END) as income,
+        SUM(CASE WHEN type = 'Income' AND COALESCE(category, '') <> 'deposit_reclass' THEN amount ELSE 0 END) as income,
         SUM(CASE WHEN type = 'Expense' THEN amount ELSE 0 END) as expense
       FROM accounting_transactions
       WHERE dorm_id = ${dormId}
@@ -43,10 +43,11 @@ export async function GET(req: Request) {
       LIMIT 12
     `;
 
-    // Income and profit never include deposits (Liability); deposits held = sum of Liability rows only
+    // Income and profit never include deposits (Liability); deposits held = sum of Liability rows only.
+    // deposit_reclass rows (an old deposit booked as Income moved to Liability at move-out, lib/moveOut.ts) are not income either
     const [sums] = await sql`
       SELECT
-        COALESCE(SUM(CASE WHEN type = 'Income' THEN amount ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN type = 'Income' AND COALESCE(category, '') <> 'deposit_reclass' THEN amount ELSE 0 END), 0) as income,
         COALESCE(SUM(CASE WHEN type = 'Expense' THEN amount ELSE 0 END), 0) as expense,
         COALESCE(SUM(CASE WHEN type = 'Liability' THEN amount ELSE 0 END), 0) as liability
       FROM accounting_transactions

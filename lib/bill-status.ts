@@ -98,7 +98,7 @@ export async function sendBills(billIds: number[], sentBy: number | null) {
 
 export type UnpayResult =
   | { ok: true; voidedPayments: number; reversedAmount: number }
-  | { ok: false; reason: 'reason_required' | 'not_found' | 'not_paid' };
+  | { ok: false; reason: 'reason_required' | 'not_found' | 'not_paid' | 'deposit_offset' };
 
 /**
  * Reverse a payment (owner only, reason required). Payments are voided, not deleted, and each one
@@ -123,8 +123,10 @@ export async function unpayBill(billId: number, reason: string, by: number | nul
       `ยกเลิกการชำระบิลห้อง ${bill.room_number || '-'} (${bill.title || bill.billing_cycle || '-'}) ฿${amount.toLocaleString('th-TH')} — ${cleanReason}`;
 
     const payments = (await client.query(
-      'SELECT id, amount FROM bill_payments WHERE bill_id = ? AND voided_at IS NULL', [billId]
+      'SELECT id, amount, method FROM bill_payments WHERE bill_id = ? AND voided_at IS NULL', [billId]
     )).rows;
+    // Paid from the deposit at move-out: reversing it would leave the deposit settlement (lib/moveOut.ts) wrong
+    if (payments.some((p: any) => p.method === 'deposit_offset')) return { ok: false, reason: 'deposit_offset' } as UnpayResult;
 
     let reversedAmount = 0;
     for (const p of payments) {

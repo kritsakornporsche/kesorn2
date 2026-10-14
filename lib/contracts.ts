@@ -13,7 +13,8 @@ const STAFF_ROLES = new Set(['owner', 'manager', 'keeper', 'admin', 'platform_ad
 // Statuses a contract can be signed (activated) from
 const SIGNABLE = new Set(['pendingownersignature', 'pendingcontract', 'pendingfirstbill']);
 // Contracts that hold a room: a new booking or walk-in for that room is refused while one exists
-export const ROOM_HOLDING_STATUSES = ['BookingRequested', 'BookingApproved', 'PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active'];
+// MoveOutPending: set by the move-out flow before commit 12; such contracts keep their room until the owner closes them
+export const ROOM_HOLDING_STATUSES = ['BookingRequested', 'BookingApproved', 'PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active', 'MoveOutPending'];
 
 export type ContractRefusal = 'room_not_found' | 'room_unavailable' | 'room_has_active_contract' | 'staff_account'
   | 'no_account' | 'not_found' | 'invalid_status' | 'deposit_mismatch' | 'deposit_reason_required' | 'has_open_contract';

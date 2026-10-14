@@ -6,7 +6,8 @@ import { Pool } from '@/lib/mysql-adapter';
 import { bangkokDate, calcLateFee, getRates, type Rates } from '@/lib/billing';
 import { isStatus, logStatus } from '@/lib/bill-status';
 
-export type PaymentMethod = 'slip' | 'cash' | 'transfer';
+/** deposit_offset: paid from the tenant's deposit at move-out (lib/moveOut.ts writes the matching Liability row) */
+export type PaymentMethod = 'slip' | 'cash' | 'transfer' | 'deposit_offset';
 
 export interface PaymentInput {
   amount: number;
@@ -29,10 +30,10 @@ export type PaymentResult =
   | { ok: false; reason: 'exceeds'; outstanding: number };
 
 // Validated here because MySQL may run without strict mode and silently coerce bad values
-const METHODS: PaymentMethod[] = ['slip', 'cash', 'transfer'];
+const METHODS: PaymentMethod[] = ['slip', 'cash', 'transfer', 'deposit_offset'];
 
 // Income category of the non-deposit part (a move-in bill's first month of rent is Rent)
-const ACCOUNTING_CATEGORY: Record<string, string> = { service: 'Service' };
+const ACCOUNTING_CATEGORY: Record<string, string> = { service: 'Service', move_out_damage: 'Damage' };
 
 const toSatang = (n: number) => Math.round(Number(n) * 100);
 const round2 = (n: number) => Math.round(n * 100) / 100;
