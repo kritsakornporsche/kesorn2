@@ -1,7 +1,8 @@
 'use client';
 
-// Owner/manager: repair / cleaning board (lib/maintenance.ts). Assign a keeper of the right kind, reject with a reason,
-// open jobs (also for a move-out), decide the charge of a finished job (owner only), close older jobs by hand.
+// Owner/manager: repair / cleaning board (lib/maintenance.ts). Keepers take waiting jobs themselves; staff may also assign
+// or move a job until it is started, reject it with a reason, open jobs (also for a move-out), decide the charge of a job
+// waiting for it (owner only, then it is closed), close older jobs by hand.
 
 import { Suspense, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
@@ -15,10 +16,10 @@ interface Keeper { id: number; name: string; phone: string | null }
 interface LegacyCleaning { id: number; status: string; job_type: string | null; notes: string | null; created_at: string; room_number: string | null }
 
 const COLUMNS: { id: string; label: string; match: (j: Job) => boolean }[] = [
-  { id: 'Requested', label: 'รอมอบงาน', match: (j) => j.state === 'Requested' },
+  { id: 'Requested', label: 'รอดำเนินการ', match: (j) => j.state === 'Requested' },
   { id: 'Assigned', label: 'มอบงานแล้ว', match: (j) => j.state === 'Assigned' },
   { id: 'InProgress', label: 'กำลังดำเนินการ', match: (j) => j.state === 'InProgress' },
-  { id: 'Charge', label: 'เสร็จแล้ว รอตัดสินค่าใช้จ่าย', match: (j) => j.state === 'Done' && !j.charge?.decided },
+  { id: 'Done', label: 'รอตรวจสอบค่าใช้จ่าย', match: (j) => j.state === 'Done' },
 ];
 
 const inputClass = 'bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white';
@@ -64,7 +65,7 @@ function Board() {
   useEffect(() => { load(); }, []);
 
   const current = jobs.filter((j) => !j.legacy);
-  const closed = current.filter((j) => j.state === 'Cancelled' || j.state === 'Rejected' || (j.state === 'Done' && j.charge?.decided));
+  const closed = current.filter((j) => j.state === 'Closed' || j.state === 'Cancelled' || j.state === 'Rejected');
   const legacyOpen = jobs.filter((j) => j.legacy && !['completed', 'resolved'].includes(String(j.legacy_status || '').toLowerCase()));
   const legacyCleaningOpen = legacyCleaning.filter((c) => String(c.status).toLowerCase() !== 'completed');
 
@@ -73,7 +74,7 @@ function Board() {
       <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/80 p-6 rounded-3xl border border-white/10">
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-white">🛠️ บอร์ดงานซ่อม & ทำความสะอาด</h1>
-          <p className="text-xs text-slate-400">ผู้เช่าแจ้ง → มอบงานให้ช่าง/แม่บ้าน → พนักงานรับและปิดงาน → เจ้าของหอตัดสินค่าใช้จ่าย</p>
+          <p className="text-xs text-slate-400">ผู้เช่าแจ้ง → ช่าง/แม่บ้านกดรับงาน (หรือมอบงานให้) → พนักงานปิดงาน → มีค่าใช้จ่ายเจ้าของหอตรวจสอบก่อนเสร็จสิ้น</p>
         </div>
         <button onClick={() => setShowCreate((v) => !v)} className="px-5 py-2.5 bg-primary text-white font-black text-xs rounded-xl">+ สร้างงาน</button>
       </div>
@@ -81,7 +82,7 @@ function Board() {
       {showCreate && <CreateForm rooms={rooms} initialKind={search.get('new') === 'cleaning' ? 'cleaning' : 'repair'} onDone={() => { setShowCreate(false); load(); }} />}
 
       <div className="flex flex-wrap gap-1.5 bg-slate-900/60 p-2 rounded-2xl border border-white/5">
-        {([['board', 'งานที่เปิดอยู่'], ['closed', `ปิดแล้ว (${closed.length})`], ['legacy', `งานแบบเดิม (${legacyOpen.length + legacyCleaningOpen.length})`]] as const).map(([id, label]) => (
+        {([['board', 'งานที่เปิดอยู่'], ['closed', `เสร็จสิ้น/ยกเลิก (${closed.length})`], ['legacy', `งานแบบเดิม (${legacyOpen.length + legacyCleaningOpen.length})`]] as const).map(([id, label]) => (
           <button key={id} onClick={() => setView(id)} className={`px-4 py-2 rounded-xl text-xs font-black ${view === id ? 'bg-primary text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>{label}</button>
         ))}
       </div>
@@ -103,7 +104,7 @@ function Board() {
           </div>
         ) : view === 'closed' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {closed.length === 0 && <p className="text-sm text-slate-500">ไม่มีงานที่ปิดแล้ว</p>}
+            {closed.length === 0 && <p className="text-sm text-slate-500">ไม่มีงานที่เสร็จสิ้นหรือยกเลิก</p>}
             {closed.map((j) => <JobCard key={j.id} job={j} keepers={[]} isOwner={isOwner} onDone={load} />)}
           </div>
         ) : (
@@ -202,7 +203,7 @@ function JobCard({ job, keepers, isOwner, onDone }: { job: Job; keepers: Keeper[
           </select>
           <button onClick={() => (keeperId ? act({ action: 'assign', keeperUserId: Number(keeperId) }) : setError('กรุณาเลือกพนักงาน'))} disabled={busy}
             className="px-3 py-2 bg-sky-500 text-white font-black rounded-xl disabled:opacity-50">{job.state === 'Assigned' ? 'เปลี่ยนผู้รับงาน' : 'มอบงาน'}</button>
-          <button onClick={() => setRejecting((v) => !v)} className="px-3 py-2 bg-rose-500/15 text-rose-300 border border-rose-500/40 font-black rounded-xl">ไม่รับงาน</button>
+          <button onClick={() => setRejecting((v) => !v)} className="px-3 py-2 bg-rose-500/15 text-rose-300 border border-rose-500/40 font-black rounded-xl">ปฏิเสธ</button>
         </div>
       )}
       {canAssign && keepers.length === 0 && <p className="text-[11px] text-rose-400 font-bold">ยังไม่มี{job.kind === 'cleaning' ? 'แม่บ้าน' : 'ช่าง'}ที่ใช้งานอยู่ — เพิ่มที่หน้าพนักงาน</p>}
@@ -214,6 +215,7 @@ function JobCard({ job, keepers, isOwner, onDone }: { job: Job; keepers: Keeper[
       )}
 
       {job.state === 'Done' && job.charge && !job.charge.decided && (
+        // Waiting for the owner: deciding the charge closes the job
         <div className="p-2 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-1.5">
           <p className="text-amber-300 font-bold">
             พนักงานเสนอค่าใช้จ่าย {baht(job.charge.proposed)}{job.charge.proposed_note ? ` · ${job.charge.proposed_note}` : ''}
@@ -239,7 +241,7 @@ function JobCard({ job, keepers, isOwner, onDone }: { job: Job; keepers: Keeper[
                 disabled={busy}
                 className="px-3 py-2 bg-amber-500 text-slate-950 font-black rounded-xl disabled:opacity-50"
               >
-                ตัดสินค่าใช้จ่าย
+                ตัดสินค่าใช้จ่ายและปิดงาน
               </button>
             </>
           ) : (

@@ -1,6 +1,7 @@
 -- 013: repair / cleaning board. maintenance_requests becomes the one table for both kinds (cleaning_jobs is no longer
 -- written; kept for reading). state is the new status flow (lib/maintenance.ts):
---   Requested -> Assigned (owner/manager) -> InProgress (the assigned keeper) -> Done (the assigned keeper)
+--   Requested -> InProgress (a keeper of this dorm claims it)  or  Requested -> Assigned (owner/manager) -> InProgress
+--   InProgress -> Closed (finished without a charge)  or  -> Done (with a proposed charge) -> Closed (the owner decides)
 --   Requested -> Cancelled (the tenant)   ·   Requested / Assigned -> Rejected (owner/manager, with a reason)
 -- Rows with state NULL are from before commit 13 ("งานแบบเดิม"): shown read-only, closed by the owner by hand.
 -- A charge proposed by the keeper is decided by the owner (amount may be changed or 0; reason tenant_damage /
@@ -17,7 +18,7 @@
 
 ALTER TABLE maintenance_requests
   ADD kind ENUM('repair','cleaning') NULL,
-  ADD state ENUM('Requested','Assigned','InProgress','Done','Cancelled','Rejected') NULL,
+  ADD state ENUM('Requested','Assigned','InProgress','Done','Closed','Cancelled','Rejected') NULL,
   ADD requested_by INT NULL,
   ADD requested_at DATETIME NULL,
   ADD contract_id INT NULL,

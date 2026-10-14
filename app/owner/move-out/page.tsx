@@ -346,7 +346,8 @@ function ReturnForm({ s, act, url }: { s: Settlement; act: ReturnType<typeof use
 }
 
 const JOB_STATE_TEXT: Record<string, string> = {
-  Requested: 'รอมอบงาน', Assigned: 'มอบงานแล้ว', InProgress: 'กำลังดำเนินการ', Done: 'เสร็จแล้ว', Cancelled: 'ยกเลิก', Rejected: 'ไม่รับงาน',
+  Requested: 'รอดำเนินการ', Assigned: 'มอบงานแล้ว', InProgress: 'กำลังดำเนินการ', Done: 'รอตรวจสอบค่าใช้จ่าย', Closed: 'เสร็จสิ้น',
+  Cancelled: 'ยกเลิก', Rejected: 'ปฏิเสธ',
 };
 
 /**

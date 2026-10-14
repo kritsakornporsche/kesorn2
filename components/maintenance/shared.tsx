@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { PHOTOS_TOTAL_MAX_BYTES, preparePhoto } from '@/lib/inspection-photo-check';
 
 export type Kind = 'repair' | 'cleaning';
-export type State = 'Requested' | 'Assigned' | 'InProgress' | 'Done' | 'Cancelled' | 'Rejected';
+export type State = 'Requested' | 'Assigned' | 'InProgress' | 'Done' | 'Closed' | 'Cancelled' | 'Rejected';
 export type ChargeReason = 'tenant_damage' | 'wear_and_tear' | 'service';
 
 export interface Job {
@@ -46,7 +46,8 @@ const STATE_STYLE: Record<State, string> = {
   Requested: 'bg-amber-500/10 border-amber-500/40 text-amber-300',
   Assigned: 'bg-sky-500/10 border-sky-500/40 text-sky-300',
   InProgress: 'bg-blue-500/10 border-blue-500/40 text-blue-300',
-  Done: 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300',
+  Done: 'bg-orange-500/10 border-orange-500/40 text-orange-300',
+  Closed: 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300',
   Cancelled: 'bg-slate-500/10 border-slate-500/40 text-slate-300',
   Rejected: 'bg-rose-500/10 border-rose-500/40 text-rose-300',
 };

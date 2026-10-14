@@ -1,6 +1,8 @@
 // Repair / cleaning board (commit 13). One table, maintenance_requests, for both kinds; the flow is `state`:
-//   Requested -> Assigned (owner/manager assigns a keeper of the right kind) -> InProgress (that keeper starts)
-//   -> Done (that keeper finishes, with a note, photos and an optional proposed charge)
+//   Requested -> InProgress (a keeper of the right kind and of this dorm claims it, started at once)
+//   Requested -> Assigned (owner/manager assigns or moves it, until it is started) -> InProgress (that keeper starts)
+//   InProgress -> Closed (the keeper finishes without a charge) or -> Done (finished with a proposed charge, waiting
+//   for the owner) -> Closed (the owner decides the charge)
 //   Requested -> Cancelled (the tenant)   ·   Requested / Assigned -> Rejected (owner/manager, with a reason)
 // Repairs go to technicians, cleaning to maids (users.role 'keeper', sub_role). A proposed charge is decided by the
 // owner only (amount may be changed or 0; reason tenant_damage / wear_and_tear / service). tenant_damage and service
@@ -20,7 +22,7 @@ import { deletePhoto, isPhotoName, parsePhotoList, photoUrl, savePhoto } from '@
 const DORM_ID = 1;
 export const KINDS = ['repair', 'cleaning'] as const;
 export type Kind = (typeof KINDS)[number];
-export const STATES = ['Requested', 'Assigned', 'InProgress', 'Done', 'Cancelled', 'Rejected'] as const;
+export const STATES = ['Requested', 'Assigned', 'InProgress', 'Done', 'Closed', 'Cancelled', 'Rejected'] as const;
 export type State = (typeof STATES)[number];
 export const CHARGE_REASONS = ['tenant_damage', 'wear_and_tear', 'service'] as const;
 export type ChargeReason = (typeof CHARGE_REASONS)[number];
@@ -29,7 +31,8 @@ export type ChargeReason = (typeof CHARGE_REASONS)[number];
 export const KIND_KEEPER: Record<Kind, 'technician' | 'maid'> = { repair: 'technician', cleaning: 'maid' };
 export const KIND_TEXT: Record<Kind, string> = { repair: 'งานซ่อม', cleaning: 'งานทำความสะอาด' };
 export const STATE_TEXT: Record<State, string> = {
-  Requested: 'รอมอบงาน', Assigned: 'มอบงานแล้ว', InProgress: 'กำลังดำเนินการ', Done: 'เสร็จแล้ว', Cancelled: 'ยกเลิก', Rejected: 'ไม่รับงาน',
+  Requested: 'รอดำเนินการ', Assigned: 'มอบงานแล้ว', InProgress: 'กำลังดำเนินการ', Done: 'รอตรวจสอบค่าใช้จ่าย', Closed: 'เสร็จสิ้น',
+  Cancelled: 'ยกเลิก', Rejected: 'ปฏิเสธ',
 };
 export const CHARGE_REASON_TEXT: Record<ChargeReason, string> = {
   tenant_damage: 'ผู้เช่าทำเสียหาย', wear_and_tear: 'เสื่อมตามสภาพ (ไม่เก็บเงิน)', service: 'ค่าบริการ',
@@ -38,7 +41,7 @@ const DUE_DAYS = 7;
 const TEXT_MAX = 1000;
 
 export type Refusal = 'not_found' | 'forbidden' | 'no_contract' | 'bad_input' | 'bad_photo' | 'invalid_state' | 'wrong_keeper'
-  | 'not_assignee' | 'reason_required' | 'already_decided' | 'no_tenant' | 'move_out_not_returned' | 'legacy' | 'note_required';
+  | 'not_assignee' | 'taken' | 'reason_required' | 'already_decided' | 'no_tenant' | 'move_out_not_returned' | 'legacy' | 'note_required';
 
 export type Result<T> = ({ ok: true } & T) | { ok: false; reason: Refusal; message: string };
 
@@ -51,6 +54,7 @@ const MESSAGES: Record<Refusal, string> = {
   invalid_state: 'งานนี้อยู่ในสถานะที่ทำรายการนี้ไม่ได้',
   wrong_keeper: 'มอบงานได้เฉพาะพนักงานของหอนี้ที่ใช้งานอยู่และตรงประเภทงาน (งานซ่อม → ช่าง, งานทำความสะอาด → แม่บ้าน)',
   not_assignee: 'งานนี้ไม่ได้มอบให้คุณ',
+  taken: 'งานนี้มีผู้รับไปแล้ว',
   reason_required: 'กรุณาระบุเหตุผล',
   already_decided: 'ตัดสินค่าใช้จ่ายของงานนี้ไปแล้ว',
   no_tenant: 'งานนี้ไม่มีผู้เช่าให้เรียกเก็บเงิน — อนุมัติเป็น 0 หรือเลือกเสื่อมตามสภาพ',
@@ -277,6 +281,25 @@ export function cancelJob(id: number, user: Actor, now: Date) {
   });
 }
 
+/**
+ * A keeper takes a Requested job themselves: right kind, staff of this dorm, account active. It starts at once
+ * (InProgress). The job row is locked, so of two keepers pressing at the same time the second is refused.
+ */
+export function claimJob(id: number, keeper: Actor, now: Date) {
+  if (!keeper || keeper.role !== 'keeper') return deny<never>('forbidden');
+  return run(async (client) => {
+    const job = await lockJob(client, id);
+    const k = await keeperRow(client, keeper.id);
+    if (!keeperFits(k, job.kind) || !(await keeperOfDorm(client, Number(k.id)))) refuse('wrong_keeper', 'รับงานได้เฉพาะพนักงานของหอนี้ที่ใช้งานอยู่และตรงประเภทงาน');
+    if (job.state !== 'Requested') refuse('taken', job.assigned_to ? MESSAGES.taken : MESSAGES.invalid_state);
+    await client.query(
+      "UPDATE maintenance_requests SET state = 'InProgress', status = 'InProgress', assigned_to = ?, assigned_by = ?, assigned_at = ?, started_at = ? WHERE id = ?",
+      [k.id, k.id, now, now, id]
+    );
+    return { tenantUserId: (job.tenant_user_id as number) || null, roomNumber: job.room_number, keeperName: String(k.name || '') };
+  });
+}
+
 /** The assigned keeper starts the job (account still active, still the right kind). */
 export function startJob(id: number, keeper: Actor, now: Date) {
   if (!keeper || keeper.role !== 'keeper') return deny<never>('forbidden');
@@ -292,7 +315,10 @@ export function startJob(id: number, keeper: Actor, now: Date) {
 
 export interface FinishInput { note?: unknown; photos?: unknown; chargeProposed?: unknown; chargeNote?: unknown }
 
-/** The assigned keeper finishes the job with a note, photos and an optional proposed charge (0 or empty = none). */
+/**
+ * The assigned keeper finishes the job with a note, photos and an optional proposed charge. Without a charge (0 or
+ * empty) the job is Closed at once; with one it is Done, waiting for the owner to decide the charge.
+ */
 export function finishJob(id: number, keeper: Actor, input: FinishInput, now: Date) {
   if (!keeper || keeper.role !== 'keeper') return deny<never>('forbidden');
   const raw = input?.chargeProposed;
@@ -303,13 +329,15 @@ export function finishJob(id: number, keeper: Actor, input: FinishInput, now: Da
     if (Number(job.assigned_to) !== Number(keeper.id)) refuse('not_assignee');
     if (!keeperFits(await keeperRow(client, keeper.id), job.kind)) refuse('forbidden');
     if (job.state !== 'InProgress') refuse('invalid_state', 'ปิดงานได้เฉพาะงานที่กำลังดำเนินการ');
+    const charged = round2(proposed) > 0;
     await client.query(
-      `UPDATE maintenance_requests SET state = 'Done', status = 'Completed', done_at = ?, done_note = ?,
-         charge_proposed = ?, charge_proposed_note = ? WHERE id = ?`,
-      [now, text(input.note), round2(proposed), text(input.chargeNote, 500), id]
+      `UPDATE maintenance_requests SET state = ?, status = 'Completed', done_at = ?, done_note = ?,
+         charge_proposed = ?, charge_proposed_note = ?, closed_by = ?, closed_at = ? WHERE id = ?`,
+      [charged ? 'Done' : 'Closed', now, text(input.note), round2(proposed), text(input.chargeNote, 500),
+        charged ? null : keeper.id, charged ? null : now, id]
     );
     await savePhotos(client, id, files, 'done', keeper.id, now);
-    return { tenantUserId: (job.tenant_user_id as number) || null, roomNumber: job.room_number, chargeProposed: round2(proposed) };
+    return { tenantUserId: (job.tenant_user_id as number) || null, roomNumber: job.room_number, chargeProposed: round2(proposed), closed: !charged };
   }));
 }
 
@@ -318,7 +346,7 @@ export function finishJob(id: number, keeper: Actor, input: FinishInput, now: Da
 export interface ChargeInput { amount: unknown; reason: unknown; note?: unknown }
 
 /**
- * Owner decides the charge of a finished job (once). 0 or wear_and_tear: nothing billed. tenant_damage / service:
+ * Owner decides the charge of a job finished with a proposed charge (Done, once), then it is Closed. 0 or wear_and_tear: nothing billed. tenant_damage / service:
  * a job of a move-out still being settled becomes a damage item of that settlement (no separate bill); otherwise a
  * bill (damage / service) to the tenant of the job's contract, paid through recordPayment like every bill.
  */
@@ -332,7 +360,7 @@ export function decideCharge(id: number, input: ChargeInput, by: Actor, now: Dat
   const note = text(input.note, 500);
   return run(async (client) => {
     const job = await lockJob(client, id);
-    if (job.state !== 'Done') refuse('invalid_state', 'ตัดสินค่าใช้จ่ายได้หลังงานเสร็จ');
+    if (job.state !== 'Done') refuse('invalid_state', 'ตัดสินค่าใช้จ่ายได้เฉพาะงานที่รอตรวจสอบค่าใช้จ่าย');
     if (job.charge_decided_at) refuse('already_decided');
 
     const billable = round2(amount) > 0 && reason !== 'wear_and_tear';
@@ -366,9 +394,9 @@ export function decideCharge(id: number, input: ChargeInput, by: Actor, now: Dat
       }
     }
     await client.query(
-      `UPDATE maintenance_requests SET charge_amount = ?, charge_reason = ?, charge_note = ?, charge_decided_by = ?, charge_decided_at = ?,
-         charge_bill_id = ?, cost = ?, bill_id = ? WHERE id = ?`,
-      [round2(amount), reason, note, by.id, now, billId, billable ? round2(amount) : 0, billId, id]
+      `UPDATE maintenance_requests SET state = 'Closed', closed_by = ?, closed_at = ?, charge_amount = ?, charge_reason = ?, charge_note = ?,
+         charge_decided_by = ?, charge_decided_at = ?, charge_bill_id = ?, cost = ?, bill_id = ? WHERE id = ?`,
+      [by.id, now, round2(amount), reason, note, by.id, now, billId, billable ? round2(amount) : 0, billId, id]
     );
     return { billed: billable, billId, toSettlement, amount: round2(amount), tenantUserId: (job.tenant_user_id as number) || null };
   });
@@ -452,7 +480,7 @@ function legacyStatusText(status: unknown) {
 /**
  * Jobs as the viewer may see them:
  *  owner/manager — every job (older ones marked legacy);
- *  keeper — jobs assigned to them, and unassigned Requested jobs of their kind (without the tenant's name / phone);
+ *  keeper — jobs assigned to them, and Requested jobs of their kind to claim (without the tenant's name / phone until taken);
  *  tenant — their own jobs.
  * Proposed charges are shown to staff and the assigned keeper; the tenant sees only a decided charge.
  */
@@ -477,7 +505,7 @@ export async function listJobs(viewer: Actor): Promise<JobView[]> {
      LEFT JOIN tenants t ON t.id = m.tenant_id
      LEFT JOIN users k ON k.id = m.assigned_to
      WHERE ${where}
-     ORDER BY CASE m.state WHEN 'Requested' THEN 0 WHEN 'Assigned' THEN 1 WHEN 'InProgress' THEN 2 WHEN 'Done' THEN 3 ELSE 4 END,
+     ORDER BY CASE m.state WHEN 'Requested' THEN 0 WHEN 'Assigned' THEN 1 WHEN 'InProgress' THEN 2 WHEN 'Done' THEN 3 WHEN 'Closed' THEN 4 ELSE 5 END,
        COALESCE(m.requested_at, m.created_at) DESC, m.id DESC`,
     params
   ) as any[];
@@ -569,7 +597,7 @@ export async function canViewJobPhoto(user: Actor, requestId: number, file: stri
 export function refusalStatus(reason: Refusal): number {
   if (reason === 'not_found') return 404;
   if (reason === 'forbidden' || reason === 'not_assignee') return 403;
-  if (['invalid_state', 'already_decided', 'legacy', 'move_out_not_returned'].includes(reason)) return 409;
+  if (['invalid_state', 'taken', 'already_decided', 'legacy', 'move_out_not_returned'].includes(reason)) return 409;
   return 400;
 }
 

@@ -1,8 +1,9 @@
 'use client';
 
-// Keeper (maid / technician): "งานของฉัน" and "งานที่รอมอบ" of their kind (lib/maintenance.ts through /api/keeper/jobs).
-// Only the assigned keeper starts and finishes a job; finishing takes a note, photos and an optional proposed charge
-// (the owner decides it). Unassigned jobs are shown without the tenant's name / phone and cannot be taken here.
+// Keeper (maid / technician): "งานของฉัน" and the waiting jobs of their kind (lib/maintenance.ts through /api/keeper/jobs).
+// A waiting job can be taken ("รับงาน", started at once); the owner/manager may also assign one. Finishing takes a note,
+// photos and an optional proposed charge: none → เสร็จสิ้น; with one → รอตรวจสอบค่าใช้จ่าย (the owner decides).
+// Waiting jobs are shown without the tenant's name / phone until taken.
 
 import { useEffect, useState } from 'react';
 import KeeperSidebar from '@/app/keeper/components/KeeperSidebar';
@@ -35,6 +36,7 @@ export default function KeeperJobs({ kind }: { kind: Kind }) {
   const expected = kind === 'repair' ? 'technician' : 'maid';
   const wrongPage = subRole !== null && subRole !== expected;
   const mine = jobs.filter((j) => j.assigned_to !== null && ['Assigned', 'InProgress'].includes(String(j.state)));
+  // Finished jobs: waiting for the owner to check the charge (Done) or closed
   const open = jobs.filter((j) => j.state === 'Requested');
   const done = jobs.filter((j) => j.assigned_to !== null && !['Assigned', 'InProgress', 'Requested'].includes(String(j.state)));
   const shown = tab === 'mine' ? mine : tab === 'open' ? open : done;
@@ -45,13 +47,13 @@ export default function KeeperJobs({ kind }: { kind: Kind }) {
       <main className="flex-1 overflow-y-auto p-4 sm:p-8 max-w-4xl w-full mx-auto space-y-5 pb-28 md:pb-12">
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-white">{kind === 'repair' ? '🔧 งานซ่อมของฉัน' : '🧹 งานทำความสะอาดของฉัน'}</h1>
-          <p className="text-xs text-slate-400">เจ้าของหอ/ผู้จัดการเป็นผู้มอบงาน · เริ่มงานและปิดงานได้เฉพาะงานที่มอบให้คุณ</p>
+          <p className="text-xs text-slate-400">กดรับงานที่รอดำเนินการได้เอง หรือรองานที่เจ้าของหอ/ผู้จัดการมอบให้ · เริ่มงานและปิดงานได้เฉพาะงานของคุณ</p>
         </div>
         {wrongPage && (
           <p className="text-sm text-rose-400 font-bold">✕ บัญชีของคุณเป็น{subRole === 'maid' ? 'แม่บ้าน' : subRole === 'technician' ? 'ช่าง' : 'พนักงานที่ยังไม่กำหนดประเภท'} — หน้านี้สำหรับ{KIND_TEXT[kind]}</p>
         )}
         <div className="flex flex-wrap gap-1.5 bg-slate-900/60 p-2 rounded-2xl border border-white/5">
-          {([['mine', `งานของฉัน (${mine.length})`], ['open', `รอมอบงาน (${open.length})`], ['done', `ปิดแล้ว (${done.length})`]] as const).map(([id, label]) => (
+          {([['mine', `งานของฉัน (${mine.length})`], ['open', `รอดำเนินการ (${open.length})`], ['done', `เสร็จแล้ว (${done.length})`]] as const).map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)} className={`px-4 py-2 rounded-xl text-xs font-black ${tab === id ? 'bg-primary text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>{label}</button>
           ))}
         </div>
@@ -97,11 +99,18 @@ function KeeperJobCard({ job, onDone }: { job: Job; onDone: () => void }) {
       {job.move_out_settlement_id && <p className="text-[11px] text-amber-300 font-bold">งานตอนผู้เช่าย้ายออก</p>}
       <p className="text-slate-300">{job.description}</p>
       {(job.tenant_name || job.tenant_phone) && <p className="text-[11px] text-slate-400">ผู้เช่า: {job.tenant_name || '-'} {job.tenant_phone ? `· 📞 ${job.tenant_phone}` : ''}</p>}
-      {job.state === 'Requested' && <p className="text-[11px] text-slate-500">รอเจ้าของหอ/ผู้จัดการมอบงาน</p>}
+      {job.state === 'Requested' && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => act({ action: 'claim', id: job.id })} disabled={busy} className="px-4 py-2 bg-sky-500 text-white font-black rounded-xl disabled:opacity-50">
+            {busy ? 'กำลังบันทึก...' : '✋ รับงาน'}
+          </button>
+          <span className="text-[11px] text-slate-500">รับแล้วเริ่มงานทันที · ชื่อและเบอร์ผู้เช่าจะแสดงหลังรับงาน</span>
+        </div>
+      )}
       <PhotoStrip photos={job.photos} />
       {job.done_note && <p className="text-[11px] text-emerald-300">บันทึกปิดงาน: {job.done_note}</p>}
-      {job.charge && job.charge.proposed !== null && job.state === 'Done' && (
-        <p className="text-[11px] text-amber-300">เสนอค่าใช้จ่าย {baht(job.charge.proposed)}{job.charge.decided ? ` · เจ้าของหอตัดสินแล้ว ${baht(job.charge.amount)}` : ' · รอเจ้าของหอตัดสิน'}</p>
+      {job.charge && job.charge.proposed !== null && job.charge.proposed > 0 && ['Done', 'Closed'].includes(String(job.state)) && (
+        <p className="text-[11px] text-amber-300">เสนอค่าใช้จ่าย {baht(job.charge.proposed)}{job.charge.decided ? ` · เจ้าของหอตัดสินแล้ว ${baht(job.charge.amount)}` : ' · รอเจ้าของหอตรวจสอบค่าใช้จ่าย'}</p>
       )}
 
       {job.state === 'Assigned' && (
@@ -120,7 +129,7 @@ function KeeperJobCard({ job, onDone }: { job: Job; onDone: () => void }) {
             <input type="number" min="0" step="0.01" value={charge} onChange={(e) => setCharge(e.target.value)} placeholder="เสนอค่าใช้จ่าย (ว่าง = ไม่มี)" className={`${inputClass} w-48`} />
             <input value={chargeNote} onChange={(e) => setChargeNote(e.target.value)} placeholder="เหตุผล เช่น ผู้เช่าทำแตก / ค่าอะไหล่" className={`${inputClass} flex-1 min-w-[200px]`} />
           </div>
-          <p className="text-[11px] text-slate-400">ค่าใช้จ่ายเป็นเพียงข้อเสนอ เจ้าของหอเป็นผู้ตัดสินว่าจะเรียกเก็บผู้เช่าหรือไม่</p>
+          <p className="text-[11px] text-slate-400">ไม่เสนอค่าใช้จ่าย → งานเสร็จสิ้นทันที · เสนอค่าใช้จ่าย → รอเจ้าของหอตรวจสอบและตัดสินว่าจะเรียกเก็บผู้เช่าหรือไม่</p>
           <div className="flex gap-2">
             <button onClick={() => setFinishing(false)} className="px-4 py-2 bg-white/10 text-white font-bold rounded-xl">ยกเลิก</button>
             <button onClick={finish} disabled={busy} className="px-4 py-2 bg-emerald-500 text-slate-950 font-black rounded-xl disabled:opacity-50">{busy ? 'กำลังบันทึก...' : 'ยืนยันปิดงาน'}</button>

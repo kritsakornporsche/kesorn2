@@ -10,8 +10,10 @@ const ISSUE_TYPES: Record<Kind, string[]> = {
   repair: ['ระบบไฟฟ้า', 'ระบบประปา', 'เครื่องปรับอากาศ', 'เฟอร์นิเจอร์', 'ประตู/หน้าต่าง/กุญแจ', 'อื่นๆ'],
   cleaning: ['ทำความสะอาดทั่วไป', 'ทำความสะอาดห้องน้ำ', 'อื่นๆ'],
 };
-const STEPS = ['Requested', 'Assigned', 'InProgress', 'Done'] as const;
-const STEP_TEXT: Record<(typeof STEPS)[number], string> = { Requested: 'แจ้งแล้ว', Assigned: 'มอบงานแล้ว', InProgress: 'กำลังดำเนินการ', Done: 'เสร็จแล้ว' };
+const STEPS = ['Requested', 'Assigned', 'InProgress', 'Done', 'Closed'] as const;
+const STEP_TEXT: Record<(typeof STEPS)[number], string> = {
+  Requested: 'รอดำเนินการ', Assigned: 'มอบงานแล้ว', InProgress: 'กำลังดำเนินการ', Done: 'รอตรวจสอบค่าใช้จ่าย', Closed: 'เสร็จสิ้น',
+};
 
 export default function TenantMaintenancePage() {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -104,7 +106,9 @@ function JobItem({ job, onChanged }: { job: Job; onChanged: () => void }) {
     if (!r.ok) return setError(r.message);
     onChanged();
   };
-  const step = job.state ? STEPS.indexOf(job.state as any) : -1;
+  // 'รอตรวจสอบค่าใช้จ่าย' only for a job that went through it (a charge waiting or decided)
+  const steps = STEPS.filter((st) => st !== 'Done' || job.state === 'Done' || !!job.charge?.decided);
+  const step = job.state ? steps.indexOf(job.state as any) : -1;
   return (
     <div className="bg-card rounded-3xl border border-border p-6 space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -116,7 +120,7 @@ function JobItem({ job, onChanged }: { job: Job; onChanged: () => void }) {
       </div>
       {!job.legacy && step >= 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {STEPS.map((st, i) => (
+          {steps.map((st, i) => (
             <span key={st} className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${i <= step ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'border-border text-muted-foreground'}`}>
               {i <= step ? '✓ ' : ''}{STEP_TEXT[st]}
             </span>

@@ -347,7 +347,7 @@ export default async function TenantDashboard() {
                     </div>
                 ) : recentMaintenance.map((maint: any) => {
                     // Jobs from commit 13 have state (lib/maintenance.ts); older ones only status
-                    const closedText = maint.state === 'Cancelled' ? 'ยกเลิก' : maint.state === 'Rejected' ? 'ไม่รับงาน' : 'เสร็จสิ้น';
+                    const closedText = maint.state === 'Cancelled' ? 'ยกเลิก' : maint.state === 'Rejected' ? 'ปฏิเสธ' : maint.state === 'Done' ? 'รอตรวจสอบค่าใช้จ่าย' : 'เสร็จสิ้น';
                     const isPending = maint.state ? ['Requested', 'Assigned'].includes(maint.state) : (maint.status === 'Pending' || maint.status === 'pending');
                     const isInProgress = maint.state ? maint.state === 'InProgress' : (maint.status === 'InProgress' || maint.status === 'in_progress' || maint.status === 'In Progress');
                     return (

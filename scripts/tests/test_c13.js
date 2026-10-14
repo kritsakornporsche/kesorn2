@@ -180,6 +180,40 @@ async function main() {
     check('assigned technician finishes with a proposed charge', finished.ok && (await job(j1.id)).state === 'Done', finished);
     check('tenant does not see the proposed charge', (await mt.listJobs(A.user)).find((j) => j.id === j1.id).charge.proposed === null);
 
+    // ── Claiming (a keeper takes a waiting job, started at once) ─────────────────
+    console.log('Claiming');
+    const jc = await mt.createRequest(A.user, { kind: 'repair', description: 'ก๊อกน้ำรั่ว' }, at('2026-05-02'));
+    check('waiting job: technicians see it without the tenant name', (await mt.listJobs(tech2)).some((j) => j.id === jc.id && j.tenant_name === null && j.tenant_phone === null));
+    const cMaid = await mt.claimJob(jc.id, maid, at('2026-05-02'));
+    const cOther = await mt.claimJob(jc.id, techOther, at('2026-05-02'));
+    const cNone = await mt.claimJob(jc.id, techNone, at('2026-05-02'));
+    const cOff = await mt.claimJob(jc.id, techOff, at('2026-05-02'));
+    check('claim refused: wrong kind / other dorm / no dorm / account off',
+      [cMaid, cOther, cNone, cOff].every((r) => !r.ok && r.reason === 'wrong_keeper') && (await job(jc.id)).state === 'Requested', [cMaid, cOther, cNone, cOff]);
+    check('tenant cannot claim', (await mt.claimJob(jc.id, A.user, at('2026-05-02'))).reason === 'forbidden');
+    const claimed = await mt.claimJob(jc.id, tech, at('2026-05-02'));
+    const rc = await job(jc.id);
+    check('technician claims: InProgress at once, assigned to self, times set', claimed.ok && rc.state === 'InProgress' && Number(rc.assigned_to) === tech.id
+      && Number(rc.assigned_by) === tech.id && !!rc.assigned_at && !!rc.started_at, rc);
+    const cTaken = await mt.claimJob(jc.id, tech2, at('2026-05-02'));
+    check('second claim refused: already taken', !cTaken.ok && cTaken.reason === 'taken' && cTaken.message === 'งานนี้มีผู้รับไปแล้ว', cTaken);
+    check('claimer sees the tenant; the other technician no longer sees the job',
+      (await mt.listJobs(tech)).some((j) => j.id === jc.id && j.tenant_name) && !(await mt.listJobs(tech2)).some((j) => j.id === jc.id));
+    check('staff cannot move a started job', (await mt.assignJob(jc.id, tech2.id, owner, at('2026-05-02'))).reason === 'invalid_state');
+    const ja = await mt.createRequest(A.user, { kind: 'repair', description: 'ปลั๊กหลวม' }, at('2026-05-02'));
+    await mt.assignJob(ja.id, tech2.id, manager, at('2026-05-02'));
+    check('job assigned to someone else cannot be claimed', (await mt.claimJob(ja.id, tech, at('2026-05-02'))).reason === 'taken');
+    check('staff can still move an assigned job before it starts', (await mt.assignJob(ja.id, tech.id, owner, at('2026-05-02'))).ok && Number((await job(ja.id)).assigned_to) === tech.id);
+    const jr = await mt.createRequest(B.user, { kind: 'repair', description: 'ไฟกะพริบ' }, at('2026-05-02'));
+    const race = await Promise.all([mt.claimJob(jr.id, tech, at('2026-05-02')), mt.claimJob(jr.id, tech2, at('2026-05-02'))]);
+    check('two technicians press at once: exactly one gets it, the other is told it is taken',
+      race.filter((r) => r.ok).length === 1 && race.find((r) => !r.ok)?.reason === 'taken', race.map((r) => r.ok || r.reason));
+    const noCharge = await mt.finishJob(jc.id, tech, { note: 'เปลี่ยนซีลก๊อก' }, at('2026-05-02'));
+    const rnc = await job(jc.id);
+    check('finished without a charge: Closed at once (เสร็จสิ้น)', noCharge.ok && noCharge.closed && rnc.state === 'Closed' && !!rnc.closed_at && !rnc.charge_decided_at, rnc);
+    check('a Closed job has no charge to decide', (await mt.decideCharge(jc.id, { amount: 0, reason: 'wear_and_tear' }, owner, at('2026-05-03'))).reason === 'invalid_state');
+    check('state texts as in the spec', mt.STATE_TEXT.Requested === 'รอดำเนินการ' && mt.STATE_TEXT.Done === 'รอตรวจสอบค่าใช้จ่าย' && mt.STATE_TEXT.Closed === 'เสร็จสิ้น' && mt.STATE_TEXT.Rejected === 'ปฏิเสธ');
+
     // ── Cancel / reject ─────────────────────────────────────────────────────────
     console.log('Cancel / reject');
     const j2 = await mt.createRequest(A.user, { kind: 'cleaning', description: 'ขอทำความสะอาด' }, at('2026-05-03'));
@@ -202,7 +236,8 @@ async function main() {
     check('owner edits the amount: damage bill to the tenant of the contract', charged.ok && chargeBill && chargeBill.bill_type === 'damage' && Number(chargeBill.tenant_id) === A.tenantId && near(chargeBill.amount, 400), chargeBill || charged);
     await pay(charged.billId, 400, '2026-05-05');
     check('paid through recordPayment: Income Damage', near(await incomeOfBill(charged.billId, 'Damage'), 400));
-    check('second decision refused', (await mt.decideCharge(j1.id, { amount: 1, reason: 'tenant_damage' }, owner, at('2026-05-04'))).reason === 'already_decided');
+    check('owner decision closes the job', (await job(j1.id)).state === 'Closed');
+    check('second decision refused', ['already_decided', 'invalid_state'].includes((await mt.decideCharge(j1.id, { amount: 1, reason: 'tenant_damage' }, owner, at('2026-05-04'))).reason));
 
     const doneJob = async (u, kind, keeper, ymd, proposed) => {
       const r = await mt.createRequest(u, { kind, description: `${TAG} ${kind}` }, at(ymd));
@@ -216,7 +251,8 @@ async function main() {
     const zero = await mt.decideCharge(jZero, { amount: 0, reason: 'tenant_damage' }, owner, at('2026-05-06'));
     const jWear = await doneJob(B.user, 'repair', tech, '2026-05-06', 300);
     const wear = await mt.decideCharge(jWear, { amount: 300, reason: 'wear_and_tear' }, owner, at('2026-05-06'));
-    check('approved as 0 and wear_and_tear: no bill', zero.ok && !zero.billed && wear.ok && !wear.billed
+    check('approved as 0 and wear_and_tear: no bill, both Closed', zero.ok && !zero.billed && wear.ok && !wear.billed
+      && (await job(jZero)).state === 'Closed' && (await job(jWear)).state === 'Closed'
       && (await q('SELECT COUNT(*) AS n FROM bills WHERE tenant_id = ?', [B.tenantId]))[0].n === billsBefore, [zero, wear]);
     const jClean = await doneJob(B.user, 'cleaning', maid, '2026-05-07', 200);
     const service = await mt.decideCharge(jClean, { amount: 200, reason: 'service' }, owner, at('2026-05-07'));
@@ -235,12 +271,13 @@ async function main() {
     await mt.startJob(mj.id, maid, at('2026-08-21'));
     await mt.finishJob(mj.id, maid, { note: 'คราบหนัก', chargeProposed: 300 }, at('2026-08-21'));
     const tooEarly = await mt.decideCharge(mj.id, { amount: 300, reason: 'tenant_damage' }, owner, at('2026-08-22'));
-    check('charge refused before the room is returned', !tooEarly.ok && tooEarly.reason === 'move_out_not_returned', tooEarly);
+    check('charge refused before the room is returned (job stays waiting for the owner)', !tooEarly.ok && tooEarly.reason === 'move_out_not_returned' && (await job(mj.id)).state === 'Done', tooEarly);
     await mo.recordReturn(sid, { returnDate: '2026-09-30', finalMeter: 100 }, owner, at('2026-09-30'));
     const damageBillsBefore = (await q("SELECT COUNT(*) AS n FROM bills WHERE tenant_id = ? AND bill_type = 'damage'", [M.tenantId]))[0].n;
     const intoSettlement = await mt.decideCharge(mj.id, { amount: 300, reason: 'tenant_damage' }, owner, at('2026-09-30'));
     check('charge becomes a damage item of the settlement, no separate bill', intoSettlement.ok && intoSettlement.toSettlement
       && (await q("SELECT COUNT(*) AS n FROM bills WHERE tenant_id = ? AND bill_type = 'damage'", [M.tenantId]))[0].n === damageBillsBefore, intoSettlement);
+    check('move-out job Closed after the decision', (await job(mj.id)).state === 'Closed');
     const view = await mo.getSettlement(sid, owner, at('2026-09-30'));
     check('settlement shows the job with its proposed charge', view.jobs.some((j) => j.id === mj.id && near(j.charge_proposed, 300) && j.charge_decided), view.jobs);
     const manual = await mo.setDamages(sid, [{ amount: 100, reason: 'กุญแจหาย' }], owner, at('2026-09-30'));

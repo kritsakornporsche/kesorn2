@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/authz';
-import { finishJob, listJobs, refusalStatus, startJob } from '@/lib/maintenance';
+import { claimJob, finishJob, listJobs, refusalStatus, startJob } from '@/lib/maintenance';
 import { PHOTOS_TOTAL_MAX_BYTES } from '@/lib/maintenance-files';
 import { notifyUser, ownerUserId } from '@/lib/move-out-notify';
 
@@ -18,7 +18,8 @@ export async function GET() {
   }
 }
 
-// POST { action: 'start' | 'finish', id, note?, photos?, chargeProposed?, chargeNote? } — only the assigned keeper.
+// POST { action: 'claim' | 'start' | 'finish', id, note?, photos?, chargeProposed?, chargeNote? }
+// claim: a keeper of this dorm takes a Requested job of their kind (started at once); start / finish: the assigned keeper.
 export async function POST(req: Request) {
   const guard = await requireRole(['keeper']);
   if ('response' in guard) return guard.response;
@@ -29,6 +30,12 @@ export async function POST(req: Request) {
     try { body = JSON.parse(raw); } catch { return NextResponse.json({ success: false, message: 'ข้อมูลไม่ถูกต้อง' }, { status: 400 }); }
     const now = new Date();
     const id = Number(body.id);
+    if (body.action === 'claim') {
+      const r = await claimJob(id, guard.user, now);
+      if (!r.ok) return NextResponse.json({ success: false, message: r.message }, { status: refusalStatus(r.reason) });
+      await notifyUser(r.tenantUserId, 'พนักงานรับงานแล้ว', `งาน #${id} ห้อง ${r.roomNumber || '-'} · ${r.keeperName} กำลังดำเนินการ`, '/tenant/maintenance', now, 'maintenance');
+      return NextResponse.json({ success: true, message: 'รับงานแล้ว — กำลังดำเนินการ' });
+    }
     if (body.action === 'start') {
       const r = await startJob(id, guard.user, now);
       if (!r.ok) return NextResponse.json({ success: false, message: r.message }, { status: refusalStatus(r.reason) });
@@ -39,9 +46,9 @@ export async function POST(req: Request) {
       const r = await finishJob(id, guard.user, body, now);
       if (!r.ok) return NextResponse.json({ success: false, message: r.message }, { status: refusalStatus(r.reason) });
       await notifyUser(r.tenantUserId, 'งานเสร็จแล้ว', `งาน #${id} ห้อง ${r.roomNumber || '-'}`, '/tenant/maintenance', now, 'maintenance');
-      await notifyUser(await ownerUserId(), 'พนักงานปิดงานแล้ว',
+      await notifyUser(await ownerUserId(), r.closed ? 'พนักงานปิดงานแล้ว' : 'งานรอตรวจสอบค่าใช้จ่าย',
         `งาน #${id} ห้อง ${r.roomNumber || '-'}${r.chargeProposed > 0 ? ` · เสนอค่าใช้จ่าย ฿${r.chargeProposed}` : ''}`, '/owner/maintenance', now, 'maintenance');
-      return NextResponse.json({ success: true, message: 'ปิดงานแล้ว' });
+      return NextResponse.json({ success: true, message: r.closed ? 'ปิดงานแล้ว (เสร็จสิ้น)' : 'ทำเสร็จแล้ว รอเจ้าของหอตรวจสอบค่าใช้จ่าย' });
     }
     return NextResponse.json({ success: false, message: 'ไม่รู้จักคำสั่งนี้' }, { status: 400 });
   } catch (error: any) {
