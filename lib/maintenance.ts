@@ -49,7 +49,7 @@ const MESSAGES: Record<Refusal, string> = {
   bad_input: 'ข้อมูลไม่ถูกต้อง',
   bad_photo: 'รูปไม่ถูกต้อง',
   invalid_state: 'งานนี้อยู่ในสถานะที่ทำรายการนี้ไม่ได้',
-  wrong_keeper: 'มอบงานได้เฉพาะพนักงานที่ใช้งานอยู่และตรงประเภทงาน (งานซ่อม → ช่าง, งานทำความสะอาด → แม่บ้าน)',
+  wrong_keeper: 'มอบงานได้เฉพาะพนักงานของหอนี้ที่ใช้งานอยู่และตรงประเภทงาน (งานซ่อม → ช่าง, งานทำความสะอาด → แม่บ้าน)',
   not_assignee: 'งานนี้ไม่ได้มอบให้คุณ',
   reason_required: 'กรุณาระบุเหตุผล',
   already_decided: 'ตัดสินค่าใช้จ่ายของงานนี้ไปแล้ว',
@@ -105,6 +105,11 @@ async function keeperRow(client: Client, userId: number) {
   return (await client.query('SELECT id, name, role, sub_role, is_active FROM users WHERE id = ? FOR UPDATE', [userId])).rows[0];
 }
 const keeperFits = (k: any, kind: Kind) => !!k && Number(k.is_active) === 1 && k.role === 'keeper' && k.sub_role === KIND_KEEPER[kind];
+
+/** Staff of this dorm: a keepers row with dorm_id (same rule as /api/owner/staff). Older accounts of other dorms are not. */
+async function keeperOfDorm(client: Client, userId: number) {
+  return !!(await client.query('SELECT id FROM keepers WHERE user_id = ? AND dorm_id = ? LIMIT 1', [userId, DORM_ID])).rows[0];
+}
 
 async function lockJob(client: Client, id: number) {
   const job = (await client.query(
@@ -224,14 +229,14 @@ export function staffCreate(by: Actor, input: StaffCreateInput, now: Date) {
 
 // ── Flow ────────────────────────────────────────────────────────────────────────────
 
-/** Owner/manager assigns (or reassigns until started) a keeper whose sub_role fits the kind and whose account is active. */
+/** Owner/manager assigns (or reassigns until started) a keeper of this dorm whose sub_role fits the kind and whose account is active. */
 export function assignJob(id: number, keeperUserId: number, by: Actor, now: Date) {
   if (!by || !isStaff(by)) return deny<never>('forbidden');
   return run(async (client) => {
     const job = await lockJob(client, id);
     if (!['Requested', 'Assigned'].includes(job.state)) refuse('invalid_state', 'มอบงานได้ก่อนเริ่มงานเท่านั้น');
     const k = await keeperRow(client, Number(keeperUserId) || 0);
-    if (!keeperFits(k, job.kind)) refuse('wrong_keeper');
+    if (!keeperFits(k, job.kind) || !(await keeperOfDorm(client, Number(k.id)))) refuse('wrong_keeper');
     await client.query(
       "UPDATE maintenance_requests SET state = 'Assigned', assigned_to = ?, assigned_by = ?, assigned_at = ? WHERE id = ?",
       [k.id, by.id, now, id]
@@ -534,10 +539,11 @@ export async function legacyCleaningJobs() {
   }
 }
 
-/** Active keepers of a kind (for the assign list). */
+/** Active keepers of this dorm of a kind (for the assign list). */
 export async function keepersFor(kind: Kind) {
   const sql = getDb();
-  return sql`SELECT id, name, phone, sub_role FROM users WHERE role = 'keeper' AND sub_role = ${KIND_KEEPER[kind]} AND is_active = 1 ORDER BY name`;
+  return sql`SELECT id, name, phone, sub_role FROM users WHERE role = 'keeper' AND sub_role = ${KIND_KEEPER[kind]} AND is_active = 1
+    AND id IN (SELECT user_id FROM keepers WHERE dorm_id = ${DORM_ID} AND user_id IS NOT NULL) ORDER BY name`;
 }
 
 /** Whether the user may open a photo of this job: staff, the tenant of the job, or the keeper who can see the job. */

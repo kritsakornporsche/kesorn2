@@ -60,6 +60,11 @@ async function main() {
     created.users.push(r.insertId);
     return { id: r.insertId, email, role, sub_role: subRole, name: `${TAG} ${key}` };
   };
+  /** A keeper of a dorm: the keepers row that makes them staff of that dorm (same rule as /api/owner/staff) */
+  const keeperOf = async (u, dormId) => {
+    await q('INSERT INTO keepers (user_id, name, email, phone, position, dorm_id) VALUES (?, ?, ?, ?, ?, ?)', [u.id, u.name, u.email, '0000000000', u.sub_role, dormId]);
+    return u;
+  };
   let roomSeq = 0;
   const room = async () => {
     roomSeq++;
@@ -106,10 +111,13 @@ async function main() {
   try {
     const owner = await user('owner', 'owner');
     const manager = await user('manager', 'manager');
-    const maid = await user('maid', 'keeper', 'maid');
-    const tech = await user('tech', 'keeper', 'technician');
-    const tech2 = await user('tech2', 'keeper', 'technician');
-    const techOff = await user('techoff', 'keeper', 'technician', 0);
+    const maid = await keeperOf(await user('maid', 'keeper', 'maid'), 1);
+    const tech = await keeperOf(await user('tech', 'keeper', 'technician'), 1);
+    const tech2 = await keeperOf(await user('tech2', 'keeper', 'technician'), 1);
+    const techOff = await keeperOf(await user('techoff', 'keeper', 'technician', 0), 1);
+    // Technicians that are not staff of this dorm: one of another dorm (older multi-dorm data), one with no keepers row
+    const techOther = await keeperOf(await user('techother', 'keeper', 'technician'), 2);
+    const techNone = await user('technone', 'keeper', 'technician');
     const A = await tenancy('a');
     const B = await tenancy('b');
     const E = await tenancy('e', 'Ended');
@@ -145,6 +153,13 @@ async function main() {
     check('repair cannot go to a maid', !toMaid.ok && toMaid.reason === 'wrong_keeper', toMaid);
     const toOff = await mt.assignJob(j1.id, techOff.id, owner, at('2026-05-01'));
     check('deactivated keeper cannot be assigned', !toOff.ok && toOff.reason === 'wrong_keeper', toOff);
+    const toOther = await mt.assignJob(j1.id, techOther.id, owner, at('2026-05-01'));
+    check('technician of another dorm cannot be assigned', !toOther.ok && toOther.reason === 'wrong_keeper', toOther);
+    const toNone = await mt.assignJob(j1.id, techNone.id, owner, at('2026-05-01'));
+    check('technician with no dorm cannot be assigned', !toNone.ok && toNone.reason === 'wrong_keeper', toNone);
+    const repairList = (await mt.keepersFor('repair')).map((k) => Number(k.id));
+    check('assign list: only active technicians of this dorm',
+      repairList.includes(tech.id) && repairList.includes(tech2.id) && !repairList.includes(techOther.id) && !repairList.includes(techNone.id) && !repairList.includes(techOff.id), repairList);
     const byTenant = await mt.assignJob(j1.id, tech.id, A.user, at('2026-05-01'));
     check('tenant cannot assign', !byTenant.ok && byTenant.reason === 'forbidden');
     const assigned = await mt.assignJob(j1.id, tech.id, manager, at('2026-05-01'));
@@ -285,6 +300,7 @@ async function main() {
     await q('DELETE FROM tenants WHERE id IN (?)', [ids(created.tenants)]);
     await q('DELETE FROM rooms WHERE id IN (?)', [ids(created.rooms)]);
     await q('DELETE FROM notifications WHERE user_id IN (?)', [ids(created.users)]).catch(() => {});
+    await q('DELETE FROM keepers WHERE user_id IN (?)', [ids(created.users)]);
     await q('DELETE FROM users WHERE id IN (?)', [ids(created.users)]);
     for (const f of photos) fs.rmSync(path.join(STORAGE, f), { force: true });
     listFiles(STORAGE).filter((f) => !storageBefore.has(f)).forEach((f) => fs.rmSync(f, { force: true }));
