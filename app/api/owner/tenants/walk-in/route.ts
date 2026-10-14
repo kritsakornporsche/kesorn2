@@ -147,20 +147,9 @@ export async function POST(req: Request) {
     isAutoApproved = true;
     slipRaw = JSON.stringify(verifyResult.rawData || {});
 
-    // A tenant who already lives here (Active contract) cannot be booked into another room
-    const activeElsewhere = await sql`
-      SELECT c.id, r.room_number FROM contracts c JOIN tenants t ON t.id = c.tenant_id JOIN rooms r ON r.id = c.room_id
-      WHERE LOWER(t.email) = ${cleanEmail} AND c.status = 'Active' LIMIT 1
-    `;
-    if (activeElsewhere.length > 0) {
-      return NextResponse.json({
-        success: false,
-        message: `อีเมลนี้มีสัญญาเช่าที่ใช้งานอยู่แล้ว (ห้อง ${activeElsewhere[0].room_number}) ไม่สามารถจองห้องเพิ่มได้`,
-      }, { status: 400 });
-    }
-
     // 3. Account + contract through the single contract service. A new account's password is the phone
     // number; an existing guest/tenant account keeps its password and role; staff accounts are refused.
+    // One booking/contract per account until it ends (checked in the same transaction, with the user row locked).
     const formattedStartDate = startDate || new Date().toISOString().slice(0, 10);
     const formattedEndDate = endDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10);
     const created = await createContract({
@@ -179,6 +168,7 @@ export async function POST(req: Request) {
       depositAmount: bookingFee,
       status: 'PendingOwnerSignature',
       requireRoomFree: true,
+      oneOpenContract: true,
       signature: 'WALK_IN_VERIFIED',
       signedAt: new Date(),
       // Staff on site counts as the approval

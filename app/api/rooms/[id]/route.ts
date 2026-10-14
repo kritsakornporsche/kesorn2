@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getDb, getPlatformDb, getDormDb, getDormDbFromSession } from '@/lib/db';
 import { auth } from '@/auth';
 import { expireDueBookings } from '@/lib/bookings';
+import { expireDueMoveIns } from '@/lib/moveIn';
+import { capCheck, depositFor } from '@/lib/billing';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -11,6 +13,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const sql = getDb();
     // No scheduler: bookings past their deadline are expired whenever rooms are read
     await expireDueBookings().catch((e) => console.warn('[expire bookings]', e));
+    await expireDueMoveIns().catch((e) => console.warn('[expire move-ins]', e));
     
     // Fetch room with dorm info from dormitory_profile and owner from users
     const result = await sql`
@@ -106,6 +109,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const deposit = deposit_amount !== undefined && deposit_amount !== null && deposit_amount !== '' ? parseFloat(deposit_amount) : 3000;
     const water = water_rate !== undefined && water_rate !== null && water_rate !== '' ? parseFloat(water_rate) : 100;
     const common = common_fee !== undefined && common_fee !== null && common_fee !== '' ? parseFloat(common_fee) : 150;
+
+    // Deposit + first month's rent paid in advance may be at most 3 months of rent
+    const cap = capCheck(Number(price), depositFor({ room_number, deposit_amount: deposit }));
+    if (!cap.ok) {
+      return NextResponse.json({ success: false, message: cap.message }, { status: 400 });
+    }
 
     await sql`
       UPDATE rooms 

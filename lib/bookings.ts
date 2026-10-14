@@ -4,8 +4,8 @@
 // Times are stored as Thai local time (the pool in lib/mysql-adapter.js uses timezone +07:00).
 
 import { bangkokDate, bookingFeeFor, getDormPromptPay } from '@/lib/billing';
-import { withTransaction, type Client } from '@/lib/bill-status';
-import { createContractTx, Refused, contractMessage, type ContractRefusal } from '@/lib/contracts';
+import { type Client } from '@/lib/bill-status';
+import { createContractTx, Refused, contractMessage, withRetry, type ContractRefusal } from '@/lib/contracts';
 import { recordPaymentInTransaction, slipPaidAt } from '@/lib/payments';
 import { forfeitBookingFee } from '@/lib/deposits';
 import { formatBaht } from '@/lib/format';
@@ -20,9 +20,9 @@ const OPEN = ['BookingRequested', 'BookingApproved'];
 // Booking fee paid; the owner prepares the contract and the move-in bill
 const PAID = ['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill'];
 
-export type BookingRefusal = ContractRefusal | 'outside_hours' | 'has_open_booking' | 'not_found' | 'not_owner'
+export type BookingRefusal = ContractRefusal | 'outside_hours' | 'not_found' | 'not_owner'
   | 'not_requested' | 'not_approved' | 'expired' | 'slip_rejected' | 'slip_time' | 'payment_failed'
-  | 'not_paid_booking' | 'too_early' | 'first_bill_paid';
+  | 'not_paid_booking' | 'too_early' | 'first_bill_paid' | 'legacy';
 
 export type BookingResult<T> = ({ ok: true } & T) | { ok: false; reason: BookingRefusal; message: string; expected?: number };
 
@@ -43,19 +43,10 @@ const MESSAGES: Partial<Record<BookingRefusal, string>> = {
   not_paid_booking: 'ยกเลิกแบบไม่มาตามนัดได้เฉพาะการจองที่ชำระค่าจองแล้ว',
   too_early: 'ยังไม่เลยวันเข้าพักที่นัดไว้',
   first_bill_paid: 'มีการชำระบิลแรกเข้าแล้ว กรุณาจัดการด้วยมือ',
+  legacy: 'สัญญาแบบเดิม — จัดการด้วยมือ (ไม่มีบิลเข้าอยู่ในระบบใหม่ จึงตรวจการชำระก่อนริบค่าจองไม่ได้)',
 };
 
-const isDeadlock = (error: any) => error?.code === 'ER_LOCK_DEADLOCK' || error?.errno === 1213;
-
-/** Run in a transaction; a lock deadlock (two requests on the same rows) is retried once. */
-async function withRetry<T>(work: (client: Client) => Promise<T>): Promise<T> {
-  try {
-    return await withTransaction(work);
-  } catch (error) {
-    if (isDeadlock(error)) return withTransaction(work);
-    throw error;
-  }
-}
+export { withRetry };
 
 async function run<T>(work: (client: Client) => Promise<T>): Promise<BookingResult<T>> {
   try {
@@ -101,7 +92,7 @@ export function slipTimeAllowed(slipAt: Date, approvedAt: Date) {
 }
 
 /** The room goes back to Available when no contract holds it any more. */
-async function releaseRoom(client: Client, roomId: number) {
+export async function releaseRoom(client: Client, roomId: number) {
   const holding = (await client.query(
     `SELECT id FROM contracts WHERE room_id = ? AND status IN ('BookingRequested', 'BookingApproved', 'PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active') LIMIT 1`,
     [roomId]
@@ -152,21 +143,12 @@ export interface BookingRequestInput {
   signature?: string | null;
 }
 
-/** A guest asks to book a room (no payment yet). One open request per account; the room must be free. */
+/** A guest asks to book a room (no payment yet). One booking/contract per account until it ends; the room must be free. */
 export function requestBooking(input: BookingRequestInput, now: Date) {
   return run(async (client) => {
     const window = bookingWindow(now);
     if (!window.open) refuse('outside_hours');
     await expireBookings(client, now);
-
-    const open = (await client.query(
-      `SELECT c.id, r.room_number FROM contracts c JOIN tenants t ON t.id = c.tenant_id JOIN rooms r ON r.id = c.room_id
-       WHERE LOWER(t.email) = LOWER(?) AND c.status IN ('BookingRequested', 'BookingApproved') LIMIT 1`,
-      [input.email]
-    )).rows[0];
-    if (open) {
-      refuse('has_open_booking', `คุณมีคำขอจองที่ยังไม่เสร็จอยู่ 1 รายการ (ห้อง ${open.room_number}) — ดูสถานะ/ยกเลิกได้ที่หน้าสถานะการจอง`);
-    }
 
     const room = (await client.query('SELECT room_number FROM rooms WHERE id = ?', [input.roomId])).rows[0];
     if (!room) refuse('room_not_found');
@@ -181,6 +163,8 @@ export function requestBooking(input: BookingRequestInput, now: Date) {
       depositAmount: bookingFeeFor(room.room_number),
       status: 'BookingRequested',
       requireRoomFree: true,
+      // One booking/contract per account until it ends (requested, approved, paid, waiting to move in, or living here)
+      oneOpenContract: true,
       signature: input.signature || 'CONFIRMED_E_CONTRACT',
       idCardNumber: input.idCardNumber,
       tenantAddress: input.address,
@@ -328,6 +312,8 @@ export async function cancelNoShow(contractId: number, by: number, now: Date) {
   const result = await run(async (client) => {
     const c = await lockBooking(client, contractId);
     if (!PAID.includes(c.status)) refuse('not_paid_booking');
+    // Older contract (PendingFirstBill without move_in_bill_id): its move-in payment cannot be checked here
+    if (c.status === 'PendingFirstBill' && !c.move_in_bill_id) refuse('legacy');
     if (!c.start_date || bangkokDate(now) <= bangkokDate(c.start_date)) refuse('too_early');
 
     const firstBills = (await client.query(

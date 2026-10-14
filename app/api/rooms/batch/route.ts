@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { capCheck, depositFor } from '@/lib/billing';
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,6 +22,16 @@ export async function POST(req: NextRequest) {
 
     if (!targetDormId) {
       return NextResponse.json({ success: false, message: 'Missing dormitory context' }, { status: 400 });
+    }
+
+    // Deposit + first month's rent paid in advance may be at most 3 months of rent (checked before anything is created)
+    for (const room of rooms) {
+      if (!room?.room_number || room.price === undefined) continue;
+      const deposit = room.deposit_amount !== undefined && room.deposit_amount !== null && room.deposit_amount !== '' ? parseFloat(room.deposit_amount) : 3000;
+      const cap = capCheck(Number(room.price), depositFor({ room_number: room.room_number, deposit_amount: deposit }));
+      if (!cap.ok) {
+        return NextResponse.json({ success: false, message: `ห้อง ${room.room_number}: ${cap.message}` }, { status: 400 });
+      }
     }
 
     const sql = getDb();

@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { getCurrentUser } from '@/lib/authz';
+import { canViewContract, formDeposit } from '@/lib/contract-files';
+import { getRates, ratesForRoom, type Rates } from '@/lib/billing';
 import { Document, Paragraph, TextRun, Packer, AlignmentType } from 'docx';
 
-function createContractDocx(data: any) {
+const rateText = (n: number) => n.toLocaleString('th-TH', { maximumFractionDigits: 2 });
+
+function createContractDocx(data: any, rates: Rates) {
   const roomNumber = data.room_number || '-';
   const floor = data.floor || (roomNumber.length >= 2 ? roomNumber[0] : '1');
   const tenantName = data.tenant_name || '..........................................................';
@@ -89,7 +94,7 @@ function createContractDocx(data: any) {
         }),
         new Paragraph({
           children: [
-            new TextRun({ text: `ข้อ 2. ผู้เช่าตกลงชำระค่าเช่าให้แก่ผู้ให้เช่าล่วงหน้า ค่ามัดจำจำนวน ${depositAmount} บาท ค่ามัดจำจะคืนให้ตอนออก เมื่อพักครบสัญญา อย่างน้อย 1 ปี หักค่าเสียหายภายในห้องและค่าทำความสะอาด ค่าเช่าจำนวน ${monthlyRent} บาท เป็นค่าเช่าของเดือน ${startMonthStr} ส่วนค่าเช่าชำระโดยกำหนดชำระค่าเช่าภายในวันที่ 5 ของทุกเดือน ในอัตราค่าเช่าเดือนละ ${monthlyRent} บาท หากผู้เช่าชำระเงินล่าช้ากว่ากำหนด ผู้ให้เช่ามีสิทธิ์เรียกขอค่าล่าช้าตามที่ได้แจ้งก่อนหน้านี้`, size: 24, font: 'TH Sarabun New' })
+            new TextRun({ text: `ข้อ 2. ผู้เช่าตกลงชำระค่าเช่าให้แก่ผู้ให้เช่าล่วงหน้า ค่ามัดจำจำนวน ${depositAmount} บาท ค่ามัดจำจะคืนให้ตอนออก เมื่อพักครบสัญญา อย่างน้อย 1 ปี หักค่าเสียหายภายในห้องและค่าทำความสะอาด ค่าเช่าจำนวน ${monthlyRent} บาท เป็นค่าเช่าของเดือน ${startMonthStr} ส่วนค่าเช่าชำระโดยกำหนดชำระค่าเช่าภายในวันที่ 5 ของทุกเดือน ในอัตราค่าเช่าเดือนละ ${monthlyRent} บาท หากผู้เช่าชำระเงินล่าช้ากว่ากำหนด ผู้ให้เช่ามีสิทธิ์เรียกขอค่าล่าช้าวันละ ${rateText(rates.lateFeePerDay)} บาท`, size: 24, font: 'TH Sarabun New' })
           ]
         }),
         new Paragraph({
@@ -178,7 +183,7 @@ function createContractDocx(data: any) {
         }),
         new Paragraph({
           children: [
-            new TextRun({ text: '• ค่าน้ำคนละ 100 บาท  • ค่าไฟหน่วยละ 8 บาท', size: 22, font: 'TH Sarabun New' })
+            new TextRun({ text: `• ค่าน้ำคนละ ${rateText(rates.waterPerPerson)} บาท  • ค่าไฟหน่วยละ ${rateText(rates.electricityPerUnit)} บาท`, size: 22, font: 'TH Sarabun New' })
           ]
         }),
         new Paragraph({
@@ -210,9 +215,15 @@ function createContractDocx(data: any) {
 
 export async function POST(req: Request) {
   try {
+    // Builds the document from what the page sends (nothing is read from the database), but only for signed-in users
+    if (!(await getCurrentUser())) {
+      return NextResponse.json({ success: false, message: 'กรุณาเข้าสู่ระบบ' }, { status: 401 });
+    }
     const body = await req.json();
     const contract = body.contract || body;
-    const doc = createContractDocx(contract);
+    // Rates always from the dorm settings (demo room T01 has its own), never from the page
+    const rates = ratesForRoom(await getRates(getDb()), contract.room_number);
+    const doc = createContractDocx(contract, rates);
     const buffer = await Packer.toBuffer(doc);
 
     const roomNumber = contract.room_number || 'Room';
@@ -240,9 +251,15 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, message: 'Missing contract id' }, { status: 400 });
     }
 
+    // Owner/manager, or the contract's own tenant (the document shows the ID card number and address)
+    const access = await canViewContract(Number(id));
+    if (!access.ok) {
+      return NextResponse.json({ success: false, message: access.status === 401 ? 'กรุณาเข้าสู่ระบบ' : 'Contract not found' }, { status: access.status });
+    }
+
     const sql = getDb();
     const rows = await sql`
-      SELECT c.*, r.room_number, r.floor, r.price, t.name as tenant_name, t.phone as tenant_phone, t.email as tenant_email, t.id_card_number, t.address as tenant_address
+      SELECT c.*, r.room_number, r.floor, r.price, r.deposit_amount as room_deposit_amount, t.name as tenant_name, t.phone as tenant_phone, t.email as tenant_email, t.id_card_number, t.address as tenant_address
       FROM contracts c
       LEFT JOIN rooms r ON c.room_id = r.id
       LEFT JOIN tenants t ON c.tenant_id = t.id
@@ -254,8 +271,9 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, message: 'Contract not found' }, { status: 404 });
     }
 
-    const contract = rows[0];
-    const doc = createContractDocx(contract);
+    const contract = { ...rows[0], deposit_amount: formDeposit(rows[0]) };
+    const rates = ratesForRoom(await getRates(sql), contract.room_number);
+    const doc = createContractDocx(contract, rates);
     const buffer = await Packer.toBuffer(doc);
 
     const filename = `สัญญาเช่า_หอพักเกษร_ห้อง${contract.room_number}_${(contract.tenant_name || '').replace(/\s+/g, '_')}.docx`;

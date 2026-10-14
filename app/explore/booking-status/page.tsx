@@ -61,6 +61,8 @@ export default function BookingStatusPage() {
   const [paying, setPaying] = useState(false);
   const [slipData, setSlipData] = useState<string | null>(null);
   const [qr, setQr] = useState<{ qrImage: string; promptpayNumber: string; promptpayName: string } | null>(null);
+  // QR could not be made (e.g. no PromptPay number set): show a message instead of an empty space
+  const [qrFailed, setQrFailed] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
   // Countdown base: elapsed time since the last response (monotonic), not the device's wall clock
   const syncedAt = useRef<number>(0);
@@ -115,11 +117,12 @@ export default function BookingStatusPage() {
 
   // QR for the booking fee (amount from the server)
   useEffect(() => {
+    setQrFailed(false);
     if (!open || open.status !== 'BookingApproved') { setQr(null); return; }
     fetch(`/api/booking/qr?roomId=${open.room_id}&amount=${open.booking_fee}`)
       .then((res) => res.json())
-      .then((data) => { if (data.success) setQr(data); })
-      .catch(() => {});
+      .then((data) => { if (data.success) setQr(data); else { setQr(null); setQrFailed(true); } })
+      .catch(() => setQrFailed(true));
   }, [open?.contract_id, open?.status, open?.booking_fee, open?.room_id]);
 
   const handleSlip = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -259,6 +262,18 @@ export default function BookingStatusPage() {
                   <p className="text-xs text-muted-foreground leading-relaxed">
                     หอพักอนุมัติการจองแล้ว กรุณาโอนค่าจอง ฿{formatBaht(booking.booking_fee)} และอัปโหลดสลิปภายในเวลา · โอนหลังเวลาอนุมัติเท่านั้น · ค่าจองเป็นส่วนหนึ่งของเงินประกัน ไม่คืนหากยกเลิกการจองหรือไม่มาตามนัด
                   </p>
+                  {qr && toPay !== null && toPay > 0 && (
+                    <div className="flex flex-col items-center text-center">
+                      <img src={qr.qrImage} alt="PromptPay QR" className="w-52 h-52 object-contain bg-white p-2 rounded-xl shadow-md" />
+                      <p className="text-xs text-muted-foreground mt-3 font-bold tracking-wider">พร้อมเพย์: {qr.promptpayNumber}</p>
+                      {qr.promptpayName && <p className="text-xs text-muted-foreground">{qr.promptpayName}</p>}
+                    </div>
+                  )}
+                  {qrFailed && toPay !== null && toPay > 0 && (
+                    <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-300 font-bold text-center">
+                      หอพักยังไม่ได้ตั้งเลขพร้อมเพย์ กรุณาติดต่อหอพัก{phoneOf(booking) ? ` โทร ${phoneOf(booking)}` : ''}
+                    </div>
+                  )}
                   {qr && toPay !== null && toPay > 0 && (
                     <PromptPayBankSelector
                       qrImage={qr.qrImage}

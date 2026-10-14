@@ -2,6 +2,7 @@ import { getDb } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
+import { withPaperLink } from '@/lib/contract-files';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ success: false, message: 'Contract not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, data: data[0] });
+    return NextResponse.json({ success: true, data: withPaperLink(data[0]) });
   } catch (error: any) {
     console.error('[API Contract GET Error]', error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

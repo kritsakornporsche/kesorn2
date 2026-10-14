@@ -4,6 +4,7 @@ import { getDb } from '@/lib/db';
 import { getDormPromptPay, getRates } from '@/lib/billing';
 import { formatBaht } from '@/lib/format';
 import { getPaymentSummaries, outstandingFor, recordPayment, slipPaidAt } from '@/lib/payments';
+import { afterMoveInPayment, missingMessage } from '@/lib/moveIn';
 import { NextResponse } from 'next/server';
 import { verifySlipWithSlipOK } from '@/lib/slipok';
 
@@ -104,9 +105,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message, data: verifyResult }, { status: 400 });
     }
 
+    // A paid move-in bill may complete its contract (lib/moveIn.ts)
+    const activation = payment.status === 'Paid' ? await afterMoveInPayment(sql, Number(billId)) : null;
+
     return NextResponse.json({
       success: true,
-      message: '✅ ตรวจสอบสลิปถูกต้องและอนุมัติการชำระเงินเรียบร้อยแล้ว',
+      message: '✅ ตรวจสอบสลิปถูกต้องและอนุมัติการชำระเงินเรียบร้อยแล้ว'
+        + (activation ? (activation.activated ? ' · สัญญามีผลแล้ว' : ` · ${missingMessage(activation.missing)}`) : ''),
+      activated: Boolean(activation?.activated),
       data: {
         ...verifyResult,
         penaltyAmount,

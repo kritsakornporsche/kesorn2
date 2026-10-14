@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
         success: false,
         reason: result.reason,
         message: result.message,
-        ...(result.reason === 'has_open_booking' ? { statusUrl: '/explore/booking-status' } : {}),
+        ...(result.reason === 'has_open_contract' ? { statusUrl: '/explore/booking-status' } : {}),
       }, { status: 400 });
     }
 

@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import { expireDueBookings } from '@/lib/bookings';
+import { expireDueMoveIns } from '@/lib/moveIn';
+import { capCheck, depositFor } from '@/lib/billing';
 
 export async function GET(req: NextRequest) {
   try {
@@ -23,6 +25,7 @@ export async function GET(req: NextRequest) {
     const sql = getDb();
     // No scheduler: bookings past their deadline are expired whenever rooms are read
     await expireDueBookings().catch((e) => console.warn('[expire bookings]', e));
+    await expireDueMoveIns().catch((e) => console.warn('[expire move-ins]', e));
 
     // ── Rule 16.4: Auto-recover rooms from Maintenance to Available when ready_to_occupy_date <= CURRENT_DATE ──
     try {
@@ -140,6 +143,12 @@ export async function POST(req: NextRequest) {
     const deposit = deposit_amount !== undefined && deposit_amount !== null && deposit_amount !== '' ? parseFloat(deposit_amount) : 3000;
     const water = water_rate !== undefined && water_rate !== null && water_rate !== '' ? parseFloat(water_rate) : 100;
     const common = common_fee !== undefined && common_fee !== null && common_fee !== '' ? parseFloat(common_fee) : 150;
+
+    // Deposit + first month's rent paid in advance may be at most 3 months of rent
+    const cap = capCheck(Number(price), depositFor({ room_number, deposit_amount: deposit }));
+    if (!cap.ok) {
+      return NextResponse.json({ success: false, message: cap.message }, { status: 400 });
+    }
 
     const result = await sql`
       INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount, water_rate, common_fee)

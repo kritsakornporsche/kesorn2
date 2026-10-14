@@ -16,7 +16,7 @@ const SIGNABLE = new Set(['pendingownersignature', 'pendingcontract', 'pendingfi
 export const ROOM_HOLDING_STATUSES = ['BookingRequested', 'BookingApproved', 'PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active'];
 
 export type ContractRefusal = 'room_not_found' | 'room_unavailable' | 'room_has_active_contract' | 'staff_account'
-  | 'no_account' | 'not_found' | 'invalid_status' | 'deposit_mismatch' | 'deposit_reason_required';
+  | 'no_account' | 'not_found' | 'invalid_status' | 'deposit_mismatch' | 'deposit_reason_required' | 'has_open_contract';
 
 export const CONTRACT_MESSAGES: Record<ContractRefusal, string> = {
   room_not_found: 'ไม่พบข้อมูลห้องพัก',
@@ -28,29 +28,65 @@ export const CONTRACT_MESSAGES: Record<ContractRefusal, string> = {
   invalid_status: 'สัญญานี้อยู่ในสถานะที่เปิดใช้งานไม่ได้',
   deposit_mismatch: 'เงินประกันไม่ตรงกับกติกาของห้อง',
   deposit_reason_required: 'กำหนดเงินประกันเองได้เฉพาะผู้เช่าเดิม (ก่อนใช้ระบบ) และต้องระบุเหตุผล',
+  has_open_contract: 'บัญชีนี้มีการจอง/สัญญาที่ยังไม่สิ้นสุดอยู่แล้ว',
 };
 
-/** Message for a refusal; a deposit mismatch says which amount is correct. */
-export function contractMessage(result: { reason: ContractRefusal; expected?: number }) {
-  return result.reason === 'deposit_mismatch' && result.expected !== undefined
-    ? `เงินประกันต้องเป็น ฿${formatBaht(result.expected)} ตามกติกาของห้อง`
-    : CONTRACT_MESSAGES[result.reason];
+/** Message for a refusal; a deposit mismatch says which amount is correct, an open contract which room. */
+export function contractMessage(result: { reason: ContractRefusal; expected?: number; room?: string }) {
+  if (result.reason === 'deposit_mismatch' && result.expected !== undefined) return `เงินประกันต้องเป็น ฿${formatBaht(result.expected)} ตามกติกาของห้อง`;
+  if (result.reason === 'has_open_contract' && result.room) return `${CONTRACT_MESSAGES.has_open_contract} (ห้อง ${result.room})`;
+  return CONTRACT_MESSAGES[result.reason];
 }
 
 export class Refused extends Error {
-  constructor(public reason: ContractRefusal, public expected?: number) { super(reason); }
+  constructor(public reason: ContractRefusal, public expected?: number, public room?: string) { super(reason); }
 }
-function refuse(reason: ContractRefusal, expected?: number): never {
-  throw new Refused(reason, expected);
+function refuse(reason: ContractRefusal, expected?: number, room?: string): never {
+  throw new Refused(reason, expected, room);
 }
 
-async function run<T>(work: (client: Client) => Promise<T>): Promise<({ ok: true } & T) | { ok: false; reason: ContractRefusal; expected?: number }> {
+// Two requests for the same rows: a lock deadlock, or both creating the same new account (unique email)
+const isRace = (error: any) => ['ER_LOCK_DEADLOCK', 'ER_DUP_ENTRY'].includes(error?.code) || [1213, 1062].includes(error?.errno);
+
+/** Run in a transaction; a lost race is retried once (the retry then sees the other request's rows). */
+export async function withRetry<T>(work: (client: Client) => Promise<T>): Promise<T> {
   try {
-    return { ok: true, ...(await withTransaction(work)) };
+    return await withTransaction(work);
   } catch (error) {
-    if (error instanceof Refused) return { ok: false, reason: error.reason, ...(error.expected !== undefined ? { expected: error.expected } : {}) };
+    if (isRace(error)) return withTransaction(work);
     throw error;
   }
+}
+
+async function run<T>(work: (client: Client) => Promise<T>): Promise<({ ok: true } & T) | { ok: false; reason: ContractRefusal; expected?: number; room?: string }> {
+  try {
+    return { ok: true, ...(await withRetry(work)) };
+  } catch (error) {
+    if (error instanceof Refused) {
+      return { ok: false, reason: error.reason, ...(error.expected !== undefined ? { expected: error.expected } : {}), ...(error.room ? { room: error.room } : {}) };
+    }
+    throw error;
+  }
+}
+
+/**
+ * The account's booking or contract that has not ended (any status that holds a room), or null.
+ * Locks the user row first, so two requests for the same account wait for each other. The contract lookup is a
+ * locking read: it sees contracts committed by the other request, not the snapshot taken by earlier plain reads.
+ */
+export async function findOpenContract(client: Client, email: string): Promise<{ id: number; roomNumber: string } | null> {
+  const clean = email.trim().toLowerCase();
+  await client.query('SELECT id FROM users WHERE LOWER(email) = ? FOR UPDATE', [clean]);
+  const row = (await client.query(
+    `SELECT c.id, r.room_number FROM contracts c
+       JOIN tenants t ON t.id = c.tenant_id
+       LEFT JOIN users u ON u.id = t.user_id
+       JOIN rooms r ON r.id = c.room_id
+     WHERE (LOWER(t.email) = ? OR LOWER(u.email) = ?) AND c.status IN (${ROOM_HOLDING_STATUSES.map(() => '?').join(', ')})
+     ORDER BY c.id DESC LIMIT 1 LOCK IN SHARE MODE`,
+    [clean, clean, ...ROOM_HOLDING_STATUSES]
+  )).rows[0];
+  return row ? { id: Number(row.id), roomNumber: String(row.room_number) } : null;
 }
 
 /** Temporary password for an account the owner creates (shown once, the tenant changes it after logging in). */
@@ -73,7 +109,11 @@ export interface AccountInput {
   newPassword?: string | null;
 }
 
-/** Find or create the user + tenant record for a contract. Staff accounts are refused; a tenant is never lowered to guest. */
+/**
+ * Find or create the user + tenant record for a contract. Staff accounts are refused; a tenant is never lowered to guest.
+ * An account that still has a booking/contract that has not ended (owner-made 2nd contract) keeps its profile and room:
+ * what was entered this time is kept on the new contract only (id card number/image, address — the caller passes them).
+ */
 async function resolveAccount(client: Client, input: AccountInput, place: { roomId: number; dormId: number; moveInDate: string; tenantStatus: 'pending' | 'active' }) {
   const email = input.email.trim().toLowerCase();
   const name = input.name?.trim() || null;
@@ -82,15 +122,21 @@ async function resolveAccount(client: Client, input: AccountInput, place: { room
   const existing = (await client.query('SELECT id, role FROM users WHERE LOWER(email) = ? LIMIT 1 FOR UPDATE', [email])).rows[0];
   let userId: number;
   let createdUser = false;
+  let keepProfile = false;
   if (existing) {
     if (STAFF_ROLES.has(String(existing.role || '').toLowerCase())) refuse('staff_account');
     userId = existing.id;
+    keepProfile = Boolean(await findOpenContract(client, email));
     const keepTenant = String(existing.role || '').toLowerCase() === 'tenant';
     const role = input.role === 'tenant' || keepTenant ? 'tenant' : 'guest';
-    await client.query(
-      'UPDATE users SET role = ?, primary_role = ?, name = COALESCE(?, name), phone = COALESCE(?, phone) WHERE id = ?',
-      [role, role, name, phone, userId]
-    );
+    if (keepProfile) {
+      await client.query('UPDATE users SET role = ?, primary_role = ? WHERE id = ?', [role, role, userId]);
+    } else {
+      await client.query(
+        'UPDATE users SET role = ?, primary_role = ?, name = COALESCE(?, name), phone = COALESCE(?, phone) WHERE id = ?',
+        [role, role, name, phone, userId]
+      );
+    }
   } else {
     if (!input.newPassword) refuse('no_account');
     const hash = await bcrypt.hash(String(input.newPassword), 12);
@@ -105,7 +151,11 @@ async function resolveAccount(client: Client, input: AccountInput, place: { room
     'SELECT id FROM tenants WHERE user_id = ? OR LOWER(email) = ? ORDER BY id LIMIT 1 FOR UPDATE', [userId, email]
   )).rows[0];
   let tenantId: number;
-  if (tenant) {
+  if (tenant && keepProfile) {
+    // Still living here / still booked: profile, room, status and move-in date stay as they are
+    tenantId = tenant.id;
+    await client.query('UPDATE tenants SET user_id = COALESCE(user_id, ?) WHERE id = ?', [userId, tenantId]);
+  } else if (tenant) {
     tenantId = tenant.id;
     await client.query(
       `UPDATE tenants SET user_id = ?, room_id = ?, status = ?, move_in_date = ?, move_out_date = NULL, dorm_id = ?,
@@ -148,6 +198,8 @@ export interface CreateContractInput {
   expiresAt?: Date | null;
   /** Walk-in: the room must not already be occupied or reserved */
   requireRoomFree?: boolean;
+  /** Web booking and walk-in: one booking/contract per account until it ends (renewals and owner-made contracts skip this) */
+  oneOpenContract?: boolean;
   signature?: string | null;
   ownerSignature?: string | null;
   signedAt?: Date | null;
@@ -181,6 +233,10 @@ export async function createContractTx(client: Client, input: CreateContractInpu
       [input.roomId, ...ROOM_HOLDING_STATUSES]
     )).rows[0];
     if (holding) refuse('room_unavailable');
+  }
+  if (input.oneOpenContract && input.account) {
+    const open = await findOpenContract(client, input.account.email);
+    if (open) refuse('has_open_contract', undefined, open.roomNumber);
   }
   const active = (await client.query(
     "SELECT id FROM contracts WHERE room_id = ? AND status = 'Active' AND id <> ? LIMIT 1", [input.roomId, input.parentContractId || 0]
@@ -239,34 +295,35 @@ export interface SignContractInput {
   slipUrl?: string | null;
 }
 
-/** Activate a pending contract: contract Active, room Occupied, tenant active in that room, guest account becomes tenant. */
-export function signContract(contractId: number, input: SignContractInput = {}) {
-  return run(async (client) => {
-    const contract = (await client.query(
-      `SELECT c.id, c.status, c.room_id, c.tenant_id, t.user_id, t.email
-       FROM contracts c LEFT JOIN tenants t ON t.id = c.tenant_id WHERE c.id = ? FOR UPDATE`, [contractId]
-    )).rows[0];
-    if (!contract) refuse('not_found');
-    if (!SIGNABLE.has(String(contract.status || '').toLowerCase())) refuse('invalid_status');
+/**
+ * Activate a pending contract: contract Active, room Occupied, tenant active in that room, guest account becomes tenant.
+ * Runs inside the caller's transaction (refusals throw Refused); booked contracts are activated through lib/moveIn.ts.
+ */
+export async function signContractTx(client: Client, contractId: number, input: SignContractInput = {}) {
+  const contract = (await client.query(
+    `SELECT c.id, c.status, c.room_id, c.tenant_id, t.user_id, t.email
+     FROM contracts c LEFT JOIN tenants t ON t.id = c.tenant_id WHERE c.id = ? FOR UPDATE`, [contractId]
+  )).rows[0];
+  if (!contract) refuse('not_found');
+  if (!SIGNABLE.has(String(contract.status || '').toLowerCase())) refuse('invalid_status');
 
-    await client.query(
-      `UPDATE contracts SET status = 'Active', owner_signature_data = COALESCE(?, owner_signature_data), signed_at = COALESCE(signed_at, NOW()),
-         contract_file_url = COALESCE(?, contract_file_url), deposit_amount = COALESCE(?, deposit_amount), slip_url = COALESCE(?, slip_url)
-       WHERE id = ?`,
-      [input.ownerSignature || null, input.contractFileUrl || null, input.depositAmount ?? null, input.slipUrl || null, contractId]
-    );
-    await client.query("UPDATE rooms SET status = 'Occupied' WHERE id = ?", [contract.room_id]);
-    if (contract.tenant_id) {
-      await client.query("UPDATE tenants SET status = 'active', room_id = ? WHERE id = ?", [contract.room_id, contract.tenant_id]);
-    }
-    // Only a guest account becomes tenant (staff accounts are never changed)
-    await client.query(
-      `UPDATE users SET role = 'tenant', primary_role = 'tenant'
-       WHERE (id = ? OR LOWER(email) = LOWER(?)) AND (role IS NULL OR role IN ('guest', 'tenant'))`,
-      [contract.user_id || 0, contract.email || '']
-    );
-    return { contractId, tenantId: contract.tenant_id as number, userId: (contract.user_id as number) || null, roomId: contract.room_id as number };
-  });
+  await client.query(
+    `UPDATE contracts SET status = 'Active', owner_signature_data = COALESCE(?, owner_signature_data), signed_at = COALESCE(signed_at, NOW()),
+       contract_file_url = COALESCE(?, contract_file_url), deposit_amount = COALESCE(?, deposit_amount), slip_url = COALESCE(?, slip_url)
+     WHERE id = ?`,
+    [input.ownerSignature || null, input.contractFileUrl || null, input.depositAmount ?? null, input.slipUrl || null, contractId]
+  );
+  await client.query("UPDATE rooms SET status = 'Occupied' WHERE id = ?", [contract.room_id]);
+  if (contract.tenant_id) {
+    await client.query("UPDATE tenants SET status = 'active', room_id = ? WHERE id = ?", [contract.room_id, contract.tenant_id]);
+  }
+  // Only a guest account becomes tenant (staff accounts are never changed)
+  await client.query(
+    `UPDATE users SET role = 'tenant', primary_role = 'tenant'
+     WHERE (id = ? OR LOWER(email) = LOWER(?)) AND (role IS NULL OR role IN ('guest', 'tenant'))`,
+    [contract.user_id || 0, contract.email || '']
+  );
+  return { contractId, tenantId: contract.tenant_id as number, userId: (contract.user_id as number) || null, roomId: contract.room_id as number };
 }
 
 export interface RenewContractInput {

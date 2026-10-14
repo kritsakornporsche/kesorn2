@@ -3,6 +3,9 @@ import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { createContract, temporaryPassword, contractMessage } from '@/lib/contracts';
+import { issueMoveInBill, missingMessage, recordSignedPaper } from '@/lib/moveIn';
+import { withPaperLink } from '@/lib/contract-files';
+import { formatBaht, formatThaiDate } from '@/lib/format';
 
 export async function GET(req: Request) {
   try {
@@ -51,6 +54,7 @@ export async function GET(req: Request) {
         c.renewal_requested,
         c.renewal_note,
         c.parent_contract_id,
+        c.paper_signed_date,
         COALESCE(c.id_card_number, t.id_card_number, '') as id_card_number,
         COALESCE(c.tenant_address, t.address, '') as tenant_address,
         COALESCE(c.id_card_image, t.id_card_image, '') as id_card_image,
@@ -68,7 +72,7 @@ export async function GET(req: Request) {
       ORDER BY c.id DESC
     `;
 
-    return NextResponse.json({ success: true, data: contracts });
+    return NextResponse.json({ success: true, data: contracts.map((c: any) => withPaperLink(c)) });
   } catch (err: any) {
     console.error('[Contracts API GET] Error:', err);
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
@@ -204,58 +208,47 @@ export async function POST(req: Request) {
   }
 }
 
+// PATCH { contractId, file, signedDate } — record the signed paper contract (stored outside public/) and the date it
+// was signed. The contract takes effect once its move-in bill is paid too (lib/moveIn.ts).
 export async function PATCH(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-    }
     const guard = await requireRole(['owner', 'manager']);
     if ('response' in guard) return guard.response;
     const body = await req.json();
-    const { contractId, contract_file_url } = body;
-
-    if (!contractId || !contract_file_url) {
-      return NextResponse.json({ success: false, message: 'ข้อมูลไม่ครบถ้วน (ต้องการ contractId และ contract_file_url)' }, { status: 400 });
+    const contractId = Number(body.contractId);
+    if (!contractId) {
+      return NextResponse.json({ success: false, message: 'ข้อมูลไม่ครบถ้วน (ต้องการ contractId)' }, { status: 400 });
     }
 
-    const sql = getDb();
-    await sql`
-      UPDATE contracts 
-      SET contract_file_url = ${contract_file_url} 
-      WHERE id = ${contractId}
-    `;
+    const result = await recordSignedPaper(contractId, { file: body.file, signedDate: body.signedDate, by: guard.user.id }, new Date());
+    if (!result.ok) {
+      return NextResponse.json({ success: false, message: result.message }, { status: result.reason === 'not_found' ? 404 : 400 });
+    }
 
-    // Also notify tenant that the physically signed contract has been recorded
-    try {
-      const contractRows = await sql`
-        SELECT c.tenant_id, t.user_id 
-        FROM contracts c 
-        JOIN tenants t ON c.tenant_id = t.id 
-        WHERE c.id = ${contractId} 
-        LIMIT 1
-      `;
-      if (contractRows.length > 0 && contractRows[0].user_id) {
+    if (result.tenantUserId) {
+      const sql = getDb();
+      try {
         await sql`
           INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
           VALUES (
-            ${contractRows[0].user_id},
-            'บันทึกรูปสัญญาเช่าฉบับลงนามจริงแล้ว',
-            'เจ้าของหอพักได้อัปโหลดรูปภาพสัญญาเช่าฉบับลงนามจริงเก็บไว้ในระบบเรียบร้อยแล้ว',
-            'contract_signed',
-            0,
-            '/tenant/contract',
-            NOW()
+            ${result.tenantUserId},
+            ${result.activated ? 'สัญญาเช่ามีผลแล้ว' : 'บันทึกสัญญาเช่าฉบับลงนามแล้ว'},
+            ${result.activated ? 'หอพักบันทึกสัญญาที่เซ็นแล้ว และบิลเข้าอยู่ชำระครบ สัญญาของคุณมีผลแล้ว' : 'หอพักบันทึกสัญญาเช่าฉบับลงนามเก็บไว้ในระบบแล้ว'},
+            'contract_signed', 0, ${result.activated ? '/tenant' : '/guest'}, ${new Date()}
           )
         `;
+      } catch (ne) {
+        console.warn('Notify signed contract warn:', ne);
       }
-    } catch (ne) {
-      console.warn('Notify signed contract warn:', ne);
     }
 
     return NextResponse.json({
       success: true,
-      message: 'บันทึกรูปภาพสัญญาเช่าฉบับลงนามจริงเข้าระบบเรียบร้อยแล้ว'
+      activated: result.activated,
+      missing: result.missing,
+      message: result.activated
+        ? 'บันทึกสัญญาที่เซ็นแล้ว — สัญญามีผลแล้ว'
+        : result.missing.length > 0 ? `บันทึกสัญญาที่เซ็นแล้ว — ${missingMessage(result.missing)}` : 'บันทึกสัญญาที่เซ็นแล้ว',
     });
   } catch (err: any) {
     console.error('[Contracts API PATCH] Error:', err);
@@ -263,190 +256,34 @@ export async function PATCH(req: Request) {
   }
 }
 
+// PUT { contract_id, initial_meter_reading } — issue the move-in bill (amounts from the room on the server, never from
+// the page) with the starting meter. Rules live in lib/moveIn.ts.
 export async function PUT(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-    }
     const guard = await requireRole(['owner', 'manager']);
     if ('response' in guard) return guard.response;
 
     const body = await req.json();
-    const { contract_id, contract_file_url, status, create_first_bill, monthly_rent, deposit_extra } = body;
-
-    if (!contract_id) {
+    const contractId = Number(body.contract_id);
+    if (!contractId) {
       return NextResponse.json({ success: false, message: 'Missing contract_id' }, { status: 400 });
     }
 
-    const sql = getDb();
-
-    // 1. Check existing contract
-    const contracts = await sql`
-      SELECT c.*, t.id as tenant_id, t.user_id, t.email as tenant_email, r.room_number, r.dorm_id
-      FROM contracts c
-      LEFT JOIN tenants t ON c.tenant_id = t.id
-      LEFT JOIN rooms r ON c.room_id = r.id
-      WHERE c.id = ${contract_id}
-      LIMIT 1
-    `;
-
-    if (contracts.length === 0) {
-      return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลสัญญาเช่า' }, { status: 404 });
+    const result = await issueMoveInBill(contractId, { startMeter: body.initial_meter_reading, by: guard.user.id }, new Date());
+    if (!result.ok) {
+      return NextResponse.json({ success: false, message: result.message }, { status: result.reason === 'not_found' ? 404 : 400 });
     }
 
-    const contract = contracts[0];
-    let savedFileUrl = contract_file_url;
-
-    // If Base64 string was sent, save it to disk in public/uploads/contracts
-    if (contract_file_url && contract_file_url.startsWith('data:')) {
-      try {
-        const fs = require('fs');
-        const path = require('path');
-        const match = contract_file_url.match(/^data:([^;]+);base64,(.+)$/);
-        if (match) {
-          const mimeType = match[1];
-          const base64Data = match[2];
-          const ext = mimeType.includes('pdf') ? 'pdf' : mimeType.includes('png') ? 'png' : 'jpg';
-          const filename = `contract_${contract_id}_${Date.now()}.${ext}`;
-          const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'contracts');
-          if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-          }
-          const filePath = path.join(uploadDir, filename);
-          fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-          savedFileUrl = `/uploads/contracts/${filename}`;
-        }
-      } catch (err) {
-        console.error('[Save Contract File Error]', err);
-      }
-    }
-
-    // Only the move to "waiting for the first bill" is allowed here; activating a contract goes through signContract
-    if (status && status !== 'PendingFirstBill') {
-      return NextResponse.json({ success: false, message: 'เปลี่ยนสถานะสัญญาผ่านช่องทางนี้ได้เฉพาะ PendingFirstBill' }, { status: 400 });
-    }
-    const nextStatus = 'PendingFirstBill';
-
-    // 2. Update Contract status and file url
-    await sql`
-      UPDATE contracts 
-      SET 
-        contract_file_url = COALESCE(${savedFileUrl || null}, contract_file_url),
-        status = ${nextStatus}
-      WHERE id = ${contract_id}
-    `;
-
-    // 3. Create First Bill if requested
-    if (create_first_bill && contract.tenant_id) {
-      const rentAmount = Number(monthly_rent || 3400);
-      const extraDeposit = Number(deposit_extra || 2000);
-      const totalAmount = rentAmount + extraDeposit;
-      const now = new Date();
-      const cycleStr = `${now.getMonth() + 1}/${now.getFullYear()}`;
-      
-      const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + 7);
-      const dueDateStr = dueDate.toISOString().split('T')[0];
-
-      // Record initial electric meter reading if provided (anti-cheat base)
-      const { initial_meter_reading } = body;
-      if (initial_meter_reading !== undefined && initial_meter_reading !== null && contract.room_id) {
-        const initVal = parseFloat(initial_meter_reading) || 0;
-        const currentMonthCycle = new Date().toISOString().substring(0, 7);
-        try {
-          // Check if meter reading exists for this cycle or insert new base reading
-          const existingMeter = await sql`
-            SELECT id FROM meter_readings 
-            WHERE room_id = ${contract.room_id} AND type = 'Electricity' AND billing_cycle = ${currentMonthCycle}
-            LIMIT 1
-          `;
-          if (existingMeter.length > 0) {
-            await sql`
-              UPDATE meter_readings
-              SET previous_reading = ${initVal}, current_reading = ${initVal}, units_used = 0
-              WHERE id = ${existingMeter[0].id}
-            `;
-          } else {
-            await sql`
-              INSERT INTO meter_readings (
-                dorm_id, room_id, type, previous_reading, current_reading, units_used, billing_cycle
-              ) VALUES (
-                ${contract.dorm_id || 1}, ${contract.room_id}, 'Electricity', ${initVal}, ${initVal}, 0, ${currentMonthCycle}
-              )
-            `;
-          }
-        } catch (mErr) {
-          console.error('[Record Initial Meter Error]', mErr);
-        }
-      }
-
-      // Check if first bill already exists
-      const existingBills = await sql`
-        SELECT id FROM bills 
-        WHERE tenant_id = ${contract.tenant_id} AND (is_first_bill = 1 OR bill_type = 'booking')
-          AND LOWER(status) NOT IN ('paid', 'partial', 'cancelled')
-        LIMIT 1
-      `;
-
-      if (existingBills.length === 0) {
-        await sql`
-          INSERT INTO bills (
-            tenant_id,
-            dorm_id,
-            room_number,
-            title,
-            amount,
-            room_amount,
-            billing_cycle,
-            due_date,
-            status,
-            is_first_bill,
-            bill_type,
-            created_at
-          ) VALUES (
-            ${contract.tenant_id},
-            ${contract.dorm_id || 1},
-            ${contract.room_number || '-'},
-            ${'บิลค่าแรกเข้า (ค่าห้องเดือนแรก ฿' + rentAmount.toLocaleString() + ' + เงินประกันเพิ่ม ฿' + extraDeposit.toLocaleString() + ')'},
-            ${totalAmount},
-            ${rentAmount},
-            ${cycleStr},
-            ${dueDateStr},
-            'Unpaid',
-            1,
-            'booking',
-            NOW()
-          )
-        `;
-      } else {
-        // Update existing bill with new amount and Unpaid status
-        await sql`
-          UPDATE bills 
-          SET 
-            amount = ${totalAmount},
-            room_amount = ${rentAmount},
-            title = ${'บิลค่าแรกเข้า (ค่าห้องเดือนแรก ฿' + rentAmount.toLocaleString() + ' + เงินประกันเพิ่ม ฿' + extraDeposit.toLocaleString() + ')'},
-            due_date = ${dueDateStr},
-            status = 'Unpaid'
-          WHERE id = ${existingBills[0].id}
-        `;
-      }
-    }
-
-    // 4. Send notification to guest/tenant
-    if (contract.user_id) {
+    if (result.tenantUserId) {
+      const sql = getDb();
       try {
         await sql`
           INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
           VALUES (
-            ${contract.user_id},
-            'เจ้าของหอพักอัปโหลดสัญญาเช่าและออกบิลแรกเข้าแล้ว',
-            'กรุณาตรวจสอบเอกสารสัญญาเช่าและชำระบิลค่าแรกเข้าเพื่อเข้าสู่ขั้นตอนการเข้าพัก',
-            'contract_ready',
-            0,
-            '/guest',
-            NOW()
+            ${result.tenantUserId},
+            'ออกบิลค่าแรกเข้าแล้ว',
+            ${`กรุณาชำระบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} ภายในวันเริ่มสัญญา ${formatThaiDate(result.dueDate)} — หากไม่ชำระ สัญญาจะถูกยกเลิกและค่าจองไม่คืน`},
+            'contract_ready', 0, '/guest', ${new Date()}
           )
         `;
       } catch (ne) {
@@ -456,13 +293,15 @@ export async function PUT(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: 'บันทึกสัญญาและส่งบิลค่าแรกเข้าไปยัง Guest เรียบร้อยแล้ว',
-      fileUrl: savedFileUrl
+      message: result.meterRecorded
+        ? `ออกบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} และบันทึกมิเตอร์เริ่มต้นแล้ว`
+        : `ออกบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} แล้ว · มิเตอร์เริ่มต้นเก็บในสัญญาเท่านั้น (ห้องนี้มีเลขมิเตอร์ของเดือนนี้อยู่แล้ว จึงไม่เขียนทับ — ตรวจเลขในหน้ามิเตอร์)`,
+      billId: result.billId,
+      amount: result.dueAtMoveIn,
+      dueDate: result.dueDate,
     });
   } catch (err: any) {
     console.error('[Contracts API PUT] Error:', err);
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
 }
-
-

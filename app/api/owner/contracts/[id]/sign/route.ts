@@ -1,67 +1,52 @@
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
-import { signContract, contractMessage } from '@/lib/contracts';
+import { activateIfReady, missingMessage } from '@/lib/moveIn';
 
+// POST — owner/manager confirms a contract. It takes effect only when the move-in bill is paid and the signed paper
+// contract is uploaded (lib/moveIn.ts); otherwise the reply says what is still missing and nothing changes.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session || !session.user) {
-    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-  }
   const guard = await requireRole(['owner', 'manager']);
   if ('response' in guard) return guard.response;
   const sql = getDb();
 
   try {
     const { id } = await params;
-    let ownerSignatureData = 'APPROVED_DIGITALLY';
-    try {
-      const body = await req.json();
-      if (body?.ownerSignatureData) {
-        ownerSignatureData = body.ownerSignatureData;
-      }
-    } catch (e) {}
+    const contractId = Number(id);
 
-    // 1. Activate through the single contract service (contract Active, room Occupied, tenant active, guest -> tenant)
-    const signed = await signContract(Number(id), { ownerSignature: ownerSignatureData });
-    if (!signed.ok) {
-      return NextResponse.json({ success: false, message: contractMessage(signed) }, { status: signed.reason === 'not_found' ? 404 : 400 });
+    const result = await activateIfReady(contractId);
+    if (!result.ok) {
+      return NextResponse.json({ success: false, message: result.message }, { status: result.reason === 'not_found' ? 404 : 400 });
     }
-    const tenantRows = await sql`SELECT email FROM tenants WHERE id = ${signed.tenantId} LIMIT 1`;
-    const tenant_email = tenantRows[0]?.email || '';
+    if (result.alreadyActive) {
+      return NextResponse.json({ success: false, message: 'สัญญานี้มีผลอยู่แล้ว' }, { status: 400 });
+    }
+    if (!result.activated) {
+      return NextResponse.json({ success: false, message: missingMessage(result.missing), missing: result.missing }, { status: 400 });
+    }
 
-    // 6. Notify tenant
-    try {
-      const tenantUser = await sql`
-        SELECT COALESCE(t.user_id, u.id) as user_id 
-        FROM tenants t 
-        LEFT JOIN users u ON LOWER(t.email) = LOWER(u.email)
-        WHERE LOWER(t.email) = LOWER(${tenant_email})
-        LIMIT 1
-      `;
-      if (tenantUser.length > 0 && tenantUser[0].user_id) {
+    if (result.tenantUserId) {
+      try {
         await sql`
           INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
           VALUES (
-            ${tenantUser[0].user_id},
-            'สัญญาเช่าได้รับการอนุมัติแล้ว',
-            'เจ้าของหอพักได้ลงนามอนุมัติสัญญาเช่าเรียบร้อยแล้ว ยินดีต้อนรับสู่หอพักเกษร 2',
+            ${result.tenantUserId},
+            'สัญญาเช่ามีผลแล้ว',
+            'สัญญาเช่าของคุณมีผลแล้ว ยินดีต้อนรับสู่หอพักเกษร 2',
             'contract_approved',
             0,
             '/tenant/contract',
-            NOW()
+            ${new Date()}
           )
         `;
+      } catch (ne) {
+        console.warn('Sign contract notify warn:', ne);
       }
-    } catch (ne) {
-      console.warn('Sign contract notify warn:', ne);
     }
 
-    const updatedContracts = await sql`SELECT * FROM contracts WHERE id = ${id} LIMIT 1`;
-
-    return NextResponse.json({ 
-      success: true, 
+    const updatedContracts = await sql`SELECT * FROM contracts WHERE id = ${contractId} LIMIT 1`;
+    return NextResponse.json({
+      success: true,
       message: 'Contract approved successfully',
       data: updatedContracts[0] || null
     });

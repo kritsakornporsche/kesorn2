@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getDormPromptPay, getRates } from '@/lib/billing';
 import { getPaymentSummaries, outstandingFor, recordPayment, slipPaidAt } from '@/lib/payments';
+import { afterMoveInPayment, missingMessage } from '@/lib/moveIn';
 import { formatBaht } from '@/lib/format';
 import { auth } from '@/auth';
 
@@ -148,6 +149,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message }, { status: 400 });
     }
 
+    // A paid move-in bill may complete its contract (lib/moveIn.ts)
+    const activation = payment.status === 'Paid' ? await afterMoveInPayment(sql, Number(billId)) : null;
+
     const dormId = bill.dorm_id || 1;
     const roomNumber = bill.room_number || '-';
     const billTitle = bill.title || bill.billing_cycle || 'ค่าเช่าและบริการ';
@@ -202,7 +206,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ 
       success: true, 
       verified: true,
-      message: 'การชำระเงินได้รับการอนุมัติอัตโนมัติเรียบร้อยแล้ว (SlipOK ตรวจสอบยอดเงินและบัญชีถูกต้อง)',
+      message: 'การชำระเงินได้รับการอนุมัติอัตโนมัติเรียบร้อยแล้ว (SlipOK ตรวจสอบยอดเงินและบัญชีถูกต้อง)'
+        + (activation ? (activation.activated ? ' · สัญญามีผลแล้ว' : ` · ${missingMessage(activation.missing)}`) : ''),
+      activated: Boolean(activation?.activated),
       data: {
         billId,
         status: 'Paid',

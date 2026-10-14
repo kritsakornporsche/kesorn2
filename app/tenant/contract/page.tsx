@@ -16,6 +16,8 @@ interface Contract {
   deposit_amount: number;
   status: string;
   contract_file_url?: string | null;
+  contract_file_is_pdf?: boolean;
+  paper_signed_date?: string | null;
   renewal_requested?: number;
   renewal_note?: string | null;
   parent_contract_id?: number | null;
@@ -196,7 +198,10 @@ export default function TenantContractPage() {
                     <h3 className="text-lg font-black text-white flex items-center gap-2">
                       <span>📄 เอกสารสัญญาเช่าฉบับจริง (Signed Document)</span>
                     </h3>
-                    <p className="text-xs text-muted-foreground mt-1">สำเนาภาพถ่าย/ไฟล์สัญญาที่เซ็นรับรองร่วมกับเจ้าของหอพัก</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      สำเนาภาพถ่าย/ไฟล์สัญญาที่เซ็นรับรองร่วมกับเจ้าของหอพัก
+                      {activeContract.paper_signed_date ? ` · เซ็นวันที่ ${new Date(activeContract.paper_signed_date).toLocaleDateString('th-TH')}` : ''}
+                    </p>
                   </div>
 
                   {activeContract.contract_file_url && (
@@ -214,7 +219,8 @@ export default function TenantContractPage() {
 
                 {activeContract.contract_file_url ? (
                   <div className="relative rounded-2xl overflow-hidden border border-border bg-black/40 flex items-center justify-center min-h-[350px]">
-                    {activeContract.contract_file_url.startsWith('data:image') || activeContract.contract_file_url.startsWith('http') ? (
+                    {activeContract.contract_file_url.startsWith('data:image') || activeContract.contract_file_url.startsWith('http')
+                      || (activeContract.contract_file_url.startsWith('/api/contracts/') && !activeContract.contract_file_is_pdf) ? (
                       <Image
                         src={activeContract.contract_file_url}
                         alt="Contract Document"
@@ -241,13 +247,13 @@ export default function TenantContractPage() {
 
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-border">
-                <button
-                  onClick={() => setIsPrintModalOpen(true)}
+                <a
+                  href={`/api/contracts/export-docx?id=${activeContract.id}`}
                   className="flex-1 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl shadow-xl hover:brightness-110 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
                   <span>🖨️</span>
-                  <span>ดูและพิมพ์เอกสารสัญญาเช่า (PDF)</span>
-                </button>
+                  <span>พิมพ์แบบฟอร์มสัญญา (Word)</span>
+                </a>
 
                 <button
                   onClick={() => setIsRenewModalOpen(true)}

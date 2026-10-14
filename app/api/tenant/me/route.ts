@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { withPaperLink } from '@/lib/contract-files';
 
 export async function GET(req: Request) {
   try {
@@ -61,6 +62,7 @@ export async function GET(req: Request) {
           c.deposit_amount,
           c.status,
           c.contract_file_url,
+          c.paper_signed_date,
           c.renewal_requested,
           c.renewal_note,
           c.parent_contract_id,
@@ -85,7 +87,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       success: true,
       data: tenantInfo,
-      contracts
+      contracts: contracts.map((c) => withPaperLink(c))
     });
   } catch (error: any) {
     console.error('[GET /api/tenant/me] Error:', error);

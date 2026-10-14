@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { canViewContract, formDeposit } from '@/lib/contract-files';
 import { PDFDocument, rgb } from 'pdf-lib';
 import * as fontkit from 'fontkit';
 import fs from 'fs';
@@ -14,14 +15,21 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, message: 'Missing contract id' }, { status: 400 });
     }
 
+    // Owner/manager, or the contract's own tenant (the form shows the ID card number and address)
+    const access = await canViewContract(Number(id));
+    if (!access.ok) {
+      return NextResponse.json({ success: false, message: access.status === 401 ? 'กรุณาเข้าสู่ระบบ' : 'Contract not found' }, { status: access.status });
+    }
+
     const sql = getDb();
     const rows = await sql`
       SELECT 
         c.*, 
         r.room_number, 
         r.floor, 
-        r.price, 
-        COALESCE(t.name, u.name, '') as tenant_name, 
+        r.price,
+        r.deposit_amount as room_deposit_amount,
+        COALESCE(t.name, u.name, '') as tenant_name,
         COALESCE(t.phone, u.phone, '') as tenant_phone, 
         COALESCE(c.id_card_number, t.id_card_number, '') as id_card_number, 
         COALESCE(c.tenant_address, t.address, '') as tenant_address,
@@ -43,7 +51,13 @@ export async function GET(req: Request) {
     // Read original PDF template
     const templatePath = path.join(process.cwd(), 'docs', 'สัญญาเช่าห้องพักหอพักเกษร.pdf');
     if (!fs.existsSync(templatePath)) {
-      return NextResponse.json({ success: false, message: 'Template PDF not found' }, { status: 500 });
+      // The PDF template is not installed yet (it is not in the repository): say so instead of failing
+      return NextResponse.json({
+        success: false,
+        reason: 'template_missing',
+        message: 'ยังไม่มีไฟล์แม่แบบสัญญา PDF ในระบบ — กรุณาใช้แบบฟอร์มสัญญา (Word) แทน',
+        docxUrl: `/api/contracts/export-docx?id=${Number(id)}`,
+      }, { status: 503 });
     }
     const templateBytes = fs.readFileSync(templatePath);
 
@@ -78,7 +92,7 @@ export async function GET(req: Request) {
     const parentPhone = (data.parent_phone || '').trim();
     const roomNumber = String(data.room_number || '');
     const floor = String(data.floor || (roomNumber.length >= 2 ? roomNumber[0] : '1'));
-    const depositAmount = Number(data.deposit_amount || 1000).toLocaleString();
+    const depositAmount = formDeposit(data).toLocaleString();
     const monthlyRent = Number(data.price || data.monthly_rent || 2800).toLocaleString();
     const startMonthStr = data.start_date ? new Date(data.start_date).toLocaleDateString('th-TH', { month: 'long', year: 'numeric' }) : '';
 

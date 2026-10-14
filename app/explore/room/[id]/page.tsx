@@ -54,7 +54,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
   
   const [room, setRoom] = useState<any>(null);
   // Rates, deposit and booking fee for this room from the server (lib/billing moveInCosts) — no amounts in the page
-  const [costs, setCosts] = useState<{ rent: number; deposit: number; bookingFee: number; dueAtMoveIn: number; rates: { electricityPerUnit: number; waterPerPerson: number; commonFee: number } } | null>(null);
+  const [costs, setCosts] = useState<{ rent: number; deposit: number; bookingFee: number; dueAtMoveIn: number; rates: { electricityPerUnit: number; waterPerPerson: number; commonFee: number; lateFeePerDay: number } } | null>(null);
   const [step, setStep] = useState(1); // 1: Info, 2: Info & Dates, 3: ID Card OCR & Contract Review, 4: QR Payment & Slip, 5: Finished
   const [loading, setLoading] = useState(true);
   const [bookingData, setBookingData] = useState({
@@ -195,7 +195,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
             } else {
               setStep(1);
             }
-            setBookingData(data.data.booking_data);
+            setBookingData((prev) => ({ ...prev, ...data.data.booking_data }));
           }
         } catch (e) {
           console.error('[Fetch Progress Error]', e);
@@ -485,7 +485,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
         floor: room?.floor,
         price: room?.price,
         monthly_rent: room?.price,
-        deposit_amount: 1000,
+        deposit_amount: costs?.deposit ?? 0, // deposit in total, from /api/rates (server)
         tenant_name: bookingData.name,
         tenant_phone: bookingData.phone,
         parent_phone: bookingData.parent_phone,
@@ -564,7 +564,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
       const data = await res.json();
       if (!data.success) {
         if (data.reason === 'outside_hours') setBookingOpen(false);
-        if (data.reason === 'has_open_booking' && data.statusUrl) {
+        if (data.reason === 'has_open_contract' && data.statusUrl) {
           if (confirm(`${data.message}\n\nไปหน้าสถานะการจองตอนนี้?`)) router.push(data.statusUrl);
           return;
         }
@@ -1071,7 +1071,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                         type="tel"
                         className="w-full px-5 py-3.5 rounded-2xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
                         placeholder="08X-XXX-XXXX"
-                        value={bookingData.phone}
+                        value={bookingData.phone ?? ''}
                         onChange={(e) => setBookingData({ ...bookingData, phone: e.target.value })}
                       />
                     </div>
@@ -1084,7 +1084,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                         type="tel"
                         className="w-full px-5 py-3.5 rounded-2xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
                         placeholder="08X-XXX-XXXX (ผู้ปกครอง)"
-                        value={bookingData.parent_phone}
+                        value={bookingData.parent_phone ?? ''}
                         onChange={(e) => setBookingData({ ...bookingData, parent_phone: e.target.value })}
                       />
                     </div>
@@ -1130,7 +1130,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                         <input
                           type="date"
                           className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border focus:border-primary outline-none font-bold text-xs"
-                          value={bookingData.start_date}
+                          value={bookingData.start_date ?? ''}
                           onChange={(e) => setBookingData({ ...bookingData, start_date: e.target.value })}
                         />
                       </div>
@@ -1139,7 +1139,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                         <input
                           type="date"
                           className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border focus:border-primary outline-none font-bold text-xs"
-                          value={bookingData.end_date}
+                          value={bookingData.end_date ?? ''}
                           onChange={(e) => setBookingData({ ...bookingData, end_date: e.target.value })}
                         />
                       </div>
@@ -1494,7 +1494,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                         type="text"
                         className="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
                         placeholder="นาย/นางสาว..."
-                        value={bookingData.name}
+                        value={bookingData.name ?? ''}
                         onChange={(e) => setBookingData({ ...bookingData, name: e.target.value })}
                       />
                     </div>
@@ -1507,7 +1507,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                         type="text"
                         className="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-mono font-bold text-sm tracking-wider"
                         placeholder="X-XXXX-XXXXX-XX-X"
-                        value={bookingData.id_card_number}
+                        value={bookingData.id_card_number ?? ''}
                         onChange={(e) => setBookingData({ ...bookingData, id_card_number: e.target.value })}
                       />
                     </div>
@@ -1528,7 +1528,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                       rows={2}
                       className="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-bold text-xs"
                       placeholder="บ้านเลขที่ หมู่ ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
-                      value={bookingData.id_card_address}
+                      value={bookingData.id_card_address ?? ''}
                       onChange={(e) => setBookingData({ ...bookingData, id_card_address: e.target.value })}
                     />
                   </div>
@@ -1620,7 +1620,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     คุณสามารถดาวน์โหลดเอกสารสัญญาเช่าที่กรอกข้อมูลครบถ้วนแล้วเก็บไว้เป็นหลักฐาน หรือเจ้าของหอจะพิมพ์ฉบับจริงให้เซ็นชื่อเมื่อเข้าหอพัก
                   </p>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                  <div className="grid grid-cols-1 gap-3 pt-2">
                     <button
                       type="button"
                       onClick={handleDownloadDocx}
@@ -1628,14 +1628,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                       className="py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50"
                     >
                       <span>{downloadingDocx ? '⏳ กำลังสร้างไฟล์ Word...' : '📄 ดาวน์โหลด Word (.docx)'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsPrintModalOpen(true)}
-                      className="py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
-                    >
-                      <span>🖨️ ดู / พิมพ์สัญญา (PDF)</span>
                     </button>
                   </div>
                 </div>
@@ -1670,6 +1662,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
       <PrintableContractModal
         isOpen={isPrintModalOpen}
         onClose={() => setIsPrintModalOpen(false)}
+        rates={costs?.rates}
         contract={{
           id: createdContractId || 'DRAFT',
           room_number: room?.room_number || '',
@@ -1689,7 +1682,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
           id_card_image: bookingData.id_card_image,
           start_date: bookingData.start_date,
           end_date: bookingData.end_date,
-          deposit_amount: 1000,
+          deposit_amount: costs?.deposit ?? 0,
           monthly_rent: Number(room?.price || 0),
           created_at: new Date().toISOString(),
         } as any}

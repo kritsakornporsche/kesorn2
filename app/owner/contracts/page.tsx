@@ -9,6 +9,7 @@ import PremiumDatePicker from '@/app/components/PremiumDatePicker';
 import PrintableContractModal from '@/components/PrintableContractModal';
 import DepositRefundModal from '@/components/DepositRefundModal';
 import { PdpaOcrConsentModal } from '@/app/components/PdpaOcrConsentModal';
+import { checkPaperFile } from '@/lib/paper-file-check';
 
 interface Contract {
   id: number;
@@ -23,6 +24,7 @@ interface Contract {
   monthly_rent?: number;
   status: string;
   contract_file_url?: string | null;
+  contract_file_is_pdf?: boolean;
   renewal_requested?: number;
   renewal_note?: string | null;
   parent_contract_id?: number | null;
@@ -73,6 +75,8 @@ export default function OwnerContractsPage() {
   // Upload Signed Paper Contract Modal State
   const [uploadingContract, setUploadingContract] = useState<Contract | null>(null);
   const [signedContractFile, setSignedContractFile] = useState<string | null>(null);
+  const [signedFileError, setSignedFileError] = useState<string | null>(null);
+  const [signedDate, setSignedDate] = useState('');
   const [isUploadingSigned, setIsUploadingSigned] = useState(false);
 
   // ID Card OCR state
@@ -277,7 +281,7 @@ export default function OwnerContractsPage() {
         if (data.tempPassword) {
           setNewAccount({ email: formData.tenant_email.trim(), password: data.tempPassword });
         } else {
-          alert('🎉 บันทึกสัญญาเช่าเรียบร้อยแล้ว (ผู้เช่ามีบัญชีอยู่แล้ว ใช้รหัสผ่านเดิม) สามารถกดพิมพ์เอกสารสัญญาเช่า (PDF) ได้ทันที');
+          alert('🎉 บันทึกสัญญาเช่าเรียบร้อยแล้ว (ผู้เช่ามีบัญชีอยู่แล้ว ใช้รหัสผ่านเดิม) สามารถกดพิมพ์แบบฟอร์มสัญญา (Word) ได้ทันที');
         }
         setIsCreateModalOpen(false);
         setFormData({
@@ -408,14 +412,22 @@ export default function OwnerContractsPage() {
 
   const handleOpenUploadSignedModal = (c: Contract) => {
     setUploadingContract(c);
-    setSignedContractFile(c.contract_file_url || null);
+    // A new file is always chosen; the stored one is only viewable through its link
+    setSignedContractFile(null);
+    setSignedFileError(null);
+    setSignedDate('');
   };
 
-  const handleSignedFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleSignedFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      alert('ขนาดไฟล์ต้องไม่เกิน 10MB');
+    // Type from the file content (a renamed text file is refused), size up to 10MB
+    const problem = await checkPaperFile(file);
+    input.value = '';
+    setSignedFileError(problem);
+    if (problem) {
+      setSignedContractFile(null);
       return;
     }
     const reader = new FileReader();
@@ -426,8 +438,8 @@ export default function OwnerContractsPage() {
   };
 
   const handleSaveSignedContract = async () => {
-    if (!uploadingContract || !signedContractFile) {
-      alert('กรุณาเลือกหรือถ่ายภาพสัญญาเช่าที่ลงนามแล้ว');
+    if (!uploadingContract || !signedContractFile || !signedDate) {
+      alert('กรุณาเลือกหรือถ่ายภาพสัญญาเช่าที่ลงนามแล้ว และระบุวันที่เซ็นสัญญา');
       return;
     }
     setIsUploadingSigned(true);
@@ -437,12 +449,13 @@ export default function OwnerContractsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contractId: uploadingContract.id,
-          contract_file_url: signedContractFile,
+          file: signedContractFile,
+          signedDate,
         }),
       });
       const data = await res.json();
       if (data.success) {
-        alert('🎉 บันทึกรูปภาพสัญญาเช่าฉบับลงนามจริงเรียบร้อยแล้ว!');
+        alert(`🎉 ${data.message}`);
         setUploadingContract(null);
         setSignedContractFile(null);
         if (ownerDormId) fetchData(ownerDormId);
@@ -810,17 +823,14 @@ export default function OwnerContractsPage() {
                             )}
 
                             {/* Print / Download Contract Button */}
-                            <button
-                              onClick={() => {
-                                setPrintingContract(c);
-                                setIsPrintModalOpen(true);
-                              }}
+                            <a
+                              href={`/api/contracts/export-docx?id=${c.id}`}
                               className="px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
-                              title="พิมพ์สัญญาเช่าฉบับเต็ม / ดาวน์โหลด Word หรือ PDF"
+                              title="พิมพ์แบบฟอร์มสัญญา (Word)"
                             >
                               <span>🖨️</span>
-                              <span>พิมพ์ / PDF</span>
-                            </button>
+                              <span>พิมพ์ (Word)</span>
+                            </a>
 
                             {/* View or Upload Signed Paper Contract */}
                             {c.contract_file_url ? (
@@ -1413,11 +1423,15 @@ export default function OwnerContractsPage() {
                   {signedContractFile ? (
                     <div className="space-y-3">
                       <div className="relative rounded-2xl overflow-hidden border border-border bg-black/40 flex items-center justify-center max-h-72">
-                        <img
-                          src={signedContractFile}
-                          alt="Signed Contract Preview"
-                          className="max-w-full max-h-72 object-contain p-2"
-                        />
+                        {signedContractFile.startsWith('data:application/pdf') ? (
+                          <div className="p-8 text-sm font-bold text-foreground">📄 ไฟล์ PDF</div>
+                        ) : (
+                          <img
+                            src={signedContractFile}
+                            alt="Signed Contract Preview"
+                            className="max-w-full max-h-72 object-contain p-2"
+                          />
+                        )}
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-xs font-bold text-emerald-400">✓ เลือกรูปภาพเรียบร้อยแล้ว</span>
@@ -1433,10 +1447,24 @@ export default function OwnerContractsPage() {
                         📷
                       </div>
                       <span className="text-sm font-bold text-foreground">คลิกเพื่อถ่ายภาพ หรือเลือกรูปสัญญาที่เซ็นแล้ว</span>
-                      <span className="text-[11px] text-muted-foreground mt-1">รองรับกล้องมือถือ, ไฟล์ JPG, PNG (ไม่เกิน 10MB)</span>
+                      <span className="text-[11px] text-muted-foreground mt-1">รองรับกล้องมือถือ, ไฟล์ JPG, PNG, PDF (ไม่เกิน 10MB)</span>
                       <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleSignedFileChange} />
                     </label>
                   )}
+                  {signedFileError && <p className="text-xs text-rose-500 font-bold mt-2">✕ {signedFileError}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                    วันที่เซ็นสัญญา <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    max={new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })}
+                    value={signedDate}
+                    onChange={(e) => setSignedDate(e.target.value)}
+                    className="w-full bg-secondary border border-border rounded-2xl px-4 py-3 text-sm font-bold text-foreground"
+                  />
                 </div>
 
                 <div className="flex gap-3 pt-2">
@@ -1453,7 +1481,7 @@ export default function OwnerContractsPage() {
                   <button
                     type="button"
                     onClick={handleSaveSignedContract}
-                    disabled={!signedContractFile || isUploadingSigned}
+                    disabled={!signedContractFile || !signedDate || isUploadingSigned}
                     className="flex-[2] py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl shadow-xl hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 cursor-pointer text-xs flex items-center justify-center gap-2"
                   >
                     {isUploadingSigned ? (
@@ -1503,7 +1531,8 @@ export default function OwnerContractsPage() {
               </div>
 
               <div className="p-4 overflow-y-auto flex items-center justify-center bg-black/50 flex-1 min-h-[500px]">
-                {previewingFileUrl.toLowerCase().endsWith('.pdf') || previewingFileUrl.startsWith('data:application/pdf') ? (
+                {previewingFileUrl.toLowerCase().endsWith('.pdf') || previewingFileUrl.startsWith('data:application/pdf')
+                  || contracts.some((x) => x.contract_file_url === previewingFileUrl && x.contract_file_is_pdf) ? (
                   <iframe
                     src={previewingFileUrl}
                     title="PDF Contract Preview"

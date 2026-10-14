@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { requireRole } from '@/lib/authz';
 import { recordPayment } from '@/lib/payments';
+import { afterMoveInPayment, missingMessage } from '@/lib/moveIn';
 import { formatBaht } from '@/lib/format';
 
 const MESSAGES: Record<string, string> = {
@@ -50,6 +51,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message }, { status: result.reason === 'not_found' ? 404 : 400 });
     }
 
+    // A paid move-in bill may complete its contract (lib/moveIn.ts)
+    const activation = result.status === 'Paid' ? await afterMoveInPayment(getDb(), Number(billId)) : null;
+
     // Tell the tenant who owns the bill (not every owner account)
     try {
       const sql = getDb();
@@ -81,8 +85,10 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: result.status === 'Paid' ? 'บันทึกรับเงินแล้ว — ชำระครบ' : `บันทึกรับเงินแล้ว — คงเหลือ ฿${formatBaht(result.outstanding)}`,
+      message: (result.status === 'Paid' ? 'บันทึกรับเงินแล้ว — ชำระครบ' : `บันทึกรับเงินแล้ว — คงเหลือ ฿${formatBaht(result.outstanding)}`)
+        + (activation ? (activation.activated ? ' · สัญญามีผลแล้ว' : ` · ${missingMessage(activation.missing)}`) : ''),
       data: result,
+      activated: Boolean(activation?.activated),
     });
   } catch (error: any) {
     console.error('[Billing receive Error]', error);

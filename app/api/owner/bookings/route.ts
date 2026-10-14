@@ -3,7 +3,9 @@ import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { approveBooking, bookingDeadlines, cancelNoShow, expireDueBookings, rejectBooking } from '@/lib/bookings';
-import { bangkokDate, bookingFeeFor } from '@/lib/billing';
+import { bangkokDate, bookingFeeFor, capCheck, moveInAmounts } from '@/lib/billing';
+import { expireDueMoveIns } from '@/lib/moveIn';
+import { isPaper, withPaperLink } from '@/lib/contract-files';
 import { formatBaht } from '@/lib/format';
 
 export async function GET(req: Request) {
@@ -20,8 +22,9 @@ export async function GET(req: Request) {
 
     const sql = getDb();
     const now = new Date();
-    // No scheduler: bookings past their deadline are expired whenever they are read
+    // No scheduler: bookings past their deadline, and move-in bills not paid by the start date, are expired when read
     await expireDueBookings(now);
+    await expireDueMoveIns(now);
 
     // Single Dormitory (Kesorn 2) bookings query
     const dorms = [
@@ -51,6 +54,10 @@ export async function GET(req: Request) {
         c.cancelled_at,
         c.cancel_reason,
         c.booking_bill_id,
+        c.move_in_bill_id,
+        c.start_meter_reading,
+        c.paper_signed_date,
+        c.paper_uploaded_at,
         COALESCE(t.name, u.name, 'ไม่ระบุชื่อ') as guest_name,
         COALESCE(t.email, u.email, '') as guest_email,
         COALESCE(t.phone, u.phone, '') as guest_phone,
@@ -58,6 +65,7 @@ export async function GET(req: Request) {
         r.room_type,
         r.floor,
         r.price as monthly_rent,
+        r.deposit_amount as room_deposit_amount,
         r.status as room_status,
         b.id as first_bill_id,
         b.title as first_bill_title,
@@ -65,13 +73,14 @@ export async function GET(req: Request) {
         b.status as first_bill_status,
         b.due_date as first_bill_due_date,
         b.created_at as first_bill_created_at,
+        (SELECT COUNT(*) FROM bill_payments p WHERE p.bill_id = b.id AND p.voided_at IS NULL) as first_bill_payments,
         1 as dorm_id,
         'หอพักเกษร 2' as dorm_name
       FROM contracts c
       LEFT JOIN tenants t ON c.tenant_id = t.id
       LEFT JOIN users u ON t.user_id = u.id OR t.email = u.email
       JOIN rooms r ON c.room_id = r.id
-      LEFT JOIN bills b ON (b.tenant_id = c.tenant_id AND (b.is_first_bill = 1 OR b.bill_type = 'booking') AND b.status != 'Cancelled')
+      LEFT JOIN bills b ON b.id = c.move_in_bill_id
       ORDER BY 
         CASE 
           WHEN c.status = 'BookingRequested' THEN 0
@@ -95,13 +104,26 @@ export async function GET(req: Request) {
     const withTimers = bookings.map((b: any) => {
       const deadlines = b.approved_at ? bookingDeadlines(new Date(b.approved_at)) : null;
       const secondsTo = (d: Date | null) => (d ? Math.max(0, Math.floor((d.getTime() - now.getTime()) / 1000)) : null);
+      const moveIn = moveInAmounts({ room_number: b.room_number, price: b.monthly_rent, deposit_amount: b.room_deposit_amount });
+      const cap = capCheck(moveIn.rent, moveIn.deposit);
+      const pastStart = Boolean(b.start_date) && bangkokDate(now) > bangkokDate(b.start_date);
+      const firstBillPaid = String(b.first_bill_status || '').toLowerCase() === 'paid';
       return {
-        ...b,
+        ...withPaperLink(b, 'contract_id'),
         booking_fee: bookingFeeFor(b.room_number),
+        // Move-in (lib/moveIn.ts): amounts from the room on the server; contracts without move_in_bill_id are older ones
+        move_in: { ...moveIn, cap_ok: cap.ok, cap_message: cap.ok ? null : cap.message },
+        legacy: b.booking_status === 'PendingFirstBill' && !b.move_in_bill_id,
+        move_in_bill_paid: firstBillPaid,
+        paper_uploaded: isPaper(b.contract_file_url) && Boolean(b.paper_signed_date),
+        move_in_overdue_partial: b.booking_status === 'PendingFirstBill' && pastStart && !firstBillPaid && Number(b.first_bill_payments || 0) > 0,
+        can_issue_move_in: ['PendingOwnerSignature', 'PendingContract'].includes(b.booking_status) && !b.move_in_bill_id && !pastStart,
         seconds_to_expire: b.expires_at ? secondsTo(new Date(b.expires_at)) : null,
         seconds_to_pay: b.booking_status === 'BookingApproved' ? secondsTo(deadlines?.payBy || null) : null,
-        // No-show cancel is possible from the day after the move-in date (Thai date)
+        // No-show cancel is possible from the day after the move-in date (Thai date); never for older contracts
+        // (their move-in payment cannot be checked — lib/bookings cancelNoShow refuses them too)
         no_show_allowed: ['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill'].includes(b.booking_status)
+          && !(b.booking_status === 'PendingFirstBill' && !b.move_in_bill_id)
           && Boolean(b.start_date) && bangkokDate(now) > bangkokDate(b.start_date),
       };
     });

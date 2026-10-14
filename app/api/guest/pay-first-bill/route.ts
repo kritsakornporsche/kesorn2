@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import { getPaymentSummaries, outstandingFor, recordPayment, slipPaidAt } from '@/lib/payments';
-import { depositFor, getDormPromptPay, getRates } from '@/lib/billing';
-import { signContract } from '@/lib/contracts';
+import { getDormPromptPay, getRates } from '@/lib/billing';
+import { afterMoveInPayment, expireDueMoveIns, missingMessage } from '@/lib/moveIn';
 import { formatBaht } from '@/lib/format';
 
 export async function POST(req: Request) {
@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   const sql = getDb();
 
   try {
-    const { contractId, billId, slipUrl } = await req.json();
+    const { contractId, slipUrl } = await req.json();
 
     if (!contractId) {
       return NextResponse.json({ success: false, message: 'Missing contractId' }, { status: 400 });
@@ -28,9 +28,12 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
+    // A move-in bill not paid by the contract start date cancels the contract (checked when read)
+    await expireDueMoveIns(new Date());
+
     // 1. Fetch contract and bill
     const contracts = await sql`
-      SELECT c.*, t.id as tenant_id, t.user_id, t.email as tenant_email, r.id as room_id, r.room_number, r.dorm_id, r.deposit_amount as room_deposit_amount
+      SELECT c.*, t.id as tenant_id, t.user_id, t.email as tenant_email, r.id as room_id, r.room_number, r.dorm_id
       FROM contracts c
       LEFT JOIN tenants t ON c.tenant_id = t.id
       LEFT JOIN rooms r ON c.room_id = r.id
@@ -52,12 +55,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลสัญญาเช่า' }, { status: 404 });
     }
 
-    // The first bill must belong to this contract's tenant
-    const bRes = billId
-      ? await sql`SELECT * FROM bills WHERE id = ${billId} AND tenant_id = ${contract.tenant_id} LIMIT 1`
-      : await sql`SELECT * FROM bills WHERE tenant_id = ${contract.tenant_id} AND (is_first_bill = 1 OR bill_type = 'booking') AND LOWER(status) NOT IN ('paid', 'cancelled') ORDER BY id DESC LIMIT 1`;
+    // Only the move-in bill linked to this contract; older contracts without the link are handled by the dorm
+    if (contract.status === 'PendingFirstBill' && !contract.move_in_bill_id) {
+      return NextResponse.json({ success: false, message: 'สัญญาแบบเดิม กรุณาติดต่อหอพัก' }, { status: 400 });
+    }
+    if (contract.status !== 'PendingFirstBill') {
+      return NextResponse.json({ success: false, message: 'สัญญานี้ไม่ได้อยู่ในขั้นตอนชำระบิลค่าแรกเข้า' }, { status: 400 });
+    }
+    const bRes = await sql`SELECT * FROM bills WHERE id = ${contract.move_in_bill_id} LIMIT 1`;
     const targetBill: any = bRes[0] || null;
-    if (!targetBill) {
+    if (!targetBill || ['paid', 'cancelled'].includes(String(targetBill.status || '').toLowerCase())) {
       return NextResponse.json({ success: false, message: 'ไม่พบบิลแรกเข้าที่ต้องชำระ' }, { status: 404 });
     }
 
@@ -121,21 +128,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message }, { status: 400 });
     }
 
-    // 3.1 Paid: activate the contract through the single contract service with the full deposit now held
-    // (contract Active, room Occupied, tenant active, guest -> tenant)
-    const signed = await signContract(Number(contractId), {
-      depositAmount: depositFor({ room_number: contract.room_number, deposit_amount: contract.room_deposit_amount }),
-      slipUrl: storedSlipUrl || null,
-    });
-    if (!signed.ok) {
-      // The payment is recorded; the contract could not be activated (e.g. already active)
-      console.warn('[Pay first bill] contract not activated', contractId, signed.reason);
-    }
+    // 3.1 The contract takes effect only when the signed paper contract is also uploaded (lib/moveIn.ts)
+    const activation = payment.status === 'Paid' ? await afterMoveInPayment(sql, Number(targetBill.id)) : null;
+    const activated = Boolean(activation?.activated);
 
     return NextResponse.json({
       success: true,
-      message: 'ชำระค่าแรกเข้าสำเร็จ! SlipOK ตรวจสอบสลิปถูกต้อง อัปเดตเงินประกัน 3,000 บาท และย้ายสถานะเข้าสู่ระบบผู้เช่าเรียบร้อยแล้ว',
-      role: 'tenant'
+      activated,
+      message: activated
+        ? 'ชำระค่าแรกเข้าสำเร็จ สัญญาของคุณมีผลแล้ว ยินดีต้อนรับสู่หอพัก'
+        : payment.status === 'Paid'
+          ? `ชำระค่าแรกเข้าสำเร็จ — ${activation?.missing?.length ? missingMessage(activation.missing) : 'รอหอพักยืนยันสัญญา'}`
+          : `บันทึกการชำระแล้ว คงเหลือ ฿${formatBaht(payment.outstanding)}`,
+      ...(activated ? { role: 'tenant' } : {}),
     });
   } catch (error: any) {
     console.error('[Pay First Bill Error]', error);

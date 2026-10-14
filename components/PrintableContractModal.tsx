@@ -23,9 +23,13 @@ interface PrintableContractModalProps {
     monthly_rent?: number;
     created_at?: string;
   } | null;
+  // Rates of this room from the server (lib/billing ratesForRoom); without them the notes show no numbers
+  rates?: { electricityPerUnit: number; waterPerPerson: number; lateFeePerDay?: number } | null;
 }
 
-export default function PrintableContractModal({ isOpen, onClose, contract }: PrintableContractModalProps) {
+const rateText = (n: number) => n.toLocaleString('th-TH', { maximumFractionDigits: 2 });
+
+export default function PrintableContractModal({ isOpen, onClose, contract, rates }: PrintableContractModalProps) {
   const page1Ref = useRef<HTMLDivElement>(null);
   const page2Ref = useRef<HTMLDivElement>(null);
   const page3Ref = useRef<HTMLDivElement>(null);
@@ -314,7 +318,7 @@ export default function PrintableContractModal({ isOpen, onClose, contract }: Pr
 
                   <p>
                     ส่วนค่าเช่าชำระโดยกำหนดชำระค่าเช่าภายในวันที่ <span className="font-bold border-b border-dotted border-slate-600 px-1">5</span> ของทุกเดือน ในอัตราค่าเช่าเดือนละ{' '}
-                    <Blank value={rentStr} dots={25} minW="min-w-[90px]" /> บาท หากผู้เช่าชำระเงินล่าช้ากว่ากำหนด ผู้ให้เช่ามีสิทธิ์เรียกขอค่าล่าช้าตามที่ได้แจ้งก่อนหน้านี้
+                    <Blank value={rentStr} dots={25} minW="min-w-[90px]" /> บาท หากผู้เช่าชำระเงินล่าช้ากว่ากำหนด ผู้ให้เช่ามีสิทธิ์เรียกขอค่าล่าช้า{rates?.lateFeePerDay != null ? `วันละ ${rateText(rates.lateFeePerDay)} บาท` : 'ตามอัตราที่หอพักกำหนด'}
                   </p>
 
                   <p className="indent-8">
@@ -430,8 +434,8 @@ export default function PrintableContractModal({ isOpen, onClose, contract }: Pr
                 </div>
 
                 <div className="space-y-4 text-[15px] leading-[1.7] text-slate-900">
-                  <p>• ค่าน้ำคนละ 100 บาท</p>
-                  <p>• ค่าไฟหน่วยละ 8 บาท</p>
+                  <p>• ค่าน้ำคนละ {rates ? `${rateText(rates.waterPerPerson)} บาท` : 'ตามอัตราที่หอพักกำหนด'}</p>
+                  <p>• ค่าไฟหน่วยละ {rates ? `${rateText(rates.electricityPerUnit)} บาท` : 'ตามอัตราที่หอพักกำหนด'}</p>
                   <p>• ติดต่อเจ้าของหอพัก นายขันแก้ว คำบัว 09-3048-0607</p>
                   <p>• ติดต่อเจ้าของหอพัก นายวรรธนันท์ คำบัว 081-842-4948</p>
                   <p>• หากพักไม่ ครบ 12 เดือน ผู้เช่าขอสงวนสิทธิ์ไม่คืนเงินมัดจำ</p>

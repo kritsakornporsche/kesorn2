@@ -1,6 +1,8 @@
 // Central billing rules: rates, utility charges, due dates and late fees.
 // Every day count uses the calendar date in Asia/Bangkok, never UTC or the server's local time.
 
+import { formatBaht } from '@/lib/format';
+
 export interface Rates {
   electricityPerUnit: number;
   waterPerPerson: number;
@@ -201,6 +203,20 @@ export function depositFor(room: { room_number?: string | null; deposit_amount?:
 }
 
 /**
+ * Consumer protection cap: the deposit plus rent paid in advance (the first month) may be at most 3 months of rent.
+ * Returns the message to show when the room's figures go over it.
+ */
+export function capCheck(rent: number, deposit: number): { ok: true } | { ok: false; message: string } {
+  const total = round2(Number(rent) + Number(deposit));
+  const cap = round2(Number(rent) * 3);
+  if (Math.round(total * 100) <= Math.round(cap * 100)) return { ok: true };
+  return {
+    ok: false,
+    message: `เงินประกัน ฿${formatBaht(deposit)} + ค่าเช่าล่วงหน้า ฿${formatBaht(rent)} = ฿${formatBaht(total)} เกิน 3 เท่าของค่าเช่า (฿${formatBaht(cap)}) ตามประกาศ สคบ. — กรุณาแก้ราคาห้อง/เงินประกันในหน้าห้องพัก`,
+  };
+}
+
+/**
  * What a new tenant pays for a room: the booking fee now, then at move-in the first month of rent in full
  * (not pro-rated) plus the rest of the deposit. Monthly utility rates are included for estimates.
  */
@@ -208,18 +224,21 @@ export async function moveInCosts(sql: any, roomNumber: string) {
   const rows = await sql`SELECT room_number, price, deposit_amount FROM rooms WHERE room_number = ${roomNumber} LIMIT 1`;
   const room = rows[0];
   if (!room) return null;
-  const rent = round2(Number(room.price || 0));
-  const deposit = depositFor(room);
-  const bookingFee = bookingFeeFor(room.room_number);
   const rates = ratesForRoom(await getRates(sql), room.room_number);
   return {
     roomNumber: String(room.room_number),
-    rent,
-    deposit,
-    bookingFee,
-    dueAtMoveIn: round2(rent + Math.max(0, deposit - bookingFee)),
-    rates: { electricityPerUnit: rates.electricityPerUnit, waterPerPerson: rates.waterPerPerson, commonFee: rates.commonFee },
+    ...moveInAmounts(room),
+    rates: { electricityPerUnit: rates.electricityPerUnit, waterPerPerson: rates.waterPerPerson, commonFee: rates.commonFee, lateFeePerDay: rates.lateFeePerDay },
   };
+}
+
+/** Amounts of moveInCosts for a room row already read (the move-in bill is issued from these). */
+export function moveInAmounts(room: { room_number?: string | null; price?: number | string | null; deposit_amount?: number | string | null }) {
+  const rent = round2(Number(room.price || 0));
+  const deposit = depositFor(room);
+  const bookingFee = bookingFeeFor(room.room_number);
+  const depositAtMoveIn = round2(Math.max(0, deposit - bookingFee));
+  return { rent, deposit, bookingFee, depositAtMoveIn, dueAtMoveIn: round2(rent + depositAtMoveIn) };
 }
 
 /**
