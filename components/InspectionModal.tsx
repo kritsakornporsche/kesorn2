@@ -112,7 +112,8 @@ export default function InspectionModal({ contractId, onClose, onSaved }: {
     if (!file) return;
     const prepared = await preparePhoto(file);
     if (!prepared.ok) {
-      update(row.key, { error: `รูปของ "${row.name || 'รายการนี้'}": ${prepared.message}` });
+      // Only this file is refused: the row keeps its previous photo (if any) and other rows are untouched
+      update(row.key, { error: `รูปของ "${row.name || 'รายการนี้'}": ${prepared.message} — ไม่ได้แนบไฟล์นี้` });
       return;
     }
     update(row.key, { newPhoto: prepared.dataUrl, newBytes: prepared.bytes, error: null });
@@ -120,9 +121,22 @@ export default function InspectionModal({ contractId, onClose, onSaved }: {
 
   const save = async () => {
     setError(null);
-    const total = rows.reduce((sum, r) => sum + (r.newPhoto ? r.newBytes : 0), 0);
+    // A row left completely empty (added but not filled in) is skipped; a row with something in it needs a name
+    const isBlank = (r: Row) => !r.name.trim() && !r.note.trim() && !r.newPhoto && !r.photoFile && r.condition === 'Good';
+    const unnamed = rows.filter((r) => !r.name.trim() && !isBlank(r));
+    if (unnamed.length > 0) {
+      setRows((list) => list.map((r) => (unnamed.some((u) => u.key === r.key) ? { ...r, error: 'กรุณากรอกชื่อรายการ' } : r)));
+      setError('กรุณากรอกชื่อรายการที่มีรูป/หมายเหตุ/สภาพ (รายการที่ว่างทั้งหมดจะถูกข้าม)');
+      return;
+    }
+    const toSave = rows.filter((r) => !isBlank(r));
+    if (toSave.length === 0) {
+      setError('กรุณาเพิ่มรายการตรวจอย่างน้อย 1 รายการ');
+      return;
+    }
+    const total = toSave.reduce((sum, r) => sum + (r.newPhoto ? r.newBytes : 0), 0);
     if (total > PHOTOS_TOTAL_MAX_BYTES) {
-      const big = rows.filter((r) => r.newPhoto).sort((a, b) => b.newBytes - a.newBytes).slice(0, 3)
+      const big = toSave.filter((r) => r.newPhoto).sort((a, b) => b.newBytes - a.newBytes).slice(0, 3)
         .map((r) => `"${r.name || '-'}" (${mb(r.newBytes)})`).join(', ');
       setError(`รูปใหม่รวมกัน ${mb(total)} เกิน 20MB ต่อการบันทึกหนึ่งครั้ง — รูปที่ใหญ่ที่สุด: ${big} · บันทึกทีละส่วน หรือลดจำนวนรูป`);
       return;
@@ -134,7 +148,7 @@ export default function InspectionModal({ contractId, onClose, onSaved }: {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           note,
-          items: rows.map((r) => ({
+          items: toSave.map((r) => ({
             name: r.name,
             condition: r.condition,
             note: r.note,
@@ -145,7 +159,7 @@ export default function InspectionModal({ contractId, onClose, onSaved }: {
       const data = await res.json().catch(() => ({ success: false, message: res.status === 413 ? 'ไฟล์รวมกันใหญ่เกินไป' : 'บันทึกไม่สำเร็จ' }));
       if (!data.success) {
         setError(data.message || 'บันทึกผลตรวจห้องไม่สำเร็จ');
-        if (typeof data.item === 'number' && rows[data.item]) update(rows[data.item].key, { error: data.message });
+        if (typeof data.item === 'number' && toSave[data.item]) update(toSave[data.item].key, { error: data.message });
         return;
       }
       await load();

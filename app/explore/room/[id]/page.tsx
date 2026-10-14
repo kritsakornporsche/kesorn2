@@ -947,16 +947,16 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
                   <div className="flex justify-between items-center text-sm">
                     <div>
-                      <span className="font-semibold block text-primary">ค่าจองห้องพักล่วงหน้า</span>
-                      <span className="text-[11px] text-emerald-500">ชำระวันนี้เพื่อล็อกสิทธิ์ห้องพัก</span>
+                      <span className="font-semibold block text-primary">ค่าจอง ฿{totalDeposit.toLocaleString()}</span>
+                      <span className="text-[11px] text-emerald-500">ชำระหลังหอพักอนุมัติคำขอ (ภายใน 10 นาที)</span>
                     </div>
                     <span className="font-bold text-primary">฿{totalDeposit.toLocaleString()}</span>
                   </div>
 
                   <div className="border-t border-border pt-4 flex justify-between items-center">
                     <div>
-                      <span className="font-bold text-sm block">ยอดชำระเงินจองวันนี้</span>
-                      <span className="text-[11px] text-muted-foreground">(เงินจองเพื่อยืนยันสิทธิ์)</span>
+                      <span className="font-bold text-sm block">ยอดที่ต้องชำระหลังได้รับอนุมัติ</span>
+                      <span className="text-[11px] text-muted-foreground">(ค่าจอง เป็นส่วนหนึ่งของเงินประกัน)</span>
                     </div>
                     <span className="text-2xl font-black text-primary">฿{totalDeposit.toLocaleString()}</span>
                   </div>
