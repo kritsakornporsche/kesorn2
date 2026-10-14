@@ -20,6 +20,8 @@ export interface PaymentInput {
   note?: string | null;
   /** Staff-recorded cash/transfer may cover part of the bill; slip payments must cover it all. */
   allowPartial?: boolean;
+  /** Late fee counted up to this time instead of paidAt (deposit_offset: up to the room return date). */
+  lateFeeAsOf?: Date;
 }
 
 export type PaymentResult =
@@ -141,7 +143,8 @@ type TxClient = { query: (text: string, params: any[]) => Promise<{ rows: any }>
 export async function recordPaymentInTransaction(client: TxClient, billId: number, input: PaymentInput): Promise<PaymentResult> {
   const validInput = METHODS.includes(input.method)
     && Number.isFinite(Number(input.amount)) && Number(input.amount) > 0
-    && input.paidAt instanceof Date && !Number.isNaN(input.paidAt.getTime());
+    && input.paidAt instanceof Date && !Number.isNaN(input.paidAt.getTime())
+    && (input.lateFeeAsOf === undefined || (input.lateFeeAsOf instanceof Date && !Number.isNaN(input.lateFeeAsOf.getTime())));
   if (!validInput) return { ok: false, reason: 'invalid_input' };
 
   const rates = await getRates(getDb());
@@ -174,7 +177,7 @@ export async function recordPaymentInTransaction(client: TxClient, billId: numbe
     const paidBefore = (await client.query(
       'SELECT COALESCE(SUM(amount), 0) AS total FROM bill_payments WHERE bill_id = ? AND voided_at IS NULL', [billId]
     )).rows[0];
-    const { lateFee, daysOverdue, outstanding: required } = outstandingFor(bill, Number(paidBefore?.total || 0), input.paidAt, rates);
+    const { lateFee, daysOverdue, outstanding: required } = outstandingFor(bill, Number(paidBefore?.total || 0), input.lateFeeAsOf || input.paidAt, rates);
 
     if (input.method === 'slip' && toSatang(input.amount) !== toSatang(required)) {
       return reject({ ok: false, reason: 'amount_mismatch', required });

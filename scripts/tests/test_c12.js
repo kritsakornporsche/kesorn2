@@ -213,6 +213,29 @@ async function main() {
     await mo.recordRefund(bNotice.settlementId, { file: pdfUrl }, owner, at('2026-10-05'));
     check('B: Liability 0 after close', (await liability([B.contractId], bNotice.settlementId)) === 0);
 
+    // ── K: late fee of an overdue monthly bill stops at the return date, however late the owner settles ──
+    console.log('K. Late fee up to the return date');
+    const lateCase = async (key, settleYmd) => {
+      const T = await tenancy(key, { price: 1000, start: '2025-10-01', end: '2026-09-30' });
+      const monthly = await bill(T.tenantId, T.room.number, { amount: 500, room_amount: 500, billing_cycle: '2026-09', due_date: '2026-09-25' });
+      const n = await notice(T.user, '2026-09-30', '2026-08-20');
+      const r = await mo.recordReturn(n.settlementId, { returnDate: '2026-09-30', finalMeter: 100 }, owner, at('2026-09-30'));
+      const preview = await mo.getSettlement(n.settlementId, owner, at(settleYmd));
+      const st = await mo.settleMoveOut(n.settlementId, owner, at(settleYmd));
+      const penalty = Number((await q('SELECT penalty_amount FROM bills WHERE id = ?', [monthly]))[0].penalty_amount);
+      const paidAt = billing.bangkokDate((await q("SELECT paid_at FROM bill_payments WHERE bill_id = ? AND method = 'deposit_offset'", [monthly]))[0].paid_at);
+      if (st.ok && st.refund > 0) await mo.recordRefund(n.settlementId, { file: pdfUrl }, owner, at(settleYmd));
+      return { preview, st, penalty, paidAt, final: r.finalAmount, contractId: T.contractId, settlementId: n.settlementId };
+    };
+    const kSame = await lateCase('k1', '2026-09-30');
+    const kLate = await lateCase('k2', '2026-10-10');
+    const fiveDays = 5 * rates.lateFeePerDay;
+    check('late fee counted to the return date (5 days)', near(kSame.penalty, fiveDays) && near(kLate.penalty, fiveDays), [kSame.penalty, kLate.penalty]);
+    check('settling 10 days later deducts the same', kSame.st.ok && kLate.st.ok && near(kSame.st.offsetTotal, kLate.st.offsetTotal) && near(kLate.st.offsetTotal, 500 + fiveDays + kLate.final), [kSame.st, kLate.st]);
+    check('preview shows the same amount as the settlement', near(kLate.preview.money.offset, kLate.st.offsetTotal) && near(kLate.preview.outstanding_total, kLate.st.offsetTotal), kLate.preview && kLate.preview.money);
+    check('payment time is the settle date', kLate.paidAt === '2026-10-10', kLate.paidAt);
+    check('K: Liability 0 after close', (await liability([kLate.contractId], kLate.settlementId)) === 0);
+
     // ── C: early, clause 13 met → refund; return month already billed → only the electricity difference ──
     console.log('C. Early move-out meeting clause 13');
     const C = await tenancy('c', { start: '2026-01-01', end: '2026-12-31' });

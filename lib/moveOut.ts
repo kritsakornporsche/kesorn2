@@ -584,7 +584,16 @@ export function confirmLegacyDeposit(settlementId: number, input: ConfirmDeposit
 
 // ── Settlement ───────────────────────────────────────────────────────────────────────
 
-async function outstandingBills(client: Client, tenantId: number, now: Date, lock: boolean) {
+/** Late fees of bills settled at move-out run up to the room return date (until then: now). */
+function lateFeeDate(s: { return_date?: unknown }, now: Date): Date {
+  const returnDate = ymdOf(s.return_date);
+  if (!returnDate) return now;
+  const end = new Date(`${returnDate}T23:59:59+07:00`);
+  return end < now ? end : now;
+}
+
+/** Bills still owed by the tenant, late fees counted up to `feeAsOf`. */
+async function outstandingBills(client: Client, tenantId: number, feeAsOf: Date, lock: boolean) {
   const bills = (await client.query(
     `SELECT id, title, amount, status, bill_type, due_date, billing_cycle FROM bills
      WHERE tenant_id = ? AND LOWER(status) IN ('unpaid', 'overdue', 'pending', 'partial')
@@ -598,7 +607,7 @@ async function outstandingBills(client: Client, tenantId: number, now: Date, loc
     [bills.map((b) => b.id)]
   )).rows as any[];
   return bills.map((b) => {
-    const o = outstandingFor(b, Number(paid.find((p) => Number(p.bill_id) === Number(b.id))?.total || 0), now, rates);
+    const o = outstandingFor(b, Number(paid.find((p) => Number(p.bill_id) === Number(b.id))?.total || 0), feeAsOf, rates);
     return { id: Number(b.id), title: b.title, bill_type: b.bill_type, status: b.status, due_date: b.due_date, outstanding: o.outstanding, late_fee: o.lateFee };
   }).filter((b) => b.outstanding > 0);
 }
@@ -645,11 +654,13 @@ export function settleMoveOut(settlementId: number, by: Actor, now: Date) {
     if (remaining < 0) refuse('bad_deposit', `ยอดเงินประกันคงเหลือติดลบ (฿${formatBaht(remaining)}) — ตรวจสอบบัญชีก่อน`);
 
     let offsetTotal = 0;
-    for (const bill of await outstandingBills(client, s.tenant_id, now, true)) {
+    // Late fees stop at the room return date, however late the owner settles (payment time is still now)
+    const feeAsOf = lateFeeDate(s, now);
+    for (const bill of await outstandingBills(client, s.tenant_id, feeAsOf, true)) {
       const pay = round2(Math.min(bill.outstanding, remaining));
       if (pay <= 0) break;
       const paid = await recordPaymentInTransaction(client, bill.id, {
-        amount: pay, method: 'deposit_offset', paidAt: now, recordedBy: by.id, allowPartial: true, note: `หักจากเงินประกัน ${room}`,
+        amount: pay, method: 'deposit_offset', paidAt: now, lateFeeAsOf: feeAsOf, recordedBy: by.id, allowPartial: true, note: `หักจากเงินประกัน ${room}`,
       });
       if (!paid.ok) refuse('offset_failed', `${MESSAGES.offset_failed} (บิล #${bill.id}: ${paid.reason})`);
       await entry(client, s, 'Liability', 'Deposit Offset', -pay, `หักเงินประกันชำระบิล #${bill.id} ${room}`, 'settlement_offset', now);
@@ -680,7 +691,7 @@ export function settleMoveOut(settlementId: number, by: Actor, now: Date) {
       [deposit.amount, offsetTotal, refund, forfeit, refund > 0 ? 'OwnerRefund' : 'ZeroBalance', s.request_id]
     );
 
-    const left = await outstandingBills(client, s.tenant_id, now, false);
+    const left = await outstandingBills(client, s.tenant_id, feeAsOf, false);
     if (refund === 0) await closeLocked(client, { ...s, state: 'Settled' }, base.billIds, by, now);
     return {
       deposit: deposit.amount ?? 0, offsetTotal, forfeit, refund, refundDueDate: dueDate, closed: refund === 0,
@@ -772,7 +783,7 @@ export interface SettlementView {
   final_bill_id: number | null;
   damage_items: { amount: number; reason: string }[];
   clause13: Clause13 | null;
-  outstanding: { id: number; title: string; bill_type: string; outstanding: number }[];
+  outstanding: { id: number; title: string; bill_type: string; outstanding: number; late_fee: number }[];
   outstanding_total: number;
   /** null for managers (they do not see the deposit, forfeits or refunds) */
   money: null | {
@@ -850,7 +861,7 @@ function viewOf(s: any, base: Awaited<ReturnType<typeof depositBase>>, held: num
     contract_start: startDate, contract_end: endDate,
     final_bill_id: s.final_bill_id ? Number(s.final_bill_id) : null,
     damage_items: damageItems, clause13: check,
-    outstanding: outstanding.map((b) => ({ id: b.id, title: b.title, bill_type: b.bill_type, outstanding: b.outstanding })),
+    outstanding: outstanding.map((b) => ({ id: b.id, title: b.title, bill_type: b.bill_type, outstanding: b.outstanding, late_fee: b.late_fee })),
     outstanding_total: outstandingTotal, money,
   };
 }
@@ -870,7 +881,8 @@ export async function getSettlement(settlementId: number, viewer: Actor, now: Da
     }
     const base = await depositBase(client, s.contract_id);
     const held = base.kind === 'system' ? await liabilityHeld(client, base.billIds, s.id) : 0;
-    const outstanding = s.state === 'Cancelled' ? [] : await outstandingBills(client, s.tenant_id, now, false);
+    // Before settling: as the settlement will count them (late fees up to the return date). After: what is owed now.
+    const outstanding = s.state === 'Cancelled' ? [] : await outstandingBills(client, s.tenant_id, s.state === 'Returned' ? lateFeeDate(s, now) : now, false);
     return viewOf(s, base, held, outstanding, viewer, now);
   });
 }
