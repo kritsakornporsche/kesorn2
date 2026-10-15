@@ -298,7 +298,7 @@ export default function MetersOverviewPage() {
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">ห้อง</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">สถานะห้อง</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">รอบนี้ ({cycle || '-'})</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">รอบบิลล่าสุด</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">รอบที่จดล่าสุด</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">เลขมิเตอร์ล่าสุด</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-right">การดำเนินการ</th>
                 </tr>

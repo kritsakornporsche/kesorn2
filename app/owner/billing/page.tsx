@@ -21,6 +21,7 @@ interface MonthlyBill {
   room_number: string;
   tenant_name: string;
   tenant_phone?: string;
+  title?: string;
   amount: number;
   room_amount?: number;
   electric_units?: number;
@@ -771,6 +772,10 @@ export default function OwnerMonthlyBillingPage() {
                     <span className="px-3 py-1 rounded-full text-[10px] font-black bg-sky-500/10 text-sky-300 border border-sky-500/30">📝 ร่าง</span>
                   </div>
                   <div className="space-y-2 text-xs">
+                    {bill.title && <p className="text-[11px] text-slate-300 leading-snug">{bill.title}</p>}
+                    {bill.title?.includes('ไม่รวมค่าเช่า') && (
+                      <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/10 text-amber-300 border border-amber-500/30">ไม่รวมค่าเช่า (เก็บในบิลเข้าอยู่แล้ว)</span>
+                    )}
                     <div className="flex justify-between text-slate-300">
                       <span>รอบบิล:</span>
                       <span className="font-mono text-white">{bill.billing_cycle}</span>

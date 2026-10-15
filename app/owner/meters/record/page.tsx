@@ -377,7 +377,7 @@ export default function MeterRecordMobileFlowPage() {
   };
 
   return (
-    <div className="min-h-full bg-slate-950 text-slate-100 p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full">
+    <div className="min-h-full bg-slate-950 text-slate-100 p-4 pb-12 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-2xl font-bold text-xs border flex items-center gap-2 max-w-[90vw] text-center ${
@@ -625,10 +625,10 @@ export default function MeterRecordMobileFlowPage() {
                 <input
                   type="number"
                   step="0.01"
-                  placeholder={`กรอกเลขมิเตอร์ครั้งนี้ (เดิม: ${prevVal ?? '-'})`}
+                  placeholder={`เลขครั้งนี้ (เดิม ${prevVal ?? '-'})`}
                   value={inputReading}
                   onChange={(e) => setInputReading(e.target.value)}
-                  className="w-full bg-slate-950 border border-white/10 rounded-2xl px-5 py-4 text-xl sm:text-2xl font-mono font-black text-white focus:outline-none focus:border-primary tracking-wider"
+                  className="w-full bg-slate-950 border border-white/10 rounded-2xl px-4 sm:px-5 py-4 text-lg sm:text-2xl font-mono font-black text-white focus:outline-none focus:border-primary tracking-normal sm:tracking-wider placeholder:text-sm sm:placeholder:text-base placeholder:font-sans placeholder:font-bold"
                 />
               </div>
 
