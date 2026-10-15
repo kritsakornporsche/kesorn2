@@ -87,9 +87,7 @@ export default function OwnerContractsPage() {
     tenant_name: '',
     tenant_email: '',
     tenant_phone: '',
-    id_card_number: '',
     tenant_address: '',
-    id_card_image: '',
     room_id: '',
     start_date: new Date().toISOString().split('T')[0],
     end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
@@ -168,15 +166,11 @@ export default function OwnerContractsPage() {
         setFormData(prev => ({
           ...prev,
           tenant_name: d.full_name_th || prev.tenant_name,
-          id_card_number: d.id_card_number || prev.id_card_number,
           tenant_address: d.address || prev.tenant_address,
-          id_card_image: base64Data,
-          contract_file_url: prev.contract_file_url || base64Data,
-          contract_file_name: prev.contract_file_name || `บัตรประชาชน_${fileName}`,
           tenant_email: prev.tenant_email || '',
           tenant_phone: prev.tenant_phone || '',
         }));
-        setOcrSuccessMsg(`✓ อ่านบัตรประชาชนสำเร็จ: ${d.full_name_th} (${d.id_card_number})`);
+        setOcrSuccessMsg(`✓ อ่านชื่อและที่อยู่จากบัตรสำเร็จ: ${d.full_name_th} (ระบบไม่เก็บเลขบัตรประชาชนและรูปบัตร)`);
       } else {
         alert(ocrJson.message || 'ไม่สามารถอ่านข้อมูลบัตรได้ กรุณากรอกด้วยตนเอง');
       }
@@ -216,16 +210,12 @@ export default function OwnerContractsPage() {
         tenant_name: 'นายสมชาย ใจดี',
         tenant_email: 'tenant@kesorn.com',
         tenant_phone: '089-123-4567',
-        id_card_number: '1-1002-01384-95-2',
         tenant_address: '99/50 หมู่ 3 ซอยงามวงศ์วาน 54 แขวงลาดยาว เขตจตุจักร กรุงเทพมหานคร 10900',
-        contract_file_name: 'บัตรประชาชนตัวอย่าง_สมชาย_ใจดี.jpg',
-        contract_file_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&q=80',
-        id_card_image: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&q=80'
       }));
       // Room and deposit come from the same path as choosing a room (deposit from the server)
       if (firstRoom) handleCreateRoomChange(firstRoom.id.toString());
       setIsOcrProcessing(false);
-      setOcrSuccessMsg('✓ อ่านข้อมูลบัตรประชาชนตัวอย่างสำเร็จ (นายสมชาย ใจดี, 1-1002-01384-95-2)');
+      setOcrSuccessMsg('✓ อ่านข้อมูลบัตรประชาชนตัวอย่างสำเร็จ (นายสมชาย ใจดี)');
     }, 400);
   };
 
@@ -269,7 +259,7 @@ export default function OwnerContractsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          contract_file_url: formData.contract_file_url || formData.id_card_image || 'CONTRACT_DOCUMENT',
+          contract_file_url: formData.contract_file_url || 'CONTRACT_DOCUMENT',
           dormId: ownerDormId
         }),
       });
@@ -285,9 +275,7 @@ export default function OwnerContractsPage() {
           tenant_name: '',
           tenant_email: '',
           tenant_phone: '',
-          id_card_number: '',
           tenant_address: '',
-          id_card_image: '',
           room_id: '',
           start_date: new Date().toISOString().split('T')[0],
           end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
@@ -680,7 +668,7 @@ export default function OwnerContractsPage() {
                 <thead className="bg-secondary/60 border-b border-border">
                   <tr>
                     <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ห้อง / ลูกหอ</th>
-                    <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">เลขประจำตัวประชาชน & ที่อยู่</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ที่อยู่ตามสัญญาเช่า</th>
                     <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ระยะเวลาสัญญา</th>
                     <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ค่ามัดจำ</th>
                     <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">สถานะ</th>
@@ -721,17 +709,10 @@ export default function OwnerContractsPage() {
                         </td>
 
                         <td className="px-8 py-6 text-xs max-w-xs">
-                          {c.id_card_number ? (
-                            <div className="space-y-1">
-                              <span className="font-mono font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 inline-block">
-                                🪪 {c.id_card_number}
-                              </span>
-                              <p className="text-white/60 truncate" title={c.tenant_address}>
-                                {c.tenant_address || 'ที่อยู่ตามบัตรประชาชน'}
-                              </p>
-                            </div>
+                          {c.tenant_address ? (
+                            <p className="text-white/60 truncate" title={c.tenant_address}>{c.tenant_address}</p>
                           ) : (
-                            <span className="text-muted-foreground/60 italic">ไม่ได้บันทึกเลขบัตร</span>
+                            <span className="text-muted-foreground/60 italic">ไม่ได้บันทึกที่อยู่</span>
                           )}
                         </td>
 
@@ -915,7 +896,7 @@ export default function OwnerContractsPage() {
                           สแกนอ่านข้อมูลจากบัตรประชาชน (Smart ID Card OCR)
                         </h4>
                         <p className="text-xs text-white/60">
-                          ถ่ายรูปหรือแนบไฟล์รูปบัตรประชาชน ระบบจะกรอกชื่อ เลขบัตร 13 หลัก และที่อยู่อัตโนมัติ
+                          ถ่ายรูปหรือแนบไฟล์รูปบัตรประชาชน ระบบจะกรอกชื่อและที่อยู่อัตโนมัติ (ไม่เก็บเลขบัตรและรูปบัตร)
                         </p>
                       </div>
                     </div>
@@ -977,8 +958,8 @@ export default function OwnerContractsPage() {
                     </select>
                   </div>
 
-                  {/* Name and Citizen ID */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Name (the ID number is not stored — PDPA) */}
+                  <div className="grid grid-cols-1 gap-6">
                     <div className="space-y-2">
                       <label className="block text-[10px] font-black text-foreground/50 uppercase tracking-widest">
                         ชื่อ-นามสกุล ผู้เช่า <span className="text-rose-500">*</span>
@@ -993,18 +974,6 @@ export default function OwnerContractsPage() {
                       />
                     </div>
 
-                    <div className="space-y-2">
-                      <label className="block text-[10px] font-black text-foreground/50 uppercase tracking-widest">
-                        เลขประจำตัวประชาชน (13 หลัก)
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="1-1002-01384-95-2"
-                        value={formData.id_card_number}
-                        onChange={(e) => setFormData({ ...formData, id_card_number: e.target.value })}
-                        className="w-full px-6 py-4 bg-background border border-border rounded-2xl text-foreground font-mono font-bold outline-none focus:border-primary transition-all"
-                      />
-                    </div>
                   </div>
 
                   {/* Address from ID Card */}

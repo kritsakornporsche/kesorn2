@@ -157,7 +157,9 @@ export interface BookingRequestInput {
   email: string;
   name?: string | null;
   phone?: string | null;
+  /** @deprecated Ignored — the ID number is not stored (PDPA, commit 16) */
   idCardNumber?: string | null;
+  /** @deprecated Ignored — the ID card image is not stored (PDPA, commit 16) */
   idCardImage?: string | null;
   address?: string | null;
   parentPhone?: string | null;
@@ -178,8 +180,8 @@ export function requestBooking(input: BookingRequestInput, now: Date) {
     if (!room) refuse('room_not_found');
     const created = await createContractTx(client, {
       account: {
-        email: input.email, name: input.name, phone: input.phone, idCardNumber: input.idCardNumber,
-        idCardImage: input.idCardImage, address: input.address, emergencyContact: input.parentPhone, role: 'guest',
+        email: input.email, name: input.name, phone: input.phone,
+        address: input.address, emergencyContact: input.parentPhone, role: 'guest',
       },
       roomId: input.roomId,
       startDate: input.startDate,
@@ -190,7 +192,6 @@ export function requestBooking(input: BookingRequestInput, now: Date) {
       // One booking/contract per account until it ends (requested, approved, paid, waiting to move in, or living here)
       oneOpenContract: true,
       signature: input.signature || 'CONFIRMED_E_CONTRACT',
-      idCardNumber: input.idCardNumber,
       tenantAddress: input.address,
       parentPhone: input.parentPhone,
       expiresAt: window.closesAt,

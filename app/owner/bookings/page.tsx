@@ -479,9 +479,6 @@ export default function OwnerBookingsPage() {
                         <span className="font-mono font-black text-white">฿{Number(item.move_in.deposit).toLocaleString('th-TH')}</span>
                       </div>
                     )}
-                    <p className="text-[11px] text-slate-400 truncate">
-                      บัตร ปชช: {item.id_card_number || '-'}
-                    </p>
                     <div className="pt-1 flex items-center gap-2">
                       <a
                         href={`/api/contracts/export-docx?id=${item.contract_id}`}
@@ -714,10 +711,6 @@ export default function OwnerBookingsPage() {
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">ชื่อ-นามสกุล:</span>
                     <span className="text-white font-bold text-sm">{previewContractModal.guest_name}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">เลขประจำตัวประชาชน:</span>
-                    <span className="text-white font-bold font-mono text-sm">{previewContractModal.id_card_number || '-'}</span>
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">เบอร์โทรศัพท์ผู้เช่า:</span>

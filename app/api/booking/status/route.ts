@@ -63,7 +63,6 @@ export async function GET() {
       LEFT JOIN bills b ON b.id = c.move_in_bill_id
       WHERE (t.email = ${session.user.email} 
          OR t.user_id = ${(session.user as any).id || 0}
-         OR c.id_card_number IN (SELECT id_card_number FROM contracts WHERE tenant_id IN (SELECT id FROM tenants WHERE email = ${session.user.email}))
          OR c.tenant_id IN (SELECT id FROM tenants WHERE email = ${session.user.email}))
         AND c.status IN ('BookingRequested', 'BookingApproved', 'PendingContract', 'PendingFirstBill', 'PendingOwnerSignature', 'Active', 'Cancelled', 'Rejected', 'Expired')
       GROUP BY c.id

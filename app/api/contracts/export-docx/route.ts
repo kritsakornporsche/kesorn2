@@ -15,7 +15,8 @@ function createContractDocx(data: any, rates: Rates, payment: PaymentInfo) {
   const roomNumber = data.room_number || '-';
   const floor = data.floor || (roomNumber.length >= 2 ? roomNumber[0] : '1');
   const tenantName = data.tenant_name || '..........................................................';
-  const idCardNumber = data.id_card_number || '..........................................................';
+  // PDPA (commit 16): the ID number is not stored — always a blank line, filled in by hand when signing
+  const idCardNumber = '..........................................................';
   const tenantAddress = data.tenant_address || '................................................................................................................................................';
   const tenantPhone = data.tenant_phone || data.phone || '..............................................';
   const parentPhone = data.parent_phone || '..................................................................................';

@@ -100,7 +100,9 @@ export interface AccountInput {
   email: string;
   name?: string | null;
   phone?: string | null;
+  /** @deprecated Ignored — the ID number is not stored (PDPA, commit 16) */
   idCardNumber?: string | null;
+  /** @deprecated Ignored — the ID card image is not stored (PDPA, commit 16) */
   idCardImage?: string | null;
   address?: string | null;
   emergencyContact?: string | null;
@@ -160,17 +162,17 @@ async function resolveAccount(client: Client, input: AccountInput, place: { room
     tenantId = tenant.id;
     await client.query(
       `UPDATE tenants SET user_id = ?, room_id = ?, status = ?, move_in_date = ?, move_out_date = NULL, dorm_id = ?,
-         name = COALESCE(?, name), phone = COALESCE(?, phone), id_card_number = COALESCE(?, id_card_number),
-         id_card_image = COALESCE(?, id_card_image), address = COALESCE(?, address), emergency_contact = COALESCE(?, emergency_contact)
+         name = COALESCE(?, name), phone = COALESCE(?, phone),
+         address = COALESCE(?, address), emergency_contact = COALESCE(?, emergency_contact)
        WHERE id = ?`,
-      [userId, place.roomId, place.tenantStatus, place.moveInDate, place.dormId, name, phone, input.idCardNumber || null,
-        input.idCardImage || null, input.address || null, input.emergencyContact || null, tenantId]
+      [userId, place.roomId, place.tenantStatus, place.moveInDate, place.dormId, name, phone,
+        input.address || null, input.emergencyContact || null, tenantId]
     );
   } else {
     tenantId = (await client.query(
-      `INSERT INTO tenants (name, email, phone, room_id, user_id, id_card_number, id_card_image, address, emergency_contact, status, move_in_date, dorm_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [name || email, email, phone, place.roomId, userId, input.idCardNumber || null, input.idCardImage || null,
+      `INSERT INTO tenants (name, email, phone, room_id, user_id, address, emergency_contact, status, move_in_date, dorm_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [name || email, email, phone, place.roomId, userId,
         input.address || null, input.emergencyContact || null, place.tenantStatus, place.moveInDate, place.dormId]
     )).rows.insertId;
   }
@@ -206,7 +208,9 @@ export interface CreateContractInput {
   signedAt?: Date | null;
   slipUrl?: string | null;
   contractFileUrl?: string | null;
+  /** @deprecated Ignored — the ID number is not stored (PDPA, commit 16) */
   idCardNumber?: string | null;
+  /** @deprecated Ignored — the ID card image is not stored (PDPA, commit 16) */
   idCardImage?: string | null;
   tenantAddress?: string | null;
   parentPhone?: string | null;
@@ -268,12 +272,12 @@ export async function createContractTx(client: Client, input: CreateContractInpu
 
   const contractId = (await client.query(
     `INSERT INTO contracts (tenant_id, room_id, start_date, end_date, deposit_amount, status, signature_data, owner_signature_data,
-       signed_at, slip_url, contract_file_url, id_card_number, id_card_image, tenant_address, parent_phone, parent_contract_id, renewal_note, occupants,
+       signed_at, slip_url, contract_file_url, tenant_address, parent_phone, parent_contract_id, renewal_note, occupants,
        deposit_outside_system, deposit_note, approved_at, approved_by, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [tenantId, room.id, input.startDate, input.endDate, deposit, input.status, input.signature || null,
       input.ownerSignature || null, input.signedAt || null, input.slipUrl || null, input.contractFileUrl || null,
-      input.idCardNumber || null, input.idCardImage || null, input.tenantAddress || null, input.parentPhone || null,
+      input.tenantAddress || null, input.parentPhone || null,
       input.parentContractId || null, input.note || null, Math.max(1, Math.floor(Number(input.occupants) || 1)),
       outside ? 1 : 0, outside ? String(outside.reason).trim().slice(0, 500) : null,
       input.approvedAt || null, input.approvedBy || null, input.expiresAt || null]
@@ -346,8 +350,7 @@ export function renewContract(contractId: number, input: RenewContractInput) {
       depositAmount: Number(old.deposit_amount || 0),
       status: 'Active',
       contractFileUrl: input.contractFileUrl || old.contract_file_url || null,
-      idCardNumber: old.id_card_number,
-      idCardImage: old.id_card_image,
+      // The ID number / card image of the old contract are not copied (PDPA, commit 16)
       tenantAddress: old.tenant_address,
       parentContractId: contractId,
       occupants: old.occupants,

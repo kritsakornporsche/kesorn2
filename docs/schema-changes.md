@@ -1,4 +1,4 @@
-# การเปลี่ยนแปลง schema สาขา `completeness` (migration 001–016)
+# การเปลี่ยนแปลง schema สาขา `completeness` (migration 001–017)
 
 สำหรับวาด ER ใหม่และตรวจก่อน merge เข้า `main` · ไฟล์ migration อยู่ที่ `db/migrations/NNN_*.up.sql` / `*.down.sql` (รันตามลำดับเลข) · ตรวจกับฐาน dev ที่รันครบ 016 แล้ว
 
@@ -28,6 +28,7 @@ FK: **D** = ประกาศจริงในฐาน · **I** = อ้า�
 | 014 | `meters` | เพิ่ม 13 คอลัมน์ใน `meter_readings` รวม generated `cycle_key` + UNIQUE `uq_meter_cycle` + INDEX `(room_id, id)` | แถวเดิมทั้งหมด `kind = 'cycle'` · รูปใน `storage/meters` |
 | 015 | `rates_settings` | `dormitory_profile.cleaning_fee` (300), `bank_name`, `bank_account`, `bank_account_name` · DEFAULT `water_rate` 18→100, `electricity_rate` 8→4.88 (MODIFY, แถวเดิมไม่เปลี่ยน) · `bills.late_fee_rate` · **ตาราง `rate_changes`** | บิลที่ส่งแล้ว (ไม่ใช่ Draft/Cancelled) ได้ `late_fee_rate` = อัตราปัจจุบัน |
 | 016 | `timed_notifications` | `notifications.event_key VARCHAR(120)` + UNIQUE `(user_id, event_key)` · **ตาราง `job_runs`** | แจ้งเตือน `overdue_alert` เดิมได้ key `overdue15:<bill>` (แถวแรกต่อ user+link) · แทรก `job_runs ('reminders', '2000-01-01')` |
+| 017 | `pdpa_clear_id_card` | ไม่เปลี่ยนโครงสร้าง · `tenants.id_card_number/id_card_image` และ `contracts.id_card_number/id_card_image` **เลิกใช้** (โค้ดไม่เขียนแล้วตั้งแต่ commit 16) | ล้างค่าเดิมเป็น NULL (ย้อนกลับไม่ได้ — backup ก่อน) |
 
 ข้อที่ต้องตรวจก่อนรัน (012–014) และโฟลเดอร์ `storage/*` อยู่ใน `docs/CHANGES-completeness.md` หัวข้อ deploy
 
@@ -92,7 +93,7 @@ FK: **D** = ประกาศจริงในฐาน · **I** = อ้า�
 
 **`users`** — `role` เพิ่ม `manager` (001) · `sub_role` (`maid` / `technician`) แยกบอร์ดงานของ keeper
 
-**ไม่ใช้แล้ว / อ่านอย่างเดียว:** `rooms.water_rate`, `rooms.common_fee` · `cleaning_jobs` (อ่านเป็นงานเดิม) · `room_inventory` (ต้นแบบรายการตรวจห้อง) · คอลัมน์ settlement เดิมใน `move_out_requests` (`net_refund_amount`, `settlement_type` …) ใช้กับคำขอแบบเดิมเท่านั้น
+**ไม่ใช้แล้ว / อ่านอย่างเดียว:** `tenants.id_card_number`, `tenants.id_card_image`, `contracts.id_card_number`, `contracts.id_card_image` (PDPA — ไม่เก็บ, 017 ล้างค่าเดิม) · `rooms.water_rate`, `rooms.common_fee` · `cleaning_jobs` (อ่านเป็นงานเดิม) · `room_inventory` (ต้นแบบรายการตรวจห้อง) · คอลัมน์ settlement เดิมใน `move_out_requests` (`net_refund_amount`, `settlement_type` …) ใช้กับคำขอแบบเดิมเท่านั้น
 
 ---
 

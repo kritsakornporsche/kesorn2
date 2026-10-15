@@ -29,7 +29,6 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
   // Form State
   const [selectedRoomId, setSelectedRoomId] = useState<string>('');
   const [tenantName, setTenantName] = useState('');
-  const [idCardNumber, setIdCardNumber] = useState('');
   const [tenantAddress, setTenantAddress] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -71,7 +70,6 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
   const resetForm = () => {
     setSelectedRoomId('');
     setTenantName('');
-    setIdCardNumber('');
     setTenantAddress('');
     setEmail('');
     setPhone('');
@@ -187,14 +185,12 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
       if (result.success && result.data) {
         const d = result.data;
         const extractedName = d.full_name_th || (d.first_name_th ? `${d.title_th ? d.title_th + ' ' : ''}${d.first_name_th} ${d.last_name_th || ''}`.trim() : '');
-        const extractedId = d.id_card_number || '';
         const extractedAddress = d.address || '';
 
         if (extractedName) setTenantName(extractedName);
-        if (extractedId) setIdCardNumber(extractedId);
         if (extractedAddress) setTenantAddress(extractedAddress);
 
-        setOcrSuccessMsg(`✓ สแกนบัตรประชาชนสำเร็จ! AI อ่านชื่อ: ${extractedName || extractedId || '-'}`);
+        setOcrSuccessMsg(`✓ อ่านชื่อและที่อยู่จากบัตรสำเร็จ: ${extractedName || '-'} (ระบบไม่เก็บเลขบัตรประชาชน)`);
       } else {
         setOcrErrorMsg(result.message || 'ไม่สามารถอ่านข้อมูลจากบัตรได้ กรุณากรอกด้วยตนเอง');
       }
@@ -286,7 +282,6 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
           email,
           phone,
           parentPhone,
-          idCardNumber,
           tenantAddress,
           slipUrl: slipData,
         }),
@@ -533,19 +528,6 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                     className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-primary"
                   />
                   <p className="text-[10px] text-slate-500">ชื่อนี้จะถูกใช้เป็นชื่อบัญชีผู้ใช้</p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300">
-                    เลขบัตรประชาชน 13 หลัก
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="13 หลัก"
-                    value={idCardNumber}
-                    onChange={(e) => setIdCardNumber(e.target.value)}
-                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-primary"
-                  />
                 </div>
 
                 <div className="space-y-1.5">

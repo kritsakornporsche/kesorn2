@@ -64,7 +64,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     email: '',
     start_date: new Date().toISOString().split('T')[0],
     end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
-    id_card_number: '',
     id_card_address: '',
     id_card_image: '',
     houseNo: '',
@@ -397,7 +396,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
         setBookingData((prev) => ({
           ...prev,
           name: extractedName || (prev.name === 'guest' ? '' : prev.name),
-          id_card_number: d.id_card_number || prev.id_card_number,
           id_card_address: d.address || prev.id_card_address,
           id_card_image: base64Data,
           houseNo: addrParts.houseNo || prev.houseNo,
@@ -407,7 +405,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
           district: addrParts.district || prev.district,
           province: addrParts.province || prev.province,
         }));
-        setOcrSuccessMsg(`✓ อ่านข้อมูลบัตรสำเร็จ: ${extractedName || d.id_card_number || ''}`);
+        setOcrSuccessMsg(`✓ อ่านชื่อและที่อยู่จากบัตรสำเร็จ: ${extractedName || ''} (ระบบไม่เก็บเลขบัตรประชาชน)`);
         setOcrStats(`อ่านสำเร็จใน ${elapsedSec} วินาที (Google Gemini AI Vision)`);
       } else {
         const errMsg = ocrJson.message || 'ไม่สามารถอ่านตัวอักษรบนบัตรได้ชัดเจน กรุณาตรวจสอบหรือกรอกเพิ่มเติมในช่องด้านล่าง';
@@ -460,7 +458,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
         name: 'นายกฤษกร บวรนันทกุล',
         phone: prev.phone || '089-123-4567',
         parent_phone: prev.parent_phone || '081-987-6543',
-        id_card_number: '1-5601-00123-45-6',
         id_card_address: '224/12 หมู่ 2 ต.แม่กา อ.เมือง จ.พะเยา 56000',
         houseNo: '224/12',
         village: '2',
@@ -471,7 +468,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
         id_card_image: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&q=80',
       }));
       setIsOcrProcessing(false);
-      setOcrSuccessMsg('✓ นำเข้าข้อมูลตัวอย่างสำเร็จ (นายกฤษกร บวรนันทกุล, 1-5601-00123-45-6)');
+      setOcrSuccessMsg('✓ นำเข้าข้อมูลตัวอย่างสำเร็จ (นายกฤษกร บวรนันทกุล)');
       setOcrStats('จำลองสำเร็จใน 0.4 วินาที');
     }, 400);
   };
@@ -490,7 +487,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
         tenant_phone: bookingData.phone,
         parent_phone: bookingData.parent_phone,
         tenant_email: bookingData.email,
-        id_card_number: bookingData.id_card_number,
         tenant_address: bookingData.id_card_address,
         start_date: bookingData.start_date,
         end_date: bookingData.end_date,
@@ -555,9 +551,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
           tenantName: bookingData.name,
           phone: bookingData.phone,
           parentPhone: bookingData.parent_phone,
-          idCardNumber: bookingData.id_card_number,
           tenantAddress: bookingData.id_card_address,
-          idCardImage: bookingData.id_card_image,
         })
       });
 
@@ -1485,7 +1479,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
                 {/* Extracted Fields */}
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4">
                     <div className="space-y-1">
                       <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
                         ชื่อ-นามสกุล ผู้เช่า <span className="text-rose-500">*</span>
@@ -1498,20 +1492,8 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                         onChange={(e) => setBookingData({ ...bookingData, name: e.target.value })}
                       />
                     </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
-                        เลขประจำตัวประชาชน (13 หลัก) <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        className="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-mono font-bold text-sm tracking-wider"
-                        placeholder="X-XXXX-XXXXX-XX-X"
-                        value={bookingData.id_card_number ?? ''}
-                        onChange={(e) => setBookingData({ ...bookingData, id_card_number: e.target.value })}
-                      />
-                    </div>
                   </div>
+                  <p className="text-[11px] text-muted-foreground">🔒 ระบบไม่เก็บเลขบัตรประชาชนและรูปบัตร — ใช้บัตรเพื่อกรอกชื่อและที่อยู่เท่านั้น (เลขบัตรกรอกด้วยมือในสัญญากระดาษตอนเซ็น)</p>
 
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
@@ -1574,7 +1556,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   )}
                   <button
                     onClick={handleFinalSubmit}
-                    disabled={!bookingData.id_card_number || !bookingData.id_card_address || !bookingOpen || isProcessing || !costs}
+                    disabled={!bookingData.name || !bookingData.id_card_address || !bookingOpen || isProcessing || !costs}
                     className="w-full py-5 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-sm transition-all shadow-xl shadow-primary/25 hover:scale-[1.02] active:scale-95 disabled:opacity-40 cursor-pointer"
                   >
                     {isProcessing ? 'กำลังส่งคำขอจอง...' : 'ส่งคำขอจอง →'}
@@ -1671,7 +1653,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
           tenant_phone: bookingData.phone,
           parent_phone: bookingData.parent_phone,
           tenant_email: bookingData.email,
-          id_card_number: bookingData.id_card_number,
           tenant_address: bookingData.id_card_address,
           houseNo: bookingData.houseNo,
           village: bookingData.village,
@@ -1679,7 +1660,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
           subdistrict: bookingData.subdistrict,
           district: bookingData.district,
           province: bookingData.province,
-          id_card_image: bookingData.id_card_image,
           start_date: bookingData.start_date,
           end_date: bookingData.end_date,
           deposit_amount: costs?.deposit ?? 0,

@@ -1,6 +1,6 @@
-# สรุปการเปลี่ยนแปลงสาขา `completeness` (commit 1–15)
+# สรุปการเปลี่ยนแปลงสาขา `completeness` (commit 1–16)
 
-สำหรับรีวิวก่อน merge `completeness` → `main` · ฐานร่วม `c1f5251` (main ยังไม่มี commit ใหม่หลังจากนั้น) · 29 commit ใน git = 15 ขั้นตามแผน `docs/completeness-plan.md`
+สำหรับรีวิวก่อน merge `completeness` → `main` · ฐานร่วม `c1f5251` (main ยังไม่มี commit ใหม่หลังจากนั้น) · commit ใน git = 16 ขั้นตามแผน (1–15) + PDPA เลขบัตร (16) `docs/completeness-plan.md`
 schema ละเอียด: [`docs/schema-changes.md`](schema-changes.md) · ไม่มีไฟล์ถูก rename ในสาขานี้ (มีแต่เพิ่ม/ลบ)
 
 สารบัญ: [1. ทีละ commit](#1-ทีละ-commit) · [2. หน้า/API ที่ลบหรือเปลี่ยนการเรียก](#2-หน้าapi-ที่ลบหรือเปลี่ยนการเรียก) · [3. กติกาธุรกิจใหม่](#3-กติกาธุรกิจใหม่) · [4. ไฟล์ที่ชนกับ feature-development](#4-ไฟล์ที่ชนกับ-originfeature-development) · [5. ขั้นตอน deploy](#5-ขั้นตอน-deploy)
@@ -22,6 +22,7 @@ schema ละเอียด: [`docs/schema-changes.md`](schema-changes.md) · �
 | 13 | 265d022, 2a8c08e, 9261854, f8b672a | บอร์ดงานซ่อม/ทำความสะอาด | 013 |
 | 14 | 927e91a, 277447a | มิเตอร์ที่ server, บิลรายเดือนรอบละใบ | 014 |
 | 15 | 9b12347, 760ee0b, 9e703f7 | หน้าอัตราเดียว + แจ้งเตือนตามเวลา | 015, 016 |
+| 16 | (commit นี้) | PDPA: ไม่เก็บเลขบัตร ปชช. / รูปบัตร | 017 (ล้างข้อมูลเดิม — รอรัน) |
 
 (46b1dd9, 546add7 = ย้ายไฟล์ทดสอบไป docs เท่านั้น)
 
@@ -90,6 +91,14 @@ schema ละเอียด: [`docs/schema-changes.md`](schema-changes.md) · �
 
 ---
 
+### 16 · PDPA: ไม่เก็บเลขบัตรประชาชนและรูปบัตร (นโยบายตกลงกับเพื่อนแล้ว — ทางของ feature-development)
+- จอง / walk-in / owner สร้างสัญญา / ต่อสัญญา **ไม่บันทึกเลข 13 หลักและรูปบัตร** อีก — ทำที่ service จุดเดียว (`lib/contracts.ts` `resolveAccount`, `createContractTx`, `renewContract` ไม่คัดลอกเลขบัตร · `lib/bookings.ts` `requestBooking`) · route ทั้ง 3 ไม่ได้แก้ SQL (ค่าที่ส่งมาถูกละทิ้งที่ service)
+- สแกนบัตรยังกรอกชื่อ/ที่อยู่ได้ แต่ OCR ไม่อ่านและไม่คืนเลขบัตร (`lib/id-card-ocr.ts`) · หน้าจอง / walk-in / สร้างสัญญา ไม่มีช่องเลขบัตร ไม่ส่งเลขบัตรและรูปบัตรไป server (รูปใช้แสดงในเครื่องเท่านั้น)
+- หน้าสร้างสัญญาของ owner เคยใช้ **รูปบัตรเป็นไฟล์สัญญา** (`contract_file_url`) เมื่อไม่ได้แนบไฟล์ — เอาออกแล้ว
+- สัญญา Word: ช่องเลขบัตรเป็นเส้นว่างให้กรอกด้วยมือตอนเซ็นเสมอ · หน้า owner/bookings และตารางสัญญาไม่แสดงเลขบัตร
+- `/api/booking/status`: ลบเงื่อนไข `OR c.id_card_number IN (...)` ที่ทำให้เห็นสัญญาของบัญชีอื่นที่เลขบัตรซ้ำ
+- migration **017** ล้างเลขบัตร/รูปบัตรที่เก็บไว้เดิมเป็น NULL (คอลัมน์ยังอยู่ — ไม่ DROP) · ย้อนกลับไม่ได้ ต้อง backup
+
 ## 2. หน้า/API ที่ลบหรือเปลี่ยนการเรียก
 
 **หน้า/โฟลเดอร์ที่ลบ:** `app/admin/`, `app/platform/`, `app/researcher/`, `app/explore/[dormId]`, `app/sequence`, `app/owner/onboarding`, `app/tenant/contract/simulate`, `app/tenant/refund-request`, `app/owner/settings/layout.tsx` · components: `MermaidRenderer`, `ContractSigner`, `DepositRefundModal`, `MoveOutTestButton`, `ResetAllTestButton`, `app/tenant/move-out/components/{MoveOutForm,CancelRequestButton}` · `lib/diagramsData.ts` (สำเนาที่ `docs/old/`) · package `mermaid`
@@ -110,6 +119,8 @@ schema ละเอียด: [`docs/schema-changes.md`](schema-changes.md) · �
 | `POST /api/owner/billing` | ไม่ใช้ยอดจาก client · บิลรายเดือน → 400 (ออกได้จากมิเตอร์เท่านั้น) |
 | `owner/billing/[id]` PUT `status=Paid` | 400 (ต้องผ่านการรับเงิน) |
 | `POST /api/owner/meters` | ไม่ใช้ `previous_reading` จากหน้าเว็บ |
+| `POST /api/contracts`, `POST /api/owner/contracts`, walk-in | รับ `idCardNumber` / `id_card_number` / รูปบัตรได้เหมือนเดิม แต่ **ไม่บันทึก** (commit 16) |
+| `GET /api/booking/status` | หาสัญญาจากบัญชีของผู้ใช้เท่านั้น (ไม่จับคู่ด้วยเลขบัตร) |
 | `GET /api/booking/qr` | ไม่รับ `amount` · ค่าจอง = `bookingFeeFor` · บิลเข้าอยู่ส่ง `contractId` |
 | `GET /api/tenant/billing/qr` | ต้องมี `billId` (ไม่มีโหมดยอดลอย) · ส่ง `promptpayName` |
 | `GET/POST /api/owner/settings` | GET owner+manager (manager ไม่เห็น OCR key) · POST owner เท่านั้น เขียนเฉพาะช่องที่ส่ง |
@@ -180,14 +191,13 @@ schema ละเอียด: [`docs/schema-changes.md`](schema-changes.md) · �
 | `app/owner/contracts/page.tsx` | เงินประกันจาก server (ไม่ใช่ `price*2`), อัปสัญญากระดาษ, ลบ `DepositRefundModal` แท็บย้ายออกชี้ `/owner/move-out` | OCR ไม่เก็บเลขบัตร, ปุ่ม ThaID (ส่วนใหญ่ auto-merge แล้ว) | import: เก็บทั้งสอง (`checkPaperFile` + `ThaIdDigitalIdButton`) ไม่มี `DepositRefundModal` · ค่าเริ่มฟอร์ม: ใช้ชุดของเรา (ไม่มี `deposit_amount: price*2`) |
 | `components/DepositRefundModal.tsx` | **ลบ** — ระบบคืนค่าจองถูกยกเลิก (commit 10: ค่าจองไม่คืน) และการคืนเงินประกันย้ายไป `/owner/move-out` (commit 12) | แก้ 1 บรรทัด (ไม่ใช้เลขบัตรเป็นพร้อมเพย์) | **ยืนยันการลบ** (`git rm`) — หน้าใหม่ไม่ใช้เลขบัตรอยู่แล้ว |
 
-**ใส่ PDPA ที่ service (ถ้าตกลงนโยบาย "ไม่เก็บเลขบัตร/รูปบัตร"):** `lib/contracts.ts` (`resolveAccount` UPDATE/INSERT tenants, `createContractTx` INSERT contracts, การต่อสัญญาที่คัดลอกเลขบัตร) และ `lib/bookings.ts` → ทั้ง 3 route ได้ผลเหมือนกันโดยไม่ต้องแตะ SQL ใน route · ล้างข้อมูลเดิมทำเป็น migration 017 (ต้อง backup — กู้คืนไม่ได้) + ลบรูปใน `public/uploads/id_cards/`
-⚠️ ต้องตัดสินก่อน: แผนเดิม (`completeness-plan.md` B.1) เขียน "เก็บบัตร ปชช. + ยินยอม PDPA" ซึ่งตรงข้ามกับทิศของเพื่อน
+**✅ นโยบายตัดสินแล้ว: ไม่เก็บเลขบัตร ปชช. และรูปบัตร** (ทางของ feature-development — แทนแผนเดิม B.1) · **ทำแล้วใน commit 16 ที่ service** (`lib/contracts.ts`, `lib/bookings.ts`, `lib/id-card-ocr.ts`) → ตอน merge เอาไฟล์ API ฝั่ง completeness ได้เลย ไม่ต้อง port การแก้ SQL ของเพื่อน — ค่าที่ route ส่งเข้า service (รวมโค้ดของเพื่อนที่ยังส่ง) ถูกละทิ้งที่ service · `booking/status` ลบเงื่อนไขเลขบัตรแล้ว · migration **017** ล้างข้อมูลเดิม (เขียนไว้ รอรันตอน deploy)
 
 **auto-merge ได้แต่ควรดู:** `export-docx` (สัญญา Word จะไม่มีเลขบัตร) · `WalkInTenantModal` (state เลขบัตรยังส่ง `''`) · `owner/bookings/page.tsx` (ใช้ฟิลด์ที่ API เรามีแล้ว) · `lib/version.json` · `app/api/booking/status/route.ts` มีเงื่อนไข `OR c.id_card_number IN (...)` จาก base — เสี่ยงเห็นสัญญาข้ามบัญชีที่เลขบัตรซ้ำ ควรลบไม่ว่าเลือกนโยบายไหน
 
 **ไฟล์ใหม่ของเพื่อน:** ไม่เรียก API ที่เราลบ ไม่มี migration (ไม่ชนเลข 001–016) · `app/api/features/thaid/route.ts` **ไม่มี auth guard** (ต่างจากแนวทาง commit 1–2) และ salt มีค่าสำรองในโค้ด → ควรใส่ auth/feature flag ก่อน production · `FEATURE_INTEGRATION_LOG.md` ห้าม DROP/RENAME บน users/tenants/rooms/contracts/bills — migration ของเรา **ไม่มี** DROP/RENAME มีแค่ `MODIFY` เพิ่มค่า ENUM (`users.role`, `rooms.status`, `accounting_transactions.type`, `bill_payments.method`) และเปลี่ยน DEFAULT ใน `dormitory_profile`
 
-**ลำดับ resolve ที่แนะนำ:** ตัดสินนโยบายเลขบัตร → API 3 ไฟล์เอาของเรา → หน้า 2 ไฟล์แก้ทีละ hunk → `git rm components/DepositRefundModal.tsx` → PDPA ใน service → auth ให้ ThaID route → (ถ้า PDPA) migration 017 → build + ทดสอบ จอง / walk-in / สร้างสัญญา
+**ลำดับ resolve ที่แนะนำ:** API 3 ไฟล์เอาของเรา → หน้า 2 ไฟล์แก้ทีละ hunk (ฝั่งเราไม่มีช่องเลขบัตรแล้ว เก็บปุ่ม ThaID ของเพื่อน) → `git rm components/DepositRefundModal.tsx` → auth ให้ ThaID route → build + ทดสอบ จอง / walk-in / สร้างสัญญา / ต่อสัญญา (`docs/review/tests/test_c16.js` ตรวจว่าไม่มีเลขบัตรถูกเก็บ)
 
 ---
 
@@ -216,17 +226,24 @@ SELECT COUNT(*) AS cleaning_jobs_rows, SUM(LOWER(status) <> 'completed') AS clea
 -- 014 (มิเตอร์): ต้องได้ 0 ไม่งั้น UNIQUE จะสร้างไม่ได้
 SELECT COUNT(*) FROM (SELECT room_id, type, billing_cycle FROM meter_readings
   GROUP BY room_id, type, billing_cycle HAVING COUNT(*) > 1) d;
+
+-- 017 (PDPA): จำนวนแถวที่จะถูกล้าง (ย้อนกลับไม่ได้ — backup ก่อน)
+SELECT COUNT(*) FROM tenants   WHERE id_card_number IS NOT NULL OR id_card_image IS NOT NULL;
+SELECT COUNT(*) FROM contracts WHERE id_card_number IS NOT NULL OR id_card_image IS NOT NULL;
+-- โค้ดเก่าอาจเก็บรูปบัตรเป็นไฟล์สัญญา: ตรวจด้วยตา (017 ไม่ล้างให้)
+SELECT id, LEFT(contract_file_url, 30) FROM contracts WHERE contract_file_url LIKE 'data:image%';
 ```
 
 ### 5.3 รัน migration ตามลำดับ
 ```bash
-# ชื่อไฟล์ขึ้นต้นด้วยเลข 3 หลัก → sort ได้ลำดับ 001…016 · หยุดทันทีถ้าตัวใดล้ม
+# ชื่อไฟล์ขึ้นต้นด้วยเลข 3 หลัก → sort ได้ลำดับ 001…017 · หยุดทันทีถ้าตัวใดล้ม
 for f in $(ls db/migrations/*.up.sql | sort); do
   echo "== $f"; mysql -u <user> -p<password> <db> < "$f" || break
 done
 ```
 001 add_manager_role · 002 add_late_fee_rate · 003 add_contract_occupants · 004 add_bill_payments · 005 bill_status_flow · 006 accounting_liability · 007 rooms_reserved · 008 contract_deposit_source · 009 booking_approval · 010 contract_move_in · 011 contract_inspections · 012 move_out_settlement · 013 work_orders · 014 meters · 015 rates_settings · 016 timed_notifications
 - **016 ต้องรันก่อนเปิดแอป** — การหมดเวลาจองเขียน `notifications.event_key`
+- **017** ล้างเลขบัตร/รูปบัตรเดิม (ย้อนกลับไม่ได้) · หลังรัน ลบรูปบัตรที่ค้างใน `public/uploads/id_cards/` (เก็บ `.gitkeep`)
 - ทุกตัวมี `*.down.sql` (ทดสอบ down → up บน dev แล้วสำหรับ 015, 016)
 
 ### 5.4 env (ดู `.env.example`)
