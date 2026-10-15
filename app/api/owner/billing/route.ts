@@ -1,7 +1,8 @@
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
-import { bangkokDate, getRates, priceMonthlyBill } from '@/lib/billing';
+import { bangkokDate, getRates } from '@/lib/billing';
+import { issueMonthlyBill, meterRefusalStatus } from '@/lib/meters';
 import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
 import { NextResponse } from 'next/server';
 
@@ -70,7 +71,7 @@ export async function GET(req: Request) {
         WHERE mr3.room_id = r.id 
           AND (mr3.billing_cycle = b.billing_cycle OR mr3.billing_cycle IS NULL)
           AND (mr3.type = 'Electricity' OR mr3.type = 'Electric')
-        ORDER BY mr3.id DESC 
+        ORDER BY (mr3.kind = 'cycle') DESC, mr3.id DESC 
         LIMIT 1
       )
       ORDER BY b.due_date DESC, b.created_at DESC
@@ -138,35 +139,40 @@ export async function POST(req: Request) {
       normalizedCycle = bangkokDate(new Date()).slice(0, 7);
     }
 
-    // Monthly bills are always priced on the server; amounts and due date from the client are ignored
+    // Monthly bills: lib/meters.ts — priced on the server from the cycle's reading, Draft, one per tenant and cycle
+    // (amounts and due date from the client are ignored). Sent later, which notifies the tenant.
     if (body.bill_type === 'monthly') {
-      const priced = await priceMonthlyBill(sql, room_number, normalizedCycle);
-      if ('error' in priced) {
-        return NextResponse.json({ success: false, message: priced.error }, { status: 400 });
-      }
-      ({ tenant_id, amount, due_date, water_units, electric_units, water_amount, electric_amount, room_amount, common_fee } = priced);
-      title = title || `ค่าเช่าห้องและสาธารณูปโภค (${normalizedCycle})`;
+      const r = await issueMonthlyBill(String(room_number || ''), normalizedCycle, guard.user, new Date(), title);
+      if (!r.ok) return NextResponse.json({ success: false, message: r.message }, { status: meterRefusalStatus(r.reason) });
+      if (!r.issued) return NextResponse.json({ success: false, message: r.message, skipped: r.skipped, billId: r.billId }, { status: r.skipped === 'exists' || r.skipped === 'final_bill' ? 409 : 400 });
+      return NextResponse.json({
+        success: true,
+        data: { id: r.billId, tenant_id: r.tenantId, amount: r.amount, due_date: r.dueDate, billing_cycle: normalizedCycle, room_number: r.roomNumber, status: 'Draft' },
+      });
     }
 
     if (!tenant_id || !title || !amount || !due_date) {
       return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
     }
 
-    // Monthly bills start as drafts: reviewed, then sent (which notifies the tenant)
-    const isDraft = body.bill_type === 'monthly';
+    const isDraft = false;
+    const billType = body.bill_type || (title.includes('จอง') || title.includes('มัดจำ') ? 'booking' : (title.includes('ซ่อม') || title.includes('ทำความสะอาด') ? 'service' : 'monthly'));
+    if (billType === 'monthly') {
+      return NextResponse.json({ success: false, message: 'บิลรายเดือนออกได้จากเลขมิเตอร์เท่านั้น (bill_type: monthly + room_number)' }, { status: 400 });
+    }
 
-    // Prevent duplicate bill for same tenant in same billing cycle
+    // Same tenant, cycle and bill type only (a month also has repair / service / final bills)
     if (normalizedCycle) {
       const existing = await sql`
-        SELECT id FROM bills 
-        WHERE tenant_id = ${tenant_id} 
-        AND billing_cycle = ${normalizedCycle}
+        SELECT id FROM bills
+        WHERE tenant_id = ${tenant_id} AND billing_cycle = ${normalizedCycle} AND COALESCE(bill_type, 'monthly') = ${billType}
+          AND LOWER(status) NOT IN ('cancelled', 'canceled')
         LIMIT 1
       `;
       if (existing.length > 0) {
         return NextResponse.json({ 
           success: false, 
-          message: `มีใบแจ้งหนี้รอบบิล "${normalizedCycle}" สำหรับผู้เช่ารายนี้แล้ว ไม่สามารถออกบิลซ้ำได้` 
+          message: `มีใบแจ้งหนี้ประเภทนี้รอบบิล "${normalizedCycle}" สำหรับผู้เช่ารายนี้แล้ว ไม่สามารถออกบิลซ้ำได้` 
         }, { status: 400 });
       }
     }
@@ -202,7 +208,7 @@ export async function POST(req: Request) {
         ${electric_amount || 0}, 
         ${room_amount || 0},
         ${common_fee || 0},
-        ${body.bill_type || (title.includes('จอง') || title.includes('มัดจำ') ? 'booking' : (title.includes('ซ่อม') || title.includes('ทำความสะอาด') ? 'service' : 'monthly'))}
+        ${billType}
       )
     `;
 
@@ -225,7 +231,7 @@ export async function POST(req: Request) {
             'billing',
             0,
             '/tenant/billing',
-            NOW()
+            ${new Date()}
           )
         `;
       }

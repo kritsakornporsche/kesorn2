@@ -294,9 +294,7 @@ export async function PUT(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: result.meterRecorded
-        ? `ออกบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} และบันทึกมิเตอร์เริ่มต้นแล้ว`
-        : `ออกบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} แล้ว · มิเตอร์เริ่มต้นเก็บในสัญญาเท่านั้น (ห้องนี้มีเลขมิเตอร์ของเดือนนี้อยู่แล้ว จึงไม่เขียนทับ — ตรวจเลขในหน้ามิเตอร์)`,
+      message: `ออกบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} และบันทึกมิเตอร์เริ่มต้นแล้ว`,
       billId: result.billId,
       amount: result.dueAtMoveIn,
       dueDate: result.dueDate,

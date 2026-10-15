@@ -444,7 +444,7 @@ export function recordReturn(settlementId: number, input: ReturnInput, by: Actor
     const finalMeter = meterValue(input.finalMeter);
     if (finalMeter === null) refuse('meter_required');
     const latest = (await client.query(
-      "SELECT current_reading FROM meter_readings WHERE room_id = ? AND type IN ('Electricity', 'Electric') AND current_reading IS NOT NULL ORDER BY billing_cycle DESC, id DESC LIMIT 1",
+      "SELECT current_reading FROM meter_readings WHERE room_id = ? AND type IN ('Electricity', 'Electric') AND current_reading IS NOT NULL ORDER BY id DESC LIMIT 1 FOR UPDATE",
       [s.room_id]
     )).rows[0];
     let prevMeter = latest ? round2(Number(latest.current_reading)) : meterValue(s.start_meter_reading);
@@ -487,11 +487,12 @@ export function recordReturn(settlementId: number, input: ReturnInput, by: Actor
         [finalBillId, by.id, now]
       );
     }
-    // The final reading becomes the room's latest reading (the next tenant starts from it)
+    // The final reading (kind 'move_out') becomes the room's latest reading (the next tenant starts from it)
     await client.query(
-      `INSERT INTO meter_readings (dorm_id, room_id, type, billing_cycle, previous_reading, current_reading, units_used, created_at)
-       VALUES (?, ?, 'Electricity', ?, ?, ?, ?, ?)`,
-      [s.dorm_id, s.room_id, cycle, prevMeter, finalMeter, units, now]
+      `INSERT INTO meter_readings (dorm_id, room_id, type, billing_cycle, kind, previous_reading, current_reading, units_used,
+         recorded_by, recorded_at, confirmed_by, confirmed_at, created_at)
+       VALUES (?, ?, 'Electricity', ?, 'move_out', ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [s.dorm_id, s.room_id, cycle, prevMeter, finalMeter, units, by.id, now, by.id, now, now]
     );
 
     // Clause 13 (early move-out only matters for the deposit); notice in writing = the earlier of system / paper

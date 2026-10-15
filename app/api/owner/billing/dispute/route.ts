@@ -60,7 +60,7 @@ export async function GET(req: Request) {
           WHERE mr3.room_id = r.id 
             AND (mr3.billing_cycle = b.billing_cycle OR mr3.billing_cycle IS NULL)
             AND (mr3.type = 'Electricity' OR mr3.type = 'Electric')
-          ORDER BY mr3.id DESC 
+          ORDER BY (mr3.kind = 'cycle') DESC, mr3.id DESC 
           LIMIT 1
         )
         LEFT JOIN users u ON bc.requester_id = u.id
@@ -89,7 +89,7 @@ export async function GET(req: Request) {
           WHERE mr3.room_id = r.id 
             AND (mr3.billing_cycle = b.billing_cycle OR mr3.billing_cycle IS NULL)
             AND (mr3.type = 'Electricity' OR mr3.type = 'Electric')
-          ORDER BY mr3.id DESC 
+          ORDER BY (mr3.kind = 'cycle') DESC, mr3.id DESC 
           LIMIT 1
         )
         LEFT JOIN users u ON bc.requester_id = u.id
@@ -298,6 +298,7 @@ export async function PUT(req: Request) {
         WHERE room_id = (SELECT id FROM rooms WHERE room_number = ${corr.room_number})
           AND billing_cycle = ${corr.billing_cycle}
           AND type = 'Electricity'
+          AND kind = 'cycle'
       `;
 
       await sql`

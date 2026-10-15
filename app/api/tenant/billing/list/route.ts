@@ -65,7 +65,7 @@ export async function GET(req: Request) {
         WHERE mr3.room_id = r.id 
           AND (mr3.billing_cycle = b.billing_cycle OR mr3.billing_cycle IS NULL)
           AND (mr3.type = 'Electricity' OR mr3.type = 'Electric')
-        ORDER BY mr3.id DESC 
+        ORDER BY (mr3.kind = 'cycle') DESC, mr3.id DESC 
         LIMIT 1
       )
       LEFT JOIN (

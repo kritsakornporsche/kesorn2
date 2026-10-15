@@ -108,29 +108,25 @@ export function issueMoveInBill(contractId: number, input: IssueMoveInInput, now
 
     const dueDate = bangkokDate(c.start_date);
     const billId = Number((await client.query(
+      // common_fee 0: the move-in bill charges rent + deposit only (the column defaults to 150)
       `INSERT INTO bills (tenant_id, dorm_id, room_number, title, amount, room_amount, water_amount, electric_amount, water_units, electric_units,
-         billing_cycle, due_date, status, is_first_bill, bill_type, slip_verified)
-       VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 'ค่าแรกเข้า (ค่าเช่าเดือนแรก + เงินประกันส่วนที่เหลือ)', ?, 'Unpaid', 1, 'booking', 0)`,
+         common_fee, billing_cycle, due_date, status, is_first_bill, bill_type, slip_verified)
+       VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 'ค่าแรกเข้า (ค่าเช่าเดือนแรก + เงินประกันส่วนที่เหลือ)', ?, 'Unpaid', 1, 'booking', 0)`,
       [c.tenant_id, c.dorm_id, c.room_number,
         `บิลค่าแรกเข้า (ค่าห้องเดือนแรก ฿${formatBaht(amounts.rent)} + เงินประกันส่วนที่เหลือ ฿${formatBaht(amounts.depositAtMoveIn)})`,
         amounts.dueAtMoveIn, amounts.rent, dueDate]
     )).rows.insertId);
 
-    // Starting meter as the base reading of this month, only when the month has no reading yet.
-    // An existing reading (current_reading is always set) is never overwritten: the start stays in contracts.start_meter_reading.
+    // Starting meter as its own row (kind 'start'): the room's latest reading, so the next monthly reading counts from it
+    // (lib/meters.ts). Other readings of the month are never overwritten.
     const cycle = bangkokDate(now).slice(0, 7);
-    const reading = (await client.query(
-      "SELECT id FROM meter_readings WHERE room_id = ? AND type = 'Electricity' AND billing_cycle = ? ORDER BY id DESC LIMIT 1 FOR UPDATE",
-      [c.room_id, cycle]
-    )).rows[0];
-    const meterRecorded = !reading;
-    if (!reading) {
-      await client.query(
-        `INSERT INTO meter_readings (dorm_id, room_id, type, previous_reading, current_reading, units_used, billing_cycle)
-         VALUES (?, ?, 'Electricity', ?, ?, 0, ?)`,
-        [c.dorm_id, c.room_id, meter, meter, cycle]
-      );
-    }
+    await client.query(
+      `INSERT INTO meter_readings (dorm_id, room_id, type, previous_reading, current_reading, units_used, billing_cycle, kind,
+         recorded_by, recorded_at, confirmed_by, confirmed_at, created_at)
+       VALUES (?, ?, 'Electricity', ?, ?, 0, ?, 'start', ?, ?, ?, ?, ?)`,
+      [c.dorm_id, c.room_id, meter, meter, cycle, input.by ?? null, now, input.by ?? null, now, now]
+    );
+    const meterRecorded = true;
 
     await client.query(
       "UPDATE contracts SET status = 'PendingFirstBill', move_in_bill_id = ?, start_meter_reading = ? WHERE id = ?",

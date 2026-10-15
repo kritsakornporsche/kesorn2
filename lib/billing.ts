@@ -119,7 +119,7 @@ export function calcMonthlyBill({ roomPrice, unitsUsed, occupants, rates }: {
 
 /**
  * Price a monthly rent bill for a room and billing cycle from server data only:
- * latest electricity reading of the cycle, rooms.price, the active contract's occupants and the rates.
+ * the monthly (kind = 'cycle') electricity reading of the cycle, rooms.price, the active contract's occupants and the rates.
  */
 export async function priceMonthlyBill(sql: any, roomNumber: string, billingCycle: string, issueDate: Date | string | number = new Date()) {
   if (!roomNumber) return { error: 'ไม่ได้ระบุห้อง' };
@@ -130,20 +130,21 @@ export async function priceMonthlyBill(sql: any, roomNumber: string, billingCycl
 
   const readings = await sql`
     SELECT units_used FROM meter_readings
-    WHERE room_id = ${room.id} AND type IN ('Electricity', 'Electric') AND billing_cycle = ${billingCycle}
+    WHERE room_id = ${room.id} AND type IN ('Electricity', 'Electric') AND billing_cycle = ${billingCycle} AND kind = 'cycle'
     ORDER BY id DESC LIMIT 1
   `;
   if (readings.length === 0) return { error: `ห้อง ${roomNumber} ยังไม่มีเลขมิเตอร์ของรอบ ${billingCycle}` };
 
   const contracts = await sql`
-    SELECT tenant_id, occupants FROM contracts
+    SELECT tenant_id, occupants, start_date, move_in_bill_id FROM contracts
     WHERE room_id = ${room.id} AND status = 'Active'
     ORDER BY id DESC LIMIT 1
   `;
   if (contracts.length === 0 || !contracts[0].tenant_id) return { error: `ห้อง ${roomNumber} ไม่มีสัญญาเช่าที่ใช้งานอยู่` };
 
   const rates = ratesForRoom(await getRates(sql), room.room_number);
-  const bill = calcMonthlyBill({ roomPrice: room.price, unitsUsed: readings[0].units_used, occupants: contracts[0].occupants, rates });
+  const full = calcMonthlyBill({ roomPrice: room.price, unitsUsed: readings[0].units_used, occupants: contracts[0].occupants, rates });
+  const bill = withoutMoveInCover(full, await moveInCover(sql, contracts[0], billingCycle));
 
   return {
     tenant_id: contracts[0].tenant_id,
@@ -156,6 +157,49 @@ export async function priceMonthlyBill(sql: any, roomNumber: string, billingCycl
     room_amount: bill.roomAmount,
     common_fee: bill.commonFee,
     lines: bill.lines,
+    move_in_covered: bill.covered,
+  };
+}
+
+type MoveInCover = { room: boolean; electric: boolean; water: boolean; common: boolean } | null;
+
+/**
+ * What the move-in bill already charged when the cycle is the contract's first month (start month in Thai time,
+ * as lib/moveOut.ts counts it): each part it charged (> 0) is not charged again by that cycle's monthly bill.
+ * Today the move-in bill charges the first month's rent only. Its common_fee column is never a charge (lib/moveIn.ts
+ * never charges it; older rows hold the column default 150), so the common fee is always charged by the monthly bill.
+ */
+export async function moveInCover(sql: any, contract: { start_date?: unknown; move_in_bill_id?: unknown }, billingCycle: string): Promise<MoveInCover> {
+  if (!contract.move_in_bill_id || !contract.start_date) return null;
+  if (bangkokDate(contract.start_date as any).slice(0, 7) !== billingCycle) return null;
+  const rows = await sql`
+    SELECT room_amount, water_amount, electric_amount FROM bills
+    WHERE id = ${contract.move_in_bill_id} AND LOWER(status) NOT IN ('cancelled', 'canceled') LIMIT 1
+  `;
+  const b = rows[0];
+  if (!b) return null;
+  return {
+    room: Number(b.room_amount || 0) > 0,
+    electric: Number(b.electric_amount || 0) > 0,
+    water: Number(b.water_amount || 0) > 0,
+    common: false,
+  };
+}
+
+/** A monthly bill with the parts the move-in bill already charged set to 0 (lines say so). */
+export function withoutMoveInCover<T extends ReturnType<typeof calcMonthlyBill>>(bill: T, cover: MoveInCover) {
+  if (!cover) return { ...bill, covered: [] as string[] };
+  const roomAmount = cover.room ? 0 : bill.roomAmount;
+  const electricAmount = cover.electric ? 0 : bill.electricAmount;
+  const waterAmount = cover.water ? 0 : bill.waterAmount;
+  const commonFee = cover.common ? 0 : bill.commonFee;
+  const covered = (['room', 'electric', 'water', 'common'] as const).filter((k) => cover[k]);
+  const lines = bill.lines.map((l) => (covered.includes(l.key)
+    ? { ...l, amount: 0, detail: `${l.detail} · เก็บในบิลค่าแรกเข้าแล้ว` }
+    : l));
+  return {
+    ...bill, roomAmount, electricAmount, waterAmount, commonFee, lines, covered: covered as string[],
+    total: round2(roomAmount + electricAmount + waterAmount + commonFee),
   };
 }
 

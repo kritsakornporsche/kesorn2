@@ -123,38 +123,19 @@ export default function OwnerMonthlyBillingPage() {
           (billsData.data || []).map((b: any) => `${b.room_number}_${b.billing_cycle}`)
         );
 
-        // Billing cycle of "now" in Thai time (UTC would still be last month until 07:00 on the 1st)
-        const currentCycle = bangkokDate(new Date()).slice(0, 7);
+        // The cycle being recorded now (server, Thai time: 25th–end = this month, 1st–24th = last month)
+        const currentCycle: string = metersData.cycle;
         const ready: MeterReadyRoom[] = [];
 
         (metersData.data || []).forEach((m: any) => {
-          const meterCycle = m.latest_cycle || currentCycle;
-          const key = `${m.room_number}_${meterCycle}`;
-          
-          // Must meet ALL criteria:
-          // 1. Room is Occupied OR has active contract status
-          // 2. Meter cycle matches the current billing cycle (or is a valid current active cycle)
-          // 3. Meter has reading and units calculated
-          // 4. Bill not already issued for this room and cycle
-          // 5. Not undergoing move-out (Rule 16.1)
-          const isOccupied = m.room_status === 'Occupied' || m.contract_status === 'Active';
-          const isCurrentCycle = meterCycle === currentCycle;
-
-          if (
-            isOccupied &&
-            isCurrentCycle &&
-            m.latest_reading !== null &&
-            m.units_used !== null &&
-            m.bill_preview &&
-            !issuedBillKeys.has(key) &&
-            m.contract_status !== 'MoveOutPending'
-          ) {
+          // Active contract + a reading of this cycle + no monthly bill of this cycle yet (rooms not recorded get no bill)
+          if (m.needs_reading && m.cycle_reading && m.bill_preview && !m.cycle_bill && !issuedBillKeys.has(`${m.room_number}_${currentCycle}`)) {
             // Amounts are priced by the server (lib/billing); the page only displays them
             const p = m.bill_preview;
             ready.push({
               room_id: m.room_id,
               room_number: m.room_number,
-              tenant_name: m.tenant_name || (m.room_status === 'Occupied' ? 'ผู้เช่าประจำ' : 'ผู้เช่า'),
+              tenant_name: m.tenant_name || 'ผู้เช่า',
               tenant_id: m.tenant_id || m.room_id,
               room_price: p.roomAmount,
               units_used: p.electricUnits,
@@ -162,10 +143,10 @@ export default function OwnerMonthlyBillingPage() {
               water_amount: p.waterAmount,
               common_fee: p.commonFee,
               total_amount: p.total,
-              billing_cycle: meterCycle,
+              billing_cycle: currentCycle,
               due_date: p.due_date,
               lines: p.lines,
-              photo_url: m.photo_url || null,
+              photo_url: m.cycle_reading.photo_url || null,
             });
           }
         });
@@ -222,23 +203,14 @@ export default function OwnerMonthlyBillingPage() {
     if (readyRooms.length === 0) return;
     setBatchIssuing(true);
     try {
-      let successCount = 0;
-      for (const room of readyRooms) {
-        const res = await fetch('/api/owner/billing', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            room_number: room.room_number,
-            title: `ค่าเช่าห้องและสาธารณูปโภค (${room.billing_cycle})`,
-            billing_cycle: room.billing_cycle,
-            bill_type: 'monthly',
-          }),
-        });
-        const d = await res.json();
-        if (d.success) successCount++;
-      }
-
-      showToast(`📝 สร้างร่างบิลแล้ว ${successCount} ห้อง ตรวจแล้วกดส่งในแท็บ "ร่าง"`, 'success');
+      // One call: lib/meters.ts issues a draft for every room with a reading of the cycle (no duplicates)
+      const res = await fetch('/api/owner/billing/issue-month', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cycle: readyRooms[0].billing_cycle }),
+      });
+      const d = await res.json();
+      showToast(d.message || (d.success ? 'สร้างร่างบิลแล้ว' : 'ออกบิลไม่สำเร็จ'), d.success ? 'success' : 'error');
       fetchBillingData();
     } catch (e: any) {
       showToast('เกิดข้อผิดพลาด: ' + e.message, 'error');
