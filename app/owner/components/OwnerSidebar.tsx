@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import { handleSignOut } from '@/lib/auth-client';
 import { useState, useEffect } from 'react';
 import versionData from '@/lib/version.json';
+import { isMenuItemVisible } from '@/lib/owner-only-paths';
 
 interface OwnerSidebarProps {
   isOpen?: boolean;
@@ -38,7 +39,7 @@ const navSections = [
       { href: '/owner/chat', label: 'แชทลูกหอ', icon: '💬' },
       { href: '/owner/maintenance', label: 'แจ้งซ่อม / แม่บ้าน', icon: '🔧' },
       { href: '/owner/rules', label: 'กฎและระเบียบหอ', icon: '⚖️' },
-      { href: '/owner/keepers', label: 'ทีมผู้ดูแล', icon: '🧹' },
+      { href: '/owner/keepers', label: 'พนักงาน', icon: '🧹' },
       { href: '/owner/settings', label: 'ตั้งค่าหอพัก', icon: '⚙️' },
     ],
   },
@@ -135,7 +136,7 @@ export default function OwnerSidebar({ isOpen, onClose }: OwnerSidebarProps) {
             {isCollapsed && <div className="h-px bg-white/5 my-2" />}
 
             <div className="space-y-0.5">
-              {section.items.map((item) => {
+              {section.items.filter((item) => isMenuItemVisible(item.href, (session?.user as any)?.role)).map((item) => {
                 const active = isActive(item.href);
                 return (
                   <Link

@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
+import { useRates } from '@/lib/use-rates';
 
 interface RoomMeterSummary {
   room_id: number;
@@ -17,14 +18,30 @@ interface RoomMeterSummary {
   units_used: number | null;
   photo_url: string | null;
   created_at: string | null;
+  needs_reading: boolean;
+  cycle_reading: { id: number; units: number | null; event: string } | null;
+  cycle_bill: { id: number; status: string } | null;
 }
+
+const BILL_STATUS_TEXT: Record<string, string> = {
+  draft: 'บิลร่าง', unpaid: 'ส่งบิลแล้ว', partial: 'ชำระบางส่วน', paid: 'ชำระแล้ว', overdue: 'เกินกำหนด', pendingcorrection: 'รอแก้ไขบิล',
+};
+const thaiMonth = (cycle: string) => {
+  const [y, m] = cycle.split('-').map(Number);
+  if (!y || !m) return cycle;
+  return new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString('th-TH', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+};
 
 export default function MetersOverviewPage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
 
   const [rooms, setRooms] = useState<RoomMeterSummary[]>([]);
+  const rates = useRates();
   const [loading, setLoading] = useState(true);
+  const [cycle, setCycle] = useState('');
+  const [issuing, setIssuing] = useState(false);
+  const [issueResult, setIssueResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   // Search, Filter, Pagination state
   const [searchQuery, setSearchQuery] = useState('');
@@ -39,6 +56,7 @@ export default function MetersOverviewPage() {
       const data = await res.json();
       if (data.success) {
         setRooms(data.data || []);
+        setCycle(data.cycle || '');
       }
     } catch (e) {
       console.error('Fetch meters error:', e);
@@ -96,6 +114,32 @@ export default function MetersOverviewPage() {
   const occupiedCount = rooms.filter((r) => r.room_status === 'Occupied').length;
   const availableCount = rooms.filter((r) => r.room_status === 'Available' || r.room_status === 'ว่าง').length;
   const recordedCount = rooms.filter((r) => r.latest_reading !== null).length;
+  const needCount = rooms.filter((r) => r.needs_reading).length;
+  const cycleRecorded = rooms.filter((r) => r.needs_reading && r.cycle_reading).length;
+  const readyToIssue = rooms.filter((r) => r.needs_reading && r.cycle_reading && !r.cycle_bill).length;
+  // Thai date: past the 30th with readings but no bills sent yet
+  const thaiDay = Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', day: '2-digit' }).format(new Date()));
+  const lateToSend = thaiDay >= 30 && rooms.some((r) => r.needs_reading && (!r.cycle_bill || String(r.cycle_bill.status).toLowerCase() === 'draft'));
+
+  // Draft monthly bills for every room recorded this cycle (lib/meters.ts); rooms not recorded get no bill
+  const issueDrafts = async () => {
+    setIssuing(true);
+    setIssueResult(null);
+    try {
+      const res = await fetch('/api/owner/billing/issue-month', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cycle }),
+      });
+      const d = await res.json();
+      setIssueResult({ ok: !!d.success, message: d.message || (d.success ? 'ออกบิลร่างแล้ว' : 'ออกบิลไม่สำเร็จ') });
+      fetchSummary();
+    } catch (e: any) {
+      setIssueResult({ ok: false, message: 'ออกบิลไม่สำเร็จ: ' + e.message });
+    } finally {
+      setIssuing(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 lg:p-10 space-y-6">
@@ -107,7 +151,7 @@ export default function MetersOverviewPage() {
             <div>
               <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">ระบบจดมิเตอร์ไฟฟ้า (ห้องพักทั้งหมด)</h1>
               <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                อัตราค่าไฟฟ้า 4.88 บาท/หน่วย • ค่าน้ำเหมาจ่าย 100 บาท/เดือน • ส่วนกลาง 150 บาท/เดือน
+                อัตราค่าไฟฟ้า {rates.electricityPerUnit} บาท/หน่วย • ค่าน้ำเหมาจ่าย {rates.waterPerPerson} บาท/คน/เดือน • ส่วนกลาง {rates.commonFee} บาท/เดือน
               </p>
             </div>
           </div>
@@ -120,10 +164,35 @@ export default function MetersOverviewPage() {
             className="px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs sm:text-sm rounded-2xl shadow-xl transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
           >
             <span>📸</span>
-            <span>จดมิเตอร์รอบใหม่</span>
+            <span>จดมิเตอร์รอบนี้</span>
           </Link>
         </div>
       </div>
+
+      {/* The cycle being recorded now (server, Thai time) */}
+      {cycle && (
+        <div className="bg-slate-900/90 border border-amber-500/30 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-xs text-slate-400 font-bold">กำลังจดรอบ</p>
+            <p className="text-xl font-black text-amber-400">{thaiMonth(cycle)} <span className="font-mono text-sm text-slate-400">({cycle})</span></p>
+            <p className="text-[11px] text-slate-500">วันที่ 25–สิ้นเดือน = รอบเดือนนั้น · วันที่ 1–24 = จดช้าของรอบเดือนก่อน · จดแล้ว {cycleRecorded}/{needCount} ห้องที่มีสัญญา · ห้องที่ไม่จดจะไม่ออกบิล</p>
+            {lateToSend && <p className="text-[11px] text-rose-300 font-bold">⚠️ เลยวันที่ 30 แล้ว ยังมีห้องที่ยังไม่ได้ส่งบิลรอบนี้</p>}
+          </div>
+          <div className="flex flex-col items-stretch md:items-end gap-2">
+            <button
+              onClick={issueDrafts}
+              disabled={issuing || readyToIssue === 0}
+              className="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-black text-xs rounded-2xl"
+            >
+              {issuing ? 'กำลังออกบิล...' : `📝 ออกบิลรอบนี้ (ร่าง) — ${readyToIssue} ห้อง`}
+            </button>
+            <Link href="/owner/billing" className="text-[11px] text-sky-300 hover:underline text-right">ไปหน้าบิลเพื่อตรวจและส่ง →</Link>
+          </div>
+        </div>
+      )}
+      {issueResult && (
+        <p className={`text-xs font-bold ${issueResult.ok ? 'text-emerald-300' : 'text-rose-400'}`}>{issueResult.ok ? '✓' : '✕'} {issueResult.message}</p>
+      )}
 
       {/* Stats Badges */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -140,8 +209,8 @@ export default function MetersOverviewPage() {
           <span className="text-xl font-black text-slate-300">{availableCount} ห้อง</span>
         </div>
         <div className="bg-slate-900/80 border border-white/5 p-4 rounded-2xl">
-          <span className="text-[10px] font-black uppercase tracking-wider text-primary block">บันทึกมิเตอร์แล้ว</span>
-          <span className="text-xl font-black text-primary">{recordedCount} / {rooms.length}</span>
+          <span className="text-[10px] font-black uppercase tracking-wider text-primary block">จดรอบนี้แล้ว</span>
+          <span className="text-xl font-black text-primary">{cycleRecorded} / {needCount}</span>
         </div>
       </div>
 
@@ -228,7 +297,8 @@ export default function MetersOverviewPage() {
                 <tr>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">ห้อง</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">สถานะห้อง</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">รอบบิลล่าสุด</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">รอบนี้ ({cycle || '-'})</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">รอบที่จดล่าสุด</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">เลขมิเตอร์ล่าสุด</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-right">การดำเนินการ</th>
                 </tr>
@@ -249,6 +319,22 @@ export default function MetersOverviewPage() {
                         {room.room_status === 'Occupied' ? '🟢 มีคนอยู่' :
                          room.room_status === 'Reserved' ? '🟡 ติดจอง' : '⚪ ห้องว่าง'}
                       </span>
+                    </td>
+
+                    <td className="px-6 py-4 text-xs">
+                      {!room.needs_reading ? (
+                        <span className="text-slate-500">ไม่มีสัญญา</span>
+                      ) : room.cycle_reading ? (
+                        <span className="text-emerald-300 font-bold">
+                          ✅ {room.cycle_reading.units} หน่วย
+                          {room.cycle_reading.event === 'rollover' ? ' · วนรอบ' : room.cycle_reading.event === 'replaced' ? ' · เปลี่ยนเครื่อง' : ''}
+                          <span className="block text-[10px] text-slate-400 font-normal">
+                            {room.cycle_bill ? `${BILL_STATUS_TEXT[String(room.cycle_bill.status).toLowerCase()] || room.cycle_bill.status} #${room.cycle_bill.id}` : 'ยังไม่ออกบิล'}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-amber-300 font-bold">⏳ ยังไม่จด</span>
+                      )}
                     </td>
 
                     <td className="px-6 py-4 text-xs font-mono text-slate-300">

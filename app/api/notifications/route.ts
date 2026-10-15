@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { maybeRunReminders } from '@/lib/reminders';
 
 // Fetch notifications for the current user
 export async function GET(req: Request) {
@@ -9,7 +10,15 @@ export async function GET(req: Request) {
     if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    
+
+    // Timed reminders (lib/reminders.ts) are checked from here, at most every 10 minutes across all requests.
+    // Not awaited and errors only logged: the bell never waits for them or fails because of them.
+    try {
+      maybeRunReminders(new Date()).catch((e) => console.error('[reminders]', e));
+    } catch (e) {
+      console.error('[reminders]', e);
+    }
+
     const sql = getDb();
     let userId = (session.user as any)?.id;
     if (!userId && session.user.email) {

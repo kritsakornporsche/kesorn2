@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { parseThaiAddress } from '@/lib/address-parser';
+import type { PaymentInfo } from '@/lib/billing';
+import { contractPaymentLines } from '@/lib/settings-fields';
 
 interface PrintableContractModalProps {
   isOpen: boolean;
@@ -20,12 +22,17 @@ interface PrintableContractModalProps {
     start_date: string;
     end_date: string;
     deposit_amount: number;
+    form_deposit?: number;
     monthly_rent?: number;
     created_at?: string;
   } | null;
+  // Rates of this room from the server (lib/billing ratesForRoom); without them the notes show no numbers
+  rates?: { electricityPerUnit: number; waterPerPerson: number; lateFeePerDay?: number } | null;
 }
 
-export default function PrintableContractModal({ isOpen, onClose, contract }: PrintableContractModalProps) {
+const rateText = (n: number) => n.toLocaleString('th-TH', { maximumFractionDigits: 2 });
+
+export default function PrintableContractModal({ isOpen, onClose, contract, rates }: PrintableContractModalProps) {
   const page1Ref = useRef<HTMLDivElement>(null);
   const page2Ref = useRef<HTMLDivElement>(null);
   const page3Ref = useRef<HTMLDivElement>(null);
@@ -33,8 +40,18 @@ export default function PrintableContractModal({ isOpen, onClose, contract }: Pr
   const [downloading, setDownloading] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | '1' | '2' | '3'>('all');
+  // Where to transfer: PromptPay / bank account from the settings page (no numbers written in this file)
+  const [payment, setPayment] = useState<PaymentInfo | null>(null);
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch('/api/rates')
+      .then((res) => res.json())
+      .then((data) => { if (data.success) setPayment(data.payment || null); })
+      .catch(() => {});
+  }, [isOpen]);
 
   if (!isOpen || !contract) return null;
+  const paymentLines = contractPaymentLines(payment);
 
   const thaiMonths = [
     'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -50,7 +67,10 @@ export default function PrintableContractModal({ isOpen, onClose, contract }: Pr
     ? `${thaiMonths[new Date(contract.start_date).getMonth()]} ${new Date(contract.start_date).getFullYear() + 543}`
     : '....................................................';
 
-  const depositStr = Number(contract.deposit_amount || 0) > 0 ? Number(contract.deposit_amount).toLocaleString() : '';
+  // Deposit in total for the room while the contract is being prepared (form_deposit from the server, lib/contract-files
+  // formDeposit); pages that already pass the room's total (explore) have no form_deposit
+  const formDepositValue = Number(contract.form_deposit ?? contract.deposit_amount ?? 0);
+  const depositStr = formDepositValue > 0 ? formDepositValue.toLocaleString() : '';
   const rentStr = Number(contract.monthly_rent || 0) > 0 ? Number(contract.monthly_rent).toLocaleString() : '';
   const floorStr = (contract as any).floor || (contract.room_number?.length >= 2 ? contract.room_number[0] : '1');
 
@@ -304,7 +324,7 @@ export default function PrintableContractModal({ isOpen, onClose, contract }: Pr
                     </p>
                     <div className="pl-6 pt-1 space-y-1">
                       <p>
-                        • ค่ามัดจำจำนวน <Blank value={depositStr} dots={22} minW="min-w-[90px]" /> บาท ค่ามัดจำจะคืนให้ตอนออก เมื่อพักครบสัญญา อย่างน้อย 1 ปี หักค่าเสียหายภายในห้องและค่าทำความสะอาด
+                        • ผู้เช่าได้วางเงินประกันจำนวน <Blank value={depositStr} dots={22} minW="min-w-[90px]" /> บาท ผู้ให้เช่าจะคืนเงินประกันภายใน 7 วันนับแต่วันที่ผู้เช่าส่งมอบห้องคืน หากมีการหักค่าเสียหายหรือค่าใช้จ่ายที่ค้างชำระ ผู้ให้เช่าจะแจ้งรายการหักเป็นหนังสือ และคืนเงินส่วนที่เหลือภายใน 14 วันนับแต่วันที่ผู้เช่าส่งมอบห้องคืน
                       </p>
                       <p>
                         • ค่าเช่าจำนวน <Blank value={rentStr} dots={29} minW="min-w-[90px]" /> บาท เป็นค่าเช่าของเดือน <Blank value={startMonthStr} dots={52} minW="min-w-[180px]" />
@@ -314,7 +334,7 @@ export default function PrintableContractModal({ isOpen, onClose, contract }: Pr
 
                   <p>
                     ส่วนค่าเช่าชำระโดยกำหนดชำระค่าเช่าภายในวันที่ <span className="font-bold border-b border-dotted border-slate-600 px-1">5</span> ของทุกเดือน ในอัตราค่าเช่าเดือนละ{' '}
-                    <Blank value={rentStr} dots={25} minW="min-w-[90px]" /> บาท หากผู้เช่าชำระเงินล่าช้ากว่ากำหนด ผู้ให้เช่ามีสิทธิ์เรียกขอค่าล่าช้าตามที่ได้แจ้งก่อนหน้านี้
+                    <Blank value={rentStr} dots={25} minW="min-w-[90px]" /> บาท หากผู้เช่าชำระเงินล่าช้ากว่ากำหนด ผู้ให้เช่ามีสิทธิ์เรียกขอค่าล่าช้า{rates?.lateFeePerDay != null ? `วันละ ${rateText(rates.lateFeePerDay)} บาท` : 'ตามอัตราที่หอพักกำหนด'}
                   </p>
 
                   <p className="indent-8">
@@ -430,20 +450,24 @@ export default function PrintableContractModal({ isOpen, onClose, contract }: Pr
                 </div>
 
                 <div className="space-y-4 text-[15px] leading-[1.7] text-slate-900">
-                  <p>• ค่าน้ำคนละ 100 บาท</p>
-                  <p>• ค่าไฟหน่วยละ 8 บาท</p>
+                  <p>• ค่าน้ำคนละ {rates ? `${rateText(rates.waterPerPerson)} บาท` : 'ตามอัตราที่หอพักกำหนด'}</p>
+                  <p>• ค่าไฟหน่วยละ {rates ? `${rateText(rates.electricityPerUnit)} บาท` : 'ตามอัตราที่หอพักกำหนด'}</p>
                   <p>• ติดต่อเจ้าของหอพัก นายขันแก้ว คำบัว 09-3048-0607</p>
                   <p>• ติดต่อเจ้าของหอพัก นายวรรธนันท์ คำบัว 081-842-4948</p>
-                  <p>• หากพักไม่ ครบ 12 เดือน ผู้เช่าขอสงวนสิทธิ์ไม่คืนเงินมัดจำ</p>
+                  <p>• กรณีผู้เช่าเลิกสัญญาก่อนครบกำหนด ผู้ให้เช่ามีสิทธิ์ไม่คืนเงินประกัน เว้นแต่ผู้เช่าได้เช่ามาแล้วไม่น้อยกว่ากึ่งหนึ่งของระยะเวลาเช่า ได้แจ้งเลิกสัญญาเป็นหนังสือล่วงหน้าไม่น้อยกว่า 30 วัน และไม่ค้างชำระค่าเช่าหรือค่าใช้จ่ายอื่น</p>
                   <p>• ห้ามทิ้งขยะลงโถชักโครก</p>
                   <p>• ห้ามเสียงดัง ห้ามดื่มเหล้า สูบบุหรี่ ให้รักษาความสะอาดห้องพักสม่ำเสมอ</p>
                   <p>• โปรดแยกขยะและทิ้งขยะบริเวณที่เตรียมไว้</p>
-                  <div className="space-y-1 pt-1">
-                    <p>• หอพักเกษร กรณีโอนเงิน หมายเลขบัญชีธนาคารกสิกรไทย วรรธนันท์ คำบัว ออมทรัพย์บางซื่อ 020-2-56417-8</p>
-                    <p className="pl-3 font-semibold text-emerald-800">
-                      หรือ พร้อมเพย์ <span className="font-bold underline">0636040550</span> วรรธนันท์ คำบัว
-                    </p>
-                  </div>
+                  {(paymentLines.bank || paymentLines.promptpay) && (
+                    <div className="space-y-1 pt-1">
+                      {paymentLines.bank && <p>• {paymentLines.bank}</p>}
+                      {paymentLines.promptpay && (
+                        <p className={`${paymentLines.bank ? 'pl-3' : ''} font-semibold text-emerald-800`}>
+                          {paymentLines.bank ? '' : '• '}{paymentLines.promptpay}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 

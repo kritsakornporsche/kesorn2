@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 
 export async function GET() {
   try {
     const session = await auth();
-    if (!session || (session.user as any)?.role !== 'owner') {
+    if (!session) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    const guard = await requireRole(['owner']);
+    if ('response' in guard) return guard.response;
 
     const sql = getDb();
     const dormId = (session.user as any)?.dormId || 1;
@@ -37,9 +40,11 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    if (!session || (session.user as any)?.role !== 'owner') {
+    if (!session) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    const guard = await requireRole(['owner']);
+    if ('response' in guard) return guard.response;
 
     const body = await req.json();
     const apiKey = (body.apiKey !== undefined ? String(body.apiKey).trim() : null);

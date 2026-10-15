@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils';
 import Image from 'next/image';
 
 import PrintableContractModal from '@/components/PrintableContractModal';
+import { checkPaperFile } from '@/lib/paper-file-check';
+import { InspectionButton } from '@/components/InspectionModal';
 
 interface ContractDetail {
   id: number;
@@ -26,6 +28,8 @@ interface ContractDetail {
   status: string;
   slip_url: string | null;
   contract_file_url?: string | null;
+  contract_file_is_pdf?: boolean;
+  paper_signed_date?: string | null;
   signature_data: string | null;
   owner_signature_data: string | null;
   created_at: string;
@@ -45,6 +49,10 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [isUploadingSigned, setIsUploadingSigned] = useState(false);
   const [previewSignedDoc, setPreviewSignedDoc] = useState(false);
+  // Date written on the signed paper contract (required with the upload; at most today in Thai time)
+  const [signedDate, setSignedDate] = useState('');
+  const [signedFileError, setSignedFileError] = useState<string | null>(null);
+  const todayBangkok = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
 
   const handleDownloadDocx = async () => {
     if (!contract) return;
@@ -75,9 +83,14 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
 
   const handleUploadSignedContract = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      alert('ขนาดไฟล์ต้องไม่เกิน 10MB');
+    // Type from the file content (a renamed text file is refused), size up to 10MB
+    const problem = await checkPaperFile(file);
+    setSignedFileError(problem);
+    if (problem) return;
+    if (!signedDate) {
+      alert('กรุณาระบุวันที่เซ็นสัญญาก่อนอัปโหลด');
       return;
     }
     const reader = new FileReader();
@@ -90,13 +103,14 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contractId: contract?.id,
-            contract_file_url: base64Data,
+            file: base64Data,
+            signedDate,
           }),
         });
         const data = await res.json();
         if (data.success) {
-          alert('✓ บันทึกรูปภาพสัญญาเช่าฉบับลงนามจริงเรียบร้อยแล้ว!');
-          setContract(prev => prev ? ({ ...prev, contract_file_url: base64Data }) : null);
+          alert(`✓ ${data.message}`);
+          window.location.reload();
         } else {
           alert(data.message || 'เกิดข้อผิดพลาดในการบันทึก');
         }
@@ -194,14 +208,6 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             <span>{downloadingDocx ? 'กำลังสร้างไฟล์...' : 'โหลดไฟล์ Word (.docx)'}</span>
           </button>
 
-          <button
-            onClick={() => setIsPrintModalOpen(true)}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95"
-          >
-            <span>🖨️</span>
-            <span>พิมพ์สัญญาเช่า (PDF)</span>
-          </button>
-
           <span className={cn(
             "px-4 py-1.5 rounded-full text-xs font-bold border flex items-center gap-1.5",
             contract.status === 'Active' ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
@@ -268,7 +274,7 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             <span className="text-2xl font-black text-white">฿{Number(contract.monthly_rent || contract.room_price || 0).toLocaleString()}</span>
           </div>
           <div>
-            <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider block mb-1">ค่ามัดจำสัญญา (ชำระแล้ว)</span>
+            <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider block mb-1">เงินประกันตามสัญญา</span>
             <span className="text-2xl font-black text-emerald-400">฿{Number(contract.deposit_amount).toLocaleString()}</span>
           </div>
         </div>
@@ -323,6 +329,22 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             <span className="text-[11px] text-white/50">ลงชื่อกระดาษตอนเข้าพักแล้วถ่ายรูปบันทึกเข้าระบบ</span>
           </div>
 
+          {/* The signing date is recorded with every upload */}
+          <label className="flex items-center gap-3 text-xs text-white/70">
+            <span className="font-bold">วันที่เซ็นสัญญา:</span>
+            <input
+              type="date"
+              max={todayBangkok}
+              value={signedDate}
+              onChange={(e) => setSignedDate(e.target.value)}
+              className="bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white"
+            />
+            {contract.paper_signed_date && (
+              <span className="text-emerald-400">บันทึกไว้: {new Date(contract.paper_signed_date).toLocaleDateString('th-TH')}</span>
+            )}
+          </label>
+          {signedFileError && <p className="text-xs text-rose-400 font-bold">✕ {signedFileError}</p>}
+
           {contract.contract_file_url ? (
             <div className="p-6 bg-slate-950/60 border border-emerald-500/30 rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-6">
               <div className="flex items-center gap-5">
@@ -330,7 +352,11 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
                   onClick={() => setPreviewSignedDoc(true)}
                   className="w-20 h-28 rounded-2xl overflow-hidden border border-emerald-500/40 bg-slate-900 relative cursor-pointer group shadow-lg shrink-0"
                 >
-                  <img src={contract.contract_file_url} alt="Signed Contract" className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
+                  {contract.contract_file_is_pdf ? (
+                    <div className="w-full h-full flex items-center justify-center text-3xl">📄</div>
+                  ) : (
+                    <img src={contract.contract_file_url} alt="Signed Contract" className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
+                  )}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold transition-opacity">
                     🔍 ขยาย
                   </div>
@@ -375,6 +401,20 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             </div>
           )}
         </div>
+
+        {/* Move-in room inspection (does not hold up the contract taking effect) */}
+        {['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active'].includes(contract.status) && (
+          <div className="space-y-3 pt-2">
+            <h3 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+              <span>🔍</span>
+              <span>ตรวจสภาพห้องและทรัพย์สินก่อนเข้าอยู่</span>
+            </h3>
+            <div className="p-5 bg-slate-950/60 border border-white/10 rounded-3xl flex flex-wrap items-center gap-3">
+              <InspectionButton contractId={contract.id} />
+              <span className="text-[11px] text-white/40">บันทึกสภาพและรูปถ่ายแต่ละรายการ ผู้เช่ากดรับทราบผ่านหน้าสัญญาของตน (แก้ไขได้จนผู้เช่ารับทราบ)</span>
+            </div>
+          </div>
+        )}
 
         {/* Confirmation and Approval Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
@@ -458,7 +498,11 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
               </div>
             </div>
             <div className="rounded-2xl overflow-hidden flex-1 flex items-center justify-center bg-black/60 p-2">
-              <img src={contract.contract_file_url} alt="Signed Contract Full" className="max-h-[70vh] w-auto object-contain rounded-xl" />
+              {contract.contract_file_is_pdf ? (
+                <iframe src={contract.contract_file_url} title="Signed Contract PDF" className="w-full h-[70vh] rounded-xl bg-white" />
+              ) : (
+                <img src={contract.contract_file_url} alt="Signed Contract Full" className="max-h-[70vh] w-auto object-contain rounded-xl" />
+              )}
             </div>
             <button 
               onClick={() => setPreviewSignedDoc(false)} 

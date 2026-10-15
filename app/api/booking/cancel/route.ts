@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { forfeitBookingFee } from '@/lib/deposits';
+import { cancelUnpaidBooking } from '@/lib/bookings';
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -24,7 +26,7 @@ export async function POST(req: Request) {
         FROM contracts c
         JOIN tenants t ON c.tenant_id = t.id
         WHERE (t.email = ${session.user.email} OR t.user_id = ${(session.user as any).id || 0})
-        AND c.status IN ('PendingContract', 'PendingOwnerSignature')
+        AND c.status IN ('BookingRequested', 'BookingApproved', 'PendingContract', 'PendingOwnerSignature')
         ORDER BY c.id DESC
         LIMIT 1
       `;
@@ -39,12 +41,33 @@ export async function POST(req: Request) {
     }
 
     // 2. Check if the contract is strictly in PendingContract state (Can only cancel at 2.1.1)
-    const contractData = await sql`SELECT room_id, status FROM contracts WHERE id = ${targetContractId}`;
+    const contractData = await sql`SELECT room_id, tenant_id, status FROM contracts WHERE id = ${targetContractId}`;
     if (contractData.length === 0) {
       return NextResponse.json({ success: false, message: 'ไม่พบสัญญาที่ระบุ' }, { status: 404 });
     }
 
     const currentStatus = contractData[0].status;
+
+    // Only the booker can cancel their own booking (paid or not)
+    const owner = await sql`
+      SELECT t.id FROM tenants t
+      WHERE t.id = ${contractData[0].tenant_id}
+        AND (LOWER(t.email) = LOWER(${session.user.email}) OR t.user_id = ${(session.user as any).id || 0})
+      LIMIT 1
+    `;
+    if (owner.length === 0) {
+      return NextResponse.json({ success: false, message: 'ไม่พบรายการจองที่สามารถยกเลิกได้' }, { status: 404 });
+    }
+
+    // Not paid yet (waiting for approval / for the booking fee): cancel without forfeiting anything
+    if (currentStatus === 'BookingRequested' || currentStatus === 'BookingApproved') {
+      const cancelled = await cancelUnpaidBooking(Number(targetContractId), Number((session.user as any).id) || null, new Date());
+      if (!cancelled.ok) {
+        return NextResponse.json({ success: false, message: cancelled.message }, { status: 400 });
+      }
+      return NextResponse.json({ success: true, message: 'ยกเลิกคำขอจองแล้ว ห้องเปิดให้ผู้อื่นจองแล้ว' });
+    }
+
     if (currentStatus !== 'PendingContract' && currentStatus !== 'PendingOwnerSignature') {
       return NextResponse.json({
         success: false,
@@ -57,7 +80,7 @@ export async function POST(req: Request) {
     // 3. Mark contract as Cancelled (deposit non-refundable)
     await sql`
       UPDATE contracts 
-      SET status = 'Cancelled', renewal_note = 'ผู้จองกดยกเลิกการจอง (ไม่คืนเงินมัดจำ)'
+      SET status = 'Cancelled', renewal_note = 'ผู้จองกดยกเลิกการจอง (ไม่คืนค่าจอง)'
       WHERE id = ${targetContractId}
     `;
 
@@ -68,10 +91,15 @@ export async function POST(req: Request) {
         SET status = 'Cancelled' 
         WHERE (tenant_id IN (SELECT tenant_id FROM contracts WHERE id = ${targetContractId}) OR room_number IN (SELECT room_number FROM rooms WHERE id = ${targetRoomId}))
           AND bill_type = 'booking'
-          AND status != 'Cancelled'
+          AND LOWER(status) NOT IN ('cancelled', 'paid', 'partial')
       `;
     } catch (bErr) {
       console.warn('Could not cancel booking bill:', bErr);
+    }
+
+    // 3.2 The booking fee is not refunded: what is held as deposit becomes income
+    if (contractData[0].tenant_id) {
+      await forfeitBookingFee(Number(contractData[0].tenant_id));
     }
 
     // 4. Reset room status to Available immediately

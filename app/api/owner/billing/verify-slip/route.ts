@@ -1,15 +1,21 @@
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
+import { getDormPromptPay, getRates } from '@/lib/billing';
+import { formatBaht } from '@/lib/format';
+import { getPaymentSummaries, outstandingFor, recordPayment, slipPaidAt } from '@/lib/payments';
+import { afterMoveInPayment, missingMessage } from '@/lib/moveIn';
 import { NextResponse } from 'next/server';
 import { verifySlipWithSlipOK } from '@/lib/slipok';
 
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    const role = (session?.user as any)?.role;
-    if (!session?.user || (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin' && role !== 'tenant')) {
+    if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
 
     const body = await req.json();
     const { billId, slipUrl } = body;
@@ -22,7 +28,7 @@ export async function POST(req: Request) {
     let targetSlip = slipUrl;
 
     const billRes = await sql`
-      SELECT id, amount, common_fee, due_date, billing_cycle, created_at, status, slip_url 
+      SELECT id, amount, common_fee, due_date, late_fee_rate, billing_cycle, created_at, status, slip_url, bill_type
       FROM bills 
       WHERE id = ${billId} 
       LIMIT 1
@@ -39,17 +45,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'ไม่พบรูปภาพสลิปสำหรับตรวจสอบ' }, { status: 400 });
     }
 
-    const dormProfileRes = await sql`SELECT name, promptpay_name, promptpay_number FROM dormitory_profile LIMIT 1`;
+    const dormProfileRes = await sql`SELECT name, promptpay_name FROM dormitory_profile LIMIT 1`;
     const expectedDorm = dormProfileRes[0] || {};
 
     // 1. Run SlipOK Verification
     const verifyResult = await verifySlipWithSlipOK(targetSlip, {
       expectedReceiver: {
         name: expectedDorm.promptpay_name || expectedDorm.name || 'หอพักเกษร 2',
-        promptpay: expectedDorm.promptpay_number || '0636040550',
+        promptpay: (await getDormPromptPay(sql)) || '',
         dormName: expectedDorm.name || 'หอพักเกษร 2'
       },
-      billCreatedAt: bill.created_at
+      billCreatedAt: bill.created_at,
+      // The tenant usually sent this slip already; it may still pay once (recordPayment refuses a used reference)
+      allowRepeat: true,
     });
 
     if (!verifyResult.success || !verifyResult.readSuccess) {
@@ -61,7 +69,7 @@ export async function POST(req: Request) {
     }
 
     // 2. Anti-Cheat 15.3: Check if slip timestamp is BEFORE bill creation date
-    const slipDateTime = new Date(verifyResult.transDate ? `${verifyResult.transDate}T${verifyResult.transTime || '00:00:00'}` : Date.now());
+    const slipDateTime = slipPaidAt(verifyResult);
     const billCreatedAt = new Date(bill.created_at);
 
     if (slipDateTime.getTime() < billCreatedAt.getTime() - 60000) { // 1 min margin
@@ -72,40 +80,39 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // 3. Dynamic Late Fee Calculation (15.2: 50 THB/day, max 500 THB)
-    let dueDate = new Date(bill.due_date || `${bill.billing_cycle}-05T23:59:59`);
-    const diffTime = slipDateTime.getTime() - dueDate.getTime();
-    const daysOverdue = diffTime > 0 ? Math.ceil(diffTime / (1000 * 60 * 60 * 24)) : 0;
-    const penaltyAmount = Math.min(500, daysOverdue * 50);
-    const expectedTotal = Number(bill.amount) + penaltyAmount;
+    // 3. Late fee counted up to the actual transfer time (monthly rent bills only, no cap)
+    // Expected = what is still owed at the transfer time (partial payments deducted)
+    const paidSoFar = (await getPaymentSummaries(sql, [Number(billId)])).get(Number(billId))?.paid_total || 0;
+    const owed = outstandingFor(bill, paidSoFar, slipDateTime, await getRates(sql));
+    const { daysOverdue, lateFee: penaltyAmount } = owed;
+    const expectedTotal = owed.outstanding;
 
-    // 4. Verify Amount match
-    const actualAmount = Number(verifyResult.transAmount || 0);
-    if (Math.abs(actualAmount - expectedTotal) > 1) { // Allow minor rounding
-      return NextResponse.json({
-        success: false,
-        message: `❌ ยอดเงินในสลิป (฿${actualAmount.toLocaleString()}) ไม่ตรงกับยอดที่ต้องชำระ (฿${expectedTotal.toLocaleString()}) รวมค่าปรับ ${daysOverdue} วัน (฿${penaltyAmount})`,
-        data: verifyResult
-      }, { status: 400 });
+    // 4. Mark Paid through the single payment entry point (the slip amount must match exactly)
+    const actualAmount = Number(verifyResult.amount || 0);
+    const payment = await recordPayment(Number(billId), {
+      amount: actualAmount,
+      method: 'slip',
+      paidAt: slipDateTime,
+      slipRef: verifyResult.transRef || null,
+      slipData: JSON.stringify(verifyResult),
+      recordedBy: guard.user.id,
+    });
+    if (!payment.ok) {
+      const message = payment.reason === 'amount_mismatch'
+        ? `❌ ยอดเงินในสลิป (฿${formatBaht(actualAmount)}) ไม่ตรงกับยอดที่ต้องชำระ (฿${formatBaht(payment.required)}) รวมค่าปรับ ${daysOverdue} วัน (฿${formatBaht(penaltyAmount)})`
+        : payment.reason === 'duplicate_slip' ? '❌ สลิปนี้ถูกใช้ชำระเงินไปแล้ว ไม่สามารถใช้ซ้ำได้'
+        : payment.reason === 'already_paid' ? 'บิลนี้ชำระเรียบร้อยแล้ว' : 'ไม่สามารถบันทึกการชำระบิลนี้ได้';
+      return NextResponse.json({ success: false, message, data: verifyResult }, { status: 400 });
     }
 
-    // 5. Update Bill as Paid
-    await sql`
-      UPDATE bills
-      SET status = 'Paid',
-          penalty_amount = ${penaltyAmount},
-          days_overdue = ${daysOverdue},
-          slip_verified = 1,
-          slip_verified_at = NOW(),
-          slipok_trans_ref = ${verifyResult.transRef || null},
-          slip_data = ${JSON.stringify(verifyResult)},
-          paid_at = ${slipDateTime}
-      WHERE id = ${billId}
-    `;
+    // A paid move-in bill may complete its contract (lib/moveIn.ts)
+    const activation = payment.status === 'Paid' ? await afterMoveInPayment(sql, Number(billId)) : null;
 
     return NextResponse.json({
       success: true,
-      message: '✅ ตรวจสอบสลิปถูกต้องและอนุมัติการชำระเงินเรียบร้อยแล้ว',
+      message: '✅ ตรวจสอบสลิปถูกต้องและอนุมัติการชำระเงินเรียบร้อยแล้ว'
+        + (activation ? (activation.activated ? ' · สัญญามีผลแล้ว' : ` · ${missingMessage(activation.missing)}`) : ''),
+      activated: Boolean(activation?.activated),
       data: {
         ...verifyResult,
         penaltyAmount,

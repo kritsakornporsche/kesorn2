@@ -7,7 +7,7 @@ import type { NextRequest } from 'next/server';
  */
 export default function proxy(req: NextRequest) {
   const { nextUrl } = req;
-  const protectedPrefixes = ['owner', 'tenant', 'keeper', 'platform', 'admin', 'researcher'];
+  const protectedPrefixes = ['owner', 'tenant', 'keeper'];
   const pathParts = nextUrl.pathname.split('/');
   const currentPrefix = pathParts[1];
 

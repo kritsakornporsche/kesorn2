@@ -1,12 +1,22 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { getCurrentUser } from '@/lib/authz';
+import { canViewContract, formDeposit } from '@/lib/contract-files';
+import { depositFor, getPaymentInfo, getRates, ratesForRoom, type PaymentInfo, type Rates } from '@/lib/billing';
+import { contractPaymentLines } from '@/lib/settings-fields';
 import { Document, Paragraph, TextRun, Packer, AlignmentType } from 'docx';
 
-function createContractDocx(data: any) {
+const rateText = (n: number) => n.toLocaleString('th-TH', { maximumFractionDigits: 2 });
+
+function createContractDocx(data: any, rates: Rates, payment: PaymentInfo) {
+  // Transfer details from the settings page; a detail that is not set is left out
+  const pay = contractPaymentLines(payment);
+  const payText = [pay.bank, pay.promptpay].filter(Boolean).join(' ');
   const roomNumber = data.room_number || '-';
   const floor = data.floor || (roomNumber.length >= 2 ? roomNumber[0] : '1');
   const tenantName = data.tenant_name || '..........................................................';
-  const idCardNumber = data.id_card_number || '..........................................................';
+  // PDPA (commit 16): the ID number is not stored — always a blank line, filled in by hand when signing
+  const idCardNumber = '..........................................................';
   const tenantAddress = data.tenant_address || '................................................................................................................................................';
   const tenantPhone = data.tenant_phone || data.phone || '..............................................';
   const parentPhone = data.parent_phone || '..................................................................................';
@@ -89,7 +99,7 @@ function createContractDocx(data: any) {
         }),
         new Paragraph({
           children: [
-            new TextRun({ text: `ข้อ 2. ผู้เช่าตกลงชำระค่าเช่าให้แก่ผู้ให้เช่าล่วงหน้า ค่ามัดจำจำนวน ${depositAmount} บาท ค่ามัดจำจะคืนให้ตอนออก เมื่อพักครบสัญญา อย่างน้อย 1 ปี หักค่าเสียหายภายในห้องและค่าทำความสะอาด ค่าเช่าจำนวน ${monthlyRent} บาท เป็นค่าเช่าของเดือน ${startMonthStr} ส่วนค่าเช่าชำระโดยกำหนดชำระค่าเช่าภายในวันที่ 5 ของทุกเดือน ในอัตราค่าเช่าเดือนละ ${monthlyRent} บาท หากผู้เช่าชำระเงินล่าช้ากว่ากำหนด ผู้ให้เช่ามีสิทธิ์เรียกขอค่าล่าช้าตามที่ได้แจ้งก่อนหน้านี้`, size: 24, font: 'TH Sarabun New' })
+            new TextRun({ text: `ข้อ 2. ผู้เช่าตกลงชำระค่าเช่าให้แก่ผู้ให้เช่าล่วงหน้า ผู้เช่าได้วางเงินประกันจำนวน ${depositAmount} บาท ผู้ให้เช่าจะคืนเงินประกันภายใน 7 วันนับแต่วันที่ผู้เช่าส่งมอบห้องคืน หากมีการหักค่าเสียหายหรือค่าใช้จ่ายที่ค้างชำระ ผู้ให้เช่าจะแจ้งรายการหักเป็นหนังสือ และคืนเงินส่วนที่เหลือภายใน 14 วันนับแต่วันที่ผู้เช่าส่งมอบห้องคืน ค่าเช่าจำนวน ${monthlyRent} บาท เป็นค่าเช่าของเดือน ${startMonthStr} ส่วนค่าเช่าชำระโดยกำหนดชำระค่าเช่าภายในวันที่ 5 ของทุกเดือน ในอัตราค่าเช่าเดือนละ ${monthlyRent} บาท หากผู้เช่าชำระเงินล่าช้ากว่ากำหนด ผู้ให้เช่ามีสิทธิ์เรียกขอค่าล่าช้าวันละ ${rateText(rates.lateFeePerDay)} บาท`, size: 24, font: 'TH Sarabun New' })
           ]
         }),
         new Paragraph({
@@ -178,7 +188,7 @@ function createContractDocx(data: any) {
         }),
         new Paragraph({
           children: [
-            new TextRun({ text: '• ค่าน้ำคนละ 100 บาท  • ค่าไฟหน่วยละ 8 บาท', size: 22, font: 'TH Sarabun New' })
+            new TextRun({ text: `• ค่าน้ำคนละ ${rateText(rates.waterPerPerson)} บาท  • ค่าไฟหน่วยละ ${rateText(rates.electricityPerUnit)} บาท`, size: 22, font: 'TH Sarabun New' })
           ]
         }),
         new Paragraph({
@@ -188,7 +198,7 @@ function createContractDocx(data: any) {
         }),
         new Paragraph({
           children: [
-            new TextRun({ text: '• หากพักไม่ครบ 12 เดือน ผู้เช่าขอสงวนสิทธิ์ไม่คืนเงินมัดจำ', size: 22, font: 'TH Sarabun New' })
+            new TextRun({ text: '• กรณีผู้เช่าเลิกสัญญาก่อนครบกำหนด ผู้ให้เช่ามีสิทธิ์ไม่คืนเงินประกัน เว้นแต่ผู้เช่าได้เช่ามาแล้วไม่น้อยกว่ากึ่งหนึ่งของระยะเวลาเช่า ได้แจ้งเลิกสัญญาเป็นหนังสือล่วงหน้าไม่น้อยกว่า 30 วัน และไม่ค้างชำระค่าเช่าหรือค่าใช้จ่ายอื่น', size: 22, font: 'TH Sarabun New' })
           ]
         }),
         new Paragraph({
@@ -196,11 +206,11 @@ function createContractDocx(data: any) {
             new TextRun({ text: '• ห้ามทิ้งขยะลงโถชักโครก ห้ามเสียงดัง ห้ามดื่มเหล้า สูบบุหรี่ ให้รักษาความสะอาดห้องพักสม่ำเสมอ', size: 22, font: 'TH Sarabun New' })
           ]
         }),
-        new Paragraph({
+        ...(payText ? [new Paragraph({
           children: [
-            new TextRun({ text: '• หอพักเกษร กรณีโอนเงินหมายเลขบัญชีธนาคารกสิกรไทย วรรธนันท์ คำบัว 020-2-56417-8 หรือ พร้อมเพย์ 0636040550 วรรธนันท์ คำบัว', size: 22, font: 'TH Sarabun New' })
+            new TextRun({ text: `• ${payText}`, size: 22, font: 'TH Sarabun New' })
           ]
-        }),
+        })] : []),
       ]
     }]
   });
@@ -210,9 +220,28 @@ function createContractDocx(data: any) {
 
 export async function POST(req: Request) {
   try {
+    // Builds the document from what the page sends (amounts come from the database), only for signed-in users
+    if (!(await getCurrentUser())) {
+      return NextResponse.json({ success: false, message: 'กรุณาเข้าสู่ระบบ' }, { status: 401 });
+    }
     const body = await req.json();
-    const contract = body.contract || body;
-    const doc = createContractDocx(contract);
+    const contract = { ...(body.contract || body) };
+    // The deposit printed on the form comes from the server, never from the page: the contract's formDeposit when it
+    // exists, otherwise the room's total deposit (depositFor)
+    const sql = getDb();
+    const saved = Number(contract.id) > 0 ? await sql`
+      SELECT c.status, c.deposit_amount, r.room_number, r.deposit_amount AS room_deposit_amount
+      FROM contracts c JOIN rooms r ON r.id = c.room_id WHERE c.id = ${Number(contract.id)} LIMIT 1
+    ` : [];
+    if (saved[0]) {
+      contract.deposit_amount = formDeposit(saved[0]);
+    } else {
+      const room = contract.room_number ? await sql`SELECT room_number, deposit_amount FROM rooms WHERE room_number = ${String(contract.room_number)} LIMIT 1` : [];
+      contract.deposit_amount = depositFor(room[0] || { room_number: contract.room_number });
+    }
+    // Rates always from the dorm settings (demo room T01 has its own), never from the page
+    const rates = ratesForRoom(await getRates(getDb()), contract.room_number);
+    const doc = createContractDocx(contract, rates, await getPaymentInfo(getDb()));
     const buffer = await Packer.toBuffer(doc);
 
     const roomNumber = contract.room_number || 'Room';
@@ -240,9 +269,15 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, message: 'Missing contract id' }, { status: 400 });
     }
 
+    // Owner/manager, or the contract's own tenant (the document shows the ID card number and address)
+    const access = await canViewContract(Number(id));
+    if (!access.ok) {
+      return NextResponse.json({ success: false, message: access.status === 401 ? 'กรุณาเข้าสู่ระบบ' : 'Contract not found' }, { status: access.status });
+    }
+
     const sql = getDb();
     const rows = await sql`
-      SELECT c.*, r.room_number, r.floor, r.price, t.name as tenant_name, t.phone as tenant_phone, t.email as tenant_email, t.id_card_number, t.address as tenant_address
+      SELECT c.*, r.room_number, r.floor, r.price, r.deposit_amount as room_deposit_amount, t.name as tenant_name, t.phone as tenant_phone, t.email as tenant_email, t.id_card_number, t.address as tenant_address
       FROM contracts c
       LEFT JOIN rooms r ON c.room_id = r.id
       LEFT JOIN tenants t ON c.tenant_id = t.id
@@ -254,8 +289,9 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, message: 'Contract not found' }, { status: 404 });
     }
 
-    const contract = rows[0];
-    const doc = createContractDocx(contract);
+    const contract = { ...rows[0], deposit_amount: formDeposit(rows[0]) };
+    const rates = ratesForRoom(await getRates(sql), contract.room_number);
+    const doc = createContractDocx(contract, rates, await getPaymentInfo(sql));
     const buffer = await Packer.toBuffer(doc);
 
     const filename = `สัญญาเช่า_หอพักเกษร_ห้อง${contract.room_number}_${(contract.tenant_name || '').replace(/\s+/g, '_')}.docx`;

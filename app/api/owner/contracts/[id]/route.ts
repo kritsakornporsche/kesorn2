@@ -1,12 +1,16 @@
 import { getDb } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
+import { formDeposit, withPaperLink } from '@/lib/contract-files';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session || !session.user) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
+  const guard = await requireRole(['owner', 'manager']);
+  if ('response' in guard) return guard.response;
   const sql = getDb();
 
   try {
@@ -29,7 +33,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         r.room_number,
         r.room_type,
         r.price as room_price,
-        r.price as monthly_rent
+        r.price as monthly_rent,
+        r.deposit_amount as room_deposit_amount
       FROM contracts c
       JOIN tenants t ON c.tenant_id = t.id
       JOIN rooms r ON c.room_id = r.id
@@ -40,7 +45,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ success: false, message: 'Contract not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, data: data[0] });
+    return NextResponse.json({ success: true, data: { ...withPaperLink(data[0]), form_deposit: formDeposit(data[0]) } });
   } catch (error: any) {
     console.error('[API Contract GET Error]', error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

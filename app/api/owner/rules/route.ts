@@ -1,4 +1,5 @@
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
@@ -21,6 +22,8 @@ async function verifyDormOwner(sql: any, user: any, dormId: number) {
 export async function GET(req: Request) {
   try {
     const session = await auth();
+    const guard = await requireRole(['owner']);
+    if ('response' in guard) return guard.response;
     const { searchParams } = new URL(req.url);
     const dormIdParam = searchParams.get('dormId');
     const dormId = dormIdParam ? parseInt(dormIdParam, 10) : ((session?.user as any)?.dormId ? parseInt((session?.user as any).dormId, 10) : 1);
@@ -68,6 +71,8 @@ export async function POST(req: Request) {
     if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    const guard = await requireRole(['owner']);
+    if ('response' in guard) return guard.response;
 
     const body = await req.json();
     const { dormId, title, description, category, fineAmount, isActive, sortOrder } = body;
@@ -120,6 +125,8 @@ export async function PUT(req: Request) {
     if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    const guard = await requireRole(['owner']);
+    if ('response' in guard) return guard.response;
 
     const body = await req.json();
     const { id, title, description, category, fineAmount, isActive, sortOrder } = body;
@@ -168,6 +175,8 @@ export async function DELETE(req: Request) {
     if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    const guard = await requireRole(['owner']);
+    if ('response' in guard) return guard.response;
 
     const { searchParams } = new URL(req.url);
     const ruleId = searchParams.get('id');
