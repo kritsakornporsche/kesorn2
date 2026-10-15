@@ -80,7 +80,7 @@ export async function POST(req: Request) {
     // 3. Mark contract as Cancelled (deposit non-refundable)
     await sql`
       UPDATE contracts 
-      SET status = 'Cancelled', renewal_note = 'ผู้จองกดยกเลิกการจอง (ไม่คืนเงินมัดจำ)'
+      SET status = 'Cancelled', renewal_note = 'ผู้จองกดยกเลิกการจอง (ไม่คืนค่าจอง)'
       WHERE id = ${targetContractId}
     `;
 

@@ -58,7 +58,9 @@ export async function POST(request: Request) {
   const sql = getDb();
 
   try {
-    const { roomId, currentStep, bookingData } = await request.json();
+    const { roomId, currentStep, bookingData: rawData } = await request.json();
+    // PDPA (commit 16b): the ID number and the card photo are never kept, not even in a booking draft
+    const { id_card_number: _n, id_card_image: _i, ...bookingData } = (rawData && typeof rawData === 'object') ? rawData : {};
 
     const parsedRoomId = parseInt(roomId);
     if (isNaN(parsedRoomId) || !currentStep) {

@@ -511,11 +511,11 @@ export default function OwnerContractsPage() {
             <div className="flex items-center gap-3">
               <div className="w-1.5 h-8 bg-primary rounded-full" />
               <h1 className="text-3xl font-black text-foreground tracking-tight">
-                สัญญาเช่า & คืนค่ามัดจำห้องพัก
+                สัญญาเช่า
               </h1>
             </div>
             <p className="text-muted-foreground text-sm font-medium ml-4 mt-1">
-              ตรวจสอบสัญญาเช่า จัดการคำขอต่อสัญญา พิมพ์สัญญา A4 และคืนค่ามัดจำด้วย Dynamic PromptPay QR
+              ตรวจสอบสัญญาเช่า จัดการคำขอต่อสัญญา และพิมพ์สัญญา (คืนเงินประกันทำที่หน้าย้ายออก)
             </p>
           </div>
           <button
@@ -670,7 +670,7 @@ export default function OwnerContractsPage() {
                     <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ห้อง / ลูกหอ</th>
                     <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ที่อยู่ตามสัญญาเช่า</th>
                     <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ระยะเวลาสัญญา</th>
-                    <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">ค่ามัดจำ</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">เงินประกัน</th>
                     <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest">สถานะ</th>
                     <th className="px-8 py-5 text-[10px] font-black text-foreground/50 uppercase tracking-widest text-center">พิมพ์สัญญา / จัดการ</th>
                   </tr>
@@ -735,10 +735,10 @@ export default function OwnerContractsPage() {
                             <button
                               onClick={() => {
                                 setPreviewingFileUrl(c.slip_url || null);
-                                setPreviewingTitle(`สลิปเงินมัดจำ/จอง ห้อง ${c.room_number} (${c.tenant_name})`);
+                                setPreviewingTitle(`สลิปค่าจอง ห้อง ${c.room_number} (${c.tenant_name})`);
                               }}
                               className="mt-1 px-2.5 py-0.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
-                              title="คลิกเพื่อดูสลิปเงินมัดจำ/จอง"
+                              title="คลิกเพื่อดูสลิปค่าจอง"
                             >
                               <span>📸</span> ดูสลิป
                             </button>
@@ -1403,7 +1403,7 @@ export default function OwnerContractsPage() {
         {/* PDPA OCR Consent Modal */}
         <PdpaOcrConsentModal
           isOpen={isPdpaModalOpen}
-          title="หนังสือยินยอมการเก็บและประมวลผลบัตรประชาชน (PDPA)"
+          title="ยินยอมให้ประมวลผลภาพบัตรประชาชนเพื่ออ่านชื่อและที่อยู่ (PDPA)"
           actionText="ยินยอมและอ่านข้อมูลบัตรด้วย AI"
           onClose={() => {
             setIsPdpaModalOpen(false);

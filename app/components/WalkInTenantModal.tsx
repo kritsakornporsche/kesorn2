@@ -435,10 +435,10 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                     />
                     <div className="text-[11px] leading-relaxed">
                       <span className="font-bold text-white block">
-                        ยินยอมการเก็บรวบรวมและประมวลผลข้อมูลบัตรประชาชน (PDPA) <span className="text-rose-400">*</span>
+                        ยินยอมให้ประมวลผลภาพบัตรเพื่ออ่านชื่อ/ที่อยู่ (ไม่จัดเก็บ) (PDPA) <span className="text-rose-400">*</span>
                       </span>
                       <span className="text-slate-400">
-                        ยินยอมให้ส่งภาพถ่ายบัตรประชาชนเพื่อประมวลผลด้วย Google Gemini AI Vision สำหรับการทำสัญญาเช่า
+                        ส่งภาพถ่ายบัตรให้ Google Gemini AI อ่านชื่อและที่อยู่มากรอกฟอร์ม · ระบบไม่จัดเก็บเลขบัตรประชาชนและรูปบัตร
                       </span>
                     </div>
                   </label>
@@ -800,7 +800,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
       {/* PDPA OCR Consent Modal */}
       <PdpaOcrConsentModal
         isOpen={isPdpaModalOpen}
-        title="หนังสือยินยอมการเก็บและประมวลผลบัตรประชาชน (PDPA)"
+        title="ยินยอมให้ประมวลผลภาพบัตรประชาชนเพื่ออ่านชื่อและที่อยู่ (PDPA)"
         actionText="ยินยอมและอ่านข้อมูลบัตรด้วย AI"
         onClose={() => {
           setIsPdpaModalOpen(false);

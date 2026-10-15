@@ -155,7 +155,7 @@ export async function GET(req: Request) {
     recentBook.forEach((b: any) => {
       recentActivities.push({
         type: 'booking',
-        title: `มีการจองห้อง ${b.room_number} จากคุณ${b.tenant_name} (มัดจำ ฿${Number(b.deposit_amount).toLocaleString()})`,
+        title: `มีการจองห้อง ${b.room_number} จากคุณ${b.tenant_name} (ค่าจอง ฿${Number(b.deposit_amount).toLocaleString()})`,
         time: b.created_at,
         badge: '🟡 รายการจองใหม่'
       });

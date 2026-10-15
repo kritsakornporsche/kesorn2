@@ -274,7 +274,7 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             <span className="text-2xl font-black text-white">฿{Number(contract.monthly_rent || contract.room_price || 0).toLocaleString()}</span>
           </div>
           <div>
-            <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider block mb-1">ค่ามัดจำสัญญา (ชำระแล้ว)</span>
+            <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider block mb-1">เงินประกันตามสัญญา</span>
             <span className="text-2xl font-black text-emerald-400">฿{Number(contract.deposit_amount).toLocaleString()}</span>
           </div>
         </div>

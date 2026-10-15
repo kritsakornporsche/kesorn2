@@ -14,7 +14,7 @@ export const PdpaOcrConsentModal: React.FC<PdpaOcrConsentModalProps> = ({
   isOpen,
   onClose,
   onConsent,
-  title = 'หนังสือยินยอมการเก็บรวบรวมและประมวลผลข้อมูลส่วนบุคคล (PDPA)',
+  title = 'ยินยอมให้ประมวลผลภาพบัตรประชาชนเพื่ออ่านชื่อและที่อยู่ (PDPA)',
   actionText = 'ยินยอมและส่งภาพประมวลผล OCR',
 }) => {
   const [agreed, setAgreed] = useState(false);
@@ -54,7 +54,7 @@ export const PdpaOcrConsentModal: React.FC<PdpaOcrConsentModalProps> = ({
           <div className="p-3.5 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex items-start gap-2.5 text-blue-200 text-[11px]">
             <span className="text-base leading-none">💡</span>
             <p>
-              เพื่อความสะดวกรวดเร็วและลดความผิดพลาดในการพิมพ์สัญญาเช่า ระบบจะใช้ระบบ <strong>Google Gemini Vision AI</strong> ในการอ่านข้อความจากภาพถ่ายบัตรประชาชนของท่านโดยอัตโนมัติ
+              เพื่อความสะดวกรวดเร็วและลดความผิดพลาดในการพิมพ์สัญญาเช่า ระบบจะส่งภาพถ่ายบัตรประชาชนให้ <strong>Google Gemini Vision AI</strong> อ่าน<strong>ชื่อ-นามสกุลและที่อยู่</strong>มากรอกในฟอร์มให้อัตโนมัติ · <strong>ระบบไม่จัดเก็บเลขบัตรประชาชนและรูปบัตร</strong>
             </p>
           </div>
 
@@ -64,12 +64,12 @@ export const PdpaOcrConsentModal: React.FC<PdpaOcrConsentModalProps> = ({
             </h4>
             <ul className="space-y-2 list-disc list-inside text-[11px] text-slate-300">
               <li>
-                <strong className="text-slate-100">ข้อมูลที่นำไปประมวลผล:</strong> ภาพถ่ายหน้าบัตรประชาชน, เลขประจำตัวประชาชน 13 หลัก, ชื่อ-นามสกุล, และที่อยู่ตามทะเบียนราษฎร์
+                <strong className="text-slate-100">ข้อมูลที่นำไปประมวลผล:</strong> ภาพถ่ายหน้าบัตรประชาชน (ส่งไปอ่านครั้งเดียว) → ระบบรับกลับมาเฉพาะชื่อ-นามสกุลและที่อยู่ · <strong>ไม่อ่าน ไม่รับ และไม่จัดเก็บเลขประจำตัวประชาชน 13 หลัก</strong> · ไม่บันทึกรูปบัตรไว้ในระบบ
               </li>
               <li>
                 <strong className="text-slate-100">Google Gemini นำข้อมูลไปทำอะไรบ้าง:</strong>
                 <div className="pl-4 pt-1 space-y-1 text-[11px] text-slate-300">
-                  <p>• <strong>สกัดตัวอักษรและข้อมูล (OCR Extraction):</strong> นำภาพมาแปลงเป็นตัวหนังสือและนำส่งกลับมายังระบบหอพัก เพื่อกรอกลงในแบบฟอร์มสัญญาเช่าฉบับจริงโดยอัตโนมัติเท่านั้น</p>
+                  <p>• <strong>สกัดตัวอักษรและข้อมูล (OCR Extraction):</strong> อ่านชื่อ-นามสกุลและที่อยู่จากภาพแล้วส่งกลับมากรอกในแบบฟอร์มเท่านั้น (เลขบัตรกรอกด้วยมือในสัญญากระดาษตอนเซ็น)</p>
                   <p>• <strong>ไม่นำข้อมูลไปเทรนโมเดล AI (No AI Training):</strong> ภายใต้ข้อกำหนดการใช้งาน Google Cloud / Gemini Enterprise API ข้อมูลภาพและข้อความที่ส่งผ่าน API จะ<strong>ไม่ถูกนำไปใช้ฝึกฝน (Train/Fine-tune) โมเดล AI สาธารณะของ Google</strong></p>
                   <p>• <strong>ไม่เผยแพร่หรือส่งต่อบุคคลภายนอก:</strong> ข้อมูลจะถูกประมวลผลแบบชั่วคราวในหน่วยความจำของ API และไม่ถูกส่งต่อไปยังบุคคลภายนอกหรือระบบอื่นนอกเหนือจากระบบหอพักเกษร 2</p>
                 </div>
@@ -78,7 +78,7 @@ export const PdpaOcrConsentModal: React.FC<PdpaOcrConsentModalProps> = ({
                 <strong className="text-slate-100">มาตรฐานการส่งข้อมูล (Security in Transit):</strong> ภาพจะถูกส่งผ่านช่องทางเข้ารหัสความปลอดภัยระดับสูง (HTTPS / TLS 1.3) ไปยังศูนย์ข้อมูลของ Google โดยตรง
               </li>
               <li>
-                <strong className="text-slate-100">สิทธิ์ของเจ้าของข้อมูลส่วนบุคคล:</strong> ท่านมีสิทธิ์ในการตรวจสอบ แก้ไข หรือขอลบข้อมูลเอกสารสัญญาและบัตรประชาชนได้ตามที่กฎหมาย PDPA กำหนด
+                <strong className="text-slate-100">สิทธิ์ของเจ้าของข้อมูลส่วนบุคคล:</strong> ท่านมีสิทธิ์ตรวจสอบ แก้ไข หรือขอลบข้อมูลส่วนบุคคลที่ระบบเก็บ (ชื่อ ที่อยู่ เบอร์ติดต่อ และเอกสารสัญญา) ได้ตามที่กฎหมาย PDPA กำหนด
               </li>
             </ul>
           </div>
@@ -92,7 +92,7 @@ export const PdpaOcrConsentModal: React.FC<PdpaOcrConsentModalProps> = ({
                 className="mt-0.5 w-4 h-4 rounded border-slate-600 text-blue-600 focus:ring-blue-500 focus:ring-offset-slate-900 cursor-pointer"
               />
               <span className="text-xs font-semibold text-slate-200">
-                ข้าพเจ้ายินยอมให้ส่งภาพถ่ายบัตรประชาชนเพื่อประมวลผลด้วย Google Gemini AI และยอมรับนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA)
+                ข้าพเจ้ายินยอมให้ส่งภาพถ่ายบัตรประชาชนให้ Google Gemini AI อ่านชื่อและที่อยู่ (ระบบไม่จัดเก็บเลขบัตรและรูปบัตร) และยอมรับนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA)
               </span>
             </label>
           </div>

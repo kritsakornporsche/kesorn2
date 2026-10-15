@@ -215,7 +215,8 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
             body: JSON.stringify({
               roomId: parseInt(roomId),
               currentStep: step,
-              bookingData
+              // The card photo stays in the browser (preview only) — never saved on the server (PDPA)
+              bookingData: { ...bookingData, id_card_image: '' }
             })
           });
         } catch (e) {
@@ -1053,7 +1054,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                 <div className="space-y-4">
                   <div className="p-3.5 bg-primary/10 border border-primary/20 rounded-2xl text-xs text-primary flex items-center gap-2.5">
                     <span className="text-base">🪪</span>
-                    <span><strong>ชื่อ-นามสกุล และเลขประจำตัวประชาชน:</strong> จะถูกอ่านและกรอกจากบัตรประชาชนอัตโนมัติในขั้นตอนถัดไป (AI OCR)</span>
+                    <span><strong>ชื่อ-นามสกุลและที่อยู่:</strong> จะถูกอ่านและกรอกจากบัตรประชาชนอัตโนมัติในขั้นตอนถัดไป (AI OCR) · ระบบไม่จัดเก็บเลขบัตรและรูปบัตร</span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1303,7 +1304,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                           Google Gemini AI Vision กำลังอ่านข้อมูลบัตรประชาชน...
                         </span>
                         <span className="text-[10px] text-muted-foreground">
-                          กำลังดึงเลขบัตร 13 หลัก, ชื่อ-นามสกุล, และที่อยู่เพื่อกรอกลงสัญญา
+                          กำลังอ่านชื่อ-นามสกุลและที่อยู่จากบัตร...
                         </span>
                       </div>
                     </div>
@@ -1352,10 +1353,10 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                             </div>
                             <div>
                               <span className="text-xs font-bold text-foreground block">
-                                บันทึกรูปบัตรประชาชนเรียบร้อยแล้ว
+                                อ่านข้อมูลจากบัตรแล้ว (ระบบไม่บันทึกรูปบัตร)
                               </span>
                               <span className="text-[10px] text-emerald-400 font-bold">
-                                ✓ ข้อมูลถูกนำไปกรอกลงในแบบฟอร์มสัญญาเรียบร้อย
+                                ✓ กรอกชื่อและที่อยู่ลงในแบบฟอร์มแล้ว
                               </span>
                             </div>
                           </div>

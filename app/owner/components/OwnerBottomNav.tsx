@@ -142,7 +142,7 @@ export default function OwnerBottomNav() {
         {
           href: '/owner/bookings',
           label: 'รายการจองห้อง',
-          sublabel: 'ตรวจสอบคำขอจองห้องพักใหม่และสลิปมัดจำ',
+          sublabel: 'ตรวจสอบคำขอจองห้องพักใหม่และสลิปค่าจอง',
           icon: '🛎️',
         },
       ],

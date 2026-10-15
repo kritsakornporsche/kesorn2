@@ -265,7 +265,7 @@ export default function OwnerBookingsPage() {
             <span className="text-3xl">🔔</span>
             <div>
               <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">รายการจองห้องพัก (Booking Pipeline)</h1>
-              <p className="text-xs sm:text-sm text-slate-400 mt-0.5">จัดการกระบวนการจอง 3 ระดับ: ชำระมัดจำ ➔ ทำสัญญา/บิลแรกเข้า ➔ เข้าพักสมบูรณ์</p>
+              <p className="text-xs sm:text-sm text-slate-400 mt-0.5">ขอจอง ➔ อนุมัติ ➔ ชำระค่าจอง ➔ ทำสัญญา/บิลแรกเข้า ➔ เข้าพัก</p>
             </div>
           </div>
         </div>
@@ -502,7 +502,7 @@ export default function OwnerBookingsPage() {
                           className="w-full py-2 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold rounded-xl border border-white/10 transition-all flex items-center justify-center gap-2"
                         >
                           <span>🖼️</span>
-                          <span>ดูภาพสลิปมัดจำ</span>
+                          <span>ดูภาพสลิปค่าจอง</span>
                         </button>
                       </div>
                     ) : (
@@ -706,7 +706,7 @@ export default function OwnerBookingsPage() {
             <div className="space-y-4">
               {/* Personal Info */}
               <div className="p-4 bg-slate-950/80 rounded-2xl border border-white/5 space-y-3">
-                <h4 className="text-xs font-black uppercase tracking-widest text-primary">ข้อมูลผู้เช่าและบัตรประชาชน</h4>
+                <h4 className="text-xs font-black uppercase tracking-widest text-primary">ข้อมูลผู้เช่า</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">ชื่อ-นามสกุล:</span>
