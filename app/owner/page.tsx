@@ -55,6 +55,14 @@ export default function OwnerDashboardPage() {
   });
 
   const [loading, setLoading] = useState(true);
+  // Standard booking fee from the server (lib/billing bookingFeeFor via /api/rates)
+  const [bookingFee, setBookingFee] = useState<number | null>(null);
+  useEffect(() => {
+    fetch('/api/rates')
+      .then((res) => res.json())
+      .then((data) => { if (data.success && typeof data.bookingFee === 'number') setBookingFee(data.bookingFee); })
+      .catch(() => {});
+  }, []);
   const [activeTab, setActiveTab] = useState<'bookings' | 'slips' | 'unpaid' | 'maintenance'>('bookings');
   const [mobileChip, setMobileChip] = useState<'all' | 'bookings' | 'slips' | 'maintenance'>('all');
 
@@ -133,7 +141,7 @@ export default function OwnerDashboardPage() {
               <span className="text-xl">🔔</span>
               <div>
                 <p className="text-[11px] font-black text-amber-400">จองใหม่รอทำสัญญา</p>
-                <p className="text-[10px] text-slate-400">มัดจำ 1,000 บาท</p>
+                <p className="text-[10px] text-slate-400">ค่าจอง{bookingFee !== null ? ` ${formatBaht(bookingFee)} บาท` : ''}</p>
               </div>
             </div>
             <span className="w-7 h-7 rounded-full bg-amber-500 text-white font-black text-xs flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
@@ -345,7 +353,7 @@ export default function OwnerDashboardPage() {
                       <span className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-lg">🚪</span>
                       <div>
                         <p className="text-xs font-black text-white">มีรายการจองใหม่รอทำสัญญา ({stats.pendingBookings} รายการ)</p>
-                        <p className="text-[10px] text-slate-400">ตรวจสอบสลิปมัดจำ 1,000 บาท และอัปโหลดสัญญา</p>
+                        <p className="text-[10px] text-slate-400">ตรวจสอบสลิปค่าจอง{bookingFee !== null ? ` ${formatBaht(bookingFee)} บาท` : ''} และอัปโหลดสัญญา</p>
                       </div>
                     </div>
                     <Link

@@ -265,7 +265,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
   // Step 2 Submit to Walk-in API
   const handleFinalSubmit = async () => {
     if (!slipData) {
-      alert('กรุณาแนบรูปภาพสลิปการโอนเงิน 1,000 บาท');
+      alert(`กรุณาแนบรูปภาพสลิปการโอนเงินค่าจอง${qrData ? ` ฿${qrData.amount.toLocaleString()}` : ''}`);
       return;
     }
 
@@ -313,16 +313,16 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
   const depositAmount = qrData?.amount ?? null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl my-8">
-        
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-3xl max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden shadow-2xl">
+
         {/* Header */}
-        <div className="bg-slate-950/80 px-6 py-5 border-b border-white/10 flex items-center justify-between">
+        <div className="shrink-0 bg-slate-950/80 px-6 py-4 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-2xl">🚶</span>
             <div>
               <h2 className="text-lg font-black text-white">เพิ่มผู้เช่าแบบ Walk-in (เคาน์เตอร์หอพัก)</h2>
-              <p className="text-xs text-slate-400">สร้างบัญชีผู้เช่า สแกนบัตรปชช. และตรวจสลิปมัดจำอัตโนมัติ</p>
+              <p className="text-xs text-slate-400">สร้างบัญชีผู้เช่า สแกนบัตรปชช. และตรวจสลิปค่าจองอัตโนมัติ</p>
             </div>
           </div>
           <button
@@ -334,14 +334,14 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
         </div>
 
         {/* Step Indicator */}
-        <div className="grid grid-cols-3 bg-slate-950/40 border-b border-white/5 px-6 py-3 text-xs font-bold">
+        <div className="shrink-0 grid grid-cols-3 bg-slate-950/40 border-b border-white/5 px-6 py-3 text-xs font-bold">
           <div className={`flex items-center gap-2 ${step === 1 ? 'text-primary' : 'text-slate-500'}`}>
             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${step === 1 ? 'bg-primary text-white' : 'bg-white/10'}`}>1</span>
             <span>1. เตรียมข้อมูล & สแกนบัตร</span>
           </div>
           <div className={`flex items-center gap-2 ${step === 2 ? 'text-primary' : 'text-slate-500'}`}>
             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${step === 2 ? 'bg-primary text-white' : 'bg-white/10'}`}>2</span>
-            <span>2. ชำระมัดจำ & สลิป</span>
+            <span>2. ชำระค่าจอง & สลิป</span>
           </div>
           <div className={`flex items-center gap-2 ${step === 3 ? 'text-emerald-400' : 'text-slate-500'}`}>
             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${step === 3 ? 'bg-emerald-500 text-white' : 'bg-white/10'}`}>3</span>
@@ -349,8 +349,8 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
           </div>
         </div>
 
-        {/* Content Body */}
-        <div className="p-6 sm:p-8 space-y-6">
+        {/* Content Body (the only part that scrolls) */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 sm:p-8 space-y-6">
 
           {/* STEP 1: Info & OCR */}
           {step === 1 && (
@@ -376,7 +376,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                     ⚠️ ไม่มีห้องพักว่างหรือกำลังจะว่างในขณะนี้
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 max-h-48 overflow-y-auto p-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 p-1">
                     {rooms.map((r) => {
                       const isSelected = String(r.id) === String(selectedRoomId);
                       const isMovingOut = (r.status || '').toLowerCase().includes('moving') || (r.display_status || '').toLowerCase().includes('moving');
@@ -621,24 +621,6 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="button"
-                  onClick={handleProceedToPayment}
-                  className="px-6 py-2.5 bg-primary hover:bg-primary/90 text-white font-black rounded-xl text-xs shadow-lg transition-all hover:scale-105 active:scale-95"
-                >
-                  ถัดไป: สแกนจ่ายค่าจอง →
-                </button>
-              </div>
-
             </div>
           )}
 
@@ -666,7 +648,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                   <div>
                     <span className="text-xl font-black text-white">{depositAmount !== null ? `฿${depositAmount.toLocaleString()}` : '-'}</span>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      {qrData?.promptpayName || 'หอพักเกษร 2'} • พร้อมเพย์ {qrData?.promptpayNumber || '-'}
+                      {qrData?.promptpayName || '-'} • พร้อมเพย์ {qrData?.promptpayNumber || '-'}
                     </p>
                   </div>
 
@@ -728,25 +710,6 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
 
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex justify-between items-center pt-4 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setStep(1)}
-                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors"
-                >
-                  ← ย้อนกลับ
-                </button>
-                <button
-                  type="button"
-                  disabled={isSubmitting || !slipData}
-                  onClick={handleFinalSubmit}
-                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black rounded-xl text-xs shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
-                >
-                  <span>{isSubmitting ? '⏳ กำลังตรวจสอบสลิป & บันทึก...' : '✓ ตรวจสลิป & ยืนยันการจอง Walk-in'}</span>
-                </button>
-              </div>
-
             </div>
           )}
 
@@ -761,7 +724,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                 <span className="text-xs font-black uppercase tracking-widest text-emerald-400">Walk-in สำเร็จ</span>
                 <h3 className="text-2xl font-black text-white">บันทึกข้อมูลและล็อกห้องพักสำเร็จ</h3>
                 <p className="text-xs text-slate-400 max-w-md mx-auto">
-                  ระบบได้สร้างบัญชีผู้เช่า ตรวจสอบสลิปมัดจำ และปรับสถานะห้อง {submitResult?.roomNumber} เป็น <strong>Reserved</strong> เรียบร้อยแล้ว
+                  ระบบได้สร้างบัญชีผู้เช่า ตรวจสอบสลิปค่าจอง และปรับสถานะห้อง {submitResult?.roomNumber} เป็น <strong>Reserved</strong> เรียบร้อยแล้ว
                 </p>
               </div>
 
@@ -790,20 +753,65 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                 </div>
               </div>
 
-              <div className="flex justify-center gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-6 py-2.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl text-xs shadow-lg transition-all"
-                >
-                  เสร็จสิ้น / ปิดหน้าต่าง
-                </button>
-              </div>
-
             </div>
           )}
 
         </div>
+
+        {/* Footer: buttons of the current step, always visible */}
+        {step === 1 && (
+          <div className="shrink-0 flex justify-end gap-3 px-6 py-4 border-t border-white/10 bg-slate-950/60">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              onClick={handleProceedToPayment}
+              className="px-6 py-2.5 bg-primary hover:bg-primary/90 text-white font-black rounded-xl text-xs shadow-lg transition-all hover:scale-105 active:scale-95"
+            >
+              ถัดไป: สแกนจ่ายค่าจอง →
+            </button>
+          </div>
+        )}
+        {step === 2 && (
+          <div className="shrink-0 flex justify-between items-center gap-3 px-6 py-4 border-t border-white/10 bg-slate-950/60">
+            <button
+              type="button"
+              onClick={() => setStep(1)}
+              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors"
+            >
+              ← ย้อนกลับ
+            </button>
+            <div className="flex items-center gap-3">
+              {!qrLoading && !qrData && (
+                <span className="text-[11px] font-bold text-red-400">สร้าง QR ไม่ได้ — ยืนยันการจองไม่ได้</span>
+              )}
+              <button
+                type="button"
+                disabled={isSubmitting || !slipData || qrLoading || !qrData}
+                onClick={handleFinalSubmit}
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 text-white font-black rounded-xl text-xs shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+              >
+                <span>{isSubmitting ? '⏳ กำลังตรวจสอบสลิป & บันทึก...' : '✓ ตรวจสลิป & ยืนยันการจอง Walk-in'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+        {step === 3 && (
+          <div className="shrink-0 flex justify-center px-6 py-4 border-t border-white/10 bg-slate-950/60">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-6 py-2.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl text-xs shadow-lg transition-all"
+            >
+              เสร็จสิ้น / ปิดหน้าต่าง
+            </button>
+          </div>
+        )}
 
       </div>
 

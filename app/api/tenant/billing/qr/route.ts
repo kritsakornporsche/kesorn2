@@ -72,6 +72,8 @@ export async function GET(req: Request) {
       amount, 
       promptpayNumber,
       billTitle: billTitle || 'ค่าเช่าห้องพัก',
+      // Payee shown under the PromptPay number: the account name from /owner/settings (null when not set)
+      promptpayName: String(profileRes[0]?.promptpay_name || '').trim() || null,
       dormName: dormDisplayName || 'SmartDom Dormitory'
     });
 

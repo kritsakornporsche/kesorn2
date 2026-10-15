@@ -57,7 +57,7 @@ export default function TenantBillingPage() {
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [modalType, setModalType] = useState<'qr' | 'upload' | 'meter_photo' | 'dispute' | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [qrData, setQrData] = useState<{qrImage: string, amount: number, promptpayNumber: string, promptpayName?: string} | null>(null);
+  const [qrData, setQrData] = useState<{qrImage: string, amount: number, promptpayNumber: string, promptpayName?: string | null} | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState('');
 
@@ -713,6 +713,7 @@ export default function TenantBillingPage() {
                    <div className="flex flex-col items-center">
                      <img src={qrData.qrImage} alt="QR Code" className="w-52 h-52 object-contain bg-white p-2 rounded-xl shadow-md" />
                      <p className="text-xs text-muted-foreground mt-3 font-bold tracking-wider">พร้อมเพย์: {qrData.promptpayNumber}</p>
+                     {qrData.promptpayName && <p className="text-xs text-muted-foreground">ชื่อผู้รับเงิน: {qrData.promptpayName}</p>}
                    </div>
                 ) : (
                    <p className="text-rose-400 font-bold text-xs text-center">{qrError || 'ไม่สามารถโหลด QR Code ได้'}</p>
@@ -729,7 +730,7 @@ export default function TenantBillingPage() {
                  <PromptPayBankSelector
                    qrImage={qrData.qrImage}
                    promptpayNumber={qrData.promptpayNumber}
-                   promptpayName={qrData.promptpayName}
+                   promptpayName={qrData.promptpayName || undefined}
                    amount={Number(qrData?.amount ?? selectedBill.outstanding ?? selectedBill.total_amount ?? selectedBill.amount)}
                    fileName={`qr-bill-${selectedBill.id}.png`}
                  />

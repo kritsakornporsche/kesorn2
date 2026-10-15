@@ -458,10 +458,12 @@ export default function OwnerSettings() {
                 ].map(item => (
                   <label
                     key={item.key}
-                    className={`flex items-center gap-3 p-4 rounded-2xl border cursor-pointer select-none transition-all ${
+                    className={`flex items-center gap-3 p-4 rounded-2xl border select-none transition-all ${
+                      canEdit ? 'cursor-pointer' : 'cursor-default opacity-60'
+                    } ${
                       (formData as any)[item.key]
                         ? 'border-primary bg-primary/10 text-white'
-                        : 'border-border bg-secondary/40/50 text-muted-foreground hover:border-white/20'
+                        : `border-border bg-secondary/40/50 text-muted-foreground ${canEdit ? 'hover:border-white/20' : ''}`
                     }`}
                   >
                     <input
@@ -621,6 +623,13 @@ export default function OwnerSettings() {
             )}
             </fieldset>
 
+            {canEdit && message.text && (
+              <div role="alert" className={`p-4 rounded-2xl font-bold text-sm text-center ${
+                message.type === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400 border border-red-500/30'
+              }`}>
+                {message.type === 'error' ? '⛔ บันทึกไม่สำเร็จ: ' : '✓ '}{message.text}
+              </div>
+            )}
             {canEdit && (
               <button
                 type="submit"
