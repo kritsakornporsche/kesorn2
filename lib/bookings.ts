@@ -104,13 +104,36 @@ async function cancelUnpaidBookingBill(client: Client, billId: number | null) {
   if (billId) await client.query("UPDATE bills SET status = 'Cancelled' WHERE id = ? AND LOWER(status) = 'unpaid'", [billId]);
 }
 
+/** Tell the booker their booking ran out of time (key booking_expired:<contract>, migration 016). */
+async function notifyExpired(client: Client, c: { id: number; status: string }, now: Date) {
+  const who = (await client.query(
+    `SELECT r.room_number, COALESCE(t.user_id, u.id) AS user_id
+     FROM contracts c
+     LEFT JOIN rooms r ON r.id = c.room_id
+     LEFT JOIN tenants t ON t.id = c.tenant_id
+     LEFT JOIN users u ON t.user_id IS NULL AND LOWER(u.email) = LOWER(t.email)
+     WHERE c.id = ?`,
+    [c.id]
+  )).rows[0];
+  if (!who?.user_id) return;
+  const room = who.room_number || '-';
+  const message = c.status === 'BookingRequested'
+    ? `คำขอจองห้อง ${room} หมดเวลา: หอพักยังไม่ได้อนุมัติภายใน 20:00 — ส่งคำขอใหม่ได้ (รับคำขอ 08:00–20:00)`
+    : `การจองห้อง ${room} หมดเวลา: ไม่ได้ชำระค่าจองภายในเวลาที่กำหนด — ห้องถูกปล่อยว่างแล้ว`;
+  await client.query(
+    `INSERT IGNORE INTO notifications (user_id, title, message, type, is_read, link, created_at, event_key)
+     VALUES (?, 'การจองหมดเวลา', ?, 'booking', 0, '/explore/booking-status', ?, ?)`,
+    [who.user_id, message, now, `booking_expired:${c.id}`]
+  ).catch((e) => console.warn('[booking expired notify]', e));
+}
+
 /**
  * Expire requests not approved by 20:00 and approved bookings not paid within the upload window.
  * Rows are locked, so a payment arriving at the same moment either completes first or sees the booking expired.
  */
 export async function expireBookings(client: Client, now: Date): Promise<number> {
   const due = (await client.query(
-    "SELECT id, room_id, booking_bill_id FROM contracts WHERE status IN ('BookingRequested', 'BookingApproved') AND expires_at <= ? FOR UPDATE",
+    "SELECT id, status, room_id, booking_bill_id FROM contracts WHERE status IN ('BookingRequested', 'BookingApproved') AND expires_at <= ? FOR UPDATE",
     [now]
   )).rows;
   for (const c of due) {
@@ -120,6 +143,7 @@ export async function expireBookings(client: Client, now: Date): Promise<number>
     );
     await cancelUnpaidBookingBill(client, c.booking_bill_id);
     await releaseRoom(client, c.room_id);
+    await notifyExpired(client, c, now);
   }
   return due.length;
 }

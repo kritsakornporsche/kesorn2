@@ -4,11 +4,9 @@ import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
 import { daysPastDue, getRates } from '@/lib/billing';
 import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
-import { formatBaht } from '@/lib/format';
 import { expireDueBookings } from '@/lib/bookings';
+import { OVERDUE_ALERT_DAYS } from '@/lib/reminders';
 
-// Owner/manager are alerted when a bill is still unpaid this many days after its due date
-const OVERDUE_ALERT_DAYS = 15;
 
 export async function GET(req: Request) {
   try {
@@ -112,33 +110,7 @@ export async function GET(req: Request) {
       }))
       .sort((a: any, b: any) => b.days_overdue - a.days_overdue);
 
-    // One notification per bill per active owner/manager (the link identifies the bill, so it is not repeated)
-    if (overdueBills.length > 0) {
-      try {
-        const staff = await sql`SELECT id FROM users WHERE role IN ('owner', 'manager') AND COALESCE(is_active, 1) = 1`;
-        for (const bill of overdueBills) {
-          const link = `/owner/billing?bill=${bill.id}`;
-          for (const u of staff) {
-            const exists = await sql`SELECT id FROM notifications WHERE user_id = ${u.id} AND type = 'overdue_alert' AND link = ${link} LIMIT 1`;
-            if (exists.length > 0) continue;
-            await sql`
-              INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-              VALUES (
-                ${u.id},
-                'บิลค้างชำระเกิน 15 วัน',
-                ${`ห้อง ${bill.room_number || '-'} (${bill.tenant_name}) ค้างชำระ ${bill.days_overdue} วัน คงเหลือ ฿${formatBaht(bill.outstanding)}`},
-                'overdue_alert',
-                0,
-                ${link},
-                NOW()
-              )
-            `;
-          }
-        }
-      } catch (e) {
-        console.warn('[Overdue alert notify]', e);
-      }
-    }
+    // The alert for these bills is sent by lib/reminders.ts (once per bill to each active owner / manager)
 
     // 4. Expiring contracts within 30 days
     const expiringContractsRes = await sql`
