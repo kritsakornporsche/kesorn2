@@ -37,6 +37,7 @@ interface MonthlyBill {
   created_at: string;
   days_overdue?: number;
   late_fee?: number;
+  late_fee_per_day?: number;
   penalty_amount?: number;
   total_amount?: number;
   paid_total?: number;
@@ -653,7 +654,7 @@ export default function OwnerMonthlyBillingPage() {
                       </div>
                       {isOverdue && (
                         <div className="flex justify-between text-rose-400 font-bold">
-                          <span>ค่าปรับล่าช้า ({bill.days_overdue} วัน x {rates.lateFeePerDay} บ.):</span>
+                          <span>ค่าปรับล่าช้า ({bill.days_overdue} วัน x {bill.late_fee_per_day ?? rates.lateFeePerDay} บ.):</span>
                           <span className="font-mono">+฿{formatBaht(bill.late_fee)}</span>
                         </div>
                       )}

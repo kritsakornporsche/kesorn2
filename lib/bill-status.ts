@@ -3,7 +3,7 @@
 
 import { getDb } from '@/lib/db';
 import { Pool } from '@/lib/mysql-adapter';
-import { bangkokDate, calcDueDate } from '@/lib/billing';
+import { bangkokDate, calcDueDate, DEFAULT_RATES } from '@/lib/billing';
 
 /** Case-insensitive status check; older code paths wrote statuses in different cases. */
 export function isStatus(status: unknown, name: 'draft' | 'unpaid' | 'partial' | 'paid' | 'cancelled') {
@@ -37,7 +37,8 @@ export async function withTransaction<T>(work: (client: Client) => Promise<T>): 
 
 /**
  * Send draft bills to tenants: Draft -> Unpaid, due date recalculated from the send date
- * (5th of the next month, at least 3 days after sending), tenant notified, history recorded.
+ * (5th of the next month, at least 3 days after sending), the late fee per day in force saved on the bill
+ * (bills.late_fee_rate, so a later rate change does not change it), tenant notified, history recorded.
  * Bills that are not drafts are skipped and reported back.
  */
 export async function sendBills(billIds: number[], sentBy: number | null) {
@@ -58,7 +59,11 @@ export async function sendBills(billIds: number[], sentBy: number | null) {
       const dueDate = b.billing_cycle && /^\d{4}-\d{2}$/.test(b.billing_cycle)
         ? calcDueDate(b.billing_cycle, now)
         : bangkokDate(b.due_date || now);
-      await client.query("UPDATE bills SET status = 'Unpaid', sent_at = ?, due_date = ? WHERE id = ?", [now, dueDate, id]);
+      await client.query(
+        `UPDATE bills SET status = 'Unpaid', sent_at = ?, due_date = ?,
+           late_fee_rate = COALESCE((SELECT late_fee_per_day FROM dormitory_profile ORDER BY id LIMIT 1), ?) WHERE id = ?`,
+        [now, dueDate, DEFAULT_RATES.lateFeePerDay, id]
+      );
       await logStatus(client, id, b.status, 'Unpaid', null, sentBy);
       return { ...b, due_date: dueDate };
     });

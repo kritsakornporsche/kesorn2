@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { getRates } from '@/lib/billing';
+import { getRates, lateFeeRateOf } from '@/lib/billing';
 import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
 import { auth } from '@/auth';
 
@@ -98,6 +98,7 @@ export async function GET(req: Request) {
         ...b,
         days_overdue: owed.daysOverdue,
         late_fee: owed.lateFee,
+        late_fee_per_day: lateFeeRateOf(b, rates),
         base_amount: Number(b.amount),
         total_amount: owed.due,
         paid_total: s.paid_total,

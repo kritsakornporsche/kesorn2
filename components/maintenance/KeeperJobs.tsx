@@ -6,6 +6,7 @@
 // Waiting jobs are shown without the tenant's name / phone until taken.
 
 import { useEffect, useState } from 'react';
+import { useRates } from '@/lib/use-rates';
 import KeeperSidebar from '@/app/keeper/components/KeeperSidebar';
 import { KIND_TEXT, PhotoPicker, PhotoStrip, StateBadge, baht, postJson, thaiDateTime, type Job, type Kind } from '@/components/maintenance/shared';
 
@@ -67,6 +68,8 @@ export default function KeeperJobs({ kind }: { kind: Kind }) {
 }
 
 function KeeperJobCard({ job, onDone }: { job: Job; onDone: () => void }) {
+  // Cleaning jobs propose the dorm's cleaning fee (settings page) by default; the keeper may clear it, the owner decides
+  const { cleaningFee } = useRates();
   const [note, setNote] = useState('');
   const [photos, setPhotos] = useState<{ dataUrl: string; bytes: number }[]>([]);
   const [charge, setCharge] = useState('');
@@ -120,7 +123,10 @@ function KeeperJobCard({ job, onDone }: { job: Job; onDone: () => void }) {
         </button>
       )}
       {job.state === 'InProgress' && !finishing && (
-        <button onClick={() => setFinishing(true)} className="px-4 py-2 bg-emerald-500 text-slate-950 font-black rounded-xl">✓ ปิดงาน</button>
+        <button onClick={() => {
+          if (job.kind === 'cleaning' && charge === '' && cleaningFee > 0) { setCharge(String(cleaningFee)); setChargeNote('ค่าทำความสะอาด'); }
+          setFinishing(true);
+        }} className="px-4 py-2 bg-emerald-500 text-slate-950 font-black rounded-xl">✓ ปิดงาน</button>
       )}
       {job.state === 'InProgress' && finishing && (
         <div className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 space-y-2">

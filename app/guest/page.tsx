@@ -191,15 +191,20 @@ export default function GuestDashboardPage() {
   // QR PromptPay states
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState('');
 
   const fetchPromptPayQR = async () => {
     if (!booking) return;
     setQrLoading(true);
     try {
-      const res = await fetch(`/api/booking/qr?roomId=${booking.room_id}&amount=${firstBillTotal}`);
+      setQrError('');
+      const res = await fetch(`/api/booking/qr?roomId=${booking.room_id}&contractId=${booking.contract_id}`);
       const data = await res.json();
       if (data.success && data.qrImage) {
         setQrCodeUrl(data.qrImage);
+      } else {
+        setQrCodeUrl(null);
+        setQrError(data.message || 'ไม่สามารถโหลด QR Code ได้');
       }
     } catch (e) {
       console.error('Fetch PromptPay QR error:', e);
@@ -614,7 +619,7 @@ export default function GuestDashboardPage() {
                     className="w-full h-full object-contain"
                   />
                 ) : (
-                  <div className="text-xs text-rose-500 font-bold">ไม่สามารถโหลด QR Code ได้</div>
+                  <div className="text-xs text-rose-500 font-bold p-2 text-center">{qrError || 'ไม่สามารถโหลด QR Code ได้'}</div>
                 )}
               </div>
               <p className="text-[11px] text-slate-400 font-mono">สามารถใช้แอปธนาคารทุกแห่งสแกนชำระ ฿{firstBillTotal.toLocaleString()} ได้ทันที</p>

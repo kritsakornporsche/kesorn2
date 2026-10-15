@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     let targetSlip = slipUrl;
 
     const billRes = await sql`
-      SELECT id, amount, common_fee, due_date, billing_cycle, created_at, status, slip_url, bill_type
+      SELECT id, amount, common_fee, due_date, late_fee_rate, billing_cycle, created_at, status, slip_url, bill_type
       FROM bills 
       WHERE id = ${billId} 
       LIMIT 1

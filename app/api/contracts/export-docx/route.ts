@@ -2,12 +2,16 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getCurrentUser } from '@/lib/authz';
 import { canViewContract, formDeposit } from '@/lib/contract-files';
-import { depositFor, getRates, ratesForRoom, type Rates } from '@/lib/billing';
+import { depositFor, getPaymentInfo, getRates, ratesForRoom, type PaymentInfo, type Rates } from '@/lib/billing';
+import { contractPaymentLines } from '@/lib/settings-fields';
 import { Document, Paragraph, TextRun, Packer, AlignmentType } from 'docx';
 
 const rateText = (n: number) => n.toLocaleString('th-TH', { maximumFractionDigits: 2 });
 
-function createContractDocx(data: any, rates: Rates) {
+function createContractDocx(data: any, rates: Rates, payment: PaymentInfo) {
+  // Transfer details from the settings page; a detail that is not set is left out
+  const pay = contractPaymentLines(payment);
+  const payText = [pay.bank, pay.promptpay].filter(Boolean).join(' ');
   const roomNumber = data.room_number || '-';
   const floor = data.floor || (roomNumber.length >= 2 ? roomNumber[0] : '1');
   const tenantName = data.tenant_name || '..........................................................';
@@ -201,11 +205,11 @@ function createContractDocx(data: any, rates: Rates) {
             new TextRun({ text: '• ห้ามทิ้งขยะลงโถชักโครก ห้ามเสียงดัง ห้ามดื่มเหล้า สูบบุหรี่ ให้รักษาความสะอาดห้องพักสม่ำเสมอ', size: 22, font: 'TH Sarabun New' })
           ]
         }),
-        new Paragraph({
+        ...(payText ? [new Paragraph({
           children: [
-            new TextRun({ text: '• หอพักเกษร กรณีโอนเงินหมายเลขบัญชีธนาคารกสิกรไทย วรรธนันท์ คำบัว 020-2-56417-8 หรือ พร้อมเพย์ 0636040550 วรรธนันท์ คำบัว', size: 22, font: 'TH Sarabun New' })
+            new TextRun({ text: `• ${payText}`, size: 22, font: 'TH Sarabun New' })
           ]
-        }),
+        })] : []),
       ]
     }]
   });
@@ -236,7 +240,7 @@ export async function POST(req: Request) {
     }
     // Rates always from the dorm settings (demo room T01 has its own), never from the page
     const rates = ratesForRoom(await getRates(getDb()), contract.room_number);
-    const doc = createContractDocx(contract, rates);
+    const doc = createContractDocx(contract, rates, await getPaymentInfo(getDb()));
     const buffer = await Packer.toBuffer(doc);
 
     const roomNumber = contract.room_number || 'Room';
@@ -286,7 +290,7 @@ export async function GET(req: Request) {
 
     const contract = { ...rows[0], deposit_amount: formDeposit(rows[0]) };
     const rates = ratesForRoom(await getRates(sql), contract.room_number);
-    const doc = createContractDocx(contract, rates);
+    const doc = createContractDocx(contract, rates, await getPaymentInfo(sql));
     const buffer = await Packer.toBuffer(doc);
 
     const filename = `สัญญาเช่า_หอพักเกษร_ห้อง${contract.room_number}_${(contract.tenant_name || '').replace(/\s+/g, '_')}.docx`;

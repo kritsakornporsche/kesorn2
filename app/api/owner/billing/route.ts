@@ -1,7 +1,7 @@
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
-import { bangkokDate, getRates } from '@/lib/billing';
+import { bangkokDate, getRates, lateFeeRateOf } from '@/lib/billing';
 import { issueMonthlyBill, meterRefusalStatus } from '@/lib/meters';
 import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
 import { NextResponse } from 'next/server';
@@ -24,6 +24,7 @@ export async function GET(req: Request) {
         b.amount, 
         b.billing_cycle, 
         b.due_date, 
+        b.late_fee_rate,
         b.status, 
         b.slip_url,
         b.created_at,
@@ -88,6 +89,7 @@ export async function GET(req: Request) {
         ...b,
         days_overdue: owed.daysOverdue,
         late_fee: owed.lateFee,
+        late_fee_per_day: lateFeeRateOf(b, rates),
         base_amount: Number(b.amount),
         total_amount: owed.due,
         paid_total: s.paid_total,

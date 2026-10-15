@@ -8,6 +8,8 @@ export interface Rates {
   waterPerPerson: number;
   commonFee: number;
   lateFeePerDay: number;
+  /** Default proposed charge of a maid's cleaning job (owner decides the charge) */
+  cleaningFee: number;
 }
 
 // Fallback only when dormitory_profile has no value
@@ -16,6 +18,7 @@ export const DEFAULT_RATES: Rates = {
   waterPerPerson: 100,
   commonFee: 150,
   lateFeePerDay: 50,
+  cleaningFee: 300,
 };
 
 // Demo room used to test real payments with tiny amounts (rent comes from rooms.price)
@@ -62,7 +65,7 @@ const addDays = (ymd: string, days: number) =>
 
 export async function getRates(sql: any): Promise<Rates> {
   const rows = await sql`
-    SELECT electricity_rate, water_rate, common_fee, late_fee_per_day
+    SELECT electricity_rate, water_rate, common_fee, late_fee_per_day, cleaning_fee
     FROM dormitory_profile
     LIMIT 1
   `;
@@ -72,6 +75,31 @@ export async function getRates(sql: any): Promise<Rates> {
     waterPerPerson: toNumber(row.water_rate, DEFAULT_RATES.waterPerPerson),
     commonFee: toNumber(row.common_fee, DEFAULT_RATES.commonFee),
     lateFeePerDay: toNumber(row.late_fee_per_day, DEFAULT_RATES.lateFeePerDay),
+    cleaningFee: toNumber(row.cleaning_fee, DEFAULT_RATES.cleaningFee),
+  };
+}
+
+export interface PaymentInfo {
+  promptpayNumber: string | null;
+  promptpayName: string | null;
+  bankName: string | null;
+  bankAccount: string | null;
+  bankAccountName: string | null;
+}
+
+/** Where tenants transfer money (printed on the contract). No fallback: empty fields are null. */
+export async function getPaymentInfo(sql: any): Promise<PaymentInfo> {
+  const rows = await sql`
+    SELECT promptpay_number, promptpay_name, bank_name, bank_account, bank_account_name FROM dormitory_profile LIMIT 1
+  `;
+  const row = rows[0] || {};
+  const text = (v: unknown) => (String(v ?? '').trim() || null);
+  return {
+    promptpayNumber: text(row.promptpay_number),
+    promptpayName: text(row.promptpay_name),
+    bankName: text(row.bank_name),
+    bankAccount: text(row.bank_account),
+    bankAccountName: text(row.bank_account_name),
   };
 }
 
@@ -214,20 +242,27 @@ export function calcDueDate(billingCycle: string, issueDate: Date | string | num
   return dayNumber(fifthOfNextMonth) >= dayNumber(earliest) ? fifthOfNextMonth : earliest;
 }
 
+/** Late fee per day of a bill: the rate saved when it was sent (bills.late_fee_rate), else the current rate. */
+export function lateFeeRateOf(bill: { late_fee_rate?: number | string | null }, rates: Rates): number {
+  const saved = bill.late_fee_rate;
+  return saved === null || saved === undefined || saved === '' || Number.isNaN(Number(saved)) ? rates.lateFeePerDay : Number(saved);
+}
+
 /**
- * Late fee for monthly rent bills only: lateFeePerDay × whole days after the due date,
+ * Late fee for monthly rent bills only: the bill's late fee per day × whole days after the due date,
  * counted in Asia/Bangkok up to `asOf` (the actual transfer time when known). No cap.
  */
 export function calcLateFee(
-  bill: { bill_type?: string | null; status?: string | null; due_date?: Date | string | null },
+  bill: { bill_type?: string | null; status?: string | null; due_date?: Date | string | null; late_fee_rate?: number | string | null },
   asOf: Date | string | number,
   rates: Rates
 ) {
+  const lateFeePerDay = lateFeeRateOf(bill, rates);
   if (bill.bill_type !== 'monthly' || !bill.due_date || !LATE_FEE_STATUSES.has(String(bill.status || '').toLowerCase())) {
-    return { daysOverdue: 0, lateFee: 0 };
+    return { daysOverdue: 0, lateFee: 0, lateFeePerDay };
   }
   const daysOverdue = daysPastDue(bill.due_date, asOf);
-  return { daysOverdue, lateFee: round2(daysOverdue * rates.lateFeePerDay) };
+  return { daysOverdue, lateFee: round2(daysOverdue * lateFeePerDay), lateFeePerDay };
 }
 
 /** Whole days after the due date, counted in Asia/Bangkok (0 on or before the due date). */
@@ -272,7 +307,7 @@ export async function moveInCosts(sql: any, roomNumber: string) {
   return {
     roomNumber: String(room.room_number),
     ...moveInAmounts(room),
-    rates: { electricityPerUnit: rates.electricityPerUnit, waterPerPerson: rates.waterPerPerson, commonFee: rates.commonFee, lateFeePerDay: rates.lateFeePerDay },
+    rates: { electricityPerUnit: rates.electricityPerUnit, waterPerPerson: rates.waterPerPerson, commonFee: rates.commonFee, lateFeePerDay: rates.lateFeePerDay, cleaningFee: rates.cleaningFee },
   };
 }
 

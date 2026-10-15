@@ -119,7 +119,7 @@ export default function BookingStatusPage() {
   useEffect(() => {
     setQrFailed(false);
     if (!open || open.status !== 'BookingApproved') { setQr(null); return; }
-    fetch(`/api/booking/qr?roomId=${open.room_id}&amount=${open.booking_fee}`)
+    fetch(`/api/booking/qr?roomId=${open.room_id}`)
       .then((res) => res.json())
       .then((data) => { if (data.success) setQr(data); else { setQr(null); setQrFailed(true); } })
       .catch(() => setQrFailed(true));
@@ -270,7 +270,7 @@ export default function BookingStatusPage() {
                     </div>
                   )}
                   {qrFailed && toPay !== null && toPay > 0 && (
-                    <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-300 font-bold text-center">
+                    <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-xs text-red-400 font-bold text-center">
                       หอพักยังไม่ได้ตั้งเลขพร้อมเพย์ กรุณาติดต่อหอพัก{phoneOf(booking) ? ` โทร ${phoneOf(booking)}` : ''}
                     </div>
                   )}

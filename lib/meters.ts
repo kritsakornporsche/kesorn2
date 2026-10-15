@@ -179,8 +179,8 @@ async function monthlyBillOfRoom(client: Client, roomNumber: string, cycle: stri
   )).rows[0] || null;
 }
 
-/** Write the server price of a draft monthly bill (after its reading changed). */
-async function repriceDraft(client: Client, billId: number, roomNumber: string, cycle: string, now: Date) {
+/** Write the server price of a draft monthly bill (after its reading or the rates changed). */
+export async function repriceDraft(client: Client, billId: number, roomNumber: string, cycle: string, now: Date) {
   const priced = await priceMonthlyBill(tagged(client), roomNumber, cycle, now);
   if ('error' in priced) return false;
   await client.query(

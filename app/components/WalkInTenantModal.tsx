@@ -53,6 +53,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
 
   // Payment / QR & Slip State
   const [qrData, setQrData] = useState<{ qrImage: string; amount: number; promptpayNumber: string; promptpayName: string } | null>(null);
+  const [qrError, setQrError] = useState('');
   const [qrLoading, setQrLoading] = useState(false);
   const [slipData, setSlipData] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -227,17 +228,19 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
     setQrLoading(true);
     setStep(2);
     try {
-      const selectedRoom = rooms.find((r) => String(r.id) === String(selectedRoomId));
-      const isTestRoom = (selectedRoom?.room_number || '').toUpperCase() === 'T01';
-      const depositAmt = isTestRoom ? 1 : 1000;
-
-      const res = await fetch(`/api/booking/qr?roomId=${selectedRoomId}&dormId=1&amount=${depositAmt}`);
+      // The booking fee is set by the server for the room (never sent from this page)
+      setQrError('');
+      const res = await fetch(`/api/booking/qr?roomId=${selectedRoomId}`);
       const data = await res.json();
       if (data.success) {
         setQrData(data);
+      } else {
+        setQrData(null);
+        setQrError(data.message || 'สร้าง QR ไม่สำเร็จ');
       }
     } catch (err) {
       console.error('Fetch QR error:', err);
+      setQrError('สร้าง QR ไม่สำเร็จ');
     } finally {
       setQrLoading(false);
     }
@@ -307,8 +310,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
   if (!isOpen) return null;
 
   const selectedRoom = rooms.find((r) => String(r.id) === String(selectedRoomId));
-  const isTestRoom = (selectedRoom?.room_number || '').toUpperCase() === 'T01';
-  const depositAmount = isTestRoom ? 1 : 1000;
+  const depositAmount = qrData?.amount ?? null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
@@ -633,7 +635,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                   onClick={handleProceedToPayment}
                   className="px-6 py-2.5 bg-primary hover:bg-primary/90 text-white font-black rounded-xl text-xs shadow-lg transition-all hover:scale-105 active:scale-95"
                 >
-                  ถัดไป: สแกนจ่ายมัดจำ ฿{depositAmount.toLocaleString()} →
+                  ถัดไป: สแกนจ่ายค่าจอง →
                 </button>
               </div>
 
@@ -656,13 +658,13 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                     ) : qrData?.qrImage ? (
                       <img src={qrData.qrImage} alt="PromptPay QR" className="w-full h-full object-contain p-2" />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs">
-                        สร้าง QR ไม่สำเร็จ
+                      <div className="w-full h-full flex items-center justify-center text-red-600 text-xs font-bold p-2">
+                        {qrError || 'สร้าง QR ไม่สำเร็จ'}
                       </div>
                     )}
                   </div>
                   <div>
-                    <span className="text-xl font-black text-white">฿{depositAmount.toLocaleString()}</span>
+                    <span className="text-xl font-black text-white">{depositAmount !== null ? `฿${depositAmount.toLocaleString()}` : '-'}</span>
                     <p className="text-[11px] text-slate-400 mt-0.5">
                       {qrData?.promptpayName || 'หอพักเกษร 2'} • พร้อมเพย์ {qrData?.promptpayNumber || '-'}
                     </p>
@@ -674,7 +676,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                         qrImage={qrData.qrImage}
                         promptpayNumber={qrData.promptpayNumber}
                         promptpayName={qrData.promptpayName}
-                        amount={depositAmount}
+                        amount={qrData.amount}
                         fileName={`deposit-walkin-room-${selectedRoom?.room_number || 'T01'}.png`}
                       />
                     </div>

@@ -650,7 +650,7 @@ function lateFeeDate(s: { return_date?: unknown }, now: Date): Date {
 /** Bills still owed by the tenant, late fees counted up to `feeAsOf`. */
 async function outstandingBills(client: Client, tenantId: number, feeAsOf: Date, lock: boolean) {
   const bills = (await client.query(
-    `SELECT id, title, amount, status, bill_type, due_date, billing_cycle FROM bills
+    `SELECT id, title, amount, status, bill_type, due_date, late_fee_rate, billing_cycle FROM bills
      WHERE tenant_id = ? AND LOWER(status) IN ('unpaid', 'overdue', 'pending', 'partial')
      ORDER BY CASE WHEN bill_type IN (${MOVE_OUT_BILL_TYPES.map(() => '?').join(', ')}) THEN 1 ELSE 0 END, due_date, id${lock ? ' FOR UPDATE' : ''}`,
     [tenantId, ...MOVE_OUT_BILL_TYPES]

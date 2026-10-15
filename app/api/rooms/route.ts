@@ -48,8 +48,6 @@ export async function GET(req: NextRequest) {
         SELECT 
           r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at, r.ready_to_occupy_date,
           COALESCE(r.deposit_amount, 3000) as deposit_amount,
-          COALESCE(r.water_rate, 100) as water_rate,
-          COALESCE(r.common_fee, 150) as common_fee,
           mor.move_out_date,
           mor.status as move_out_status,
           mor.id as move_out_request_id,
@@ -82,8 +80,6 @@ export async function GET(req: NextRequest) {
         SELECT 
           r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at,
           COALESCE(r.deposit_amount, 3000) as deposit_amount,
-          COALESCE(r.water_rate, 100) as water_rate,
-          COALESCE(r.common_fee, 150) as common_fee,
           mor.move_out_date,
           mor.status as move_out_status,
           mor.id as move_out_request_id,
@@ -125,7 +121,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { room_number, room_type, price, status, floor, image_url, deposit_amount, water_rate, common_fee } = body;
+    const { room_number, room_type, price, status, floor, image_url, deposit_amount } = body;
     const dormId = parseInt(body.dorm_id || (session.user as any)?.dormId || '0', 10) || 1;
 
     if (!room_number || !room_type || price === undefined) {
@@ -141,8 +137,6 @@ export async function POST(req: NextRequest) {
     }
 
     const deposit = deposit_amount !== undefined && deposit_amount !== null && deposit_amount !== '' ? parseFloat(deposit_amount) : 3000;
-    const water = water_rate !== undefined && water_rate !== null && water_rate !== '' ? parseFloat(water_rate) : 100;
-    const common = common_fee !== undefined && common_fee !== null && common_fee !== '' ? parseFloat(common_fee) : 150;
 
     // Deposit + first month's rent paid in advance may be at most 3 months of rent
     const cap = capCheck(Number(price), depositFor({ room_number, deposit_amount: deposit }));
@@ -151,8 +145,8 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await sql`
-      INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount, water_rate, common_fee)
-      VALUES (${room_number}, ${room_type}, ${price}, ${status || 'Available'}, ${floor || 1}, ${image_url || null}, ${dormId}, ${deposit}, ${water}, ${common})
+      INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount)
+      VALUES (${room_number}, ${room_type}, ${price}, ${status || 'Available'}, ${floor || 1}, ${image_url || null}, ${dormId}, ${deposit})
     `;
     
     const newRoomId = (result as any).insertId;
@@ -160,7 +154,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ 
       success: true, 
       message: 'Room created successfully', 
-      data: { id: newRoomId, room_number, room_type, price, status, floor, deposit_amount: deposit, water_rate: water, common_fee: common } 
+      data: { id: newRoomId, room_number, room_type, price, status, floor, deposit_amount: deposit } 
     }, { status: 201 });
 
   } catch (error: any) {

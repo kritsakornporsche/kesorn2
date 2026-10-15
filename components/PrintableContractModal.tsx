@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { parseThaiAddress } from '@/lib/address-parser';
+import type { PaymentInfo } from '@/lib/billing';
+import { contractPaymentLines } from '@/lib/settings-fields';
 
 interface PrintableContractModalProps {
   isOpen: boolean;
@@ -38,8 +40,18 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
   const [downloading, setDownloading] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | '1' | '2' | '3'>('all');
+  // Where to transfer: PromptPay / bank account from the settings page (no numbers written in this file)
+  const [payment, setPayment] = useState<PaymentInfo | null>(null);
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch('/api/rates')
+      .then((res) => res.json())
+      .then((data) => { if (data.success) setPayment(data.payment || null); })
+      .catch(() => {});
+  }, [isOpen]);
 
   if (!isOpen || !contract) return null;
+  const paymentLines = contractPaymentLines(payment);
 
   const thaiMonths = [
     'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -446,12 +458,16 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
                   <p>• ห้ามทิ้งขยะลงโถชักโครก</p>
                   <p>• ห้ามเสียงดัง ห้ามดื่มเหล้า สูบบุหรี่ ให้รักษาความสะอาดห้องพักสม่ำเสมอ</p>
                   <p>• โปรดแยกขยะและทิ้งขยะบริเวณที่เตรียมไว้</p>
-                  <div className="space-y-1 pt-1">
-                    <p>• หอพักเกษร กรณีโอนเงิน หมายเลขบัญชีธนาคารกสิกรไทย วรรธนันท์ คำบัว ออมทรัพย์บางซื่อ 020-2-56417-8</p>
-                    <p className="pl-3 font-semibold text-emerald-800">
-                      หรือ พร้อมเพย์ <span className="font-bold underline">0636040550</span> วรรธนันท์ คำบัว
-                    </p>
-                  </div>
+                  {(paymentLines.bank || paymentLines.promptpay) && (
+                    <div className="space-y-1 pt-1">
+                      {paymentLines.bank && <p>• {paymentLines.bank}</p>}
+                      {paymentLines.promptpay && (
+                        <p className={`${paymentLines.bank ? 'pl-3' : ''} font-semibold text-emerald-800`}>
+                          {paymentLines.bank ? '' : '• '}{paymentLines.promptpay}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { DEFAULT_RATES } from '@/lib/billing';
 import { getDb } from '@/lib/db';
 import { requireRole } from '@/lib/authz';
 
@@ -31,8 +32,8 @@ export async function GET(req: Request) {
       name: 'หอพักเกษร 2',
       address: '123 หมู่ 6 ต.แม่กา อ.เมือง จ.พะเยา 56000',
       phone: '081-999-2222',
-      water_rate: 18,
-      electricity_rate: 8
+      water_rate: DEFAULT_RATES.waterPerPerson,
+      electricity_rate: DEFAULT_RATES.electricityPerUnit
     };
 
     const ownedDorms = [

@@ -18,7 +18,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ payment
   const sql = getDb();
   const rows = await sql`
     SELECT p.*, b.id AS bill_id, b.title, b.room_number, b.billing_cycle, b.amount AS bill_amount, b.bill_type, b.status AS bill_status,
-           b.due_date, b.room_amount, b.electric_units, b.electric_amount, b.water_amount, b.common_fee,
+           b.due_date, b.late_fee_rate, b.room_amount, b.electric_units, b.electric_amount, b.water_amount, b.common_fee,
            t.name AS tenant_name, t.user_id AS tenant_user_id, t.email AS tenant_email,
            r.name AS recorded_by_name, v.name AS voided_by_name
     FROM bill_payments p
@@ -47,7 +47,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ payment
   const paidThrough = Number(paidUpTo[0]?.total || 0);
   // Late fee owed at the time of this payment
   const owed = outstandingFor(
-    { amount: p.bill_amount, bill_type: p.bill_type, status: 'Unpaid', due_date: p.due_date },
+    { amount: p.bill_amount, bill_type: p.bill_type, status: 'Unpaid', due_date: p.due_date, late_fee_rate: p.late_fee_rate },
     0, p.paid_at, await getRates(sql)
   );
   const profile = (await sql`SELECT name, address, phone, tax_id FROM dormitory_profile LIMIT 1`)[0] || {};
@@ -66,7 +66,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ payment
     success: true,
     data: {
       receipt_no: receiptNo(p.id, p.paid_at),
-      dorm: { name: profile.name || 'หอพักเกษร 2', address: profile.address || '', phone: profile.phone || '', tax_id: profile.tax_id || '' },
+      dorm: { name: profile.name || 'หอพักเกษร 2', address: profile.address || '', phone: profile.phone || '', tax_id: String(profile.tax_id || '').trim() },
       payment: {
         id: p.id, amount: Number(p.amount), method: p.method, paid_at: p.paid_at, slip_ref: p.slip_ref, note: p.note,
         received_by: p.recorded_by_name || (p.method === 'slip' ? 'ระบบตรวจสลิปอัตโนมัติ' : '-'),

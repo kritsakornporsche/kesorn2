@@ -92,7 +92,7 @@ export async function GET(req: Request) {
     // 3.1 Bills still unpaid more than 15 days after the due date (any bill type; drafts,
     // cancelled bills and bills held by a correction request are excluded)
     const overdueCandidates = await sql`
-      SELECT b.id, b.title, b.amount, b.bill_type, b.status, b.due_date, b.room_number, COALESCE(t.name, '-') as tenant_name
+      SELECT b.id, b.title, b.amount, b.bill_type, b.status, b.due_date, b.late_fee_rate, b.room_number, COALESCE(t.name, '-') as tenant_name
       FROM bills b
       LEFT JOIN tenants t ON t.id = b.tenant_id
       WHERE LOWER(b.status) IN ('unpaid', 'overdue', 'pending', 'partial') AND b.due_date IS NOT NULL

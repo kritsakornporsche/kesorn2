@@ -59,6 +59,7 @@ export default function TenantBillingPage() {
   const [uploading, setUploading] = useState(false);
   const [qrData, setQrData] = useState<{qrImage: string, amount: number, promptpayNumber: string, promptpayName?: string} | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState('');
 
   // Dispute Form State
   const [disputeReading, setDisputeReading] = useState('');
@@ -130,19 +131,20 @@ export default function TenantBillingPage() {
     setModalType('qr');
     setQrLoading(true);
     setQrData(null);
+    setQrError('');
     try {
       const email = session?.user?.email || (typeof window !== 'undefined' ? localStorage.getItem('userEmail') : '');
-      const totalAmt = bill.outstanding ?? bill.total_amount ?? (Number(bill.amount) + (bill.late_fee || 0));
-      const res = await fetch(`/api/tenant/billing/qr?billId=${bill.id}&amount=${totalAmt}${email ? `&email=${encodeURIComponent(email)}` : ''}`);
+      // The server works out what is still owed on the bill
+      const res = await fetch(`/api/tenant/billing/qr?billId=${bill.id}${email ? `&email=${encodeURIComponent(email)}` : ''}`);
       const data = await res.json();
       if (data.success) {
         setQrData(data);
       } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการโหลด QR Code');
+        setQrError(data.message || 'เกิดข้อผิดพลาดในการโหลด QR Code');
       }
     } catch (err) {
       console.error(err);
-      alert('ระบบขัดข้อง');
+      setQrError('ระบบขัดข้อง');
     } finally {
       setQrLoading(false);
     }
@@ -713,7 +715,7 @@ export default function TenantBillingPage() {
                      <p className="text-xs text-muted-foreground mt-3 font-bold tracking-wider">พร้อมเพย์: {qrData.promptpayNumber}</p>
                    </div>
                 ) : (
-                   <p className="text-rose-400 font-bold text-xs">ไม่สามารถโหลด QR Code ได้</p>
+                   <p className="text-rose-400 font-bold text-xs text-center">{qrError || 'ไม่สามารถโหลด QR Code ได้'}</p>
                 )}
              </div>
 

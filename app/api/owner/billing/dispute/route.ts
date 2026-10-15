@@ -127,9 +127,9 @@ export async function POST(req: Request) {
 
     // 1. Fetch bill details
     const billRes = await sql`
-      SELECT b.*, dp.electricity_rate, dp.water_rate, dp.common_fee 
+      SELECT b.*, r.price AS room_price
       FROM bills b
-      LEFT JOIN dormitory_profile dp ON 1=1
+      LEFT JOIN rooms r ON r.room_number = b.room_number
       WHERE b.id = ${billId}
       LIMIT 1
     `;
@@ -156,11 +156,14 @@ export async function POST(req: Request) {
     if (newUnits > prevReading && prevReading > 0) {
       newUnits = Math.max(0, newUnits - prevReading);
     }
-    const elecRate = ratesForRoom(await getRates(sql), bill.room_number).electricityPerUnit;
-    const newElecAmount = Number((newUnits * elecRate).toFixed(2));
-    const waterAmount = Number(bill.water_amount || 100);
-    const commonFee = Number(bill.common_fee || 150);
-    const roomAmount = Number(bill.room_amount || 3400);
+    // Only the electricity part changes; the other parts keep what the bill charged (0 is a real amount, e.g. rent
+    // already paid by the move-in bill). A part the bill never stored comes from the current rates / the room's rent.
+    const rates = ratesForRoom(await getRates(sql), bill.room_number);
+    const stored = (v: unknown) => (v === null || v === undefined || v === '' ? null : Number(v));
+    const newElecAmount = Number((newUnits * rates.electricityPerUnit).toFixed(2));
+    const waterAmount = stored(bill.water_amount) ?? rates.waterPerPerson;
+    const commonFee = stored(bill.common_fee) ?? rates.commonFee;
+    const roomAmount = stored(bill.room_amount) ?? Number(bill.room_price || 0);
     const newTotal = Number((roomAmount + newElecAmount + waterAmount + commonFee).toFixed(2));
 
     // 2. Insert correction request

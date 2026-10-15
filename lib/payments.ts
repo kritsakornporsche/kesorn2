@@ -54,7 +54,7 @@ export function depositPortion(bill: { bill_type?: string | null; is_first_bill?
  * The late fee is a flat daily rate, so it does not depend on how much has been paid.
  */
 export function outstandingFor(
-  bill: { amount: number | string; bill_type?: string | null; status?: string | null; due_date?: Date | string | null },
+  bill: { amount: number | string; bill_type?: string | null; status?: string | null; due_date?: Date | string | null; late_fee_rate?: number | string | null },
   paidTotal: number,
   asOf: Date | string | number,
   rates: Rates
@@ -150,7 +150,7 @@ export async function recordPaymentInTransaction(client: TxClient, billId: numbe
   const rates = await getRates(getDb());
   {
     const { rows } = await client.query(
-      'SELECT id, amount, room_amount, is_first_bill, status, bill_type, due_date, dorm_id, room_number, title, billing_cycle FROM bills WHERE id = ? FOR UPDATE',
+      'SELECT id, amount, room_amount, is_first_bill, status, bill_type, due_date, late_fee_rate, dorm_id, room_number, title, billing_cycle FROM bills WHERE id = ? FOR UPDATE',
       [billId]
     );
     const bill = rows[0];

@@ -11,10 +11,9 @@ export async function GET(req: Request) {
     const session = await auth();
     const { searchParams } = new URL(req.url);
     const billId = searchParams.get('billId');
-    const amountParam = searchParams.get('amount');
-
-    if (!billId && !amountParam) {
-      return NextResponse.json({ success: false, message: 'Missing billId or amount' }, { status: 400 });
+    // The amount is what is still owed on the bill (server); an amount sent by the page is ignored
+    if (!billId) {
+      return NextResponse.json({ success: false, message: 'Missing billId' }, { status: 400 });
     }
 
     const sql = getDb();
@@ -22,7 +21,7 @@ export async function GET(req: Request) {
     let dormId = 1;
     let billTitle = 'ค่าเช่าห้องพัก';
 
-    if (billId) {
+    {
       // 1. Find the bill
       const billRes = await sql`
         SELECT b.*, t.email as tenant_email, t.dorm_id as tenant_dorm_id
@@ -43,8 +42,6 @@ export async function GET(req: Request) {
       amount = outstandingFor(bill, paid, new Date(), await getRates(sql)).outstanding;
       dormId = bill.dorm_id || bill.tenant_dorm_id || 1;
       billTitle = bill.title;
-    } else {
-      amount = parseFloat(amountParam!);
     }
 
     // 2. Same PromptPay number that slips are checked against; no fallback number

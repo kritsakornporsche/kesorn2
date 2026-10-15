@@ -1,6 +1,6 @@
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
-import { daysPastDue, getRates } from '@/lib/billing';
+import { daysPastDue, getRates, lateFeeRateOf } from '@/lib/billing';
 import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
 import { formatBaht, formatThaiDate } from '@/lib/format';
 import Link from 'next/link';
@@ -77,7 +77,8 @@ async function getDashboardData() {
   const unpaidSummary = {
     total: unpaidBills.reduce((sum: number, b: any) => sum + outstandingFor(b, summaries.get(b.id)?.paid_total || 0, now, rates).outstanding, 0),
     overdue: unpaidBills.some((b: any) => b.due_date && daysPastDue(b.due_date, now) > 0),
-    lateFeePerDay: rates.lateFeePerDay,
+    // The rate saved on the overdue bill when it was sent (a later rate change does not apply to it)
+    lateFeePerDay: lateFeeRateOf(unpaidBills.find((b: any) => b.due_date && daysPastDue(b.due_date, now) > 0) || {}, rates),
     nextDue: unpaidBills[0]?.due_date || null,
   };
 
