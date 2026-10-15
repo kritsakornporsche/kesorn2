@@ -18,8 +18,11 @@
 - [`docs/CHANGES-completeness.md`](CHANGES-completeness.md) — ทีละ commit, หน้า/API ที่ลบหรือเปลี่ยน, กติกาธุรกิจ, **ไฟล์ที่ชนกับ feature-development**, ขั้นตอน deploy
 - [`docs/schema-changes.md`](schema-changes.md) — migration 001–016, ตาราง/คอลัมน์ใหม่, สถานะและความสัมพันธ์สำหรับวาด ER
 
+## 🚀 วิธี deploy: ทาง ก (ตกลงแล้ว)
+**นำฐานข้อมูลในเครื่อง (dev) ไปแทนฐานบนเว็บ** แล้ว merge PR นี้ = deploy อัตโนมัติ (เพื่อนเป็นคน merge) · ฐานที่ export ไปรัน migration **001–017 ครบแล้ว** → **บนเว็บไม่ต้องรัน 001–017 แยก** · ขั้นตอนละเอียด (backup ฐานเว็บเดิม, import + เช็ก sha256, query ตรวจหลัง import, env, storage, cron, smoke test, วิธีย้อนกลับ) อยู่ใน `docs/DEPLOY-plan.md`
+
 ## ⚠️ ผลกระทบที่ต้องรู้
-- **migration 17 ตัว** (เพิ่มอย่างเดียว ไม่มี DROP/RENAME · 017 ล้างเลขบัตรเดิม ย้อนกลับไม่ได้) — ต้องรันก่อนเปิดแอป และมี query ตรวจก่อนรันสำหรับ 012–014
+- **migration 17 ตัว** อยู่ใน repo เป็นประวัติ/ใช้กับฐานอื่น (เพิ่มอย่างเดียว ไม่มี DROP/RENAME · 017 ล้างเลขบัตรเดิม) — **ทาง ก ไม่ต้องรันบนเว็บ** เพราะฐานที่นำขึ้นรันครบแล้ว
 - **env:** `AUTH_SECRET` บังคับ (ไม่มีค่าสำรอง) · ใหม่ `CRON_SECRET`
 - **โฟลเดอร์ `storage/*`** 5 โฟลเดอร์ต้องเขียนได้ (ไฟล์สัญญา รูปตรวจห้อง สลิปคืนเงิน รูปงานซ่อม รูปมิเตอร์ — อยู่นอก public)
 - **API ที่ client ภายนอกอาจเรียก:** หลายตัวไม่รับยอดเงินจาก client แล้ว / บางตัวตอบ 410 / ต้อง login (ตารางในหัวข้อ 2 ของ CHANGES)
@@ -39,8 +42,8 @@
 - [ ] กติกาธุรกิจในหัวข้อ 3 ตรงกับที่หอใช้จริง (ค่าปรับไม่มีเพดาน, ค่าจองไม่คืน, ข้อ 13, ครบกำหนดวันที่ 5)
 - [ ] `npm run lint` ใช้ไม่ได้ใน Next 16 (`next lint` ถูกเอาออก) — ควรเปลี่ยนเป็น `eslint .` ในงานแยก
 
-**ก่อน/หลัง deploy (หัวข้อ 5 ของ CHANGES)**
-- [ ] backup ฐาน → query ตรวจ 012–014 และ 017 → รัน migration 001–017 ตามลำดับ → ลบรูปบัตรค้างใน `public/uploads/id_cards/`
+**ก่อน/หลัง deploy (ทาง ก — `docs/DEPLOY-plan.md`)**
+- [ ] backup ฐานเว็บเดิม + `public/uploads` → import ฐานใหม่ (เช็ก sha256) → query ตรวจหลัง import (ไม่ต้องรัน migration 001–017) → ลบรูปบัตรค้างใน `public/uploads/id_cards/` ถ้ามี
 - [ ] ตั้ง `AUTH_SECRET`, `CRON_SECRET` · สร้าง `storage/{contracts,inspections,move-out,maintenance,meters}` · ตั้ง cron ทุกชั่วโมง
 - [ ] ตั้งพร้อมเพย์ + บัญชีธนาคารที่ `/owner/settings` · วางแม่แบบ PDF สัญญา (ไม่อยู่ใน git)
 - [ ] เปลี่ยนรหัสบัญชีทดสอบ/เดโม · ปิดบัญชี owner เก่าที่ไม่ใช้
