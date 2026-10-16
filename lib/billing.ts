@@ -2,6 +2,7 @@
 // Every day count uses the calendar date in Asia/Bangkok, never UTC or the server's local time.
 
 import { formatBaht } from '@/lib/format';
+import type { ContractParty } from '@/lib/settings-fields';
 
 export interface Rates {
   electricityPerUnit: number;
@@ -100,6 +101,20 @@ export async function getPaymentInfo(sql: any): Promise<PaymentInfo> {
     bankName: text(row.bank_name),
     bankAccount: text(row.bank_account),
     bankAccountName: text(row.bank_account_name),
+  };
+}
+
+/** Dorm and landlord details for the contract (settings page). No fallback: empty fields are null. */
+export async function getContractParty(sql: any): Promise<ContractParty> {
+  const rows = await sql`SELECT name, address, phone, landlord_name, landlord_phone FROM dormitory_profile ORDER BY id LIMIT 1`;
+  const row = rows[0] || {};
+  const text = (v: unknown) => (String(v ?? '').trim() || null);
+  return {
+    dormName: text(row.name),
+    dormAddress: text(row.address),
+    dormPhone: text(row.phone),
+    landlordName: text(row.landlord_name),
+    landlordPhone: text(row.landlord_phone),
   };
 }
 

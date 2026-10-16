@@ -10,6 +10,7 @@ import { useSession } from 'next-auth/react';
 import { InspectionButton } from '@/components/InspectionModal';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { kindAndTopic } from '@/components/maintenance/shared';
+import { statusText } from '@/lib/status-text';
 
 type State = 'Notified' | 'Returned' | 'Settled' | 'Closed' | 'Cancelled';
 
@@ -573,7 +574,7 @@ function LegacyCard({ row, isOwner, onDone }: { row: Row; isOwner: boolean; onDo
         <span className="px-3 py-1 rounded-xl border border-slate-500/40 text-slate-300 text-[11px] font-black">คำขอแบบเดิม — จัดการด้วยมือ</span>
       </div>
       <p className="text-xs text-slate-400">
-        คำขอ #{row.request_id} · วันที่ต้องการย้ายออก {thaiDate(row.desired_date)} · สถานะคำขอ {row.request_status} · สถานะสัญญา {row.contract_status || '-'}
+        คำขอ #{row.request_id} · วันที่ต้องการย้ายออก {thaiDate(row.desired_date)} · สถานะคำขอ {statusText('request', row.request_status)} · สถานะสัญญา {statusText('contract', row.contract_status)}
       </p>
       <p className="text-xs text-slate-400">
         คำขอนี้ทำก่อนระบบย้ายออกใหม่ ยอดเงินประกันและบิลต้องจัดการด้วยมือ (รับเงินผ่านหน้าบิล / บันทึกบัญชีเอง) แล้วจึงปิดคำขอ

@@ -2,13 +2,16 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getCurrentUser } from '@/lib/authz';
 import { canViewContract, formDeposit } from '@/lib/contract-files';
-import { depositFor, getPaymentInfo, getRates, ratesForRoom, type PaymentInfo, type Rates } from '@/lib/billing';
-import { contractPaymentLines } from '@/lib/settings-fields';
+import { depositFor, getContractParty, getPaymentInfo, getRates, ratesForRoom, type PaymentInfo, type Rates } from '@/lib/billing';
+import { contractPartyText, contractPaymentLines, type ContractParty } from '@/lib/settings-fields';
 import { Document, Paragraph, TextRun, Packer, AlignmentType } from 'docx';
 
 const rateText = (n: number) => n.toLocaleString('th-TH', { maximumFractionDigits: 2 });
 
-function createContractDocx(data: any, rates: Rates, payment: PaymentInfo) {
+function createContractDocx(data: any, rates: Rates, payment: PaymentInfo, party: ContractParty) {
+  // Dorm address and landlord name / phone from the settings page; not set = dotted line
+  const landlord = contractPartyText(party);
+  const blankName = '.......................................................';
   // Transfer details from the settings page; a detail that is not set is left out
   const pay = contractPaymentLines(payment);
   const payText = [pay.bank, pay.promptpay].filter(Boolean).join(' ');
@@ -54,7 +57,7 @@ function createContractDocx(data: any, rates: Rates, payment: PaymentInfo) {
         new Paragraph({
           alignment: AlignmentType.CENTER,
           children: [
-            new TextRun({ text: 'หอพักเกษร 224 หมู่ 2 แม่กาห้วยเคียน เมือง พะเยา 56000 โทร 09-3048-0607', size: 24, font: 'TH Sarabun New' })
+            new TextRun({ text: landlord.header, size: 24, font: 'TH Sarabun New' })
           ]
         }),
         new Paragraph({ text: '' }),
@@ -67,7 +70,7 @@ function createContractDocx(data: any, rates: Rates, payment: PaymentInfo) {
         new Paragraph({ text: '' }),
         new Paragraph({
           children: [
-            new TextRun({ text: '        สัญญาเช่าฉบับนี้ทำขึ้นระหว่าง ขันแก้ว คำบัว ดังที่อยู่ข้างต้น ซึ่งต่อไปในสัญญานี้จะเรียกว่า "ผู้ให้เช่า" ฝ่ายหนึ่งกับ', size: 24, font: 'TH Sarabun New' })
+            new TextRun({ text: `        สัญญาเช่าฉบับนี้ทำขึ้นระหว่าง ${landlord.landlordName} ดังที่อยู่ข้างต้น ซึ่งต่อไปในสัญญานี้จะเรียกว่า "ผู้ให้เช่า" ฝ่ายหนึ่งกับ`, size: 24, font: 'TH Sarabun New' })
           ]
         }),
         new Paragraph({
@@ -166,7 +169,7 @@ function createContractDocx(data: any, rates: Rates, payment: PaymentInfo) {
         }),
         new Paragraph({
           children: [
-            new TextRun({ text: `      ( ${tenantName} )                                      ( นายขันแก้ว คำบัว )`, size: 24, font: 'TH Sarabun New' })
+            new TextRun({ text: `      ( ${tenantName} )                                      ( ${landlord.landlordName} )`, size: 24, font: 'TH Sarabun New' })
           ]
         }),
         new Paragraph({ text: '' }),
@@ -177,7 +180,7 @@ function createContractDocx(data: any, rates: Rates, payment: PaymentInfo) {
         }),
         new Paragraph({
           children: [
-            new TextRun({ text: '      ( ....................................................... )                                      ( นางเกษร คำบัว )', size: 24, font: 'TH Sarabun New' })
+            new TextRun({ text: `      ( ${blankName} )                                      ( ${blankName} )`, size: 24, font: 'TH Sarabun New' })
           ]
         }),
         new Paragraph({ text: '' }),
@@ -193,7 +196,7 @@ function createContractDocx(data: any, rates: Rates, payment: PaymentInfo) {
         }),
         new Paragraph({
           children: [
-            new TextRun({ text: '• ติดต่อเจ้าของหอพัก นายขันแก้ว คำบัว 09-3048-0607, นายวรรธนันท์ คำบัว 081-842-4948', size: 22, font: 'TH Sarabun New' })
+            new TextRun({ text: `• ${landlord.contact}`, size: 22, font: 'TH Sarabun New' })
           ]
         }),
         new Paragraph({
@@ -241,7 +244,7 @@ export async function POST(req: Request) {
     }
     // Rates always from the dorm settings (demo room T01 has its own), never from the page
     const rates = ratesForRoom(await getRates(getDb()), contract.room_number);
-    const doc = createContractDocx(contract, rates, await getPaymentInfo(getDb()));
+    const doc = createContractDocx(contract, rates, await getPaymentInfo(getDb()), await getContractParty(getDb()));
     const buffer = await Packer.toBuffer(doc);
 
     const roomNumber = contract.room_number || 'Room';
@@ -291,7 +294,7 @@ export async function GET(req: Request) {
 
     const contract = { ...rows[0], deposit_amount: formDeposit(rows[0]) };
     const rates = ratesForRoom(await getRates(sql), contract.room_number);
-    const doc = createContractDocx(contract, rates, await getPaymentInfo(sql));
+    const doc = createContractDocx(contract, rates, await getPaymentInfo(sql), await getContractParty(sql));
     const buffer = await Packer.toBuffer(doc);
 
     const filename = `สัญญาเช่า_หอพักเกษร_ห้อง${contract.room_number}_${(contract.tenant_name || '').replace(/\s+/g, '_')}.docx`;

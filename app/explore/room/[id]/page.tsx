@@ -449,31 +449,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     e.target.value = '';
   };
 
-  const handleDemoIdCard = () => {
-    setIsOcrProcessing(true);
-    setOcrSuccessMsg(null);
-    setOcrStats(null);
-    setTimeout(() => {
-      setBookingData((prev) => ({
-        ...prev,
-        name: 'นายกฤษกร บวรนันทกุล',
-        phone: prev.phone || '089-123-4567',
-        parent_phone: prev.parent_phone || '081-987-6543',
-        id_card_address: '224/12 หมู่ 2 ต.แม่กา อ.เมือง จ.พะเยา 56000',
-        houseNo: '224/12',
-        village: '2',
-        road: '-',
-        subdistrict: 'แม่กา',
-        district: 'เมือง',
-        province: 'พะเยา',
-        id_card_image: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&q=80',
-      }));
-      setIsOcrProcessing(false);
-      setOcrSuccessMsg('✓ นำเข้าข้อมูลตัวอย่างสำเร็จ (นายกฤษกร บวรนันทกุล)');
-      setOcrStats('จำลองสำเร็จใน 0.4 วินาที');
-    }, 400);
-  };
-
   // Download Word Contract
   const handleDownloadDocx = async () => {
     setDownloadingDocx(true);

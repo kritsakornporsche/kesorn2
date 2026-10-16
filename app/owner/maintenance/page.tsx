@@ -7,6 +7,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
+import { statusText } from '@/lib/status-text';
 import {
   CHARGE_REASON_TEXT, KIND_TEXT, PhotoPicker, kindAndTopic, PhotoStrip, StateBadge, baht, postJson, thaiDateTime,
   type ChargeReason, type Job, type Kind,
@@ -270,7 +271,7 @@ function LegacyList({ jobs, cleaning, isOwner, onDone }: { jobs: Job[]; cleaning
         <LegacyRow key={`m${j.id}`} id={j.id} title={`#${j.id} ห้อง ${j.room_number || '-'} · ${j.issue_type || '-'}`} detail={`${j.description || ''} · ${j.status_text}`} table="maintenance" isOwner={isOwner} onDone={onDone} photos={j.photos} />
       ))}
       {cleaning.map((c) => (
-        <LegacyRow key={`c${c.id}`} id={c.id} title={`งานทำความสะอาดเดิม #${c.id} ห้อง ${c.room_number || '-'}`} detail={`${c.job_type || ''} · ${c.notes || ''} · ${c.status}`} table="cleaning_jobs" isOwner={isOwner} onDone={onDone} photos={[]} />
+        <LegacyRow key={`c${c.id}`} id={c.id} title={`งานทำความสะอาดเดิม #${c.id} ห้อง ${c.room_number || '-'}`} detail={`${c.job_type || ''} · ${c.notes || ''} · ${statusText('job', c.status)}`} table="cleaning_jobs" isOwner={isOwner} onDone={onDone} photos={[]} />
       ))}
     </div>
   );

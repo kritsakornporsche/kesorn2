@@ -3,7 +3,11 @@
 export const RATE_FIELDS = ['electricity_rate', 'water_rate', 'common_fee', 'late_fee_per_day', 'cleaning_fee'] as const;
 export const PAYMENT_FIELDS = ['promptpay_number', 'promptpay_name', 'bank_name', 'bank_account', 'bank_account_name', 'tax_id'] as const;
 
+// Landlord shown on the contract (migration 018). Empty = a dotted line filled in by hand.
+export const LANDLORD_FIELDS = ['landlord_name', 'landlord_phone'] as const;
+
 export type RateField = (typeof RATE_FIELDS)[number];
+export type LandlordField = (typeof LANDLORD_FIELDS)[number];
 export type PaymentField = (typeof PAYMENT_FIELDS)[number];
 
 /** Allowed range of each rate (baht). Electricity must be above 0; the maximums only catch typing mistakes. */
@@ -28,6 +32,38 @@ export const FIELD_LABELS: Record<RateField | PaymentField, string> = {
   bank_account_name: 'ชื่อบัญชีธนาคาร',
   tax_id: 'เลขประจำตัวผู้เสียภาษี',
 };
+
+export const LANDLORD_LABELS: Record<LandlordField, string> = {
+  landlord_name: 'ชื่อผู้ให้เช่า',
+  landlord_phone: 'เบอร์โทรผู้ให้เช่า',
+};
+
+/** Dorm and landlord details printed on the contract, from the settings page (lib/billing getContractParty). */
+export interface ContractParty {
+  dormName: string | null;
+  dormAddress: string | null;
+  dormPhone: string | null;
+  landlordName: string | null;
+  landlordPhone: string | null;
+}
+
+const PARTY_DOTS = '..............................................';
+
+/**
+ * Text of the contract's landlord parts. Nothing is written into the code: a detail that is not set
+ * becomes a dotted line (name / phone) or is left out (dorm address line).
+ */
+export function contractPartyText(p: ContractParty | null | undefined) {
+  const t = (v: unknown) => String(v ?? '').trim();
+  const name = t(p?.landlordName);
+  const phone = t(p?.landlordPhone);
+  const dormPhone = t(p?.dormPhone);
+  return {
+    header: [t(p?.dormName), t(p?.dormAddress), dormPhone ? `โทร ${dormPhone}` : ''].filter(Boolean).join(' '),
+    landlordName: name || PARTY_DOTS,
+    contact: `ติดต่อผู้ให้เช่า ${name || PARTY_DOTS} โทร ${phone || PARTY_DOTS}`,
+  };
+}
 
 /**
  * Transfer details printed on the contract form (print page and .docx), from the settings page.

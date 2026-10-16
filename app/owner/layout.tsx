@@ -26,7 +26,7 @@ export default async function OwnerLayout({
   return (
     <div className="flex flex-col h-screen w-screen bg-background text-foreground font-sans overflow-hidden">
       {/* 1. Full-width Top Navbar */}
-      <OwnerNavbar />
+      <OwnerNavbar role={user.role} />
 
       {/* 2. Below Navbar: Persistent Desktop Sidebar (hidden on mobile) + Main Content Area */}
       <div className="flex flex-1 overflow-hidden relative">

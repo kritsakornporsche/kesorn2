@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { FIELD_LABELS, RATE_FIELDS } from '@/lib/settings-fields';
+import { FIELD_LABELS, LANDLORD_LABELS, RATE_FIELDS } from '@/lib/settings-fields';
 
 // The one place for rates and payment details (lib/settings.ts). Owner edits; manager sees it read-only.
 // Bills already sent or paid keep their amounts and late fee; draft monthly bills are re-priced on save.
@@ -30,6 +30,8 @@ export default function OwnerSettings() {
     name: '',
     address: '',
     phone: '',
+    landlord_name: '',
+    landlord_phone: '',
     tax_id: '',
     electricity_rate: '',
     water_rate: '',
@@ -72,6 +74,8 @@ export default function OwnerSettings() {
           name: d.name || '',
           address: d.address || '',
           phone: d.phone || '',
+          landlord_name: d.landlord_name || '',
+          landlord_phone: d.landlord_phone || '',
           tax_id: d.tax_id || '',
           electricity_rate: rate(d.electricity_rate),
           water_rate: rate(d.water_rate),
@@ -237,6 +241,31 @@ export default function OwnerSettings() {
                     className="w-full bg-card border border-white/20 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-primary"
                     placeholder="เช่น 02-XXX-XXXX"
                   />
+                </div>
+
+                {/* Landlord on the contract (Word / print); empty = dotted line. Address = dorm address above. */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">{LANDLORD_LABELS.landlord_name} (ใช้ในสัญญา)</label>
+                  <input
+                    type="text"
+                    value={formData.landlord_name}
+                    onChange={e => setFormData({ ...formData, landlord_name: e.target.value })}
+                    className="w-full bg-card border border-white/20 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-primary"
+                    placeholder="ชื่อ-นามสกุล (ว่างได้ — สัญญาจะเว้นเส้นประให้เขียนเอง)"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">{LANDLORD_LABELS.landlord_phone} (ใช้ในสัญญา)</label>
+                  <input
+                    type="text"
+                    inputMode="tel"
+                    value={formData.landlord_phone}
+                    onChange={e => setFormData({ ...formData, landlord_phone: e.target.value })}
+                    className="w-full bg-card border border-white/20 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-primary"
+                    placeholder="เช่น 08X-XXX-XXXX (ว่างได้)"
+                  />
+                  <p className="text-[11px] text-muted-foreground pl-1">ที่อยู่ผู้ให้เช่าในสัญญาใช้ที่อยู่หอพัก</p>
                 </div>
 
                 <div className="space-y-2 md:col-span-2">

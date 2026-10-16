@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import { formatBaht } from '@/lib/format';
+import { statusText } from '@/lib/status-text';
 
 interface Room {
   id: number;
@@ -483,7 +484,7 @@ export default function RoomsManagement() {
                      room.status === 'Available' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 
                      room.status === 'Occupied' || room.status === 'มีผู้เช่า' ? 'bg-blue-500/10 text-blue-600 border-blue-500/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
                    }`}>
-                      {room.status === 'Available' ? 'ว่าง' : room.status === 'Occupied' || room.status === 'มีผู้เช่า' ? 'มีผู้เช่าแล้ว' : 'ปิดปรับปรุง'}
+                      {room.status === 'มีผู้เช่า' ? 'มีผู้เช่า' : statusText('room', room.status)}
                    </div>
                 </div>
 
@@ -582,15 +583,15 @@ export default function RoomsManagement() {
                         />
                     </div>
                     <div className="space-y-2">
-                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">สถานะ (Status)</label>
+                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">สถานะ</label>
                         <select 
                             value={formData.status}
                             onChange={(e) => setFormData({...formData, status: e.target.value})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground focus:bg-card cursor-pointer"
                         >
-                            <option value="Available">ว่าง (Available)</option>
-                            <option value="Occupied">มีผู้เช่า (Occupied)</option>
-                            <option value="Maintenance">ปิดปรับปรุง (Maintenance)</option>
+                            <option value="Available">ว่าง</option>
+                            <option value="Occupied">มีผู้เช่า</option>
+                            <option value="Maintenance">ปิดปรับปรุง</option>
                         </select>
                     </div>
                   </div>
@@ -805,15 +806,15 @@ export default function RoomsManagement() {
                         </select>
                     </div>
                     <div className="space-y-2">
-                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">สถานะเริ่มต้น (Status)</label>
+                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">สถานะเริ่มต้น</label>
                         <select 
                             value={batchForm.status}
                             onChange={(e) => setBatchForm({...batchForm, status: e.target.value})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground focus:bg-card cursor-pointer"
                         >
-                            <option value="Available">ว่าง (Available)</option>
-                            <option value="Occupied">มีผู้เช่า (Occupied)</option>
-                            <option value="Maintenance">ปิดปรับปรุง (Maintenance)</option>
+                            <option value="Available">ว่าง</option>
+                            <option value="Occupied">มีผู้เช่า</option>
+                            <option value="Maintenance">ปิดปรับปรุง</option>
                         </select>
                     </div>
                   </div>

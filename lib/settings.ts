@@ -8,7 +8,7 @@
 import { withTransaction, type Client } from '@/lib/bill-status';
 import { getDb } from '@/lib/db';
 import { repriceDraft } from '@/lib/meters';
-import { FIELD_LABELS, PAYMENT_FIELDS, RATE_FIELDS, RATE_LIMITS, type PaymentField, type RateField } from '@/lib/settings-fields';
+import { FIELD_LABELS, LANDLORD_LABELS, PAYMENT_FIELDS, RATE_FIELDS, RATE_LIMITS, type PaymentField, type RateField } from '@/lib/settings-fields';
 
 const PROFILE_TEXT = ['name', 'address', 'phone', 'description', 'facilities', 'map_url', 'cover_image'] as const;
 const PROFILE_FLAGS = ['has_wifi', 'has_parking', 'pet_friendly', 'has_lan', 'has_air_con'] as const;
@@ -71,6 +71,17 @@ export function validateSettings(patch: Record<string, unknown>) {
     else if (f === 'name' && v.length > MAX_TEXT) errors.push(`ชื่อหอพัก: ยาวเกิน ${MAX_TEXT} ตัวอักษร`);
     else if (f === 'phone' && v.length > 50) errors.push('เบอร์โทรศัพท์: ยาวเกิน 50 ตัวอักษร');
     else values[f] = v;
+  }
+  if (has(patch, 'landlord_name')) {
+    const v = String(patch.landlord_name ?? '').trim();
+    if (v.length > MAX_TEXT) errors.push(`${LANDLORD_LABELS.landlord_name}: ยาวเกิน ${MAX_TEXT} ตัวอักษร`);
+    else values.landlord_name = v || null;
+  }
+  if (has(patch, 'landlord_phone')) {
+    const v = String(patch.landlord_phone ?? '').trim();
+    const n = digits(v).replace('+', '').length;
+    if (v && (!/^[0-9+\s-]+$/.test(v) || n < 9 || n > 15)) errors.push(`${LANDLORD_LABELS.landlord_phone}: ตัวเลข 9–15 หลัก (ใส่ขีดได้)`);
+    else values.landlord_phone = v || null;
   }
   for (const f of PROFILE_FLAGS) if (has(patch, f)) values[f] = patch[f] ? 1 : 0;
   // OCR key: an empty value keeps the saved key (as before); the provider is kept when not given

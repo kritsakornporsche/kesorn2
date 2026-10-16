@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { parseThaiAddress } from '@/lib/address-parser';
 import type { PaymentInfo } from '@/lib/billing';
-import { contractPaymentLines } from '@/lib/settings-fields';
+import { contractPartyText, contractPaymentLines, type ContractParty } from '@/lib/settings-fields';
 
 interface PrintableContractModalProps {
   isOpen: boolean;
@@ -42,16 +42,19 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
   const [activeTab, setActiveTab] = useState<'all' | '1' | '2' | '3'>('all');
   // Where to transfer: PromptPay / bank account from the settings page (no numbers written in this file)
   const [payment, setPayment] = useState<PaymentInfo | null>(null);
+  // Dorm address and landlord name / phone from the settings page (dotted line when not set)
+  const [party, setParty] = useState<ContractParty | null>(null);
   useEffect(() => {
     if (!isOpen) return;
     fetch('/api/rates')
       .then((res) => res.json())
-      .then((data) => { if (data.success) setPayment(data.payment || null); })
+      .then((data) => { if (data.success) { setPayment(data.payment || null); setParty(data.party || null); } })
       .catch(() => {});
   }, [isOpen]);
 
   if (!isOpen || !contract) return null;
   const paymentLines = contractPaymentLines(payment);
+  const landlord = contractPartyText(party);
 
   const thaiMonths = [
     'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -274,7 +277,7 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
                     สัญญาเช่าห้องพักหอพักเกษร
                   </h1>
                   <p className="text-[15px] text-slate-800 mt-1">
-                    หอพักเกษร 224 หมู่ 2 แม่กาห้วยเคียน เมือง พะเยา 56000 โทร 09-3048-0607
+                    {landlord.header}
                   </p>
                 </div>
 
@@ -288,7 +291,7 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
 
                 <div className="text-justify text-[15px] space-y-2 leading-[1.65]">
                   <p className="indent-8">
-                    สัญญาเช่าฉบับนี้ทำขึ้นระหว่างขันแก้ว คำบัว ดังที่อยู่ข้างต้น ซึ่งต่อไปในสัญญานี้จะเรียกว่า &quot;ผู้ให้เช่า&quot; ฝ่ายหนึ่งกับ
+                    สัญญาเช่าฉบับนี้ทำขึ้นระหว่าง {landlord.landlordName} ดังที่อยู่ข้างต้น ซึ่งต่อไปในสัญญานี้จะเรียกว่า &quot;ผู้ให้เช่า&quot; ฝ่ายหนึ่งกับ
                   </p>
                   <p>
                     นาย/นางสาว <Blank value={contract.tenant_name} dots={58} minW="min-w-[280px]" />{' '}
@@ -412,7 +415,7 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
 
                     <div className="space-y-1">
                       <p>ลงชื่อ.......................................................ผู้ให้เช่า</p>
-                      <p>(……….............นายขันแก้ว คำบัว.........………….)</p>
+                      <p>( {party?.landlordName ? <span className="font-bold">{landlord.landlordName}</span> : '……………………………………………………………'} )</p>
                     </div>
                   </div>
 
@@ -424,7 +427,7 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
 
                     <div className="space-y-1">
                       <p>ลงชื่อ.......................................................พยาน</p>
-                      <p>(………...............นางเกษร คำบัว..........………….)</p>
+                      <p>(…………………………………………………………….)</p>
                     </div>
                   </div>
                 </div>
@@ -452,8 +455,7 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
                 <div className="space-y-4 text-[15px] leading-[1.7] text-slate-900">
                   <p>• ค่าน้ำคนละ {rates ? `${rateText(rates.waterPerPerson)} บาท` : 'ตามอัตราที่หอพักกำหนด'}</p>
                   <p>• ค่าไฟหน่วยละ {rates ? `${rateText(rates.electricityPerUnit)} บาท` : 'ตามอัตราที่หอพักกำหนด'}</p>
-                  <p>• ติดต่อเจ้าของหอพัก นายขันแก้ว คำบัว 09-3048-0607</p>
-                  <p>• ติดต่อเจ้าของหอพัก นายวรรธนันท์ คำบัว 081-842-4948</p>
+                  <p>• {landlord.contact}</p>
                   <p>• กรณีผู้เช่าเลิกสัญญาก่อนครบกำหนด ผู้ให้เช่ามีสิทธิ์ไม่คืนเงินประกัน เว้นแต่ผู้เช่าได้เช่ามาแล้วไม่น้อยกว่ากึ่งหนึ่งของระยะเวลาเช่า ได้แจ้งเลิกสัญญาเป็นหนังสือล่วงหน้าไม่น้อยกว่า 30 วัน และไม่ค้างชำระค่าเช่าหรือค่าใช้จ่ายอื่น</p>
                   <p>• ห้ามทิ้งขยะลงโถชักโครก</p>
                   <p>• ห้ามเสียงดัง ห้ามดื่มเหล้า สูบบุหรี่ ให้รักษาความสะอาดห้องพักสม่ำเสมอ</p>

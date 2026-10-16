@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
 import Image from 'next/image';
 import { formatBaht, formatThaiDateTime, PAYMENT_METHOD_LABEL } from '@/lib/format';
+import { isPaidStatus, statusText } from '@/lib/status-text';
 
 // One-line label of a bill that is not split into rent / utilities (same rule as the receipt: lines only when they add up)
 const BILL_TYPE_LINE: Record<string, string> = {
@@ -301,9 +302,10 @@ export default function TenantBillingPage() {
                               <span className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-full border ${
                                  bill.status === 'Unpaid' || bill.status === 'Overdue' || bill.status === 'Partial' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' :
                                  bill.status === 'Pending' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' :
-                                 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                 isPaidStatus(bill.status) ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
+                                 'bg-slate-500/10 text-slate-300 border-slate-500/30'
                                }`}>
-                                {bill.status === 'Unpaid' ? 'รอชำระเงิน' : bill.status === 'Overdue' ? 'เกินกำหนดชำระ' : bill.status === 'Partial' ? 'ชำระบางส่วน' : bill.status === 'Pending' ? 'กำลังตรวจสอบ' : 'ชำระเรียบร้อย'}
+                                {statusText('bill', bill.status)}
                               </span>
                             )}
                           </div>

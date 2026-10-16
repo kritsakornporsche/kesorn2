@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { statusText } from '@/lib/status-text';
 
 interface HistoryItem {
   id: number;
@@ -126,7 +127,7 @@ export default function RoomMeterHistoryPage() {
           </div>
           <div className="p-4 bg-slate-900/80 rounded-2xl border border-white/10 space-y-0.5">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">สถานะปัจจุบัน</span>
-            <p className="text-sm font-bold text-primary">{room.status === 'Occupied' ? 'มีผู้พักอาศัย' : room.status}</p>
+            <p className="text-sm font-bold text-primary">{statusText('room', room.status)}</p>
           </div>
         </div>
       )}
@@ -231,7 +232,7 @@ export default function RoomMeterHistoryPage() {
                           item.bill_status ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
                           'bg-slate-800 text-slate-400'
                         }`}>
-                          {item.bill_status ? `${BILL_TEXT[String(item.bill_status).toLowerCase()] || item.bill_status} #${item.bill_id}` : 'ยังไม่ออกบิล'}
+                          {item.bill_status ? `${BILL_TEXT[String(item.bill_status).toLowerCase()] || statusText('bill', item.bill_status)} #${item.bill_id}` : 'ยังไม่ออกบิล'}
                         </span>
                       )}
                     </td>

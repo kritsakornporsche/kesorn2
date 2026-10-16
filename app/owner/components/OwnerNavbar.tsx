@@ -9,9 +9,12 @@ import ThemeToggle from '@/app/components/ThemeToggle';
 
 interface OwnerNavbarProps {
   onToggleMobileMenu?: () => void;
+  /** Role read from the DB by the server layout. */
+  role: 'owner' | 'manager';
 }
 
-export default function OwnerNavbar({ onToggleMobileMenu }: OwnerNavbarProps) {
+export default function OwnerNavbar({ onToggleMobileMenu, role }: OwnerNavbarProps) {
+  const isManager = role === 'manager';
   const { data: session } = useSession();
   const [dormName, setDormName] = useState<string | null>(null);
   const [dorms, setDorms] = useState<any[]>([]);
@@ -89,7 +92,7 @@ export default function OwnerNavbar({ onToggleMobileMenu }: OwnerNavbarProps) {
         <Link
           href="/owner"
           className="flex items-center gap-2 sm:gap-3 hover:opacity-90 transition-opacity cursor-pointer group"
-          title="แดชบอร์ดเจ้าของหอพัก"
+          title={isManager ? 'แดชบอร์ดผู้จัดการหอพัก' : 'แดชบอร์ดเจ้าของหอพัก'}
         >
           <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-primary text-white flex items-center justify-center shadow-md shrink-0 group-hover:scale-105 transition-transform text-lg">
             🏢
@@ -100,7 +103,7 @@ export default function OwnerNavbar({ onToggleMobileMenu }: OwnerNavbarProps) {
             </h2>
             <div className="flex items-center gap-1.5 leading-none mt-1">
               <span className="text-[9px] font-black text-primary uppercase tracking-[0.15em]">
-                Owner Portal
+                {isManager ? 'Manager Portal' : 'Owner Portal'}
               </span>
               <span className="hidden sm:inline text-muted-foreground text-[9px]">•</span>
               <span className="hidden sm:inline text-[9px] text-muted-foreground">ระบบจัดการหอพัก</span>
@@ -162,7 +165,7 @@ export default function OwnerNavbar({ onToggleMobileMenu }: OwnerNavbarProps) {
         {/* User Info (Desktop only, shown in Mobile Drawer) */}
         <div className="hidden md:block text-right pl-2 border-l border-border">
           <p className="text-xs font-bold text-foreground truncate max-w-[130px]">
-            {session?.user?.name || 'Owner'}
+            {session?.user?.name || (isManager ? 'Manager' : 'Owner')}
           </p>
           <p className="text-[10px] text-muted-foreground font-medium truncate max-w-[130px]">
             {dormName || 'SmartDom'}

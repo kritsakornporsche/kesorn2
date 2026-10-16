@@ -8,6 +8,7 @@ import Image from 'next/image';
 
 import PrintableContractModal from '@/components/PrintableContractModal';
 import { checkPaperFile } from '@/lib/paper-file-check';
+import { statusText } from '@/lib/status-text';
 import { InspectionButton } from '@/components/InspectionModal';
 
 interface ContractDetail {
@@ -220,9 +221,7 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
               contract.status === 'PendingOwnerSignature' ? "bg-amber-400 animate-pulse" :
               "bg-slate-400"
             )} />
-            {contract.status === 'Active' ? 'สัญญาใช้งานอยู่ (Active)' :
-             contract.status === 'PendingOwnerSignature' ? 'รอเจ้าของหอตรวจ & อนุมัติ' : 
-             contract.status}
+            {contract.status === 'PendingOwnerSignature' ? 'รอเจ้าของหอตรวจ & อนุมัติ' : statusText('contract', contract.status)}
           </span>
 
           {contract.status === 'PendingOwnerSignature' && (

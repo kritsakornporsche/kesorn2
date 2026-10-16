@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { useRates } from '@/lib/use-rates';
+import { statusText } from '@/lib/status-text';
 
 interface RoomMeterSummary {
   room_id: number;
@@ -329,7 +330,7 @@ export default function MetersOverviewPage() {
                           ✅ {room.cycle_reading.units} หน่วย
                           {room.cycle_reading.event === 'rollover' ? ' · วนรอบ' : room.cycle_reading.event === 'replaced' ? ' · เปลี่ยนเครื่อง' : ''}
                           <span className="block text-[10px] text-slate-400 font-normal">
-                            {room.cycle_bill ? `${BILL_STATUS_TEXT[String(room.cycle_bill.status).toLowerCase()] || room.cycle_bill.status} #${room.cycle_bill.id}` : 'ยังไม่ออกบิล'}
+                            {room.cycle_bill ? `${BILL_STATUS_TEXT[String(room.cycle_bill.status).toLowerCase()] || statusText('bill', room.cycle_bill.status)} #${room.cycle_bill.id}` : 'ยังไม่ออกบิล'}
                           </span>
                         </span>
                       ) : (

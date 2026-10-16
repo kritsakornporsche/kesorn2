@@ -706,7 +706,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                 <span className="text-xs font-black uppercase tracking-widest text-emerald-400">Walk-in สำเร็จ</span>
                 <h3 className="text-2xl font-black text-white">บันทึกข้อมูลและล็อกห้องพักสำเร็จ</h3>
                 <p className="text-xs text-slate-400 max-w-md mx-auto">
-                  ระบบได้สร้างบัญชีผู้เช่า ตรวจสอบสลิปค่าจอง และปรับสถานะห้อง {submitResult?.roomNumber} เป็น <strong>Reserved</strong> เรียบร้อยแล้ว
+                  ระบบได้สร้างบัญชีผู้เช่า ตรวจสอบสลิปค่าจอง และปรับสถานะห้อง {submitResult?.roomNumber} เป็น <strong>ติดจอง</strong> เรียบร้อยแล้ว
                 </p>
               </div>
 

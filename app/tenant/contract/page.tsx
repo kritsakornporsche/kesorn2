@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import PrintableContractModal from '@/components/PrintableContractModal';
 import TenantInspectionCard from '@/components/TenantInspectionCard';
+import { statusText } from '@/lib/status-text';
 
 interface Contract {
   id: number;
@@ -150,7 +151,7 @@ export default function TenantContractPage() {
             <div className={`p-4 text-center font-black tracking-widest uppercase text-xs border-b ${
               activeContract.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-white/5 text-muted-foreground border-border'
             }`}>
-              สถานะสัญญา: {activeContract.status === 'Active' ? '🟢 มีผลบังคับใช้ (Active)' : activeContract.status}
+              สถานะสัญญา: {activeContract.status === 'Active' ? '🟢 ' : ''}{statusText('contract', activeContract.status)}
               {activeContract.renewal_requested === 1 && ' — 🔔 แจ้งส่งคำขอต่อสัญญาแล้ว (รอเจ้าของหอพักดำเนินการ)'}
             </div>
 

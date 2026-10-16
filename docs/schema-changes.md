@@ -28,6 +28,7 @@ FK: **D** = ประกาศจริงในฐาน · **I** = อ้า�
 | 014 | `meters` | เพิ่ม 13 คอลัมน์ใน `meter_readings` รวม generated `cycle_key` + UNIQUE `uq_meter_cycle` + INDEX `(room_id, id)` | แถวเดิมทั้งหมด `kind = 'cycle'` · รูปใน `storage/meters` |
 | 015 | `rates_settings` | `dormitory_profile.cleaning_fee` (300), `bank_name`, `bank_account`, `bank_account_name` · DEFAULT `water_rate` 18→100, `electricity_rate` 8→4.88 (MODIFY, แถวเดิมไม่เปลี่ยน) · `bills.late_fee_rate` · **ตาราง `rate_changes`** | บิลที่ส่งแล้ว (ไม่ใช่ Draft/Cancelled) ได้ `late_fee_rate` = อัตราปัจจุบัน |
 | 016 | `timed_notifications` | `notifications.event_key VARCHAR(120)` + UNIQUE `(user_id, event_key)` · **ตาราง `job_runs`** | แจ้งเตือน `overdue_alert` เดิมได้ key `overdue15:<bill>` (แถวแรกต่อ user+link) · แทรก `job_runs ('reminders', '2000-01-01')` |
+| 018 | `landlord_contact` | `dormitory_profile.landlord_name VARCHAR(255) NULL`, `landlord_phone VARCHAR(50) NULL` | แถวเดิมได้ NULL (สัญญาแสดงเส้นประจนกว่าเจ้าของหอกรอกในหน้าตั้งค่า) |
 | 017 | `pdpa_clear_id_card` | ไม่เปลี่ยนโครงสร้าง · `tenants.id_card_number/id_card_image` และ `contracts.id_card_number/id_card_image` **เลิกใช้** (โค้ดไม่เขียนแล้วตั้งแต่ commit 16) | ล้างค่าเดิมเป็น NULL (ย้อนกลับไม่ได้ — backup ก่อน) |
 
 ข้อที่ต้องตรวจก่อนรัน (012–014) และโฟลเดอร์ `storage/*` อยู่ใน `docs/CHANGES-completeness.md` หัวข้อ deploy
@@ -87,7 +88,7 @@ FK: **D** = ประกาศจริงในฐาน · **I** = อ้า�
 
 **`notifications`** — `event_key` + UNIQUE `(user_id, event_key)` (016): แจ้งเตือนตามเวลาส่งครั้งเดียวต่อคนต่อเหตุการณ์ · แถวอื่น key = NULL
 
-**`dormitory_profile`** — ที่เดียวที่เก็บอัตราและข้อมูลรับเงิน: `late_fee_per_day` (002), `cleaning_fee`, `bank_name`, `bank_account`, `bank_account_name` (015) · DEFAULT ของ `water_rate` / `electricity_rate` เปลี่ยน · `water_rate` = ต่อคนต่อเดือน, `common_fee` = ต่อห้องต่อเดือน
+**`dormitory_profile`** — ที่เดียวที่เก็บอัตราและข้อมูลรับเงิน: `late_fee_per_day` (002), `cleaning_fee`, `bank_name`, `bank_account`, `bank_account_name` (015) · `landlord_name`, `landlord_phone` (018 — ชื่อ/เบอร์ผู้ให้เช่าในสัญญา) · DEFAULT ของ `water_rate` / `electricity_rate` เปลี่ยน · `water_rate` = ต่อคนต่อเดือน, `common_fee` = ต่อห้องต่อเดือน
 
 **`accounting_transactions`** — `type` เพิ่ม `Liability` (006) · `reference_id` เป็น polymorphic ตาม `reference_type` (ข้อ 4)
 

@@ -9,6 +9,7 @@ import PremiumDatePicker from '@/app/components/PremiumDatePicker';
 import PrintableContractModal from '@/components/PrintableContractModal';
 import { PdpaOcrConsentModal } from '@/app/components/PdpaOcrConsentModal';
 import { checkPaperFile } from '@/lib/paper-file-check';
+import { statusText } from '@/lib/status-text';
 
 interface Contract {
   id: number;
@@ -538,7 +539,7 @@ export default function OwnerContractsPage() {
             }`}
           >
             <div className="flex justify-between items-start mb-2">
-              <h3 className="text-xs font-black text-emerald-400 uppercase tracking-widest">สัญญาใช้งานอยู่ (Active)</h3>
+              <h3 className="text-xs font-black text-emerald-400 uppercase tracking-widest">สัญญาที่มีผลบังคับใช้</h3>
               <span className="text-xl">🟢</span>
             </div>
             <p className="text-4xl font-black text-foreground">{activeContracts.length} <span className="text-xs text-muted-foreground font-medium">สัญญา</span></p>
@@ -754,7 +755,7 @@ export default function OwnerContractsPage() {
                             c.status === 'Renewed' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
                             'bg-slate-500/10 text-slate-400 border-slate-500/20'
                           }`}>
-                            {c.renewal_requested === 1 ? '🔄 ขอต่อสัญญา' : (c.status === 'Active' ? 'Active' : c.status === 'Renewed' ? 'ต่ออายุแล้ว' : c.status)}
+                            {c.renewal_requested === 1 ? '🔄 ขอต่อสัญญา' : statusText('contract', c.status)}
                           </span>
                         </td>
 
@@ -918,6 +919,7 @@ export default function OwnerContractsPage() {
                       />
                     </label>
 
+                    {process.env.NODE_ENV === 'development' && (
                     <button
                       type="button"
                       onClick={handleDemoIdCard}
@@ -927,6 +929,7 @@ export default function OwnerContractsPage() {
                       <span>⚡</span>
                       <span>บัตรตัวอย่าง (Quick Test)</span>
                     </button>
+                    )}
                   </div>
 
                   {ocrSuccessMsg && (
