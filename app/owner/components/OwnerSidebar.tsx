@@ -31,6 +31,7 @@ const navSections = [
       { href: '/owner/meters', label: 'จดมิเตอร์น้ำ-ไฟ', icon: '⚡' },
       { href: '/owner/billing', label: 'บิลค่าเช่ารายเดือน', icon: '💰' },
       { href: '/owner/accounting', label: 'บัญชีรายรับ-จ่าย', icon: '📈' },
+      { href: '/owner/reports', label: 'รายงานหอพัก', icon: '📊' },
     ],
   },
   {

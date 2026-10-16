@@ -152,7 +152,7 @@ export default function OwnerBottomNav() {
       label: 'การเงิน & สัญญา',
       icon: '💰',
       activeIcon: '💳',
-      matchPaths: ['/owner/meters', '/owner/billing', '/owner/contracts', '/owner/accounting'],
+      matchPaths: ['/owner/meters', '/owner/billing', '/owner/contracts', '/owner/accounting', '/owner/reports'],
       subActions: [
         {
           href: '/owner/meters',
@@ -178,6 +178,12 @@ export default function OwnerBottomNav() {
           label: 'บัญชีรายรับ-จ่าย',
           sublabel: 'บันทึกกระแสเงินสด สรุปผลประกอบการหอพัก',
           icon: '📈',
+        },
+        {
+          href: '/owner/reports',
+          label: 'รายงานหอพัก',
+          sublabel: 'สรุปรายรับ-รายจ่ายรายเดือน อัตราการเข้าพัก บิลค้างชำระ ส่งออก CSV',
+          icon: '📊',
         },
       ],
     },
