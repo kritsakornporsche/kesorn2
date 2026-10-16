@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import PrintableContractModal from '@/components/PrintableContractModal';
+import TenantInspectionCard from '@/components/TenantInspectionCard';
+import { statusText } from '@/lib/status-text';
 
 interface Contract {
   id: number;
@@ -16,6 +17,8 @@ interface Contract {
   deposit_amount: number;
   status: string;
   contract_file_url?: string | null;
+  contract_file_is_pdf?: boolean;
+  paper_signed_date?: string | null;
   renewal_requested?: number;
   renewal_note?: string | null;
   parent_contract_id?: number | null;
@@ -42,7 +45,6 @@ export default function TenantContractPage() {
   const [submitting, setSubmitting] = useState(false);
 
   // Printable Contract Modal
-  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
 
   // Preview File Modal
   const [previewingFileUrl, setPreviewingFileUrl] = useState<string | null>(null);
@@ -147,7 +149,7 @@ export default function TenantContractPage() {
             <div className={`p-4 text-center font-black tracking-widest uppercase text-xs border-b ${
               activeContract.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-white/5 text-muted-foreground border-border'
             }`}>
-              สถานะสัญญา: {activeContract.status === 'Active' ? '🟢 มีผลบังคับใช้ (Active)' : activeContract.status}
+              สถานะสัญญา: {activeContract.status === 'Active' ? '🟢 ' : ''}{statusText('contract', activeContract.status)}
               {activeContract.renewal_requested === 1 && ' — 🔔 แจ้งส่งคำขอต่อสัญญาแล้ว (รอเจ้าของหอพักดำเนินการ)'}
             </div>
 
@@ -196,7 +198,10 @@ export default function TenantContractPage() {
                     <h3 className="text-lg font-black text-white flex items-center gap-2">
                       <span>📄 เอกสารสัญญาเช่าฉบับจริง (Signed Document)</span>
                     </h3>
-                    <p className="text-xs text-muted-foreground mt-1">สำเนาภาพถ่าย/ไฟล์สัญญาที่เซ็นรับรองร่วมกับเจ้าของหอพัก</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      สำเนาภาพถ่าย/ไฟล์สัญญาที่เซ็นรับรองร่วมกับเจ้าของหอพัก
+                      {activeContract.paper_signed_date ? ` · เซ็นวันที่ ${new Date(activeContract.paper_signed_date).toLocaleDateString('th-TH')}` : ''}
+                    </p>
                   </div>
 
                   {activeContract.contract_file_url && (
@@ -214,7 +219,8 @@ export default function TenantContractPage() {
 
                 {activeContract.contract_file_url ? (
                   <div className="relative rounded-2xl overflow-hidden border border-border bg-black/40 flex items-center justify-center min-h-[350px]">
-                    {activeContract.contract_file_url.startsWith('data:image') || activeContract.contract_file_url.startsWith('http') ? (
+                    {activeContract.contract_file_url.startsWith('data:image') || activeContract.contract_file_url.startsWith('http')
+                      || (activeContract.contract_file_url.startsWith('/api/contracts/') && !activeContract.contract_file_is_pdf) ? (
                       <Image
                         src={activeContract.contract_file_url}
                         alt="Contract Document"
@@ -239,15 +245,29 @@ export default function TenantContractPage() {
                 )}
               </div>
 
+              {/* Move-in room inspection: shown once the owner has recorded it */}
+              <TenantInspectionCard key={activeContract.id} contractId={activeContract.id} />
+              <a
+                href={`/inspection-sheet/${activeContract.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline"
+              >
+                <span>📋</span>
+                <span>ใบตรวจสภาพห้อง (เอกสารแนบท้ายสัญญา) — เปิดเพื่อพิมพ์</span>
+              </a>
+
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-border">
-                <button
-                  onClick={() => setIsPrintModalOpen(true)}
-                  className="flex-1 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl shadow-xl hover:brightness-110 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
+                <a
+                  href={`/contract-print/${activeContract.id}?print=1`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl shadow-xl active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
-                  <span>🖨️</span>
-                  <span>ดูและพิมพ์เอกสารสัญญาเช่า (PDF)</span>
-                </button>
+                  <span>📥</span>
+                  <span>ดาวน์โหลดสัญญา (PDF)</span>
+                </a>
 
                 <button
                   onClick={() => setIsRenewModalOpen(true)}
@@ -399,12 +419,6 @@ export default function TenantContractPage() {
         </div>
       )}
 
-      {/* Printable Contract Modal */}
-      <PrintableContractModal
-        isOpen={isPrintModalOpen}
-        onClose={() => setIsPrintModalOpen(false)}
-        contract={activeContract as any}
-      />
     </div>
   );
 }

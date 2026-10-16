@@ -1,8 +1,12 @@
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { verifySlipWithSlipOK } from '@/lib/slipok';
-import bcrypt from 'bcryptjs';
+import { recordPayment, slipPaidAt } from '@/lib/payments';
+import { bookingFeeFor, getDormPromptPay } from '@/lib/billing';
+import { createContract, contractMessage } from '@/lib/contracts';
+import { voidFailedBooking } from '@/lib/bookings';
 
 /**
  * POST /api/owner/tenants/walk-in
@@ -14,7 +18,8 @@ import bcrypt from 'bcryptjs';
  *    - email = entered email
  *    - password = phone number hash (e.g. 0636040550)
  * 3. Creates tenant record with status 'Pending'
- * 4. Verifies ฿1,000 PromptPay slip via SlipOK (anti-replay + validation)
+ * 4. Booking fee: a PromptPay slip verified by SlipOK (anti-replay + validation), or cash received by the
+ *    owner/manager on site (paymentMethod 'cash': exactly the server's booking fee, recorded with a receipt)
  * 5. Updates room status to 'Reserved'
  * 6. Creates booking bill (status = 'Paid') & logs to accounting_transactions
  * 7. Creates contract with status 'PendingOwnerSignature'
@@ -22,21 +27,18 @@ import bcrypt from 'bcryptjs';
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    const role = (session?.user as any)?.role;
 
     if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
-      return NextResponse.json({ success: false, message: 'Forbidden: เฉพาะเจ้าของหอพักและผู้ดูแล' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
 
     const body = await req.json();
     const {
       roomId,
       startDate,
       endDate,
-      depositAmount = 1000,
       monthlyRent,
       tenantName,
       email,
@@ -44,15 +46,42 @@ export async function POST(req: Request) {
       parentPhone,
       idCardNumber,
       tenantAddress,
-      slipUrl
+      slipUrl,
+      paymentMethod: rawMethod,
+      cashAmount,
+      cashPaidAt,
     } = body;
 
+    // How the booking fee is paid: a transfer slip (default, as before) or cash received on site
+    const paymentMethod = rawMethod === undefined || rawMethod === null || rawMethod === '' ? 'slip' : rawMethod;
+    if (paymentMethod !== 'slip' && paymentMethod !== 'cash') {
+      return NextResponse.json({ success: false, message: 'วิธีชำระค่าจองไม่ถูกต้อง (สลิปโอน หรือ เงินสด)' }, { status: 400 });
+    }
+    const isCash = paymentMethod === 'cash';
+
     // Validation
-    if (!roomId || !tenantName || !email || !phone || !slipUrl) {
+    if (!roomId || !tenantName || !email || !phone || (!isCash && !slipUrl)) {
       return NextResponse.json({
         success: false,
-        message: 'กรุณากรอกข้อมูลสำคัญให้ครบถ้วน (ห้องพัก, ชื่อผู้เช่า, อีเมล, เบอร์โทรศัพท์, และสลิปการโอนเงิน)'
+        message: isCash
+          ? 'กรุณากรอกข้อมูลสำคัญให้ครบถ้วน (ห้องพัก, ชื่อผู้เช่า, อีเมล, เบอร์โทรศัพท์)'
+          : 'กรุณากรอกข้อมูลสำคัญให้ครบถ้วน (ห้องพัก, ชื่อผู้เช่า, อีเมล, เบอร์โทรศัพท์, และสลิปการโอนเงิน)'
       }, { status: 400 });
+    }
+
+    // Cash: when it was received (Thai time 'YYYY-MM-DDTHH:mm', default now), never in the future
+    const now = new Date();
+    let cashPaidAtDate = now;
+    if (isCash && cashPaidAt !== undefined && cashPaidAt !== null && cashPaidAt !== '') {
+      cashPaidAtDate = typeof cashPaidAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(cashPaidAt)
+        ? new Date(`${cashPaidAt}:00+07:00`)
+        : new Date(NaN);
+      if (Number.isNaN(cashPaidAtDate.getTime())) {
+        return NextResponse.json({ success: false, message: 'วันเวลาที่รับเงินไม่ถูกต้อง' }, { status: 400 });
+      }
+      if (cashPaidAtDate.getTime() > now.getTime() + 60_000) {
+        return NextResponse.json({ success: false, message: 'วันเวลาที่รับเงินต้องไม่อยู่ในอนาคต' }, { status: 400 });
+      }
     }
 
     const cleanEmail = email.trim().toLowerCase();
@@ -92,26 +121,34 @@ export async function POST(req: Request) {
     }
 
     const targetDormId = room.dorm_id || 1;
+    // Booking fee set by the server (never by the page), as for self-booking; the slip must match it exactly
+    const bookingFee = bookingFeeFor(room.room_number);
+    // Cash: the amount the staff confirmed on the page must be exactly the booking fee (a stale page is refused)
+    if (isCash && Number(cashAmount) !== bookingFee) {
+      return NextResponse.json({ success: false, message: `ยอดเงินสดไม่ตรงกับค่าจอง ฿${bookingFee.toLocaleString('th-TH')}` }, { status: 400 });
+    }
 
-    // 2. SlipOK Verification (Verify ฿1,000 booking slip)
-    let isAutoApproved = false;
-    let slipVerified = 0;
     let slipRaw = null;
     let slipokRef: string | null = null;
+    let slipAmount: number | undefined;
+    let slipPaid: Date = cashPaidAtDate;
+
+    if (!isCash) {
+    // 2. SlipOK Verification (booking fee slip)
 
     const dormProfiles = await sql`
-      SELECT name, promptpay_number, promptpay_name 
-      FROM dormitory_profile 
+      SELECT name, promptpay_name
+      FROM dormitory_profile
       LIMIT 1
     `;
-    const dormProfile = dormProfiles.length > 0 ? dormProfiles[0] : { name: 'หอพักเกษร 2', promptpay_number: '0636040550' };
+    const dormProfile = dormProfiles.length > 0 ? dormProfiles[0] : { name: 'หอพักเกษร 2' };
 
     const verifyResult = await verifySlipWithSlipOK(
       slipUrl,
-      Number(depositAmount || 1000),
+      bookingFee,
       {
         name: dormProfile.promptpay_name || dormProfile.name || 'หอพักเกษร 2',
-        promptpay: dormProfile.promptpay_number || '0636040550',
+        promptpay: (await getDormPromptPay(sql)) || '',
         dormName: dormProfile.name || 'หอพักเกษร 2',
         isBooking: true,
         checkPromptPayOnly: true
@@ -142,128 +179,46 @@ export async function POST(req: Request) {
       }
     }
 
-    isAutoApproved = true;
-    slipVerified = 1;
     slipRaw = JSON.stringify(verifyResult.rawData || {});
-
-    // Save slip image to disk
-    const { saveBase64Image } = await import('@/lib/file-storage');
-    const storedSlipUrl = saveBase64Image(slipUrl, 'slips', `walkin_${Date.now()}_room_${room.room_number}`);
-
-    // 3. User Account Creation / Update (Username = Full Name from ID card, Password = Phone)
-    const passwordHash = await bcrypt.hash(cleanPhone, 12);
-    let userId: number;
-
-    const existingUsers = await sql`
-      SELECT id, role FROM users 
-      WHERE LOWER(email) = ${cleanEmail}
-      LIMIT 1
-    `;
-
-    if (existingUsers.length > 0) {
-      userId = existingUsers[0].id;
-      // Update info and set password to phone
-      await sql`
-        UPDATE users 
-        SET name = ${cleanName},
-            phone = ${cleanPhone},
-            password = ${passwordHash},
-            role = 'guest',
-            primary_role = 'guest'
-        WHERE id = ${userId}
-      `;
-    } else {
-      const userInsert = await sql`
-        INSERT INTO users (name, email, password, phone, role, primary_role)
-        VALUES (${cleanName}, ${cleanEmail}, ${passwordHash}, ${cleanPhone}, 'guest', 'guest')
-      `;
-      userId = (userInsert as any).insertId;
+    slipAmount = verifyResult.amount !== undefined ? Number(verifyResult.amount) : bookingFee;
+    slipPaid = slipPaidAt(verifyResult);
     }
 
-    // Assign dorm role
-    try {
-      const existingRole = await sql`
-        SELECT id FROM user_dorm_roles 
-        WHERE user_id = ${userId} AND dorm_id = ${targetDormId} 
-        LIMIT 1
-      `;
-      if (existingRole.length === 0) {
-        await sql`INSERT INTO user_dorm_roles (user_id, dorm_id, role) VALUES (${userId}, ${targetDormId}, 'guest')`;
-      }
-    } catch (e) {}
-
-    // 4. Tenant record creation / update
-    let tenantId: number;
-    const existingTenants = await sql`
-      SELECT id FROM tenants 
-      WHERE user_id = ${userId} OR LOWER(email) = ${cleanEmail}
-      LIMIT 1
-    `;
-
+    // 3. Account + contract through the single contract service. A new account's password is the phone
+    // number; an existing guest/tenant account keeps its password and role; staff accounts are refused.
+    // One booking/contract per account until it ends (checked in the same transaction, with the user row locked).
     const formattedStartDate = startDate || new Date().toISOString().slice(0, 10);
     const formattedEndDate = endDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10);
-
-    if (existingTenants.length > 0) {
-      tenantId = existingTenants[0].id;
-      await sql`
-        UPDATE tenants 
-        SET name = ${cleanName},
-            phone = ${cleanPhone},
-            room_id = ${room.id},
-            user_id = ${userId},
-            id_card_number = ${cleanIdCard},
-            address = ${tenantAddress || null},
-            status = 'Pending',
-            move_in_date = ${formattedStartDate},
-            dorm_id = ${targetDormId}
-        WHERE id = ${tenantId}
-      `;
-    } else {
-      const tenantInsert = await sql`
-        INSERT INTO tenants (
-          name, email, phone, room_id, user_id, id_card_number, address, status, move_in_date, dorm_id
-        ) VALUES (
-          ${cleanName}, ${cleanEmail}, ${cleanPhone}, ${room.id}, ${userId}, ${cleanIdCard}, ${tenantAddress || null}, 'Pending', ${formattedStartDate}, ${targetDormId}
-        )
-      `;
-      tenantId = (tenantInsert as any).insertId;
+    const created = await createContract({
+      account: {
+        email: cleanEmail,
+        name: cleanName,
+        phone: cleanPhone,
+        idCardNumber: cleanIdCard,
+        address: tenantAddress || null,
+        role: 'guest',
+        newPassword: cleanPhone,
+      },
+      roomId: room.id,
+      startDate: formattedStartDate,
+      endDate: formattedEndDate,
+      depositAmount: bookingFee,
+      status: 'PendingOwnerSignature',
+      requireRoomFree: true,
+      oneOpenContract: true,
+      signature: 'WALK_IN_VERIFIED',
+      signedAt: new Date(),
+      // Staff on site counts as the approval
+      approvedAt: new Date(),
+      approvedBy: guard.user.id,
+      idCardNumber: cleanIdCard,
+      tenantAddress: tenantAddress || null,
+      parentPhone: cleanParentPhone,
+    });
+    if (!created.ok) {
+      return NextResponse.json({ success: false, message: contractMessage(created) }, { status: 400 });
     }
-
-    // 5. Contract Record Creation (Status = PendingOwnerSignature)
-    const contractInsert = await sql`
-      INSERT INTO contracts (
-        tenant_id, 
-        room_id, 
-        start_date, 
-        end_date, 
-        deposit_amount, 
-        signature_data, 
-        owner_signature_data,
-        signed_at,
-        slip_url,
-        id_card_number,
-        tenant_address,
-        id_card_image,
-        parent_phone,
-        status
-      ) VALUES (
-        ${tenantId}, 
-        ${room.id}, 
-        ${formattedStartDate}, 
-        ${formattedEndDate}, 
-        ${depositAmount || 1000}, 
-        'WALK_IN_VERIFIED', 
-        NULL,
-        ${new Date()},
-        ${storedSlipUrl || null},
-        ${cleanIdCard},
-        ${tenantAddress || null},
-        NULL,
-        ${cleanParentPhone},
-        'PendingOwnerSignature'
-      )
-    `;
-    const contractId = (contractInsert as any).insertId;
+    const { contractId, tenantId, userId } = created;
 
     // 6. Create Booking Bill (Status = Paid)
     const bookingTitle = `ค่าจองห้องพัก Walk-in (ห้อง ${room.room_number})`;
@@ -293,46 +248,59 @@ export async function POST(req: Request) {
         ${targetDormId},
         ${room.room_number},
         ${bookingTitle},
-        ${depositAmount || 1000},
-        ${depositAmount || 1000},
+        ${bookingFee},
+        ${bookingFee},
         0,
         0,
         0,
         0,
         'ค่าจองห้องพักเพื่อยืนยันสิทธิ์',
         ${formattedStartDate},
-        'Paid',
-        ${storedSlipUrl || null},
+        'Unpaid',
+        ${null},
         'booking',
-        ${slipVerified},
-        ${new Date()},
+        0,
+        ${null},
         ${slipokRef},
         ${slipRaw}
       )
     `;
     const billId = (billInsertRes as any)?.insertId;
 
-    // 7. Update Room status to 'Reserved'
-    await sql`UPDATE rooms SET status = 'Reserved' WHERE id = ${room.id}`;
+    await sql`UPDATE contracts SET booking_bill_id = ${billId} WHERE id = ${contractId}`;
 
-    // 8. Log Accounting Transaction
-    try {
-      await sql`
-        INSERT INTO accounting_transactions (
-          dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date
-        ) VALUES (
-          ${targetDormId},
-          'Income',
-          'Deposit',
-          ${depositAmount || 1000},
-          ${'ชำระค่าจองห้อง Walk-in ' + room.room_number + ' (Ref: ' + (slipokRef || '-') + ') [SlipOK อนุมัติอัตโนมัติ]'},
-          ${billId || contractId},
-          'bill',
-          ${new Date().toISOString().slice(0, 10)}
-        )
-      `;
-    } catch (accErr) {
-      console.warn('[Walk-in Accounting Sync Error]', accErr);
+    // The verified slip, or the cash received, pays the booking bill through the single payment entry point
+    // (also records the deposit part as a liability, and gives the receipt).
+    // If it cannot be recorded, the contract and bill just created are undone and the room is released.
+    const payment = isCash
+      ? await recordPayment(billId, {
+          amount: bookingFee,
+          method: 'cash',
+          paidAt: cashPaidAtDate,
+          recordedBy: guard.user.id,
+          note: 'รับเงินสดค่าจอง (walk-in)',
+        })
+      : await recordPayment(billId, {
+          amount: slipAmount ?? bookingFee,
+          method: 'slip',
+          paidAt: slipPaid,
+          slipRef: slipokRef,
+          recordedBy: guard.user.id,
+        });
+    if (!payment.ok) {
+      await voidFailedBooking(contractId, billId, new Date());
+      const message = payment.reason === 'duplicate_slip' ? 'สลิปนี้ถูกใช้ชำระเงินไปแล้ว ไม่สามารถใช้ซ้ำได้'
+        : payment.reason === 'amount_mismatch' ? `ยอดในสลิปไม่ตรงกับค่าจอง ฿${bookingFee.toLocaleString('th-TH')}`
+        : 'บันทึกการชำระค่าจองไม่สำเร็จ';
+      return NextResponse.json({ success: false, message }, { status: 400 });
+    }
+
+    // Keep the slip image only now that the walk-in succeeded (a refused walk-in leaves no file behind)
+    const { saveBase64Image } = await import('@/lib/file-storage');
+    const storedSlipUrl = isCash ? null : saveBase64Image(slipUrl, 'slips', `walkin_${Date.now()}_room_${room.room_number}`);
+    if (storedSlipUrl) {
+      await sql`UPDATE contracts SET slip_url = ${storedSlipUrl} WHERE id = ${contractId}`;
+      await sql`UPDATE bills SET slip_url = ${storedSlipUrl} WHERE id = ${billId}`;
     }
 
     // 9. Send notification to tenant
@@ -346,7 +314,7 @@ export async function POST(req: Request) {
           'booking',
           0,
           '/guest',
-          NOW()
+          ${new Date()}
         )
       `;
     } catch (ne) {}
@@ -361,7 +329,10 @@ export async function POST(req: Request) {
         roomNumber: room.room_number,
         email: cleanEmail,
         defaultPassword: cleanPhone,
-        tenantName: cleanName
+        tenantName: cleanName,
+        paymentMethod,
+        paymentId: payment.paymentId,
+        bookingFee,
       }
     });
 

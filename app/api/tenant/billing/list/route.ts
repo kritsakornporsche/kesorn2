@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { getRates, lateFeeRateOf } from '@/lib/billing';
+import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
 import { auth } from '@/auth';
 
 export async function GET(req: Request) {
@@ -63,7 +65,7 @@ export async function GET(req: Request) {
         WHERE mr3.room_id = r.id 
           AND (mr3.billing_cycle = b.billing_cycle OR mr3.billing_cycle IS NULL)
           AND (mr3.type = 'Electricity' OR mr3.type = 'Electric')
-        ORDER BY mr3.id DESC 
+        ORDER BY (mr3.kind = 'cycle') DESC, mr3.id DESC 
         LIMIT 1
       )
       LEFT JOIN (
@@ -81,30 +83,27 @@ export async function GET(req: Request) {
            OR t.user_id = ${userId || 0}
            OR t.user_id IN (SELECT u.id FROM users u WHERE u.email = ${userEmail || ''})
       )
+        AND LOWER(b.status) <> 'draft'
       ORDER BY b.id DESC
     `;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const rates = await getRates(sql);
+    const now = new Date();
 
+    const summaries = await getPaymentSummaries(sql, bills.map((b: any) => b.id));
     const enrichedBills = bills.map((b: any) => {
-      let daysOverdue = 0;
-      let lateFee = 0;
-      if (b.status === 'Unpaid' && b.due_date) {
-        const due = new Date(b.due_date);
-        due.setHours(0, 0, 0, 0);
-        const diffTime = today.getTime() - due.getTime();
-        if (diffTime > 0) {
-          daysOverdue = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-          lateFee = daysOverdue * 50;
-        }
-      }
+      const s = summaries.get(b.id) || { paid_total: 0, payments: [] };
+      const owed = outstandingFor(b, s.paid_total, now, rates);
       return {
         ...b,
-        days_overdue: daysOverdue,
-        late_fee: lateFee,
+        days_overdue: owed.daysOverdue,
+        late_fee: owed.lateFee,
+        late_fee_per_day: lateFeeRateOf(b, rates),
         base_amount: Number(b.amount),
-        total_amount: Number(b.amount) + lateFee
+        total_amount: owed.due,
+        paid_total: s.paid_total,
+        outstanding: owed.outstanding,
+        payments: s.payments,
       };
     });
 

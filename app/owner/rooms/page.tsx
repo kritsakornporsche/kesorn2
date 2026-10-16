@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
+import { formatBaht } from '@/lib/format';
+import { statusText } from '@/lib/status-text';
 
 interface Room {
   id: number;
@@ -14,8 +16,6 @@ interface Room {
   floor: number;
   image_url?: string | null;
   deposit_amount?: number;
-  water_rate?: number;
-  common_fee?: number;
 }
 
 export default function RoomsManagement() {
@@ -40,8 +40,6 @@ export default function RoomsManagement() {
     room_type: 'Standard',
     price: 4500,
     deposit_amount: 3000,
-    water_rate: 100,
-    common_fee: 150,
     status: 'Available',
   });
 
@@ -51,14 +49,17 @@ export default function RoomsManagement() {
     room_type: 'Standard',
     price: 4500,
     deposit_amount: 3000,
-    water_rate: 100,
-    common_fee: 150,
     floor: 1,
     status: 'Available',
     images: [] as string[] // array of base64 strings
   });
 
   const [ownerDormId, setOwnerDormId] = useState<number | null>(1);
+  // The rates monthly bills actually use (dormitory_profile via /api/rates), not per-room columns
+  const [billingRates, setBillingRates] = useState<{ waterPerPerson: number; commonFee: number } | null>(null);
+  useEffect(() => {
+    fetch('/api/rates').then((res) => res.json()).then((json) => { if (json.success) setBillingRates(json.data); }).catch(() => {});
+  }, []);
 
   const fetchRooms = async (dormId: number = 1) => {
     setLoading(true);
@@ -147,8 +148,6 @@ export default function RoomsManagement() {
         room_type: batchForm.room_type,
         price: batchForm.price,
         deposit_amount: batchForm.deposit_amount,
-        water_rate: batchForm.water_rate,
-        common_fee: batchForm.common_fee,
         floor: batchForm.floor,
         status: batchForm.status,
         dorm_id: ownerDormId
@@ -202,8 +201,6 @@ export default function RoomsManagement() {
           room_type: 'Standard', 
           price: 4500, 
           deposit_amount: 3000,
-          water_rate: 100,
-          common_fee: 150,
           floor: 1, 
           status: 'Available', 
           images: [] 
@@ -239,8 +236,6 @@ export default function RoomsManagement() {
       room_type: room.room_type,
       price: room.price,
       deposit_amount: room.deposit_amount !== undefined ? Number(room.deposit_amount) : 3000,
-      water_rate: room.water_rate !== undefined ? Number(room.water_rate) : 100,
-      common_fee: room.common_fee !== undefined ? Number(room.common_fee) : 150,
       floor: room.floor,
       status: room.status,
       images: parsedImages
@@ -374,8 +369,6 @@ export default function RoomsManagement() {
                 room_type: 'Standard', 
                 price: 4500, 
                 deposit_amount: 3000,
-                water_rate: 100,
-                common_fee: 150,
                 floor: 1, 
                 status: 'Available', 
                 images: [] 
@@ -491,7 +484,7 @@ export default function RoomsManagement() {
                      room.status === 'Available' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 
                      room.status === 'Occupied' || room.status === 'มีผู้เช่า' ? 'bg-blue-500/10 text-blue-600 border-blue-500/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
                    }`}>
-                      {room.status === 'Available' ? 'ว่าง' : room.status === 'Occupied' || room.status === 'มีผู้เช่า' ? 'มีผู้เช่าแล้ว' : 'ปิดปรับปรุง'}
+                      {room.status === 'มีผู้เช่า' ? 'มีผู้เช่า' : statusText('room', room.status)}
                    </div>
                 </div>
 
@@ -508,13 +501,13 @@ export default function RoomsManagement() {
                    {/* Fee Breakdown Badges */}
                    <div className="flex flex-wrap gap-1.5 mb-6">
                       <span className="px-2.5 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded-lg border border-primary/20">
-                        🛡️ ประกัน ฿{Number(room.deposit_amount || 3000).toLocaleString()}
+                        🛡️ ประกัน {room.deposit_amount ? `฿${formatBaht(room.deposit_amount)}` : '-'}
                       </span>
                       <span className="px-2.5 py-1 bg-cyan-500/10 text-cyan-400 text-[10px] font-bold rounded-lg border border-cyan-500/20">
-                        💧 น้ำ ฿{Number(room.water_rate || 100).toLocaleString()}
+                        💧 น้ำ {billingRates ? `฿${formatBaht(billingRates.waterPerPerson)}/คน` : '-'}
                       </span>
                       <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 text-[10px] font-bold rounded-lg border border-amber-500/20">
-                        🧹 ส่วนกลาง ฿{Number(room.common_fee || 150).toLocaleString()}
+                        🧹 ส่วนกลาง {billingRates ? `฿${formatBaht(billingRates.commonFee)}` : '-'}
                       </span>
                    </div>
 
@@ -590,15 +583,15 @@ export default function RoomsManagement() {
                         />
                     </div>
                     <div className="space-y-2">
-                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">สถานะ (Status)</label>
+                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">สถานะ</label>
                         <select 
                             value={formData.status}
                             onChange={(e) => setFormData({...formData, status: e.target.value})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground focus:bg-card cursor-pointer"
                         >
-                            <option value="Available">ว่าง (Available)</option>
-                            <option value="Occupied">มีผู้เช่า (Occupied)</option>
-                            <option value="Maintenance">ปิดปรับปรุง (Maintenance)</option>
+                            <option value="Available">ว่าง</option>
+                            <option value="Occupied">มีผู้เช่า</option>
+                            <option value="Maintenance">ปิดปรับปรุง</option>
                         </select>
                     </div>
                   </div>
@@ -641,35 +634,13 @@ export default function RoomsManagement() {
                         </div>
                       </div>
 
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 sm:col-span-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
-                          💧 ค่าน้ำเหมาจ่าย (Water)
+                          💧 ค่าน้ำ / 🧹 ค่าส่วนกลาง
                         </label>
-                        <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
-                          <input 
-                            type="number" 
-                            value={formData.water_rate}
-                            onChange={(e) => setFormData({...formData, water_rate: parseFloat(e.target.value) || 0})}
-                            className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all"
-                            placeholder="100"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
-                          🧹 ค่าส่วนกลาง (Common Fee)
-                        </label>
-                        <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
-                          <input 
-                            type="number" 
-                            value={formData.common_fee}
-                            onChange={(e) => setFormData({...formData, common_fee: parseFloat(e.target.value) || 0})}
-                            className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all"
-                            placeholder="150"
-                          />
+                        <div className="px-4 py-3 bg-background border border-border rounded-2xl text-xs font-bold text-muted-foreground">
+                          อัตราเดียวทั้งหอ: น้ำ {billingRates ? `฿${formatBaht(billingRates.waterPerPerson)}/คน` : '-'} · ส่วนกลาง {billingRates ? `฿${formatBaht(billingRates.commonFee)}` : '-'}
+                          {' '}<a href="/owner/settings" className="text-primary underline">แก้ที่หน้าตั้งค่าหอพัก</a>
                         </div>
                       </div>
                     </div>
@@ -835,15 +806,15 @@ export default function RoomsManagement() {
                         </select>
                     </div>
                     <div className="space-y-2">
-                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">สถานะเริ่มต้น (Status)</label>
+                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">สถานะเริ่มต้น</label>
                         <select 
                             value={batchForm.status}
                             onChange={(e) => setBatchForm({...batchForm, status: e.target.value})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground focus:bg-card cursor-pointer"
                         >
-                            <option value="Available">ว่าง (Available)</option>
-                            <option value="Occupied">มีผู้เช่า (Occupied)</option>
-                            <option value="Maintenance">ปิดปรับปรุง (Maintenance)</option>
+                            <option value="Available">ว่าง</option>
+                            <option value="Occupied">มีผู้เช่า</option>
+                            <option value="Maintenance">ปิดปรับปรุง</option>
                         </select>
                     </div>
                   </div>
@@ -885,35 +856,13 @@ export default function RoomsManagement() {
                         </div>
                       </div>
 
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 sm:col-span-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
-                          💧 ค่าน้ำ (Water Rate)
+                          💧 ค่าน้ำ / 🧹 ค่าส่วนกลาง
                         </label>
-                        <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
-                          <input 
-                            type="number" 
-                            value={batchForm.water_rate}
-                            onChange={(e) => setBatchForm({...batchForm, water_rate: parseFloat(e.target.value) || 0})}
-                            className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all"
-                            placeholder="100"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
-                          🧹 ค่าส่วนกลาง (Common)
-                        </label>
-                        <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
-                          <input 
-                            type="number" 
-                            value={batchForm.common_fee}
-                            onChange={(e) => setBatchForm({...batchForm, common_fee: parseFloat(e.target.value) || 0})}
-                            className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all"
-                            placeholder="150"
-                          />
+                        <div className="px-4 py-3 bg-background border border-border rounded-2xl text-xs font-bold text-muted-foreground">
+                          อัตราเดียวทั้งหอ: น้ำ {billingRates ? `฿${formatBaht(billingRates.waterPerPerson)}/คน` : '-'} · ส่วนกลาง {billingRates ? `฿${formatBaht(billingRates.commonFee)}` : '-'}
+                          {' '}<a href="/owner/settings" className="text-emerald-400 underline">แก้ที่หน้าตั้งค่าหอพัก</a>
                         </div>
                       </div>
                     </div>

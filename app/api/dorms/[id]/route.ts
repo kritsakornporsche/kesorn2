@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { DEFAULT_RATES } from '@/lib/billing';
 import { getDb } from '@/lib/db';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -43,8 +44,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         has_air_con: Boolean(dorm.has_air_con),
         has_wifi: Boolean(dorm.has_wifi),
         has_lan: Boolean(dorm.has_lan),
-        water_rate: dorm.water_rate !== null && dorm.water_rate !== undefined ? Number(dorm.water_rate) : 100,
-        electricity_rate: dorm.electricity_rate !== null && dorm.electricity_rate !== undefined ? Number(dorm.electricity_rate) : 8,
+        water_rate: dorm.water_rate !== null && dorm.water_rate !== undefined ? Number(dorm.water_rate) : DEFAULT_RATES.waterPerPerson,
+        electricity_rate: dorm.electricity_rate !== null && dorm.electricity_rate !== undefined ? Number(dorm.electricity_rate) : DEFAULT_RATES.electricityPerUnit,
         facilities: dorm.facilities || '',
         map_url: dorm.map_url || '',
         min_price: Number(dorm.min_price),

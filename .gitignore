@@ -34,6 +34,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -62,3 +63,7 @@ report_flow/
 scripts/*.json
 public/uploads/*/*
 !public/uploads/*/.gitkeep
+storage/
+
+# Signed-off contract text from the dorm (has real bank account numbers) — never commit
+docs/review/contract-final.docx

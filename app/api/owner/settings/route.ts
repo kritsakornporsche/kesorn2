@@ -1,132 +1,35 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
-import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
+import { getSettings, updateSettings } from '@/lib/settings';
 
-// GET /api/owner/settings
-export async function GET(req: Request) {
+// GET /api/owner/settings — owner and manager (managers read only, without the OCR key).
+// No settings row yet → data: null (the page shows "ยังไม่ตั้งค่า"), never made-up values.
+export async function GET() {
+  const guard = await requireRole(['owner', 'manager']);
+  if ('response' in guard) return guard.response;
   try {
-    const session = await auth();
-    if (!session || !session.user) {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-    }
-    if ((session.user as any)?.role !== 'owner') {
-      return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
-    }
-
-    const sql = getDb();
-    const profile = await sql`SELECT * FROM dormitory_profile LIMIT 1`;
-
-    if (profile.length > 0) {
-      return NextResponse.json({
-        success: true,
-        data: profile[0]
-      });
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        id: 1,
-        name: 'หอพักเกษร 2',
-        phone: '081-999-2222',
-        address: '123 หมู่ 6 ต.แม่กา อ.เมือง จ.พะเยา 56000',
-        water_rate: 100,
-        electricity_rate: 8,
-        promptpay_number: '0812345678',
-        promptpay_name: 'หอพักเกษร 2 (ม.พะเยา)'
-      }
-    });
+    return NextResponse.json({ success: true, data: await getSettings(guard.user.role), canEdit: guard.user.role === 'owner' });
   } catch (err: any) {
-    console.error('Error fetching settings:', err);
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+    console.error('[GET /api/owner/settings]', err);
+    return NextResponse.json({ success: false, message: 'โหลดการตั้งค่าไม่สำเร็จ' }, { status: 500 });
   }
 }
 
-// POST /api/owner/settings
+// POST /api/owner/settings — owner only. Writes only the fields in the body (lib/settings.ts checks every value).
 export async function POST(req: Request) {
+  const guard = await requireRole(['owner']);
+  if ('response' in guard) return guard.response;
   try {
-    const session = await auth();
-    if (!session || !session.user) {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json({ success: false, message: 'ข้อมูลไม่ถูกต้อง' }, { status: 400 });
     }
-    if ((session.user as any)?.role !== 'owner') {
-      return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
-    }
-
-    const body = await req.json();
-    const {
-      name,
-      address,
-      phone,
-      tax_id,
-      water_rate,
-      electricity_rate,
-      has_wifi,
-      has_parking,
-      pet_friendly,
-      has_lan,
-      facilities,
-      map_url,
-      description,
-      has_air_con,
-      cover_image,
-      promptpay_number,
-      promptpay_name,
-      ocr_api_key,
-      ocr_provider
-    } = body;
-
-    const sql = getDb();
-
-    // Check if profile exists
-    const existing = await sql`SELECT id FROM dormitory_profile LIMIT 1`;
-    if (existing.length === 0) {
-      await sql`
-        INSERT INTO dormitory_profile (
-          name, address, phone, tax_id, water_rate, electricity_rate,
-          has_wifi, has_parking, pet_friendly, has_lan, facilities, map_url,
-          description, has_air_con, cover_image, promptpay_number, promptpay_name,
-          ocr_api_key, ocr_provider
-        ) VALUES (
-          ${name || 'หอพักเกษร 2'}, ${address || ''}, ${phone || ''}, ${tax_id || ''}, 
-          ${water_rate !== undefined ? water_rate : 100.00}, ${electricity_rate !== undefined ? electricity_rate : 8.00},
-          ${has_wifi ? 1 : 0}, ${has_parking ? 1 : 0}, ${pet_friendly ? 1 : 0}, ${has_lan ? 1 : 0}, 
-          ${facilities || ''}, ${map_url || ''}, ${description || ''}, 
-          ${has_air_con ? 1 : 0}, ${cover_image || ''},
-          ${promptpay_number || ''}, ${promptpay_name || ''},
-          ${ocr_api_key || null}, ${ocr_provider || 'gemini'}
-        )
-      `;
-    } else {
-      await sql`
-        UPDATE dormitory_profile
-        SET 
-          name = ${name || 'หอพักเกษร 2'},
-          address = ${address || ''},
-          phone = ${phone || ''},
-          tax_id = ${tax_id || ''},
-          water_rate = ${water_rate !== undefined ? water_rate : 100.00},
-          electricity_rate = ${electricity_rate !== undefined ? electricity_rate : 8.00},
-          has_wifi = ${has_wifi ? 1 : 0},
-          has_parking = ${has_parking ? 1 : 0},
-          pet_friendly = ${pet_friendly ? 1 : 0},
-          has_lan = ${has_lan ? 1 : 0},
-          facilities = ${facilities || ''},
-          map_url = ${map_url || ''},
-          description = ${description || ''},
-          has_air_con = ${has_air_con ? 1 : 0},
-          cover_image = ${cover_image || ''},
-          promptpay_number = ${promptpay_number || ''},
-          promptpay_name = ${promptpay_name || ''},
-          ocr_api_key = COALESCE(${ocr_api_key !== undefined ? (ocr_api_key || null) : null}, ocr_api_key),
-          ocr_provider = COALESCE(${ocr_provider || null}, ocr_provider)
-        WHERE id = ${existing[0].id}
-      `;
-    }
-
-    return NextResponse.json({ success: true, message: 'บันทึกข้อมูลสำเร็จ' });
+    const r = await updateSettings(body, guard.user.id, new Date());
+    if (!r.ok) return NextResponse.json({ success: false, message: r.errors.join(' · '), errors: r.errors }, { status: 400 });
+    const drafts = r.draftsRepriced > 0 ? ` · คิดร่างบิลใหม่ ${r.draftsRepriced} ใบ` : '';
+    return NextResponse.json({ success: true, message: `บันทึกข้อมูลสำเร็จ${drafts}`, ...r });
   } catch (err: any) {
-    console.error('Error updating settings:', err);
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+    console.error('[POST /api/owner/settings]', err);
+    return NextResponse.json({ success: false, message: 'บันทึกการตั้งค่าไม่สำเร็จ' }, { status: 500 });
   }
 }

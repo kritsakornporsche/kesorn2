@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Navbar from './components/Navbar';
 import ChatWidget from '@/app/components/ChatWidget';
+import { useRates } from '@/lib/use-rates';
 
 interface Room {
   id: number;
@@ -132,6 +133,7 @@ export default function Home() {
   const { data: session } = useSession();
 
   const [dormInfo, setDormInfo] = useState<DormInfo | null>(null);
+  const rates = useRates();
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterTab, setFilterTab] = useState<'all' | 'available' | 'moving_out'>('all');
@@ -331,7 +333,7 @@ export default function Home() {
               <div>
                 <span className="text-[10px] font-bold text-muted-foreground uppercase block">ค่าไฟฟ้า</span>
                 <span className="text-sm font-black text-amber-500">
-                  ฿4.88 <span className="text-[11px] font-medium text-muted-foreground">/ หน่วย</span>
+                  ฿{rates.electricityPerUnit} <span className="text-[11px] font-medium text-muted-foreground">/ หน่วย</span>
                 </span>
               </div>
             </div>
@@ -361,7 +363,7 @@ export default function Home() {
               <div>
                 <span className="text-[10px] font-bold text-muted-foreground uppercase block">เงินประกัน</span>
                 <span className="text-sm font-black text-blue-500">
-                  ฿2,000 <span className="text-[11px] font-medium text-muted-foreground">(คืนครบสัญญา)</span>
+                  ฿2,000 <span className="text-[11px] font-medium text-muted-foreground">(คืนตามเงื่อนไขสัญญา)</span>
                 </span>
               </div>
             </div>
@@ -398,7 +400,7 @@ export default function Home() {
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center font-bold text-xs shrink-0">✓</span>
-                  <span><strong>อัตราค่าใช้จ่าย:</strong> ค่าน้ำประปา 100 บาท/คน/เดือน • ค่าไฟหน่วยละ 4.88 บาท • ค่าส่วนกลาง 150 บาท/เดือน</span>
+                  <span><strong>อัตราค่าใช้จ่าย:</strong> ค่าน้ำประปา {rates.waterPerPerson} บาท/คน/เดือน • ค่าไฟหน่วยละ {rates.electricityPerUnit} บาท • ค่าส่วนกลาง {rates.commonFee} บาท/เดือน</span>
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center font-bold text-xs shrink-0">✕</span>
@@ -406,7 +408,7 @@ export default function Home() {
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center font-bold text-xs shrink-0">ℹ</span>
-                  <span><strong>เงื่อนไขเข้าพัก:</strong> ค่าจอง 1,000 บาท • ค่ามัดจำรวม 3,000 บาท (ส่วนที่เหลือ 2,000 บาท ชำระวันทำสัญญาเข้าพัก)</span>
+                  <span><strong>เงื่อนไขเข้าพัก:</strong> ค่าจอง 1,000 บาท • เงินประกันรวม 3,000 บาท (ส่วนที่เหลือ 2,000 บาท ชำระวันทำสัญญาเข้าพัก)</span>
                 </li>
               </ul>
             </div>
@@ -685,7 +687,7 @@ export default function Home() {
                           <span className="text-xs font-medium text-white/90"> /เดือน</span>
                         </div>
                         <span className="text-[10px] text-emerald-300 font-bold block drop-shadow">
-                          ✓ ค่าน้ำ ฿100/คน/ด. • ค่าไฟ ฿8/หน่วย • ฟรี Wi-Fi
+                          ✓ ค่าน้ำ ฿{rates.waterPerPerson}/คน/ด. • ค่าไฟ ฿{rates.electricityPerUnit}/หน่วย • ฟรี Wi-Fi
                         </span>
                       </div>
                     </div>

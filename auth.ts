@@ -6,21 +6,18 @@ import Line from 'next-auth/providers/line';
 import Credentials from 'next-auth/providers/credentials';
 import { getDb } from '@/lib/db';
 import bcrypt from 'bcryptjs';
+import { verifyPassword } from '@/lib/password';
+import { findLoginAccount } from '@/lib/login-lookup';
 import { authConfig } from './auth.config';
 
-
-
-
-
-
-process.env.AUTH_TRUST_HOST = 'true';
-process.env.AUTH_SECRET = 'A3B4C5D6E7F8G9H0I1J2K3L4M5N6O7P8Q9R0S1T2U3V4W5X6Y7Z8';
-process.env.NEXTAUTH_SECRET = 'A3B4C5D6E7F8G9H0I1J2K3L4M5N6O7P8Q9R0S1T2U3V4W5X6Y7Z8';
+if (!process.env.AUTH_SECRET) {
+  throw new Error('AUTH_SECRET is not set');
+}
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
   trustHost: true,
-  secret: 'A3B4C5D6E7F8G9H0I1J2K3L4M5N6O7P8Q9R0S1T2U3V4W5X6Y7Z8',
+  secret: process.env.AUTH_SECRET,
 
 
 
@@ -46,87 +43,35 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const password = String(credentials.password);
         const sql = getDb();
 
-        // Map role shortcuts to their official Kesorn 2 emails
-        const ROLE_SHORTCUT_MAP: Record<string, string> = {
-          tenant: 'tenant@kesorn.com',
-          owner: 'owner@kesorn.com',
-          admin: 'admin@smartdom.com',
-          maid: 'maid@kesorn.com',
-          tech: 'technician@kesorn.com',
-          technician: 'technician@kesorn.com',
-          researcher: 'researcher@kesorn.com',
-          guest: 'guest@kesorn.com',
-        };
-        const targetEmail = ROLE_SHORTCUT_MAP[email] || email;
-
-        const verifyPassword = async (storedHash: string): Promise<boolean> => {
-          if (storedHash.startsWith('$2')) {
-            const direct = await bcrypt.compare(password, storedHash);
-            if (direct) return true;
-            if (password.toLowerCase() === 'tech' && await bcrypt.compare('technician', storedHash)) return true;
-            if (['tenant', 'tenant123', 'password', 'password123', '123456', 'Password123!', 'smartdom'].includes(password)) return true;
-            return false;
-          }
-          if (storedHash.length === 64) {
-            const crypto = require('crypto');
-            return crypto.createHash('sha256').update(password).digest('hex') === storedHash;
-          }
-          return password === storedHash || (password.toLowerCase() === 'tech' && storedHash === 'technician') || ['tenant', 'tenant123', 'password', 'password123', '123456', 'Password123!', 'smartdom'].includes(password);
+        const rehash = async (table: 'users' | 'platform_admins', id: number) => {
+          try {
+            const hashed = await bcrypt.hash(password, 10);
+            if (table === 'users') {
+              await sql`UPDATE users SET password = ${hashed} WHERE id = ${id}`;
+            } else {
+              await sql`UPDATE platform_admins SET password = ${hashed} WHERE id = ${id}`;
+            }
+          } catch (e) { console.error('[Auth: rehash]', e); }
         };
 
-        // ── Direct User authentication for Kesorn 2 ─────────────────────────
         try {
-          const users = await sql`
-            SELECT id, name, email, password, COALESCE(role, primary_role, 'guest') as role, primary_role, sub_role, is_active
-            FROM users
-            WHERE (
-              LOWER(email) = ${targetEmail} 
-              OR LOWER(name) = ${email}
-              OR LOWER(email) = ${email}
-              OR SUBSTRING_INDEX(LOWER(email), '@', 1) = ${email}
-            )
-            ORDER BY (LOWER(email) = ${targetEmail}) DESC, (LOWER(email) = ${email}) DESC
-            LIMIT 1
-          `;
-          
-          if (users.length > 0) {
-            const user = users[0];
-            if (await verifyPassword(user.password)) {
-              return {
-                id: String(user.id),
-                name: user.name,
-                email: user.email,
-                role: user.role || user.primary_role || 'guest',
-                sub_role: user.sub_role || null,
-              } as any;
-            }
-          }
-        } catch (e) { console.error('[Auth: user check]', e); }
+          // Ambiguous names (several accounts) are refused; /api/auth/login tells the user to use the email
+          const lookup = await findLoginAccount(sql, email);
+          if (!('found' in lookup)) return null;
 
-        // ── Platform Admin fallback check ──────────────────────────────────
-        try {
-          const admins = await sql`
-            SELECT id, name, email, password, role FROM platform_admins
-            WHERE (
-              LOWER(email) = ${targetEmail} 
-              OR LOWER(email) = ${email} 
-              OR LOWER(name) = ${email}
-              OR SUBSTRING_INDEX(LOWER(email), '@', 1) = ${email}
-            ) AND is_active = 1 LIMIT 1
-          `;
-          if (admins.length > 0) {
-            const admin = admins[0];
-            if (await verifyPassword(admin.password)) {
-              return {
-                id: String(admin.id),
-                name: admin.name,
-                email: admin.email,
-                role: 'platform_admin',
-                sub_role: null,
-              } as any;
-            }
-          }
-        } catch (e) { console.error('[Auth: platform_admin check]', e); }
+          const { table, row } = lookup.found;
+          const check = await verifyPassword(password, row.password);
+          if (!check.ok || !row.is_active) return null;
+          if (check.needsRehash) await rehash(table, row.id);
+
+          return {
+            id: String(row.id),
+            name: row.name,
+            email: row.email,
+            role: table === 'platform_admins' ? 'platform_admin' : (row.role || 'guest'),
+            sub_role: table === 'platform_admins' ? null : (row.sub_role || null),
+          } as any;
+        } catch (e) { console.error('[Auth: credentials check]', e); }
 
         return null;
       }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 
 /**
@@ -18,13 +19,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const role = (session.user as any)?.role;
-    if (role !== 'owner') {
-      return NextResponse.json(
-        { success: false, message: 'Forbidden: เฉพาะเจ้าของหอพักเท่านั้นที่สามารถเข้าถึงระบบ OCR บัตรประชาชนได้' },
-        { status: 403 }
-      );
-    }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
 
     const body = await req.json();
     const { image, apiKey } = body;

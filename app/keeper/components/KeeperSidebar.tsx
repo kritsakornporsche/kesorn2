@@ -12,13 +12,14 @@ const navItems = [
   {
     href: '/keeper/maid',
     label: 'งานแม่บ้าน / ทำความสะอาด',
-    roles: ['maid', 'keeper', 'technician'],
+    // Each keeper sees only the board of their own kind (maid: cleaning · technician: repairs)
+    roles: ['maid'],
     icon: '🧹',
   },
   {
     href: '/keeper/technician',
     label: 'งานซ่อมบำรุง / ช่าง',
-    roles: ['technician', 'keeper'],
+    roles: ['technician'],
     icon: '🔧',
   },
 ];
@@ -40,14 +41,12 @@ export default function KeeperSidebar({ onDormChange }: { onDormChange?: (dormId
       .then(data => {
         if (data.success && data.dorms) {
           setDorms(data.dorms);
+          // A dorm the keeper belongs to (no "all dorms" choice): the saved one when still valid, else the first
           const savedDorm = typeof window !== 'undefined' ? localStorage.getItem('selectedKeeperDormId') : null;
-          if (savedDorm) {
-            setSelectedDormId(savedDorm);
-          } else if (data.dorms.length > 1) {
-            const firstId = String(data.dorms[0].id);
-            setSelectedDormId(firstId);
-            localStorage.setItem('selectedKeeperDormId', firstId);
-          }
+          const valid = data.dorms.some((d: any) => String(d.id) === savedDorm);
+          const dormId = valid ? (savedDorm as string) : data.dorms.length > 0 ? String(data.dorms[0].id) : 'all';
+          setSelectedDormId(dormId);
+          if (typeof window !== 'undefined' && dormId !== 'all') localStorage.setItem('selectedKeeperDormId', dormId);
         }
       })
       .catch(console.error);
@@ -108,7 +107,6 @@ export default function KeeperSidebar({ onDormChange }: { onDormChange?: (dormId
                 onChange={(e) => handleSelectDorm(e.target.value)}
                 className="bg-transparent text-xs font-bold text-foreground focus:outline-none cursor-pointer appearance-none pr-5 max-w-[120px] sm:max-w-[180px] truncate"
               >
-                <option value="all" className="bg-card text-foreground">ทุกหอพัก ({dorms.length})</option>
                 {dorms.map(d => (
                   <option key={d.id} value={String(d.id)} className="bg-card text-foreground">
                     {d.dorm_name}

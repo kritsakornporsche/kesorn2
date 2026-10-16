@@ -106,10 +106,11 @@ export default function Navbar() {
                 <div className="flex items-center gap-2">
                   <Link 
                     href={
-                      (session.user as any)?.role === 'platform_admin' ? '/platform' :
+                      (session.user as any)?.role === 'platform_admin' ? '/explore' :
                       (session.user as any)?.role === 'owner' ? '/owner' :
+                      (session.user as any)?.role === 'manager' ? '/owner' :
                       (session.user as any)?.role === 'keeper' ? '/keeper' :
-                      (session.user as any)?.role === 'researcher' ? '/researcher' :
+                      (session.user as any)?.role === 'researcher' ? '/explore' :
                       (session.user as any)?.role === 'guest' ? '/guest' :
                       '/tenant'
                     }
@@ -253,10 +254,11 @@ export default function Navbar() {
                 
                 <Link 
                   href={
-                    (session.user as any)?.role === 'platform_admin' ? '/platform' :
+                    (session.user as any)?.role === 'platform_admin' ? '/explore' :
                     (session.user as any)?.role === 'owner' ? '/owner' :
+                    (session.user as any)?.role === 'manager' ? '/owner' :
                     (session.user as any)?.role === 'keeper' ? '/keeper' :
-                    (session.user as any)?.role === 'researcher' ? '/researcher' :
+                    (session.user as any)?.role === 'researcher' ? '/explore' :
                     (session.user as any)?.role === 'guest' ? '/guest' :
                     '/tenant'
                   }
