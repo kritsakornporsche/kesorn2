@@ -457,7 +457,7 @@ export default function GuestDashboardPage() {
                           rel="noreferrer"
                           className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl border border-white/10 transition-all flex items-center gap-1.5"
                         >
-                          <span>🖨 แบบฟอร์มสัญญา (Word)</span>
+                          <span>📥 ดาวน์โหลดสัญญา (PDF)</span>
                         </a>
                       )}
                       {booking.paper_uploaded && booking.contract_file_url && (

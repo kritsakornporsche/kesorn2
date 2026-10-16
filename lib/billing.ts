@@ -2,7 +2,7 @@
 // Every day count uses the calendar date in Asia/Bangkok, never UTC or the server's local time.
 
 import { formatBaht } from '@/lib/format';
-import type { ContractParty } from '@/lib/settings-fields';
+import { RENT_DUE_DAY, type ContractParty } from '@/lib/settings-fields';
 
 export interface Rates {
   electricityPerUnit: number;
@@ -252,7 +252,7 @@ export function withoutMoveInCover<T extends ReturnType<typeof calcMonthlyBill>>
  */
 export function calcDueDate(billingCycle: string, issueDate: Date | string | number = new Date()): string {
   const [y, m] = billingCycle.split('-').map(Number);
-  const fifthOfNextMonth = new Date(Date.UTC(y, m, 5)).toISOString().slice(0, 10);
+  const fifthOfNextMonth = new Date(Date.UTC(y, m, RENT_DUE_DAY)).toISOString().slice(0, 10);
   const earliest = addDays(bangkokDate(issueDate), 3);
   return dayNumber(fifthOfNextMonth) >= dayNumber(earliest) ? fifthOfNextMonth : earliest;
 }

@@ -6,7 +6,6 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import PremiumDatePicker from '@/app/components/PremiumDatePicker';
-import PrintableContractModal from '@/components/PrintableContractModal';
 import { PdpaOcrConsentModal } from '@/app/components/PdpaOcrConsentModal';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { contractDepositLabel, statusText } from '@/lib/status-text';
@@ -65,8 +64,6 @@ export default function OwnerContractsPage() {
   const [submitting, setSubmitting] = useState(false);
 
   // Printable Contract Modal
-  const [printingContract, setPrintingContract] = useState<Contract | null>(null);
-  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
 
   // Deposit Refund Modal
 
@@ -805,15 +802,16 @@ export default function OwnerContractsPage() {
                               </>
                             )}
 
-                            <button
-                              type="button"
-                              onClick={() => { setPrintingContract(c); setIsPrintModalOpen(true); }}
-                              className="px-3 py-1.5 bg-slate-500/20 hover:bg-slate-500/30 text-slate-200 border border-slate-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
-                              title="เปิดหน้าพิมพ์สัญญา (A4)"
+                            <a
+                              href={`/contract-print/${c.id}?print=1`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
+                              title="เปิดหน้าพิมพ์สัญญา แล้วเลือก บันทึกเป็น PDF"
                             >
-                              <span>🖨️</span>
-                              <span>พิมพ์สัญญา</span>
-                            </button>
+                              <span>📥</span>
+                              <span>ดาวน์โหลดสัญญา (PDF)</span>
+                            </a>
 
                             {/* Print / Download Contract Button */}
                             <a
@@ -822,7 +820,7 @@ export default function OwnerContractsPage() {
                               title="พิมพ์แบบฟอร์มสัญญา (Word)"
                             >
                               <span>🖨️</span>
-                              <span>พิมพ์ (Word)</span>
+                              <span>Word</span>
                             </a>
 
                             {/* View or Upload Signed Paper Contract */}
@@ -1240,12 +1238,6 @@ export default function OwnerContractsPage() {
           </div>
         )}
 
-        {/* Printable Contract Modal */}
-        <PrintableContractModal
-          isOpen={isPrintModalOpen}
-          onClose={() => setIsPrintModalOpen(false)}
-          contract={printingContract}
-        />
 
 
         {/* Upload Signed Paper Contract Modal */}

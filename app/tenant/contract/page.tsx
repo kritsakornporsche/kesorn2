@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import PrintableContractModal from '@/components/PrintableContractModal';
 import TenantInspectionCard from '@/components/TenantInspectionCard';
 import { statusText } from '@/lib/status-text';
 
@@ -46,7 +45,6 @@ export default function TenantContractPage() {
   const [submitting, setSubmitting] = useState(false);
 
   // Printable Contract Modal
-  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
 
   // Preview File Modal
   const [previewingFileUrl, setPreviewingFileUrl] = useState<string | null>(null);
@@ -261,20 +259,14 @@ export default function TenantContractPage() {
 
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-border">
-                <button
-                  type="button"
-                  onClick={() => setIsPrintModalOpen(true)}
-                  className="flex-1 py-4 bg-slate-700 hover:bg-slate-600 text-white font-black rounded-2xl shadow-xl active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <span>🖨️</span>
-                  <span>พิมพ์สัญญา</span>
-                </button>
                 <a
-                  href={`/api/contracts/export-docx?id=${activeContract.id}`}
-                  className="flex-1 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl shadow-xl hover:brightness-110 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
+                  href={`/contract-print/${activeContract.id}?print=1`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl shadow-xl active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
-                  <span>🖨️</span>
-                  <span>พิมพ์แบบฟอร์มสัญญา (Word)</span>
+                  <span>📥</span>
+                  <span>ดาวน์โหลดสัญญา (PDF)</span>
                 </a>
 
                 <button
@@ -427,12 +419,6 @@ export default function TenantContractPage() {
         </div>
       )}
 
-      {/* Printable Contract Modal */}
-      <PrintableContractModal
-        isOpen={isPrintModalOpen}
-        onClose={() => setIsPrintModalOpen(false)}
-        contract={activeContract as any}
-      />
     </div>
   );
 }

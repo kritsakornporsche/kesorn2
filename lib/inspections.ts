@@ -330,17 +330,34 @@ export function getMoveInInspection(contractId: number): Promise<InspectionView 
   return getInspection(contractId, 'move_in');
 }
 
+/**
+ * Who inspected, as printed on the record: the owner is the landlord (settings) — a real name, never the login name.
+ * A name that is only the account handle ("owner", the e-mail's local part) gives the role instead.
+ */
+export function inspectorName(u: { name?: string | null; email?: string | null; role?: string | null }, landlordName?: string | null): string | null {
+  const name = String(u.name || '').trim();
+  const handle = String(u.email || '').split('@')[0].trim().toLowerCase();
+  const looksReal = !!name && name.toLowerCase() !== handle && !/^[a-z0-9._-]+$/i.test(name);
+  if (u.role === 'owner') return String(landlordName || '').trim() || (looksReal ? name : 'ผู้ให้เช่า');
+  if (u.role === 'manager') return looksReal ? name : 'ผู้จัดการ';
+  return looksReal ? name : null;
+}
+
 /** An inspection of a contract, with photo links; null when not done yet. */
 export async function getInspection(contractId: number, kindInput: InspectionKind): Promise<InspectionView | null> {
   const kind = kindOf(kindInput);
   const sql = getDb();
   const rows = await sql`
-    SELECT i.id, i.contract_id, i.kind, i.inspected_at, i.note, i.tenant_ack_at, u.name AS inspected_by_name
+    SELECT i.id, i.contract_id, i.kind, i.inspected_at, i.note, i.tenant_ack_at,
+           u.name AS user_name, u.email AS user_email, u.role AS user_role,
+           (SELECT landlord_name FROM dormitory_profile ORDER BY id LIMIT 1) AS landlord_name
     FROM contract_inspections i LEFT JOIN users u ON u.id = i.inspected_by
     WHERE i.contract_id = ${contractId} AND i.kind = ${kind} LIMIT 1
   `;
-  const row = rows[0];
-  if (!row) return null;
+  const found = rows[0];
+  if (!found) return null;
+  const { user_name, user_email, user_role, landlord_name, ...row } = found;
+  row.inspected_by_name = inspectorName({ name: user_name, email: user_email, role: user_role }, landlord_name);
   const items = await sql`
     SELECT id, item_name, condition_status, note, photo_file FROM contract_inspection_items
     WHERE inspection_id = ${row.id} ORDER BY id

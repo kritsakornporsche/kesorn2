@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 
-import PrintableContractModal from '@/components/PrintableContractModal';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { contractDepositLabel, statusText } from '@/lib/status-text';
 import { InspectionButton } from '@/components/InspectionModal';
@@ -46,7 +45,6 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
   const [error, setError] = useState('');
   const [approving, setApproving] = useState(false);
   const [previewSlip, setPreviewSlip] = useState(false);
-  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [isUploadingSigned, setIsUploadingSigned] = useState(false);
   const [previewSignedDoc, setPreviewSignedDoc] = useState(false);
@@ -199,23 +197,25 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={() => setIsPrintModalOpen(true)}
-            className="px-5 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95"
-            title="เปิดหน้าพิมพ์สัญญา (A4)"
+          <a
+            href={`/contract-print/${contract.id}?print=1`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95"
+            title="เปิดหน้าพิมพ์สัญญา แล้วเลือก บันทึกเป็น PDF"
           >
-            <span>🖨️</span>
-            <span>พิมพ์สัญญา</span>
-          </button>
+            <span>📥</span>
+            <span>ดาวน์โหลดสัญญา (PDF)</span>
+          </a>
 
           <button
             onClick={handleDownloadDocx}
             disabled={downloadingDocx}
-            className="px-5 py-2.5 bg-blue-700 hover:bg-blue-600 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95 disabled:opacity-50"
+            className="px-4 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95 disabled:opacity-50"
             title="ดาวน์โหลดสัญญาเช่ารูปแบบ Microsoft Word (.docx)"
           >
             <span>📄</span>
-            <span>{downloadingDocx ? 'กำลังสร้างไฟล์...' : 'โหลดไฟล์ Word (.docx)'}</span>
+            <span>{downloadingDocx ? 'กำลังสร้างไฟล์...' : 'Word (.docx)'}</span>
           </button>
 
           <span className={cn(
@@ -531,12 +531,6 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
         </div>
       )}
 
-      {/* Printable Contract Modal */}
-      <PrintableContractModal
-        isOpen={isPrintModalOpen}
-        onClose={() => setIsPrintModalOpen(false)}
-        contract={contract}
-      />
     </div>
   );
 }

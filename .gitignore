@@ -64,3 +64,6 @@ scripts/*.json
 public/uploads/*/*
 !public/uploads/*/.gitkeep
 storage/
+
+# Signed-off contract text from the dorm (has real bank account numbers) — never commit
+docs/review/contract-final.docx

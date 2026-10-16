@@ -83,7 +83,7 @@ export async function GET() {
         legacy: b.status === 'PendingFirstBill' && !b.move_in_bill_id,
         move_in_bill_paid: String(b.first_bill_status || '').toLowerCase() === 'paid',
         paper_uploaded: isPaper(b.contract_file_url) && Boolean(b.paper_signed_date),
-        print_url: `/api/contracts/export-docx?id=${b.contract_id}`, // Word form until the PDF template is available
+        print_url: `/contract-print/${b.contract_id}?print=1`, // print page → Save as PDF (same text as the Word file)
         seconds_to_expire: b.expires_at ? secondsTo(new Date(b.expires_at)) : null,
         seconds_to_pay: b.status === 'BookingApproved' && deadlines ? secondsTo(deadlines.payBy) : null,
         seconds_to_upload: b.status === 'BookingApproved' && deadlines ? secondsTo(deadlines.uploadBy) : null,
