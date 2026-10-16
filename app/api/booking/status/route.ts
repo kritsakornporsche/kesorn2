@@ -54,7 +54,8 @@ export async function GET() {
         c.paper_signed_date,
         r.deposit_amount AS room_deposit_amount,
         dp.phone AS dorm_contact_phone,
-        c.start_meter_reading AS initial_meter_reading
+        c.start_meter_reading AS initial_meter_reading,
+        (SELECT MAX(bp.id) FROM bill_payments bp WHERE bp.bill_id = c.booking_bill_id AND bp.voided_at IS NULL) AS booking_payment_id
       FROM contracts c
       LEFT JOIN tenants t ON c.tenant_id = t.id
       JOIN rooms r ON c.room_id = r.id

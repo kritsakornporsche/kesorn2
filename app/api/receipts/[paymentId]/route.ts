@@ -5,7 +5,8 @@ import { getRates } from '@/lib/billing';
 import { outstandingFor } from '@/lib/payments';
 import { receiptNo } from '@/lib/format';
 
-// GET — receipt data for one payment. Owner/manager: any receipt · tenant: only receipts of their own bills.
+// GET — receipt data for one payment. Owner/manager: any receipt · tenant or guest (a booker before the contract
+// takes effect, or after moving out): only receipts of their own bills.
 export async function GET(_req: Request, { params }: { params: Promise<{ paymentId: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ success: false, message: 'กรุณาเข้าสู่ระบบ' }, { status: 401 });
@@ -33,7 +34,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ payment
   if (!p) return NextResponse.json({ success: false, message: 'ไม่พบใบเสร็จ' }, { status: 404 });
 
   const isStaff = user.role === 'owner' || user.role === 'manager';
-  const isOwnTenant = user.role === 'tenant'
+  const isOwnTenant = (user.role === 'tenant' || user.role === 'guest')
     && (p.tenant_user_id === user.id || String(p.tenant_email || '').toLowerCase() === user.email.toLowerCase());
   if (!isStaff && !isOwnTenant) {
     return NextResponse.json({ success: false, message: 'ไม่มีสิทธิ์ดูใบเสร็จนี้' }, { status: 403 });

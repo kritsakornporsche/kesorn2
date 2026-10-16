@@ -10,6 +10,7 @@ interface BookingData {
   contract_id: number;
   status: string;
   booking_fee?: number;
+  booking_payment_id?: number | null;
   rejection_reason?: string | null;
   initial_meter_reading?: number | string | null;
   seconds_to_pay?: number | null;
@@ -341,6 +342,11 @@ export default function GuestDashboardPage() {
                     <span className="font-black text-sm">จองสำเร็จ</span>
                   </div>
                   <p className="text-xs text-slate-400">ชำระค่าจอง ฿{Number(booking?.booking_fee || 0).toLocaleString('th-TH')} แล้ว · วันเข้าพักหอพักจะออกบิลเข้าอยู่และพิมพ์สัญญาให้เซ็น</p>
+                  {booking?.booking_payment_id && (
+                    <a href={`/receipt/${booking.booking_payment_id}`} target="_blank" rel="noopener noreferrer" className="inline-block mt-2 text-xs font-bold text-amber-300 hover:underline">
+                      🧾 ใบเสร็จค่าจอง
+                    </a>
+                  )}
                 </div>
 
                 {/* Step 2 */}
