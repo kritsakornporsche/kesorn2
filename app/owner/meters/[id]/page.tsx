@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { statusText } from '@/lib/status-text';
 
 interface HistoryItem {
   id: number;
@@ -13,10 +14,23 @@ interface HistoryItem {
   current_reading: number;
   units_used: number;
   photo_url: string | null;
-  created_at: string;
-  bill_status: string;
+  recorded_at: string;
+  recorded_by_name?: string | null;
+  kind: 'cycle' | 'start' | 'move_out';
+  event: 'normal' | 'rollover' | 'replaced';
+  rollover_at?: number | null;
+  old_meter_final?: number | null;
+  new_meter_start?: number | null;
+  event_note?: string | null;
+  large_confirmed?: number;
+  bill_status: string | null;
   bill_id?: number | null;
 }
+
+const KIND_TEXT: Record<string, string> = { cycle: 'จดรายเดือน', start: 'มิเตอร์เริ่มสัญญา', move_out: 'วันคืนห้อง' };
+const BILL_TEXT: Record<string, string> = {
+  draft: 'บิลร่าง', unpaid: 'ส่งบิลแล้ว', partial: 'ชำระบางส่วน', paid: 'ชำระแล้ว', overdue: 'เกินกำหนด', pendingcorrection: 'รอแก้ไขบิล',
+};
 
 interface RoomInfo {
   id: number;
@@ -113,7 +127,7 @@ export default function RoomMeterHistoryPage() {
           </div>
           <div className="p-4 bg-slate-900/80 rounded-2xl border border-white/10 space-y-0.5">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">สถานะปัจจุบัน</span>
-            <p className="text-sm font-bold text-primary">{room.status === 'Occupied' ? 'มีผู้พักอาศัย' : room.status}</p>
+            <p className="text-sm font-bold text-primary">{statusText('room', room.status)}</p>
           </div>
         </div>
       )}
@@ -141,7 +155,8 @@ export default function RoomMeterHistoryPage() {
               <thead className="bg-slate-950/60 border-b border-white/10">
                 <tr>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">รอบบิล (ว/ด/ป)</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">วันที่จดบันทึก</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">ประเภท / เหตุการณ์</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">วันที่จด / ผู้จด</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 font-mono">เลขก่อนหน้า</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 font-mono">เลขครั้งนี้</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 font-mono">หน่วยที่ใช้</th>
@@ -156,8 +171,23 @@ export default function RoomMeterHistoryPage() {
                       {item.billing_cycle}
                     </td>
 
+                    <td className="px-6 py-4 text-xs text-slate-300">
+                      <span className="font-bold">{KIND_TEXT[item.kind] || item.kind}</span>
+                      {item.event === 'rollover' && (
+                        <span className="block text-[11px] text-amber-300">🔄 วนรอบ (สูงสุด {Number(item.rollover_at).toLocaleString()})</span>
+                      )}
+                      {item.event === 'replaced' && (
+                        <span className="block text-[11px] text-amber-300">
+                          🔧 เปลี่ยนเครื่อง (เก่าสุดท้าย {Number(item.old_meter_final).toLocaleString()} · ใหม่เริ่ม {Number(item.new_meter_start).toLocaleString()})
+                        </span>
+                      )}
+                      {item.event_note && <span className="block text-[11px] text-slate-400">{item.event_note}</span>}
+                      {Number(item.large_confirmed) === 1 && <span className="block text-[11px] text-amber-300">ยืนยันเกิน 200 หน่วย</span>}
+                    </td>
+
                     <td className="px-6 py-4 text-xs text-slate-400">
-                      {item.created_at ? new Date(item.created_at).toLocaleDateString('th-TH', {
+                      {item.recorded_by_name && <span className="block text-slate-300">{item.recorded_by_name}</span>}
+                      {item.recorded_at ? new Date(item.recorded_at).toLocaleDateString('th-TH', {
                         year: 'numeric',
                         month: 'short',
                         day: 'numeric',
@@ -194,14 +224,17 @@ export default function RoomMeterHistoryPage() {
                     </td>
 
                     <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
-                        item.bill_status === 'Paid' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                        item.bill_status === 'Unpaid' || item.bill_status === 'Pending' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                        'bg-slate-800 text-slate-400'
-                      }`}>
-                        {item.bill_status === 'Paid' ? 'ชำระแล้ว' :
-                         item.bill_status === 'Unpaid' || item.bill_status === 'Pending' ? 'ออกบิลแล้ว' : 'ยังไม่ออกบิล'}
-                      </span>
+                      {item.kind !== 'cycle' ? (
+                        <span className="text-[11px] text-slate-500">-</span>
+                      ) : (
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
+                          String(item.bill_status).toLowerCase() === 'paid' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                          item.bill_status ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                          'bg-slate-800 text-slate-400'
+                        }`}>
+                          {item.bill_status ? `${BILL_TEXT[String(item.bill_status).toLowerCase()] || statusText('bill', item.bill_status)} #${item.bill_id}` : 'ยังไม่ออกบิล'}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

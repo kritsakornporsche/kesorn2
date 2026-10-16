@@ -3,8 +3,8 @@ import { type ThaiAddressParts, parseThaiAddress } from '@/lib/address-parser';
 
 export { type ThaiAddressParts, parseThaiAddress };
 
+// PDPA (commit 16): the 13-digit ID number is not read or returned — the card is used to fill the name and address only
 export interface ExtractedIdCardData {
-  id_card_number: string;
   title_th?: string;
   first_name_th?: string;
   last_name_th?: string;
@@ -104,7 +104,6 @@ export async function performIdCardOcr(options: {
   const prompt = `คุณคือระบบอ่านข้อมูลบัตรประจำตัวประชาชนไทย (Thai National ID Card OCR)
 กรุณาอ่านข้อมูลจากรูปบัตรประชาชนนี้อย่างละเอียด ถูกต้อง และตอบกลับเฉพาะรูปแบบ JSON ดังนี้เท่านั้น โดยไม่มี markdown หรือข้อความอื่น:
 {
-  "id_card_number": "เลขประจำตัวประชาชน 13 หลัก (เฉพาะตัวเลข)",
   "title_th": "คำนำหน้า เช่น นาย, นางสาว, นาง",
   "first_name_th": "ชื่อภาษาไทย",
   "last_name_th": "นามสกุลภาษาไทย",
@@ -183,13 +182,8 @@ export async function performIdCardOcr(options: {
     };
   }
 
-  // Format 13-digit citizen ID
-  if (parsed.id_card_number) {
-    const rawNum = String(parsed.id_card_number).replace(/\D/g, '');
-    if (rawNum.length === 13) {
-      parsed.id_card_number = `${rawNum[0]}-${rawNum.slice(1, 5)}-${rawNum.slice(5, 10)}-${rawNum.slice(10, 12)}-${rawNum[12]}`;
-    }
-  }
+  // Never pass an ID number on, even if the model returned one
+  delete parsed.id_card_number;
 
   // Address parts parsing
   const addressParts = parseThaiAddress(parsed.address || '');

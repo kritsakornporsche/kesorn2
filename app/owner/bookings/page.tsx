@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { checkPaperFile } from '@/lib/paper-file-check';
+import { InspectionButton, type InspectionStatus } from '@/components/InspectionModal';
 
 interface Booking {
   contract_id: number;
@@ -34,6 +36,24 @@ interface Booking {
   first_bill_status?: string | null;
   first_bill_due_date?: string | null;
   first_bill_created_at?: string | null;
+  // Booking flow (approve, then pay) — times are computed on the server
+  cancel_reason?: string | null;
+  booking_fee?: number;
+  seconds_to_expire?: number | null;
+  seconds_to_pay?: number | null;
+  no_show_allowed?: boolean;
+  // Move-in (lib/moveIn.ts) — amounts and checks come from the server
+  move_in?: { rent: number; deposit: number; bookingFee: number; depositAtMoveIn: number; dueAtMoveIn: number; cap_ok: boolean; cap_message: string | null };
+  legacy?: boolean;
+  move_in_bill_paid?: boolean;
+  paper_uploaded?: boolean;
+  paper_signed_date?: string | null;
+  start_meter_reading?: number | null;
+  move_in_overdue_partial?: boolean;
+  can_issue_move_in?: boolean;
+  contract_file_is_pdf?: boolean;
+  // Move-in inspection (lib/inspections.ts); null when it cannot be inspected or migration 011 is not run
+  inspection_status?: InspectionStatus | null;
 }
 
 export default function OwnerBookingsPage() {
@@ -44,16 +64,21 @@ export default function OwnerBookingsPage() {
   const [loading, setLoading] = useState(true);
   
   // Filter tabs: 8.1 PendingContract, 8.2 PendingFirstBill, 8.3 Active, 8.4 Cancelled, All
-  const [activeTab, setActiveTab] = useState<'8.1' | '8.2' | '8.3' | '8.4' | 'ALL'>('8.1');
+  const [activeTab, setActiveTab] = useState<'REQ' | 'PAY' | '8.1' | '8.2' | '8.3' | '8.4' | 'ALL'>('REQ');
+  const [actingId, setActingId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modals state
   const [previewSlipUrl, setPreviewSlipUrl] = useState<string | null>(null);
   const [previewContractModal, setPreviewContractModal] = useState<Booking | null>(null);
   const [previewBillModal, setPreviewBillModal] = useState<Booking | null>(null);
-  const [uploadContractBooking, setUploadContractBooking] = useState<Booking | null>(null);
-  const [contractFile, setContractFile] = useState<string | null>(null);
+  // Move-in bill (with the starting meter) and the signed paper contract are two separate steps
+  const [issueBooking, setIssueBooking] = useState<Booking | null>(null);
   const [initialMeterReading, setInitialMeterReading] = useState<string>('');
+  const [paperBooking, setPaperBooking] = useState<Booking | null>(null);
+  const [paperFile, setPaperFile] = useState<string | null>(null);
+  const [paperError, setPaperError] = useState<string | null>(null);
+  const [paperSignedDate, setPaperSignedDate] = useState<string>('');
   const [uploading, setUploading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -85,44 +110,30 @@ export default function OwnerBookingsPage() {
     fetchBookings();
   }, [authStatus, router]);
 
-  // Handle Owner Upload Contract & Create First Bill
-  const handleUploadContract = async (e: React.FormEvent) => {
+  // Issue the move-in bill: the server sets the amounts from the room; only the starting meter is sent
+  const handleIssueMoveIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!uploadContractBooking || !contractFile) {
-      alert('กรุณาเลือกไฟล์สัญญาเช่า');
+    if (!issueBooking) return;
+    if (initialMeterReading.trim() === '') {
+      showToast('กรุณากรอกเลขมิเตอร์ไฟฟ้าเริ่มต้น (บังคับตอนทำสัญญา)', 'error');
       return;
     }
 
     setUploading(true);
     try {
-      const isTestBooking = (uploadContractBooking.room_number || '').toUpperCase() === 'T01';
-      const totalDeposit = isTestBooking ? 20 : 3000;
-      const paidBooking = isTestBooking ? 1 : Number(uploadContractBooking.deposit_amount || 1000);
-      const extraDeposit = Math.max(0, totalDeposit - paidBooking);
-
       const res = await fetch('/api/owner/contracts', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contract_id: uploadContractBooking.contract_id,
-          contract_file_url: contractFile,
-          status: 'PendingFirstBill', // Move to 8.2 / 2.1.2
-          create_first_bill: true,
-          monthly_rent: uploadContractBooking.monthly_rent || (isTestBooking ? 10 : 3400),
-          deposit_extra: extraDeposit,
-          initial_meter_reading: initialMeterReading ? parseFloat(initialMeterReading) : null,
-        }),
+        body: JSON.stringify({ contract_id: issueBooking.contract_id, initial_meter_reading: initialMeterReading }),
       });
-
       const data = await res.json();
       if (data.success) {
-        showToast('✅ อัปโหลดสัญญาและส่งบิลค่าแรกเข้าพร้อมบันทึกมิเตอร์เริ่มต้นเรียบร้อยแล้ว!', 'success');
-        setUploadContractBooking(null);
-        setContractFile(null);
+        showToast(`✅ ${data.message}`, 'success');
+        setIssueBooking(null);
         setInitialMeterReading('');
         fetchBookings();
       } else {
-        showToast(data.message || 'เกิดข้อผิดพลาดในการบันทึกสัญญา', 'error');
+        showToast(data.message || 'ออกบิลเข้าอยู่ไม่สำเร็จ', 'error');
       }
     } catch (err: any) {
       showToast('เกิดข้อผิดพลาด: ' + err.message, 'error');
@@ -131,16 +142,89 @@ export default function OwnerBookingsPage() {
     }
   };
 
+  // Upload the signed paper contract with its signing date; the contract takes effect once the move-in bill is paid too
+  const handleUploadPaper = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!paperBooking || !paperFile || !paperSignedDate) {
+      showToast('กรุณาเลือกไฟล์สัญญาที่เซ็นแล้วและระบุวันที่เซ็น', 'error');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const res = await fetch('/api/owner/contracts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contractId: paperBooking.contract_id, file: paperFile, signedDate: paperSignedDate }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`✅ ${data.message}`, 'success');
+        setPaperBooking(null);
+        setPaperFile(null);
+        setPaperSignedDate('');
+        fetchBookings();
+      } else {
+        showToast(data.message || 'บันทึกสัญญาที่เซ็นแล้วไม่สำเร็จ', 'error');
+      }
+    } catch (err: any) {
+      showToast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Today in Thai time, for the latest allowed signing date
+  const todayBangkok = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+
+  const runAction = async (action: 'approve' | 'reject' | 'cancel', item: Booking) => {
+    let reason = '';
+    if (action === 'approve' && !confirm(`อนุมัติการจองห้อง ${item.room_number} ของ ${item.guest_name}? ผู้จองจะมีเวลาชำระค่าจอง 10 นาที`)) return;
+    if (action === 'reject') {
+      const input = prompt('เหตุผลที่ปฏิเสธคำขอจอง (ส่งให้ผู้จองเห็น)');
+      if (input === null) return;
+      reason = input.trim();
+    }
+    if (action === 'cancel' && !confirm(`ยืนยัน: ผู้จองไม่มาเข้าพักตามวันนัด? ระบบจะยกเลิกการจอง ริบค่าจอง ฿${Number(item.booking_fee || 0).toLocaleString('th-TH')} เป็นรายได้ และเปิดห้องให้จองใหม่`)) return;
+    setActingId(item.contract_id);
+    try {
+      const res = await fetch('/api/owner/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, contractId: item.contract_id, reason }),
+      });
+      const data = await res.json();
+      showToast(data.message || (data.success ? 'สำเร็จ' : 'ทำรายการไม่สำเร็จ'), data.success ? 'success' : 'error');
+      fetchBookings();
+    } catch (err: any) {
+      showToast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  // Requests waiting / bookings waiting for payment change on their own (expiry): refresh every 15 s while any exist
+  const hasOpen = bookings.some((b) => b.booking_status === 'BookingRequested' || b.booking_status === 'BookingApproved');
+  useEffect(() => {
+    if (!hasOpen) return;
+    const id = setInterval(fetchBookings, 15_000);
+    return () => clearInterval(id);
+  }, [hasOpen]);
+
   const filteredBookings = bookings.filter((b) => {
     // Tab filter
-    if (activeTab === '8.1') {
+    if (activeTab === 'REQ') {
+      if (b.booking_status !== 'BookingRequested') return false;
+    } else if (activeTab === 'PAY') {
+      if (b.booking_status !== 'BookingApproved') return false;
+    } else if (activeTab === '8.1') {
       if (b.booking_status !== 'PendingContract' && b.booking_status !== 'PendingOwnerSignature') return false;
     } else if (activeTab === '8.2') {
       if (b.booking_status !== 'PendingFirstBill') return false;
     } else if (activeTab === '8.3') {
       if (b.booking_status !== 'Active') return false;
     } else if (activeTab === '8.4') {
-      if (b.booking_status !== 'Cancelled') return false;
+      if (!['Cancelled', 'Rejected', 'Expired'].includes(b.booking_status)) return false;
     }
 
     // Search query
@@ -158,7 +242,9 @@ export default function OwnerBookingsPage() {
   const count81 = bookings.filter((b) => b.booking_status === 'PendingContract' || b.booking_status === 'PendingOwnerSignature').length;
   const count82 = bookings.filter((b) => b.booking_status === 'PendingFirstBill').length;
   const count83 = bookings.filter((b) => b.booking_status === 'Active').length;
-  const count84 = bookings.filter((b) => b.booking_status === 'Cancelled').length;
+  const count84 = bookings.filter((b) => ['Cancelled', 'Rejected', 'Expired'].includes(b.booking_status)).length;
+  const countReq = bookings.filter((b) => b.booking_status === 'BookingRequested').length;
+  const countPay = bookings.filter((b) => b.booking_status === 'BookingApproved').length;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 lg:p-10 space-y-8">
@@ -179,7 +265,7 @@ export default function OwnerBookingsPage() {
             <span className="text-3xl">🔔</span>
             <div>
               <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">รายการจองห้องพัก (Booking Pipeline)</h1>
-              <p className="text-xs sm:text-sm text-slate-400 mt-0.5">จัดการกระบวนการจอง 3 ระดับ: ชำระมัดจำ ➔ ทำสัญญา/บิลแรกเข้า ➔ เข้าพักสมบูรณ์</p>
+              <p className="text-xs sm:text-sm text-slate-400 mt-0.5">ขอจอง ➔ อนุมัติ ➔ ชำระค่าจอง ➔ ทำสัญญา/บิลแรกเข้า ➔ เข้าพัก</p>
             </div>
           </div>
         </div>
@@ -200,12 +286,32 @@ export default function OwnerBookingsPage() {
         {/* Horizontal Filter Tabs */}
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 md:pb-0">
           <button
+            onClick={() => setActiveTab('REQ')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 ${
+              activeTab === 'REQ' ? 'bg-orange-500 text-white shadow-lg' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
+            }`}
+          >
+            <span>🟠 รออนุมัติ</span>
+            <span className="px-2 py-0.5 rounded-full bg-black/30 text-[10px] font-mono">{countReq}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('PAY')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 ${
+              activeTab === 'PAY' ? 'bg-sky-500 text-white shadow-lg' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
+            }`}
+          >
+            <span>⏱ รอชำระค่าจอง</span>
+            <span className="px-2 py-0.5 rounded-full bg-black/30 text-[10px] font-mono">{countPay}</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('8.1')}
             className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 ${
               activeTab === '8.1' ? 'bg-amber-500 text-white shadow-lg' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
             }`}
           >
-            <span>🟡 8.1 ชำระมัดจำแล้ว รอทำสัญญา</span>
+            <span>🟡 8.1 ชำระค่าจองแล้ว รอทำสัญญา</span>
             <span className="px-2 py-0.5 rounded-full bg-black/30 text-[10px] font-mono">{count81}</span>
           </button>
 
@@ -235,7 +341,7 @@ export default function OwnerBookingsPage() {
               activeTab === '8.4' ? 'bg-rose-500 text-white shadow-lg' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
             }`}
           >
-            <span>🔴 8.4 ยกเลิกการจอง</span>
+            <span>🔴 8.4 ยกเลิก / ปฏิเสธ / หมดเวลา</span>
             <span className="px-2 py-0.5 rounded-full bg-black/30 text-[10px] font-mono">{count84}</span>
           </button>
 
@@ -286,7 +392,9 @@ export default function OwnerBookingsPage() {
             const is81 = item.booking_status === 'PendingContract' || item.booking_status === 'PendingOwnerSignature';
             const is82 = item.booking_status === 'PendingFirstBill';
             const is83 = item.booking_status === 'Active';
-            const is84 = item.booking_status === 'Cancelled';
+            const is84 = ['Cancelled', 'Rejected', 'Expired'].includes(item.booking_status);
+            const isReq = item.booking_status === 'BookingRequested';
+            const isPay = item.booking_status === 'BookingApproved';
 
             return (
               <div
@@ -358,32 +466,35 @@ export default function OwnerBookingsPage() {
                       </button>
                     </div>
                     <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">เงินมัดจำการจอง:</span>
-                      <span className="font-mono font-black text-emerald-400">฿{Number(item.deposit_amount || 1000).toLocaleString()}</span>
+                      <span className="text-slate-400">ค่าจอง (ส่วนหนึ่งของเงินประกัน):</span>
+                      <span className="font-mono font-black text-emerald-400">฿{Number(item.booking_fee || 0).toLocaleString('th-TH')}</span>
                     </div>
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-400">ค่าเช่ารายเดือน:</span>
-                      <span className="font-mono font-black text-white">฿{Number(item.monthly_rent || 3400).toLocaleString()} /ด.</span>
+                      <span className="font-mono font-black text-white">฿{Number(item.monthly_rent || 0).toLocaleString('th-TH')} /ด.</span>
                     </div>
-                    <p className="text-[11px] text-slate-400 truncate">
-                      บัตร ปชช: {item.id_card_number || '-'}
-                    </p>
+                    {item.move_in && (
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400">เงินประกันรวม:</span>
+                        <span className="font-mono font-black text-white">฿{Number(item.move_in.deposit).toLocaleString('th-TH')}</span>
+                      </div>
+                    )}
                     <div className="pt-1 flex items-center gap-2">
                       <a
-                        href={`/api/contracts/export-pdf?contractId=${item.contract_id}`}
+                        href={`/api/contracts/export-docx?id=${item.contract_id}`}
                         target="_blank"
                         rel="noreferrer"
                         className="w-full py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white text-[11px] font-bold rounded-lg border border-rose-500/30 transition-all flex items-center justify-center gap-1.5"
                       >
-                        <span>📄</span>
-                        <span>ดู / บันทึกสัญญา (PDF)</span>
+                        <span>🖨</span>
+                        <span>พิมพ์แบบฟอร์มสัญญา (Word)</span>
                       </a>
                     </div>
                   </div>
 
                   {/* Box 3: Slip Evidence */}
                   <div className="bg-slate-950/60 p-4 rounded-2xl border border-white/5 space-y-2">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">สลิปโอนเงินมัดจำ (1,000 บ.)</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">สลิปโอนค่าจอง (฿{Number(item.booking_fee || 0).toLocaleString('th-TH')})</p>
                     {item.slip_url ? (
                       <div className="space-y-2">
                         <button
@@ -391,7 +502,7 @@ export default function OwnerBookingsPage() {
                           className="w-full py-2 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold rounded-xl border border-white/10 transition-all flex items-center justify-center gap-2"
                         >
                           <span>🖼️</span>
-                          <span>ดูภาพสลิปมัดจำ</span>
+                          <span>ดูภาพสลิปค่าจอง</span>
                         </button>
                       </div>
                     ) : (
@@ -411,7 +522,7 @@ export default function OwnerBookingsPage() {
                         className="px-3.5 py-2 bg-white/5 hover:bg-white/10 text-white text-xs font-bold rounded-xl border border-white/10 transition-all flex items-center gap-1.5"
                       >
                         <span>📄</span>
-                        <span>สัญญาฉบับเต็ม</span>
+                        <span>{item.paper_uploaded ? `สัญญาที่เซ็นแล้ว (${item.paper_signed_date ? new Date(item.paper_signed_date).toLocaleDateString('th-TH') : '-'})` : 'สัญญาฉบับเต็ม'}</span>
                       </a>
                     )}
 
@@ -425,23 +536,93 @@ export default function OwnerBookingsPage() {
                   </div>
 
                   {/* Primary Actions based on stage */}
-                  <div className="flex items-center gap-2">
-                    {is81 && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {isReq && (
+                      <>
+                        <span className="text-[11px] text-orange-300 font-bold">
+                          หมดอายุใน {Math.floor(Number(item.seconds_to_expire || 0) / 60)} นาที (20:00 น.)
+                        </span>
+                        <button
+                          onClick={() => runAction('approve', item)}
+                          disabled={actingId === item.contract_id}
+                          className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-white font-black text-xs rounded-xl shadow-lg disabled:opacity-50"
+                        >
+                          ✓ อนุมัติ
+                        </button>
+                        <button
+                          onClick={() => runAction('reject', item)}
+                          disabled={actingId === item.contract_id}
+                          className="px-5 py-2.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-black text-xs rounded-xl disabled:opacity-50"
+                        >
+                          ✕ ปฏิเสธ
+                        </button>
+                      </>
+                    )}
+
+                    {isPay && (
+                      <span className="text-xs text-sky-300 font-bold">
+                        รอผู้จองชำระค่าจอง ฿{Number(item.booking_fee || 0).toLocaleString('th-TH')} · เหลือเวลาโอนประมาณ {Math.ceil(Number(item.seconds_to_pay || 0) / 60)} นาที
+                      </span>
+                    )}
+
+                    {item.no_show_allowed && !item.legacy && (
                       <button
-                        onClick={() => setUploadContractBooking(item)}
-                        className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs rounded-xl shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
+                        onClick={() => runAction('cancel', item)}
+                        disabled={actingId === item.contract_id}
+                        className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl shadow-lg disabled:opacity-50"
                       >
-                        <span>✍️</span>
-                        <span>อัปโหลดสัญญา & ออกบิลแรกเข้า</span>
+                        ไม่มาตามนัด (ริบค่าจอง)
                       </button>
                     )}
 
-                    {is82 && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-blue-400 font-bold">
-                          รอ Guest ชำระค่าแรกเข้า (฿{Number((item.first_bill_amount) || (item.monthly_rent + 2000)).toLocaleString()})
+                    {item.legacy && (
+                      <span className="px-4 py-2 bg-slate-500/10 text-slate-300 border border-slate-500/30 text-xs font-bold rounded-xl">
+                        สัญญาแบบเดิม — จัดการด้วยมือ
+                      </span>
+                    )}
+
+                    {(is81 || is82) && !item.legacy && (
+                      <>
+                        {/* Checklist: the contract takes effect when both are done */}
+                        <span className={`text-[11px] font-bold ${item.move_in_bill_paid ? 'text-emerald-400' : 'text-slate-400'}`}>
+                          {item.move_in_bill_paid ? '✓' : '○'} บิลเข้าอยู่ชำระแล้ว
                         </span>
-                      </div>
+                        <span className={`text-[11px] font-bold ${item.paper_uploaded ? 'text-emerald-400' : 'text-slate-400'}`}>
+                          {item.paper_uploaded ? '✓' : '○'} สัญญาที่เซ็นแล้ว
+                        </span>
+                        {item.move_in_overdue_partial && (
+                          <span className="px-3 py-1.5 bg-rose-500/10 text-rose-300 border border-rose-500/30 text-[11px] font-bold rounded-xl">
+                            เลยกำหนด — จ่ายบางส่วน กรุณาจัดการด้วยมือ
+                          </span>
+                        )}
+                        <button
+                          onClick={() => { setPaperBooking(item); setPaperFile(null); setPaperError(null); setPaperSignedDate(''); }}
+                          className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white font-black text-xs rounded-xl border border-white/10"
+                        >
+                          📤 อัปโหลดสัญญาที่เซ็นแล้ว
+                        </button>
+                      </>
+                    )}
+
+                    {(is81 || is82 || is83) && !item.legacy && item.inspection_status && (
+                      <InspectionButton contractId={item.contract_id} initialStatus={item.inspection_status} />
+                    )}
+
+                    {is81 && item.can_issue_move_in && (
+                      <button
+                        onClick={() => { setIssueBooking(item); setInitialMeterReading(''); }}
+                        className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs rounded-xl shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
+                      >
+                        <span>🧾</span>
+                        <span>ออกบิลเข้าอยู่</span>
+                      </button>
+                    )}
+
+                    {is82 && !item.legacy && !item.move_in_bill_paid && (
+                      <span className="text-xs text-blue-400 font-bold">
+                        รอผู้จองชำระค่าแรกเข้า ฿{Number(item.first_bill_amount || 0).toLocaleString('th-TH')}
+                        {item.first_bill_due_date ? ` ภายใน ${new Date(item.first_bill_due_date).toLocaleDateString('th-TH')}` : ''}
+                      </span>
                     )}
 
                     {is83 && (
@@ -453,7 +634,7 @@ export default function OwnerBookingsPage() {
 
                     {is84 && (
                       <span className="px-4 py-2 bg-rose-500/10 text-rose-400 border border-rose-500/30 text-xs font-bold rounded-xl">
-                        ยกเลิกแล้ว (ไม่คืนเงินมัดจำ)
+                        {item.booking_status === 'Rejected' ? 'ปฏิเสธแล้ว' : item.booking_status === 'Expired' ? 'หมดเวลา' : 'ยกเลิกแล้ว'}{item.cancel_reason ? ` · ${item.cancel_reason}` : ''}
                       </span>
                     )}
                   </div>
@@ -525,15 +706,11 @@ export default function OwnerBookingsPage() {
             <div className="space-y-4">
               {/* Personal Info */}
               <div className="p-4 bg-slate-950/80 rounded-2xl border border-white/5 space-y-3">
-                <h4 className="text-xs font-black uppercase tracking-widest text-primary">ข้อมูลผู้เช่าและบัตรประชาชน</h4>
+                <h4 className="text-xs font-black uppercase tracking-widest text-primary">ข้อมูลผู้เช่า</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">ชื่อ-นามสกุล:</span>
                     <span className="text-white font-bold text-sm">{previewContractModal.guest_name}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">เลขประจำตัวประชาชน:</span>
-                    <span className="text-white font-bold font-mono text-sm">{previewContractModal.id_card_number || '-'}</span>
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">เบอร์โทรศัพท์ผู้เช่า:</span>
@@ -563,8 +740,8 @@ export default function OwnerBookingsPage() {
                     <span className="text-white font-bold font-mono">฿{Number(previewContractModal.monthly_rent).toLocaleString()} /ด.</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-white/5">
-                    <span className="text-slate-400">เงินมัดจำการจอง:</span>
-                    <span className="text-emerald-400 font-bold font-mono">฿{Number(previewContractModal.deposit_amount || 1000).toLocaleString()}</span>
+                    <span className="text-slate-400">ค่าจอง / เงินประกันรวม:</span>
+                    <span className="text-emerald-400 font-bold font-mono">฿{Number(previewContractModal.booking_fee || 0).toLocaleString('th-TH')} / ฿{Number(previewContractModal.move_in?.deposit || 0).toLocaleString('th-TH')}</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-white/5">
                     <span className="text-slate-400">ระยะเวลาสัญญา:</span>
@@ -576,13 +753,13 @@ export default function OwnerBookingsPage() {
 
             <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-white/10">
               <a
-                href={`/api/contracts/export-pdf?contractId=${previewContractModal.contract_id}&autoPrint=true`}
+                href={`/api/contracts/export-docx?id=${previewContractModal.contract_id}`}
                 target="_blank"
                 rel="noreferrer"
                 className="w-full sm:w-auto px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
               >
-                <span>📄</span>
-                <span>พิมพ์ / ดาวน์โหลดเป็น PDF</span>
+                <span>🖨</span>
+                <span>พิมพ์แบบฟอร์มสัญญา (Word)</span>
               </a>
 
               <button
@@ -597,89 +774,58 @@ export default function OwnerBookingsPage() {
         </div>
       )}
 
-      {/* Upload Contract & Generate First Bill Modal */}
-      {uploadContractBooking && (
+      {/* Issue Move-in Bill Modal (amounts from the server; the starting meter is required) */}
+      {issueBooking && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-xl w-full p-6 sm:p-8 space-y-6 shadow-2xl">
             <div className="flex justify-between items-center pb-4 border-b border-white/10">
               <div>
-                <h3 className="text-lg font-black text-white">อัปโหลดสัญญา & ออกบิลแรกเข้า</h3>
-                <p className="text-xs text-slate-400 mt-0.5">ห้อง {uploadContractBooking.room_number} • ผู้จอง: {uploadContractBooking.guest_name}</p>
+                <h3 className="text-lg font-black text-white">ออกบิลเข้าอยู่</h3>
+                <p className="text-xs text-slate-400 mt-0.5">ห้อง {issueBooking.room_number} • ผู้จอง: {issueBooking.guest_name}</p>
               </div>
               <button
-                onClick={() => setUploadContractBooking(null)}
+                onClick={() => setIssueBooking(null)}
                 className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleUploadContract} className="space-y-5">
-              {(() => {
-                const isTestBooking = (uploadContractBooking.room_number || '').toUpperCase() === 'T01';
-                const roomRent = Number(uploadContractBooking.monthly_rent || (isTestBooking ? 10 : 3400));
-                const totalDep = isTestBooking ? 20 : 3000;
-                const paidDep = isTestBooking ? 1 : Number(uploadContractBooking.deposit_amount || 1000);
-                const extraDep = Math.max(0, totalDep - paidDep);
-                const totalFirstBill = roomRent + extraDep;
-
-                return (
-                  <div className="p-4 bg-slate-950 rounded-2xl border border-white/5 space-y-3">
-                    <p className="text-xs font-bold text-slate-300">บิลค่าแรกเข้าที่จะส่งไปยัง Guest:</p>
-                    <div className="flex justify-between text-xs text-slate-400">
-                      <span>ค่าห้องเดือนแรก:</span>
-                      <span className="text-white font-mono">฿{roomRent.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-xs text-slate-400">
-                      <span>เงินประกันหอพักเพิ่ม:</span>
-                      <span className="text-white font-mono">฿{extraDep.toLocaleString('th-TH', { minimumFractionDigits: 2 })} (รวมมัดจำเดิม = {totalDep.toLocaleString()} บาท)</span>
-                    </div>
-                    <div className="pt-2 border-t border-white/10 flex justify-between text-sm font-black text-emerald-400">
-                      <span>ยอดบิลแรกเข้ารวม:</span>
-                      <span className="font-mono">฿{totalFirstBill.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
-                    </div>
+            <form onSubmit={handleIssueMoveIn} className="space-y-5">
+              {issueBooking.move_in && (
+                <div className="p-4 bg-slate-950 rounded-2xl border border-white/5 space-y-3">
+                  <p className="text-xs font-bold text-slate-300">บิลค่าแรกเข้าที่จะส่งไปยังผู้จอง (คำนวณจากราคาห้อง):</p>
+                  <div className="flex justify-between text-xs text-slate-400">
+                    <span>ค่าห้องเดือนแรก (เต็มเดือน):</span>
+                    <span className="text-white font-mono">฿{Number(issueBooking.move_in.rent).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
                   </div>
-                );
-              })()}
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-2">เลือกไฟล์เอกสารสัญญาเช่า (รูปภาพหรือ PDF):</label>
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  required
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onload = () => {
-                        if (reader.result) {
-                          setContractFile(reader.result as string);
-                        }
-                      };
-                      reader.readAsDataURL(file);
-                    } else {
-                      setContractFile(null);
-                    }
-                  }}
-                  className="w-full text-xs text-slate-400 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-primary/20 file:text-primary hover:file:bg-primary/30 cursor-pointer bg-slate-950 p-2 rounded-xl border border-white/10"
-                />
-                {contractFile && (
-                  <p className="text-[11px] text-emerald-400 font-bold mt-2">✓ แนบไฟล์สัญญาเรียบร้อยแล้ว</p>
-                )}
-              </div>
+                  <div className="flex justify-between text-xs text-slate-400">
+                    <span>เงินประกันส่วนที่เหลือ:</span>
+                    <span className="text-white font-mono">฿{Number(issueBooking.move_in.depositAtMoveIn).toLocaleString('th-TH', { minimumFractionDigits: 2 })} (รวมค่าจอง = ประกัน ฿{Number(issueBooking.move_in.deposit).toLocaleString('th-TH')})</span>
+                  </div>
+                  <div className="pt-2 border-t border-white/10 flex justify-between text-sm font-black text-emerald-400">
+                    <span>ยอดบิลแรกเข้ารวม:</span>
+                    <span className="font-mono">฿{Number(issueBooking.move_in.dueAtMoveIn).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400">ครบกำหนดชำระ: วันเริ่มสัญญา {issueBooking.start_date ? new Date(issueBooking.start_date).toLocaleDateString('th-TH') : '-'} — หากไม่ชำระ สัญญาจะถูกยกเลิกและค่าจองไม่คืน</p>
+                  {!issueBooking.move_in.cap_ok && (
+                    <p className="text-[11px] text-rose-300 font-bold">{issueBooking.move_in.cap_message}</p>
+                  )}
+                </div>
+              )}
 
               {/* Initial Meter Reading Input */}
               <div className="p-4 bg-slate-950 rounded-2xl border border-amber-500/20 space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="text-base">⚡</span>
                   <label className="block text-xs font-black text-amber-300">
-                    เลขมิเตอร์ไฟฟ้าเริ่มต้นของห้อง {uploadContractBooking.room_number}:
+                    เลขมิเตอร์ไฟฟ้าเริ่มต้นของห้อง {issueBooking.room_number} (บังคับ):
                   </label>
                 </div>
                 <input
                   type="number"
                   step="0.01"
+                  min="0"
                   required
                   placeholder="กรอกเลขมิเตอร์หน้าปัด ณ วันส่งมอบห้อง (เช่น 0, 100)"
                   value={initialMeterReading}
@@ -693,10 +839,88 @@ export default function OwnerBookingsPage() {
 
               <button
                 type="submit"
-                disabled={uploading || !contractFile}
+                disabled={uploading || initialMeterReading.trim() === '' || (issueBooking.move_in ? !issueBooking.move_in.cap_ok : false)}
                 className="w-full py-4 bg-amber-500 hover:bg-amber-400 text-white font-black text-sm rounded-xl shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
               >
-                {uploading ? 'กำลังบันทึกสัญญา...' : '🚀 บันทึกสัญญา & ส่งบิลแรกเข้า'}
+                {uploading ? 'กำลังออกบิล...' : '🧾 ออกบิลเข้าอยู่ & ส่งให้ผู้จอง'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Signed Paper Contract Modal (file + signing date) */}
+      {paperBooking && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-xl w-full p-6 sm:p-8 space-y-6 shadow-2xl">
+            <div className="flex justify-between items-center pb-4 border-b border-white/10">
+              <div>
+                <h3 className="text-lg font-black text-white">อัปโหลดสัญญาที่เซ็นแล้ว</h3>
+                <p className="text-xs text-slate-400 mt-0.5">ห้อง {paperBooking.room_number} • ผู้จอง: {paperBooking.guest_name}</p>
+              </div>
+              <button
+                onClick={() => setPaperBooking(null)}
+                className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleUploadPaper} className="space-y-5">
+              <p className="text-xs text-slate-400">
+                พิมพ์แบบฟอร์มสัญญา → ให้ผู้เช่าและผู้ให้เช่าเซ็นบนกระดาษ → ถ่ายรูปหรือสแกนแล้วอัปโหลดที่นี่ · สัญญามีผลเมื่อบิลเข้าอยู่ชำระครบและอัปโหลดสัญญานี้แล้ว
+              </p>
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-2">ไฟล์สัญญาที่เซ็นแล้ว (JPG, PNG หรือ PDF ไม่เกิน 10MB):</label>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,application/pdf"
+                  required
+                  onChange={async (e) => {
+                    const input = e.target;
+                    const file = input.files?.[0];
+                    setPaperFile(null);
+                    setPaperError(null);
+                    if (!file) return;
+                    // Type from the file content (a renamed text file is refused), size up to 10MB
+                    const problem = await checkPaperFile(file);
+                    if (problem) {
+                      setPaperError(problem);
+                      input.value = '';
+                      return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = () => setPaperFile((reader.result as string) || null);
+                    reader.readAsDataURL(file);
+                  }}
+                  className="w-full text-xs text-slate-400 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-primary/20 file:text-primary hover:file:bg-primary/30 cursor-pointer bg-slate-950 p-2 rounded-xl border border-white/10"
+                />
+                {paperError && (
+                  <p className="text-[11px] text-rose-400 font-bold mt-2">✕ {paperError}</p>
+                )}
+                {paperFile && (
+                  <p className="text-[11px] text-emerald-400 font-bold mt-2">✓ แนบไฟล์สัญญาเรียบร้อยแล้ว</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-2">วันที่เซ็นสัญญา:</label>
+                <input
+                  type="date"
+                  required
+                  max={todayBangkok}
+                  value={paperSignedDate}
+                  onChange={(e) => setPaperSignedDate(e.target.value)}
+                  className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-white focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={uploading || !paperFile || !paperSignedDate}
+                className="w-full py-4 bg-primary hover:brightness-110 text-white font-black text-sm rounded-xl shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {uploading ? 'กำลังบันทึก...' : '📤 บันทึกสัญญาที่เซ็นแล้ว'}
               </button>
             </form>
           </div>
@@ -751,23 +975,26 @@ export default function OwnerBookingsPage() {
                 
                 <div className="flex justify-between py-1 border-b border-white/5">
                   <span className="text-slate-300">1. ค่าเช่าห้องพักเดือนแรก:</span>
-                  <span className="text-white font-mono font-bold">฿{Number(previewBillModal.monthly_rent || 2800).toLocaleString()}</span>
+                  <span className="text-white font-mono font-bold">฿{Number(previewBillModal.move_in?.rent || 0).toLocaleString('th-TH')}</span>
                 </div>
 
                 <div className="flex justify-between py-1 border-b border-white/5">
                   <div>
                     <span className="text-slate-300">2. เงินประกันหอพักส่วนที่เหลือ:</span>
-                    <p className="text-[10px] text-slate-500">(รวมเงินมัดจำเดิม 1,000 = ประกันรวม 3,000 บาท)</p>
+                    <p className="text-[10px] text-slate-500">(รวมค่าจอง ฿{Number(previewBillModal.move_in?.bookingFee || 0).toLocaleString('th-TH')} = ประกันรวม ฿{Number(previewBillModal.move_in?.deposit || 0).toLocaleString('th-TH')})</p>
                   </div>
-                  <span className="text-white font-mono font-bold">฿2,000.00</span>
+                  <span className="text-white font-mono font-bold">฿{Number(previewBillModal.move_in?.depositAtMoveIn || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
                 </div>
 
                 <div className="pt-2 flex justify-between items-center text-base font-black">
                   <span className="text-emerald-400">ยอดชำระรวม:</span>
                   <span className="text-emerald-400 font-mono text-xl">
-                    ฿{Number(previewBillModal.first_bill_amount || (Number(previewBillModal.monthly_rent || 2800) + 2000)).toLocaleString()}
+                    ฿{Number(previewBillModal.first_bill_amount ?? previewBillModal.move_in?.dueAtMoveIn ?? 0).toLocaleString('th-TH')}
                   </span>
                 </div>
+                {!previewBillModal.first_bill_id && (
+                  <p className="text-[10px] text-slate-500">ยังไม่ได้ออกบิล — ยอดด้านบนคำนวณจากราคาห้องปัจจุบัน</p>
+                )}
               </div>
             </div>
 

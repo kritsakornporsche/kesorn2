@@ -1,4 +1,5 @@
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
@@ -7,6 +8,8 @@ export async function GET(request: Request) {
   if (!session) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
+  const guard = await requireRole(['owner']);
+  if ('response' in guard) return guard.response;
   const sql = getDb();
 
   try {
@@ -31,6 +34,8 @@ export async function POST(request: Request) {
   if (!session) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
+  const guard = await requireRole(['owner']);
+  if ('response' in guard) return guard.response;
   const sql = getDb();
 
   try {

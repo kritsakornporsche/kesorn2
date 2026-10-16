@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 
 // Global singleton worker to avoid 10-15s re-initialization on every request
 const globalForOcr = globalThis as unknown as {
@@ -133,6 +134,8 @@ function parseMeterDigits(rawText: string, previousReading?: number | string | n
 }
 
 export async function POST(req: Request) {
+  const guard = await requireRole(['owner', 'manager']);
+  if ('response' in guard) return guard.response;
   try {
     // Permissive session check (never return 401 for OCR utility)
     try {

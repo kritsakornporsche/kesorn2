@@ -15,7 +15,6 @@ const navItems = [
   { href: '/tenant/chat', label: 'แชทหอพัก', icon: '💬', sublabel: 'สนทนากับเจ้าของหอพัก' },
   { href: '/tenant/contract', label: 'สัญญาเช่า', icon: '📝', sublabel: 'เงื่อนไขและวันหมดอายุ' },
   { href: '/tenant/announcements', label: 'ประกาศข่าวสาร', icon: '📢', sublabel: 'ข่าวสารจากหอพัก' },
-  { href: '/tenant/refund-request', label: 'ขอคืนเงินมัดจำ', icon: '💰', sublabel: 'คำร้องคืนเงินประกัน' },
   { href: '/tenant/move-out', label: 'แจ้งย้ายออก', icon: '🚪', sublabel: 'คำขอย้ายออกล่วงหน้า' },
   { href: '/', label: 'แนะนำหอเกษร 2', icon: '🏢', sublabel: 'ข้อมูลหอพักและสิ่งอำนวยความสะดวก' },
 ];

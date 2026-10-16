@@ -30,6 +30,63 @@ interface MoveOutSummaryData {
   refunded_at: string | null;
   inspection_notes: string | null;
   created_at: string;
+  /** commit 12 on: amounts from lib/moveOut.ts; null for older move-outs */
+  settlement: null | {
+    id: number;
+    return_date: string | null;
+    final_bill: null | { id: number; amount: number; room_amount: number; electric_amount: number; electric_units: number; water_amount: number; common_fee: number };
+    damage_bill: null | { id: number; amount: number };
+    damage_items: { amount: number; reason: string }[];
+    prev_meter: number | null;
+    final_meter: number | null;
+    outstanding: { id: number; title: string; outstanding: number }[];
+    outstanding_total: number;
+    money: null | { deposit: number | null; offset: number; forfeit: number; refund: number; refunded_at: string | null; has_refund_file: boolean };
+  };
+}
+
+const baht = (n: number | null | undefined) => `฿${Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** A move-out from commit 12 on: every figure from its settlement (lib/moveOut.ts) — the bills it issued, the deposit and what is still owed. */
+function SettlementBreakdown({ s }: { s: NonNullable<MoveOutSummaryData['settlement']> }) {
+  const fb = s.final_bill;
+  const damageTotal = s.damage_bill ? s.damage_bill.amount : 0;
+  const total = (fb ? fb.amount : 0) + damageTotal;
+  const money = s.money;
+  const row = (label: string, amount: number, cls = 'text-slate-300') => (
+    <div className={`flex justify-between py-2 ${cls}`}><span>{label}</span><span>{baht(amount)}</span></div>
+  );
+  return (
+    <div className="divide-y divide-white/5 font-mono text-xs">
+      {fb && fb.room_amount > 0 && row('ค่าเช่าเดือนที่คืนห้อง:', fb.room_amount)}
+      {fb && row(`ค่าไฟ (เลขเดิม ${s.prev_meter ?? '-'} → วันคืนห้อง ${s.final_meter ?? '-'} = ${fb.electric_units} หน่วย):`, fb.electric_amount)}
+      {fb && fb.water_amount > 0 && row('ค่าน้ำ:', fb.water_amount)}
+      {fb && fb.common_fee > 0 && row('ค่าส่วนกลาง:', fb.common_fee)}
+      {s.damage_items.length > 0
+        ? s.damage_items.map((d, i) => <div key={i}>{row(`ค่าเสียหาย: ${d.reason}`, d.amount, 'text-rose-300')}</div>)
+        : damageTotal > 0 && row('ค่าเสียหาย:', damageTotal, 'text-rose-300')}
+      <div className="flex justify-between py-2.5 text-white font-black text-sm border-t border-white/10">
+        <span>รวมค่าใช้จ่ายตอนย้ายออก:</span><span className="text-amber-400">{baht(total)}</span>
+      </div>
+      {money && (
+        <div className="py-3 text-sm font-black border-t border-dashed border-white/20 space-y-1">
+          <div className="flex justify-between text-slate-300"><span>เงินประกัน:</span><span>{baht(money.deposit)}</span></div>
+          <div className="flex justify-between text-amber-300"><span>หักชำระจากเงินประกัน:</span><span>{baht(money.offset)}</span></div>
+          {money.forfeit > 0 && <div className="flex justify-between text-rose-300"><span>ยึดเงินประกัน (ย้ายออกก่อนครบสัญญา):</span><span>{baht(money.forfeit)}</span></div>}
+          <div className="flex justify-between text-emerald-400"><span>คืนเงินประกัน:</span><span className="text-base">{baht(money.refund)}</span></div>
+        </div>
+      )}
+      {s.outstanding_total > 0 && (
+        <div className="py-3 text-sm font-black border-t border-dashed border-white/20 space-y-1">
+          <div className="flex justify-between text-rose-400"><span>ยอดที่ยังค้างชำระ:</span><span className="text-base">{baht(s.outstanding_total)}</span></div>
+          {s.outstanding.map((b) => (
+            <div key={b.id} className="flex justify-between text-[11px] font-normal text-rose-300/80"><span>บิล #{b.id} {b.title}</span><span>{baht(b.outstanding)}</span></div>
+          ))}
+          <p className="text-[11px] font-normal text-slate-400">ชำระได้ที่หน้าบิลของฉัน</p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function GuestMoveOutSummaryPage() {
@@ -102,6 +159,7 @@ export default function GuestMoveOutSummaryPage() {
           <div className="space-y-6">
             {summaryList.map((item) => {
               const isEarly = item.move_out_type === 'Early';
+              const money = item.settlement?.money || null;
               return (
                 <div
                   key={item.id}
@@ -117,11 +175,11 @@ export default function GuestMoveOutSummaryPage() {
                             ? 'bg-rose-500/15 text-rose-300 border-rose-500/30' 
                             : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                         }`}>
-                          {isEarly ? 'ย้ายออกก่อนกำหนด (ริบประกัน)' : 'ครบกำหนดสัญญา (เงินประกัน ฿3,000)'}
+                          {isEarly ? 'ย้ายออกก่อนครบสัญญา' : 'ครบกำหนดสัญญา'}{item.settlement ? '' : ' · คำขอแบบเดิม'}
                         </span>
                       </div>
                       <p className="text-xs text-slate-400 mt-1">
-                        ผู้เช่า: <strong className="text-white">{item.tenant_name}</strong> | วันที่ย้ายออก: <strong className="text-white">{item.desired_date ? new Date(item.desired_date).toLocaleDateString('th-TH') : '-'}</strong>
+                        ผู้เช่า: <strong className="text-white">{item.tenant_name}</strong> | วันที่ย้ายออก: <strong className="text-white">{(() => { const d = item.settlement ? item.settlement.return_date : item.desired_date; return d ? new Date(d).toLocaleDateString('th-TH') : '-'; })()}</strong>
                       </p>
                     </div>
 
@@ -143,24 +201,25 @@ export default function GuestMoveOutSummaryPage() {
                       รายละเอียดค่าใช้จ่ายปิดยอดห้องพัก (Invoice Breakdown)
                     </h3>
 
+                    {item.settlement ? <SettlementBreakdown s={item.settlement} /> : (
                     <div className="divide-y divide-white/5 font-mono text-xs">
                       <div className="flex justify-between py-2 text-slate-300">
-                        <span>ค่าเช่าห้องเดือนสุดท้าย (คิดเต็มเดือน):</span>
-                        <span>฿{Number(item.room_rent_amount || item.room_price || 0).toLocaleString()}</span>
+                        <span>ค่าเช่าเดือนที่คืนห้อง (เฉพาะที่ยังไม่ถูกเรียกเก็บ):</span>
+                        <span>฿{Number(item.room_rent_amount || 0).toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between py-2 text-slate-300">
                         <span>
-                          ค่าไฟ (เลขเดิม {item.electric_prev_unit || 0} → เลขใหม่ {item.electric_new_unit || 0} = {item.electric_units_used || 0} หน่วย × 4.88 บ.):
+                          ค่าไฟ (เลขเดิม {item.electric_prev_unit || 0} → เลขใหม่ {item.electric_new_unit || 0} = {item.electric_units_used || 0} หน่วย{Number(item.electric_units_used) > 0 ? ` × ${Number((Number(item.electric_amount || 0) / Number(item.electric_units_used)).toFixed(2))} บ.` : ''}):
                         </span>
                         <span className="text-primary font-bold">฿{Number(item.electric_amount || 0).toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between py-2 text-slate-300">
                         <span>ค่าน้ำเหมาจ่าย:</span>
-                        <span>฿{Number(item.water_amount || 100).toLocaleString()}</span>
+                        <span>฿{Number(item.water_amount || 0).toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between py-2 text-slate-300">
                         <span>ค่าส่วนกลางเหมาจ่าย:</span>
-                        <span>฿{Number(item.common_fee || 150).toLocaleString()}</span>
+                        <span>฿{Number(item.common_fee || 0).toLocaleString()}</span>
                       </div>
                       {Number(item.unpaid_bills_total || 0) > 0 && (
                         <div className="flex justify-between py-2 text-rose-300">
@@ -179,19 +238,17 @@ export default function GuestMoveOutSummaryPage() {
                         <span className="text-amber-400">฿{Number(item.total_expenses || 0).toLocaleString()}</span>
                       </div>
 
-                      {/* Net Result */}
+                      {/* Net Result (older move-out: its own columns) */}
                       <div className="flex justify-between py-3 text-sm font-black border-t border-dashed border-white/20">
                         {item.settlement_type === 'OwnerRefund' ? (
                           <>
-                            <span className="text-emerald-400">คืนเงินประกันส่วนต่างให้ผู้เช่า (฿3,000 - ค่าใช้จ่าย):</span>
+                            <span className="text-emerald-400">คืนเงินประกันส่วนต่างให้ผู้เช่า:</span>
                             <span className="text-emerald-300 text-base">฿{Number(item.net_refund_amount || 0).toLocaleString()}</span>
                           </>
                         ) : item.settlement_type === 'TenantPay' ? (
                           <>
                             <span className="text-rose-400">ผู้เช่าชำระเพิ่มเติม:</span>
-                            <span className="text-rose-300 text-base">
-                              ฿{(isEarly ? Number(item.total_expenses) : Math.max(0, Number(item.total_expenses) - 3000)).toLocaleString()}
-                            </span>
+                            <span className="text-rose-300 text-base">ตามบิลในหน้าบิลของฉัน</span>
                           </>
                         ) : (
                           <>
@@ -201,10 +258,16 @@ export default function GuestMoveOutSummaryPage() {
                         )}
                       </div>
                     </div>
+                    )}
                   </div>
 
                   {/* Refund Slip or Notes */}
-                  {item.refund_slip_url && (
+                  {money?.has_refund_file && item.settlement && (
+                    <a href={`/api/move-out/${item.settlement.id}/refund-file`} target="_blank" rel="noreferrer" className="inline-block px-4 py-2 bg-slate-950 rounded-xl border border-white/10 text-xs font-bold text-slate-200 underline">
+                      ดูสลิปการโอนคืนเงินประกัน
+                    </a>
+                  )}
+                  {!item.settlement && item.refund_slip_url && (
                     <div className="p-4 bg-slate-950 rounded-2xl border border-white/10 space-y-3">
                       <span className="text-xs font-bold text-slate-300 block">สลิปการโอนเงินคืนเงินประกันจากทางหอพัก</span>
                       <div className="w-36 h-48 relative rounded-xl overflow-hidden border border-white/10">

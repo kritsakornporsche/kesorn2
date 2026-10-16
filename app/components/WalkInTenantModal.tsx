@@ -29,7 +29,6 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
   // Form State
   const [selectedRoomId, setSelectedRoomId] = useState<string>('');
   const [tenantName, setTenantName] = useState('');
-  const [idCardNumber, setIdCardNumber] = useState('');
   const [tenantAddress, setTenantAddress] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -53,8 +52,14 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
 
   // Payment / QR & Slip State
   const [qrData, setQrData] = useState<{ qrImage: string; amount: number; promptpayNumber: string; promptpayName: string } | null>(null);
+  const [qrError, setQrError] = useState('');
   const [qrLoading, setQrLoading] = useState(false);
   const [slipData, setSlipData] = useState<string | null>(null);
+  // Booking fee paid by transfer slip (SlipOK) or in cash on site (receipt from the payment record)
+  const [payMethod, setPayMethod] = useState<'slip' | 'cash'>('slip');
+  const [roomFee, setRoomFee] = useState<number | null>(null);
+  const [cashPaidAt, setCashPaidAt] = useState('');
+  const [cashConfirmed, setCashConfirmed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<any>(null);
 
@@ -70,7 +75,6 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
   const resetForm = () => {
     setSelectedRoomId('');
     setTenantName('');
-    setIdCardNumber('');
     setTenantAddress('');
     setEmail('');
     setPhone('');
@@ -186,14 +190,12 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
       if (result.success && result.data) {
         const d = result.data;
         const extractedName = d.full_name_th || (d.first_name_th ? `${d.title_th ? d.title_th + ' ' : ''}${d.first_name_th} ${d.last_name_th || ''}`.trim() : '');
-        const extractedId = d.id_card_number || '';
         const extractedAddress = d.address || '';
 
         if (extractedName) setTenantName(extractedName);
-        if (extractedId) setIdCardNumber(extractedId);
         if (extractedAddress) setTenantAddress(extractedAddress);
 
-        setOcrSuccessMsg(`✓ สแกนบัตรประชาชนสำเร็จ! AI อ่านชื่อ: ${extractedName || extractedId || '-'}`);
+        setOcrSuccessMsg(`✓ อ่านชื่อและที่อยู่จากบัตรสำเร็จ: ${extractedName || '-'} (ระบบไม่เก็บเลขบัตรประชาชน)`);
       } else {
         setOcrErrorMsg(result.message || 'ไม่สามารถอ่านข้อมูลจากบัตรได้ กรุณากรอกด้วยตนเอง');
       }
@@ -226,18 +228,32 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
     // Fetch QR Code for Step 2
     setQrLoading(true);
     setStep(2);
+    setCashConfirmed(false);
+    // Default time of a cash payment: now, Thai time (YYYY-MM-DDTHH:mm)
+    setCashPaidAt(new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 16));
+    // Booking fee of the room from the server (shown for cash; the QR has its own amount)
+    const roomNumber = rooms.find((r) => String(r.id) === String(selectedRoomId))?.room_number;
+    setRoomFee(null);
+    if (roomNumber) {
+      fetch(`/api/rates?roomNumber=${encodeURIComponent(roomNumber)}`)
+        .then((r) => r.json())
+        .then((d) => { if (d.success && d.room) setRoomFee(Number(d.room.bookingFee)); })
+        .catch(() => {});
+    }
     try {
-      const selectedRoom = rooms.find((r) => String(r.id) === String(selectedRoomId));
-      const isTestRoom = (selectedRoom?.room_number || '').toUpperCase() === 'T01';
-      const depositAmt = isTestRoom ? 1 : 1000;
-
-      const res = await fetch(`/api/booking/qr?roomId=${selectedRoomId}&dormId=1&amount=${depositAmt}`);
+      // The booking fee is set by the server for the room (never sent from this page)
+      setQrError('');
+      const res = await fetch(`/api/booking/qr?roomId=${selectedRoomId}`);
       const data = await res.json();
       if (data.success) {
         setQrData(data);
+      } else {
+        setQrData(null);
+        setQrError(data.message || 'สร้าง QR ไม่สำเร็จ');
       }
     } catch (err) {
       console.error('Fetch QR error:', err);
+      setQrError('สร้าง QR ไม่สำเร็จ');
     } finally {
       setQrLoading(false);
     }
@@ -261,17 +277,20 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
 
   // Step 2 Submit to Walk-in API
   const handleFinalSubmit = async () => {
-    if (!slipData) {
-      alert('กรุณาแนบรูปภาพสลิปการโอนเงิน 1,000 บาท');
+    if (payMethod === 'cash' && (!cashConfirmed || roomFee === null)) {
+      alert('กรุณาติ๊กยืนยันว่าได้รับเงินสดค่าจองครบแล้ว');
+      return;
+    }
+    if (payMethod === 'slip' && !slipData) {
+      alert(`กรุณาแนบรูปภาพสลิปการโอนเงินค่าจอง${qrData ? ` ฿${qrData.amount.toLocaleString()}` : ''}`);
       return;
     }
 
     setIsSubmitting(true);
     try {
       const selectedRoom = rooms.find((r) => String(r.id) === String(selectedRoomId));
-      const isTestRoom = (selectedRoom?.room_number || '').toUpperCase() === 'T01';
-      const depositAmt = isTestRoom ? 1 : 1000;
 
+      // The booking fee is set by the server (bookingFeeFor), so it is not sent from here
       const res = await fetch('/api/owner/tenants/walk-in', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -279,15 +298,14 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
           roomId: selectedRoomId,
           startDate,
           endDate,
-          depositAmount: depositAmt,
           monthlyRent: selectedRoom?.price || 2800,
           tenantName,
           email,
           phone,
           parentPhone,
-          idCardNumber,
           tenantAddress,
-          slipUrl: slipData,
+          paymentMethod: payMethod,
+          ...(payMethod === 'cash' ? { cashAmount: roomFee, cashPaidAt } : { slipUrl: slipData }),
         }),
       });
 
@@ -309,20 +327,19 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
   if (!isOpen) return null;
 
   const selectedRoom = rooms.find((r) => String(r.id) === String(selectedRoomId));
-  const isTestRoom = (selectedRoom?.room_number || '').toUpperCase() === 'T01';
-  const depositAmount = isTestRoom ? 1 : 1000;
+  const depositAmount = qrData?.amount ?? null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl my-8">
-        
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-3xl max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden shadow-2xl">
+
         {/* Header */}
-        <div className="bg-slate-950/80 px-6 py-5 border-b border-white/10 flex items-center justify-between">
+        <div className="shrink-0 bg-slate-950/80 px-6 py-4 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-2xl">🚶</span>
             <div>
               <h2 className="text-lg font-black text-white">เพิ่มผู้เช่าแบบ Walk-in (เคาน์เตอร์หอพัก)</h2>
-              <p className="text-xs text-slate-400">สร้างบัญชีผู้เช่า สแกนบัตรปชช. และตรวจสลิปมัดจำอัตโนมัติ</p>
+              <p className="text-xs text-slate-400">สร้างบัญชีผู้เช่า สแกนบัตรปชช. และตรวจสลิปค่าจองอัตโนมัติ</p>
             </div>
           </div>
           <button
@@ -334,14 +351,14 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
         </div>
 
         {/* Step Indicator */}
-        <div className="grid grid-cols-3 bg-slate-950/40 border-b border-white/5 px-6 py-3 text-xs font-bold">
+        <div className="shrink-0 grid grid-cols-3 bg-slate-950/40 border-b border-white/5 px-6 py-3 text-xs font-bold">
           <div className={`flex items-center gap-2 ${step === 1 ? 'text-primary' : 'text-slate-500'}`}>
             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${step === 1 ? 'bg-primary text-white' : 'bg-white/10'}`}>1</span>
             <span>1. เตรียมข้อมูล & สแกนบัตร</span>
           </div>
           <div className={`flex items-center gap-2 ${step === 2 ? 'text-primary' : 'text-slate-500'}`}>
             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${step === 2 ? 'bg-primary text-white' : 'bg-white/10'}`}>2</span>
-            <span>2. ชำระมัดจำ & สลิป</span>
+            <span>2. ชำระค่าจอง & สลิป</span>
           </div>
           <div className={`flex items-center gap-2 ${step === 3 ? 'text-emerald-400' : 'text-slate-500'}`}>
             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${step === 3 ? 'bg-emerald-500 text-white' : 'bg-white/10'}`}>3</span>
@@ -349,8 +366,8 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
           </div>
         </div>
 
-        {/* Content Body */}
-        <div className="p-6 sm:p-8 space-y-6">
+        {/* Content Body (the only part that scrolls) */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 sm:p-8 space-y-6">
 
           {/* STEP 1: Info & OCR */}
           {step === 1 && (
@@ -376,7 +393,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                     ⚠️ ไม่มีห้องพักว่างหรือกำลังจะว่างในขณะนี้
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 max-h-48 overflow-y-auto p-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 p-1">
                     {rooms.map((r) => {
                       const isSelected = String(r.id) === String(selectedRoomId);
                       const isMovingOut = (r.status || '').toLowerCase().includes('moving') || (r.display_status || '').toLowerCase().includes('moving');
@@ -440,10 +457,10 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                     />
                     <div className="text-[11px] leading-relaxed">
                       <span className="font-bold text-white block">
-                        ยินยอมการเก็บรวบรวมและประมวลผลข้อมูลบัตรประชาชน (PDPA) <span className="text-rose-400">*</span>
+                        ยินยอมให้ประมวลผลภาพบัตรเพื่ออ่านชื่อ/ที่อยู่ (ไม่จัดเก็บ) (PDPA) <span className="text-rose-400">*</span>
                       </span>
                       <span className="text-slate-400">
-                        ยินยอมให้ส่งภาพถ่ายบัตรประชาชนเพื่อประมวลผลด้วย Google Gemini AI Vision สำหรับการทำสัญญาเช่า
+                        ส่งภาพถ่ายบัตรให้ Google Gemini AI อ่านชื่อและที่อยู่มากรอกฟอร์ม · ระบบไม่จัดเก็บเลขบัตรประชาชนและรูปบัตร
                       </span>
                     </div>
                   </label>
@@ -537,19 +554,6 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-300">
-                    เลขบัตรประชาชน 13 หลัก
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="13 หลัก"
-                    value={idCardNumber}
-                    onChange={(e) => setIdCardNumber(e.target.value)}
-                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-primary"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300">
                     อีเมลผู้เช่า <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -621,33 +625,32 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="button"
-                  onClick={handleProceedToPayment}
-                  className="px-6 py-2.5 bg-primary hover:bg-primary/90 text-white font-black rounded-xl text-xs shadow-lg transition-all hover:scale-105 active:scale-95"
-                >
-                  ถัดไป: สแกนจ่ายมัดจำ ฿{depositAmount.toLocaleString()} →
-                </button>
-              </div>
-
             </div>
           )}
 
           {/* STEP 2: Payment & SlipOK */}
           {step === 2 && (
             <div className="space-y-6 animate-in fade-in">
+              {/* Payment method */}
+              <div className="flex gap-2" role="radiogroup" aria-label="วิธีชำระค่าจอง">
+                {([['slip', '📱 โอนเงิน + แนบสลิป'], ['cash', '💵 รับเงินสด']] as const).map(([m, label]) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="radio"
+                    aria-checked={payMethod === m}
+                    onClick={() => setPayMethod(m)}
+                    className={`flex-1 px-4 py-2.5 rounded-xl text-xs font-black border transition-all ${payMethod === m ? 'bg-primary text-white border-primary' : 'bg-slate-950/60 text-slate-300 border-white/10 hover:border-white/30'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
                 
                 {/* QR Code */}
+                {payMethod === 'slip' ? (
                 <div className="md:col-span-5 bg-slate-950 p-6 rounded-2xl border border-white/10 text-center space-y-3">
                   <span className="text-[10px] font-black uppercase tracking-widest text-primary">สแกนจ่ายเงินจอง</span>
                   <div className="relative w-48 h-48 mx-auto bg-white p-2 rounded-2xl shadow-xl">
@@ -658,15 +661,15 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                     ) : qrData?.qrImage ? (
                       <img src={qrData.qrImage} alt="PromptPay QR" className="w-full h-full object-contain p-2" />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs">
-                        พร้อมเพย์ 0636040550
+                      <div className="w-full h-full flex items-center justify-center text-red-600 text-xs font-bold p-2">
+                        {qrError || 'สร้าง QR ไม่สำเร็จ'}
                       </div>
                     )}
                   </div>
                   <div>
-                    <span className="text-xl font-black text-white">฿{depositAmount.toLocaleString()}</span>
+                    <span className="text-xl font-black text-white">{depositAmount !== null ? `฿${depositAmount.toLocaleString()}` : '-'}</span>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      {qrData?.promptpayName || 'หอพักเกษร 2'} • พร้อมเพย์ {qrData?.promptpayNumber || '0636040550'}
+                      {qrData?.promptpayName || '-'} • พร้อมเพย์ {qrData?.promptpayNumber || '-'}
                     </p>
                   </div>
 
@@ -676,12 +679,19 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                         qrImage={qrData.qrImage}
                         promptpayNumber={qrData.promptpayNumber}
                         promptpayName={qrData.promptpayName}
-                        amount={depositAmount}
+                        amount={qrData.amount}
                         fileName={`deposit-walkin-room-${selectedRoom?.room_number || 'T01'}.png`}
                       />
                     </div>
                   )}
                 </div>
+                ) : (
+                <div className="md:col-span-5 bg-slate-950 p-6 rounded-2xl border border-white/10 text-center space-y-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">รับเงินสดค่าจอง</span>
+                  <p className="text-3xl font-black text-white">{roomFee !== null ? `฿${roomFee.toLocaleString('th-TH')}` : '...'}</p>
+                  <p className="text-[11px] text-slate-400">ยอดตามที่ระบบกำหนดสำหรับห้อง {selectedRoom?.room_number} · ระบบออกใบเสร็จให้หลังบันทึก</p>
+                </div>
+                )}
 
                 {/* Slip Upload & Summary */}
                 <div className="md:col-span-7 space-y-4">
@@ -704,6 +714,25 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                     </div>
                   </div>
 
+                  {payMethod === 'cash' ? (
+                    <div className="space-y-3">
+                      <label className="block space-y-1">
+                        <span className="text-xs font-bold text-slate-300">วันเวลาที่รับเงิน (เวลาไทย)</span>
+                        <input
+                          type="datetime-local"
+                          value={cashPaidAt}
+                          max={new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 16)}
+                          onChange={(e) => setCashPaidAt(e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-sm text-white"
+                        />
+                      </label>
+                      <label className="flex items-start gap-2 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs text-amber-200 cursor-pointer">
+                        <input type="checkbox" checked={cashConfirmed} onChange={(e) => setCashConfirmed(e.target.checked)} className="mt-0.5" />
+                        <span>ได้รับเงินสดค่าจอง {roomFee !== null ? `฿${roomFee.toLocaleString('th-TH')}` : ''} ครบถ้วนแล้ว (บันทึกในชื่อผู้รับเงินคือบัญชีของคุณ)</span>
+                      </label>
+                    </div>
+                  ) : (
+                  <>
                   {/* Slip Upload Box */}
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-slate-300">
@@ -724,27 +753,10 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                       <Image src={slipData} alt="Uploaded Slip" fill className="object-cover" />
                     </div>
                   )}
+                  </>
+                  )}
                 </div>
 
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex justify-between items-center pt-4 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setStep(1)}
-                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors"
-                >
-                  ← ย้อนกลับ
-                </button>
-                <button
-                  type="button"
-                  disabled={isSubmitting || !slipData}
-                  onClick={handleFinalSubmit}
-                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black rounded-xl text-xs shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
-                >
-                  <span>{isSubmitting ? '⏳ กำลังตรวจสอบสลิป & บันทึก...' : '✓ ตรวจสลิป & ยืนยันการจอง Walk-in'}</span>
-                </button>
               </div>
 
             </div>
@@ -761,8 +773,18 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                 <span className="text-xs font-black uppercase tracking-widest text-emerald-400">Walk-in สำเร็จ</span>
                 <h3 className="text-2xl font-black text-white">บันทึกข้อมูลและล็อกห้องพักสำเร็จ</h3>
                 <p className="text-xs text-slate-400 max-w-md mx-auto">
-                  ระบบได้สร้างบัญชีผู้เช่า ตรวจสอบสลิปมัดจำ และปรับสถานะห้อง {submitResult?.roomNumber} เป็น <strong>Reserved</strong> เรียบร้อยแล้ว
+                  ระบบได้สร้างบัญชีผู้เช่า {submitResult?.paymentMethod === 'cash' ? 'บันทึกรับเงินสดค่าจอง' : 'ตรวจสอบสลิปค่าจอง'} และปรับสถานะห้อง {submitResult?.roomNumber} เป็น <strong>ติดจอง</strong> เรียบร้อยแล้ว
                 </p>
+                {submitResult?.paymentId && (
+                  <a
+                    href={`/receipt/${submitResult.paymentId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 mt-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-xs font-bold text-white"
+                  >
+                    🧾 พิมพ์ใบเสร็จค่าจอง
+                  </a>
+                )}
               </div>
 
               {/* Account Details Card for Tenant */}
@@ -790,27 +812,72 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                 </div>
               </div>
 
-              <div className="flex justify-center gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-6 py-2.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl text-xs shadow-lg transition-all"
-                >
-                  เสร็จสิ้น / ปิดหน้าต่าง
-                </button>
-              </div>
-
             </div>
           )}
 
         </div>
+
+        {/* Footer: buttons of the current step, always visible */}
+        {step === 1 && (
+          <div className="shrink-0 flex justify-end gap-3 px-6 py-4 border-t border-white/10 bg-slate-950/60">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              onClick={handleProceedToPayment}
+              className="px-6 py-2.5 bg-primary hover:bg-primary/90 text-white font-black rounded-xl text-xs shadow-lg transition-all hover:scale-105 active:scale-95"
+            >
+              ถัดไป: สแกนจ่ายค่าจอง →
+            </button>
+          </div>
+        )}
+        {step === 2 && (
+          <div className="shrink-0 flex justify-between items-center gap-3 px-6 py-4 border-t border-white/10 bg-slate-950/60">
+            <button
+              type="button"
+              onClick={() => setStep(1)}
+              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors"
+            >
+              ← ย้อนกลับ
+            </button>
+            <div className="flex items-center gap-3">
+              {payMethod === 'slip' && !qrLoading && !qrData && (
+                <span className="text-[11px] font-bold text-red-400">สร้าง QR ไม่ได้ — ยืนยันการจองไม่ได้</span>
+              )}
+              <button
+                type="button"
+                disabled={isSubmitting || (payMethod === 'cash' ? !cashConfirmed || roomFee === null : !slipData || qrLoading || !qrData)}
+                onClick={handleFinalSubmit}
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 text-white font-black rounded-xl text-xs shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+              >
+                <span>{isSubmitting ? '⏳ กำลังบันทึก...' : payMethod === 'cash' ? '✓ บันทึกรับเงินสด & ยืนยันการจอง Walk-in' : '✓ ตรวจสลิป & ยืนยันการจอง Walk-in'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+        {step === 3 && (
+          <div className="shrink-0 flex justify-center px-6 py-4 border-t border-white/10 bg-slate-950/60">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-6 py-2.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl text-xs shadow-lg transition-all"
+            >
+              เสร็จสิ้น / ปิดหน้าต่าง
+            </button>
+          </div>
+        )}
 
       </div>
 
       {/* PDPA OCR Consent Modal */}
       <PdpaOcrConsentModal
         isOpen={isPdpaModalOpen}
-        title="หนังสือยินยอมการเก็บและประมวลผลบัตรประชาชน (PDPA)"
+        title="ยินยอมให้ประมวลผลภาพบัตรประชาชนเพื่ออ่านชื่อและที่อยู่ (PDPA)"
         actionText="ยินยอมและอ่านข้อมูลบัตรด้วย AI"
         onClose={() => {
           setIsPdpaModalOpen(false);

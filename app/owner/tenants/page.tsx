@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 
 import WalkInTenantModal from '@/app/components/WalkInTenantModal';
+import { statusText } from '@/lib/status-text';
 
 interface Tenant {
   id: number;
@@ -191,8 +192,8 @@ export default function TenantsManagement() {
                     </td>
                     <td className="px-6 py-4 text-xs text-slate-400 truncate max-w-[200px]">{tenant.email || '-'}</td>
                     <td className="px-6 py-4">
-                      <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-                        {tenant.status === 'active' ? '🟢 กำลังพักอยู่' : tenant.status}
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border ${String(tenant.status).toLowerCase() === 'active' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-500/10 border-slate-500/30 text-slate-400'}`}>
+                        {String(tenant.status).toLowerCase() === 'active' ? '🟢 ' : ''}{statusText('tenant', tenant.status)}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">

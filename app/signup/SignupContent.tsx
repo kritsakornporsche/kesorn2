@@ -8,20 +8,7 @@ import { signIn } from 'next-auth/react';
 import { cn } from '@/lib/utils';
 import CloudflareTurnstile from '@/app/components/CloudflareTurnstile';
 
-type Role = 'guest' | 'owner';
-
-const roleConfig: Record<Role, { label: string; desc: string; icon: string }> = {
-  guest: {
-    label: 'แขก',
-    desc: 'เลือกดูและจองห้องพัก',
-    icon: '🏠',
-  },
-  owner: {
-    label: 'เจ้าของหอพัก',
-    desc: 'ควบคุมระบบทั้งหมด วิเคราะห์ข้อมูล และจัดการหอพัก',
-    icon: '👑',
-  }
-};
+type Role = 'guest';
 
 type FormState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -37,7 +24,6 @@ export default function SignupContent() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl');
 
-  const [selectedRole, setSelectedRole] = useState<Role>('guest');
   const [formState, setFormState] = useState<FormState>('idle');
   const [message, setMessage] = useState('');
   const [createdUser, setCreatedUser] = useState<CreatedUser | null>(null);
@@ -263,7 +249,6 @@ export default function SignupContent() {
           username: fields.username,
           email: fields.email,
           password: fields.password,
-          role: selectedRole,
         }),
       });
 
@@ -288,10 +273,7 @@ export default function SignupContent() {
         setMessage(data.message);
         setCreatedUser(data.data);
         
-        let redirectPath = selectedRole === 'owner' ? '/owner' : '/explore';
-        if (callbackUrl && selectedRole === 'guest') {
-          redirectPath = callbackUrl;
-        }
+        const redirectPath = callbackUrl || '/explore';
 
         setTimeout(() => {
           if (typeof window !== 'undefined') {
@@ -513,28 +495,6 @@ export default function SignupContent() {
                     onChange={handleChange}
                     className="w-full rounded-2xl border border-white/10 bg-[#0F172A] px-5 py-3 text-sm font-bold text-white focus:bg-[#0F172A] focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-white/30"
                   />
-                </div>
-              </div>
-
-              <div className="space-y-2 pt-1">
-                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">ฉันคือ...</label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {(Object.keys(roleConfig) as Role[]).map((role) => (
-                    <button
-                      key={role}
-                      type="button"
-                      onClick={() => setSelectedRole(role)}
-                      className={cn(
-                        "flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl border transition-all text-center h-full cursor-pointer",
-                        selectedRole === role ? "border-primary bg-primary/10 shadow-sm ring-1 ring-primary" : "border-border hover:bg-secondary"
-                      )}
-                    >
-                      <span className="text-2xl">{roleConfig[role].icon}</span>
-                      <div>
-                        <p className="text-xs font-black text-foreground leading-tight">{roleConfig[role].label}</p>
-                      </div>
-                    </button>
-                  ))}
                 </div>
               </div>
 
