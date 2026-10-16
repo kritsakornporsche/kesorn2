@@ -3,7 +3,7 @@ import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
 import { bookingFeeFor, daysPastDue, getRates } from '@/lib/billing';
-import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
+import { getPaymentSummaries, outstandingFor, unpaidBillsToday } from '@/lib/payments';
 import { expireDueBookings } from '@/lib/bookings';
 import { OVERDUE_ALERT_DAYS } from '@/lib/reminders';
 
@@ -65,15 +65,10 @@ export async function GET(req: Request) {
     `);
     const pendingMaintenance = Number(pendingMaintRes[0]?.count || 0);
 
-    // Partially paid bills count with what is still owed (late fees are shown per bill, not here)
-    const unpaidBillsRes = await sql`
-      SELECT COUNT(*) as count,
-             COALESCE(SUM(b.amount - COALESCE((SELECT SUM(p.amount) FROM bill_payments p WHERE p.bill_id = b.id AND p.voided_at IS NULL), 0)), 0) as total
-      FROM bills b
-      WHERE LOWER(b.status) IN ('unpaid', 'overdue', 'partial')
-    `;
-    const unpaidBillsCount = Number(unpaidBillsRes[0]?.count || 0);
-    const unpaidBillsAmount = Number(unpaidBillsRes[0]?.total || 0);
+    // Still owed today incl. late fees to today, never below 0 (lib/payments unpaidBillsToday — same as the owner report)
+    const unpaid = await unpaidBillsToday(sql, new Date());
+    const unpaidBillsCount = unpaid.count;
+    const unpaidBillsAmount = unpaid.total;
 
     // Drafts are not owed yet (not sent to tenants); shown separately as work to do
     const draftBillsRes = await sql`SELECT COUNT(*) as count FROM bills WHERE LOWER(status) = 'draft'`;

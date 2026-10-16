@@ -87,6 +87,43 @@ export async function getPaymentSummaries(sql: any, billIds: number[]): Promise<
   return map;
 }
 
+export interface UnpaidBill {
+  id: number; room_number: string; title: string; billing_cycle: string | null; due_date: string | null; status: string;
+  amount: number; late_fee: number; paid: number; outstanding: number;
+}
+
+/**
+ * Bills still owed today (Unpaid / Overdue / Partial — not drafts, held corrections or cancelled bills).
+ * Owed = bill amount + late fee up to `now` (calcLateFee, Thai date; 0 for a bill that has no late fee)
+ * − payments not voided, never below 0. The dashboard (/api/owner/stats) and the owner report (lib/reports.ts) use this.
+ */
+export async function unpaidBillsToday(sql: any, now: Date): Promise<{ count: number; total: number; bills: UnpaidBill[] }> {
+  const rows = await sql`
+    SELECT id, room_number, title, billing_cycle, due_date, status, amount, bill_type, late_fee_rate
+    FROM bills WHERE LOWER(status) IN ('unpaid', 'overdue', 'partial')
+    ORDER BY room_number + 0, room_number, due_date, id
+  `;
+  const rates = await getRates(sql);
+  const summaries = await getPaymentSummaries(sql, rows.map((b: any) => Number(b.id)));
+  const bills: UnpaidBill[] = rows.map((b: any) => {
+    const paid = summaries.get(Number(b.id))?.paid_total || 0;
+    const owed = outstandingFor(b, paid, now, rates);
+    return {
+      id: Number(b.id),
+      room_number: String(b.room_number || '-'),
+      title: String(b.title || ''),
+      billing_cycle: b.billing_cycle || null,
+      due_date: b.due_date ? bangkokDate(b.due_date) : null,
+      status: String(b.status || ''),
+      amount: round2(Number(b.amount)),
+      late_fee: owed.lateFee,
+      paid: owed.paidTotal,
+      outstanding: owed.outstanding,
+    };
+  });
+  return { count: bills.length, total: round2(bills.reduce((s, b) => s + b.outstanding, 0)), bills };
+}
+
 /**
  * Time of a transfer from a SlipOK result. SlipOK reports Thai local time, so +07:00 is added when the
  * value has no offset (the result must not depend on the server timezone). Falls back to now.

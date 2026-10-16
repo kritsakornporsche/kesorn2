@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { formatBaht } from '@/lib/format';
-import { INCOME_SPLIT_NOTE, TODAY_NOTE } from '@/lib/report-text';
+import { INCOME_SPLIT_NOTE, TODAY_NOTE, UNPAID_NOTE } from '@/lib/report-text';
 import type { OwnerReport } from '@/lib/reports';
 
 // Owner report (lib/reports.ts): a month of income / expense from the accounts, the 6-month chart, deposits held,
@@ -11,6 +11,7 @@ import type { OwnerReport } from '@/lib/reports';
 const SHORT_MONTH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const shortMonth = (m: string) => { const [y, mm] = m.split('-').map(Number); return `${SHORT_MONTH[mm - 1]} ${String(y + 543).slice(2)}`; };
 const longMonth = (m: string) => { const [y, mm] = m.split('-').map(Number); return new Date(Date.UTC(y, mm - 1, 15)).toLocaleDateString('th-TH', { month: 'long', year: 'numeric', timeZone: 'UTC' }); };
+const dueText = (d: string | null) => (d ? new Date(`${d}T00:00:00+07:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-');
 const thisMonth = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 7);
 
 // Chart colors (validated: dataviz validate_palette — light on #FFFFFF, dark on #111827)
@@ -226,23 +227,41 @@ export default function OwnerReportsPage() {
               {report.unpaid.bills.length === 0 ? (
                 <p className="text-sm text-muted-foreground">ไม่มีบิลค้างชำระ</p>
               ) : (
-                <div className="overflow-x-auto">
+                <>
+                {/* Narrow screens: one card per bill, the amount always visible */}
+                <ul className="sm:hidden space-y-2">
+                  {report.unpaid.bills.map((b) => (
+                    <li key={b.id} className="rounded-xl border border-border/60 p-3">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="font-black text-foreground">ห้อง {b.room_number}</span>
+                        <span className="font-black tabular-nums text-foreground">{formatBaht(b.outstanding)}</span>
+                      </div>
+                      <p className="text-sm text-foreground mt-1">{b.title || b.billing_cycle}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        ครบกำหนด {dueText(b.due_date)}{b.late_fee > 0 ? ` · ค่าปรับ ${formatBaht(b.late_fee)}` : ''}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+                <div className="hidden sm:block overflow-x-auto">
                   <table className="w-full text-sm min-w-[420px]">
-                    <thead><tr className="text-xs text-muted-foreground text-left"><th className="py-1">ห้อง</th><th>รายการ</th><th>ครบกำหนด</th><th className="text-right">ค้างชำระ</th></tr></thead>
+                    <thead><tr className="text-xs text-muted-foreground text-left"><th className="py-1">ห้อง</th><th>รายการ</th><th>ครบกำหนด</th><th className="text-right">ค่าปรับ</th><th className="text-right">ค้างชำระ</th></tr></thead>
                     <tbody>
                       {report.unpaid.bills.map((b) => (
                         <tr key={b.id} className="border-t border-border/60">
                           <td className="py-1.5 font-bold text-foreground">{b.room_number}</td>
                           <td className="py-1.5 text-foreground">{b.title || b.billing_cycle}</td>
-                          <td className="py-1.5 text-muted-foreground">{b.due_date ? new Date(`${b.due_date}T00:00:00+07:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-'}</td>
+                          <td className="py-1.5 text-muted-foreground">{dueText(b.due_date)}</td>
+                          <td className="py-1.5 text-right tabular-nums text-muted-foreground">{b.late_fee > 0 ? formatBaht(b.late_fee) : '-'}</td>
                           <td className="py-1.5 text-right tabular-nums text-foreground">{formatBaht(b.outstanding)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
-              <p className="text-[11px] text-muted-foreground mt-2">ยอดค้างไม่รวมค่าปรับ (ค่าปรับแสดงในหน้าบิลแต่ละใบ) — ตรงกับหน้าภาพรวม</p>
+              <p className="text-[11px] text-muted-foreground mt-2">{UNPAID_NOTE} — ตรงกับหน้าภาพรวม</p>
             </Card>
           </div>
         </>

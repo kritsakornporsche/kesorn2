@@ -297,7 +297,7 @@ export default function OwnerDashboardPage() {
               </div>
               )}
               <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-400">ค้างชำระ:</span>
+                <span className="text-slate-400">ค้างชำระ <span className="text-[10px]">(รวมค่าปรับถึงวันนี้)</span>:</span>
                 <span className="font-bold text-rose-400 font-mono">฿{stats.unpaidBillsAmount.toLocaleString()} ({stats.unpaidBillsCount} ห้อง)</span>
               </div>
             </div>

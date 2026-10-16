@@ -7,9 +7,10 @@
 
 import { getDb } from '@/lib/db';
 import { bangkokDate } from '@/lib/billing';
-import { INCOME_GROUPS, INCOME_GROUP_LABELS, INCOME_SPLIT_NOTE, TODAY_NOTE, type IncomeGroup } from '@/lib/report-text';
+import { unpaidBillsToday, type UnpaidBill } from '@/lib/payments';
+import { INCOME_GROUPS, INCOME_GROUP_LABELS, INCOME_SPLIT_NOTE, TODAY_NOTE, UNPAID_NOTE, type IncomeGroup } from '@/lib/report-text';
 
-export { INCOME_GROUPS, INCOME_GROUP_LABELS, INCOME_SPLIT_NOTE, TODAY_NOTE, type IncomeGroup };
+export { INCOME_GROUPS, INCOME_GROUP_LABELS, INCOME_SPLIT_NOTE, TODAY_NOTE, UNPAID_NOTE, type IncomeGroup };
 
 const DORM_ID = 1;
 
@@ -25,6 +26,7 @@ const MANUAL_GROUP: Record<string, IncomeGroup> = {
   'ค่าทำความสะอาด': 'cleaning',
   damage: 'damage', 'ค่าเสียหาย': 'damage',
   'ริบค่าจอง': 'booking_forfeit',
+  'ริบเงินประกัน': 'deposit_forfeit',
 };
 
 const toSatang = (n: unknown) => Math.round(Number(n || 0) * 100);
@@ -129,7 +131,7 @@ export interface OwnerReport {
     months: { month: string; income: number; expense: number }[];
   };
   occupancy: { occupied: number; total: number; rate: number };
-  unpaid: { count: number; total: number; bills: { id: number; room_number: string; title: string; billing_cycle: string | null; due_date: string | null; status: string; outstanding: number }[] };
+  unpaid: { count: number; total: number; bills: UnpaidBill[] };
 }
 
 async function incomeSplit(sql: any, first: string, last: string) {
@@ -171,6 +173,7 @@ async function incomeSplit(sql: any, first: string, last: string) {
     let parts: Partial<Record<IncomeGroup, number>>;
     if (bill) parts = allocate(satang, billWeights(bill));
     else if (r.reference_type === 'booking_forfeit') parts = { booking_forfeit: satang };
+    else if (r.reference_type === 'settlement_forfeit') parts = { deposit_forfeit: satang }; // deposit kept at move-out (lib/moveOut.ts)
     else if (!r.reference_type) parts = { [MANUAL_GROUP[String(r.category || '').trim().toLowerCase()] || MANUAL_GROUP[String(r.category || '').trim()] || 'other']: satang };
     else parts = { other: satang };
     for (const [g, v] of Object.entries(parts) as [IncomeGroup, number][]) sums[g] += v;
@@ -187,23 +190,8 @@ export async function ownerReport(month: string, role: 'owner' | 'manager', now:
   const totalRooms = Number(total || 0);
   const occupiedRooms = Number(occupied || 0);
 
-  // Same rule as the dashboard: unpaid / overdue / partial bills, what is still owed without late fees
-  const unpaidRows = await sql`
-    SELECT b.id, b.room_number, b.title, b.billing_cycle, b.due_date, b.status,
-           b.amount - COALESCE((SELECT SUM(p.amount) FROM bill_payments p WHERE p.bill_id = b.id AND p.voided_at IS NULL), 0) AS outstanding
-    FROM bills b
-    WHERE LOWER(b.status) IN ('unpaid', 'overdue', 'partial')
-    ORDER BY b.room_number + 0, b.room_number, b.due_date, b.id
-  `;
-  const unpaidBills = (unpaidRows as any[]).map((b) => ({
-    id: Number(b.id),
-    room_number: String(b.room_number || '-'),
-    title: String(b.title || ''),
-    billing_cycle: b.billing_cycle || null,
-    due_date: b.due_date ? (b.due_date instanceof Date ? bangkokDate(b.due_date) : String(b.due_date).slice(0, 10)) : null,
-    status: String(b.status || ''),
-    outstanding: baht(toSatang(b.outstanding)),
-  }));
+  // Same formula as the dashboard (lib/payments unpaidBillsToday): amount + late fee to today − payments, never below 0
+  const unpaid = await unpaidBillsToday(sql, now);
 
   const report: OwnerReport = {
     month,
@@ -211,7 +199,7 @@ export async function ownerReport(month: string, role: 'owner' | 'manager', now:
     role,
     money: null,
     occupancy: { occupied: occupiedRooms, total: totalRooms, rate: totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 1000) / 10 : 0 },
-    unpaid: { count: unpaidBills.length, total: baht(unpaidBills.reduce((s, b) => s + toSatang(b.outstanding), 0)), bills: unpaidBills },
+    unpaid,
   };
   if (role !== 'owner') return report;
 
@@ -281,8 +269,8 @@ export function reportCsv(r: OwnerReport): string {
   }
   rows.push([TODAY_NOTE]);
   rows.push(['อัตราการเข้าพัก', `${r.occupancy.occupied}/${r.occupancy.total}`, `${r.occupancy.rate}%`], []);
-  rows.push(['บิลค้างชำระ', `${r.unpaid.count} บิล`, num(r.unpaid.total)]);
-  rows.push(['ห้อง', 'รายการ', 'รอบบิล', 'ครบกำหนด', 'ค้างชำระ (บาท)']);
-  for (const b of r.unpaid.bills) rows.push([b.room_number, b.title, b.billing_cycle || '', b.due_date || '', num(b.outstanding)]);
+  rows.push(['บิลค้างชำระ', `${r.unpaid.count} บิล`, num(r.unpaid.total)], [UNPAID_NOTE]);
+  rows.push(['ห้อง', 'รายการ', 'รอบบิล', 'ครบกำหนด', 'ยอดบิล', 'ค่าปรับถึงวันนี้', 'ชำระแล้ว', 'ค้างชำระ (บาท)']);
+  for (const b of r.unpaid.bills) rows.push([b.room_number, b.title, b.billing_cycle || '', b.due_date || '', num(b.amount), num(b.late_fee), num(b.paid), num(b.outstanding)]);
   return '﻿' + rows.map((row) => row.map(cell).join(',')).join('\r\n') + '\r\n';
 }
