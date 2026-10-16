@@ -306,7 +306,7 @@ export function capCheck(rent: number, deposit: number): { ok: true } | { ok: fa
   if (Math.round(total * 100) <= Math.round(cap * 100)) return { ok: true };
   return {
     ok: false,
-    message: `เงินประกัน ฿${formatBaht(deposit)} + ค่าเช่าล่วงหน้า ฿${formatBaht(rent)} = ฿${formatBaht(total)} เกิน 3 เท่าของค่าเช่า (฿${formatBaht(cap)}) ตามประกาศ สคบ. — กรุณาแก้ราคาห้อง/เงินประกันในหน้าห้องพัก`,
+    message: `เงินประกัน ฿${formatBaht(deposit)} + ค่าเช่าล่วงหน้า ฿${formatBaht(rent)} = ฿${formatBaht(total)} เกิน 3 เท่าของค่าเช่า (฿${formatBaht(cap)}) ตามประกาศ สคบ. พ.ศ. 2568 — กรุณาแก้ราคาห้อง/เงินประกันในหน้าห้องพัก`,
   };
 }
 

@@ -82,7 +82,7 @@ export default function TenantMoveOutPage() {
       <div>
         <h1 className="text-3xl font-black text-white tracking-tight">🚪 แจ้งย้ายออก & เงินประกัน</h1>
         <p className="text-muted-foreground mt-2 text-sm">
-          แจ้งล่วงหน้าอย่างน้อย {NOTICE_DAYS} วัน · ไม่คิดค่าเช่ารายวัน · คืนเงินประกันภายใน 7 วันหลังคืนห้อง (14 วันเมื่อมีรายการหัก)
+          แจ้งล่วงหน้าอย่างน้อย {NOTICE_DAYS} วัน · ไม่คิดค่าเช่ารายวัน · คืนเงินประกันภายใน 7 วันหลังคืนห้อง (ตามประกาศ สคบ. พ.ศ. 2568) · 14 วันเมื่อมีรายการหัก (ตามนโยบายหอพัก)
         </p>
       </div>
 
@@ -184,7 +184,7 @@ function NoticeForm({ contract, onDone }: { contract: NonNullable<Data['contract
           </p>
           {early && (
             <p className="text-amber-300 font-bold">
-              ย้ายออกก่อนครบสัญญา: เงินประกันจะถูกยึดหลังหักยอดค้าง ยกเว้นเข้าเงื่อนไข สคบ. ข้อ 13 ครบทั้ง 3 ข้อ
+              ย้ายออกก่อนครบสัญญา: เงินประกันจะถูกยึดหลังหักยอดค้าง ยกเว้นเข้าเงื่อนไขตามประกาศ สคบ. พ.ศ. 2568 ครบทั้ง 3 ข้อ
               — (ก) อยู่มาแล้วอย่างน้อยครึ่งหนึ่งของสัญญา {half ? '✓' : '✕'} · (ข) แจ้งล่วงหน้าอย่างน้อย 30 วัน {noticeDays !== null && noticeDays >= NOTICE_DAYS ? '✓' : '✕'} · (ค) ไม่ค้างชำระ
             </p>
           )}
@@ -258,7 +258,7 @@ function SettlementCard({ s, onChanged }: { s: Settlement; onChanged: () => void
 
         {s.clause13?.early && (
           <div className="p-4 rounded-2xl border border-border bg-secondary/20 text-sm space-y-1">
-            <p className="font-black text-amber-300">ย้ายออกก่อนครบสัญญา — สคบ. ข้อ 13</p>
+            <p className="font-black text-amber-300">ย้ายออกก่อนครบสัญญา — ตามประกาศ สคบ. พ.ศ. 2568</p>
             <p className={s.clause13.half ? 'text-emerald-400' : 'text-rose-400'}>{s.clause13.half ? '✓' : '✕'} (ก) อยู่มาแล้ว {s.clause13.stayedDays} จาก {s.clause13.contractDays} วัน</p>
             <p className={s.clause13.notice ? 'text-emerald-400' : 'text-rose-400'}>{s.clause13.notice ? '✓' : '✕'} (ข) แจ้งเป็นหนังสือล่วงหน้า {s.clause13.noticeDays} วัน</p>
             <p className={s.clause13.noArrears ? 'text-emerald-400' : 'text-rose-400'}>{s.clause13.noArrears ? '✓' : '✕'} (ค) ไม่ค้างชำระ ณ วันแจ้งและวันคืนห้อง</p>

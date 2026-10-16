@@ -200,6 +200,15 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
 
         <div className="flex flex-wrap items-center gap-3">
           <button
+            onClick={() => setIsPrintModalOpen(true)}
+            className="px-5 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95"
+            title="เปิดหน้าพิมพ์สัญญา (A4)"
+          >
+            <span>🖨️</span>
+            <span>พิมพ์สัญญา</span>
+          </button>
+
+          <button
             onClick={handleDownloadDocx}
             disabled={downloadingDocx}
             className="px-5 py-2.5 bg-blue-700 hover:bg-blue-600 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95 disabled:opacity-50"
@@ -410,6 +419,15 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             </h3>
             <div className="p-5 bg-slate-950/60 border border-white/10 rounded-3xl flex flex-wrap items-center gap-3">
               <InspectionButton contractId={contract.id} />
+              <a
+                href={`/inspection-sheet/${contract.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-xs font-bold flex items-center gap-1.5"
+              >
+                <span>📋</span>
+                <span>พิมพ์ใบตรวจสภาพห้อง (แนบท้ายสัญญา)</span>
+              </a>
               <span className="text-[11px] text-white/40">บันทึกสภาพและรูปถ่ายแต่ละรายการ ผู้เช่ากดรับทราบผ่านหน้าสัญญาของตน (แก้ไขได้จนผู้เช่ารับทราบ)</span>
             </div>
           </div>

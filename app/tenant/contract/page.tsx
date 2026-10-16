@@ -249,9 +249,26 @@ export default function TenantContractPage() {
 
               {/* Move-in room inspection: shown once the owner has recorded it */}
               <TenantInspectionCard key={activeContract.id} contractId={activeContract.id} />
+              <a
+                href={`/inspection-sheet/${activeContract.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline"
+              >
+                <span>📋</span>
+                <span>ใบตรวจสภาพห้อง (เอกสารแนบท้ายสัญญา) — เปิดเพื่อพิมพ์</span>
+              </a>
 
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setIsPrintModalOpen(true)}
+                  className="flex-1 py-4 bg-slate-700 hover:bg-slate-600 text-white font-black rounded-2xl shadow-xl active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span>🖨️</span>
+                  <span>พิมพ์สัญญา</span>
+                </button>
                 <a
                   href={`/api/contracts/export-docx?id=${activeContract.id}`}
                   className="flex-1 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl shadow-xl hover:brightness-110 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"

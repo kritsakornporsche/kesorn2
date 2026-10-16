@@ -33,6 +33,12 @@ export const FIELD_LABELS: Record<RateField | PaymentField, string> = {
   tax_id: 'เลขประจำตัวผู้เสียภาษี',
 };
 
+/** Shown under the rate inputs (text only, the value is not blocked). */
+export const RATE_NOTES: Partial<Record<RateField, string>> = {
+  electricity_rate: 'ตามประกาศ สคบ. พ.ศ. 2568 ต้องไม่เกินอัตราที่การไฟฟ้าเรียกเก็บจริง',
+  water_rate: 'ตามประกาศ สคบ. พ.ศ. 2568 ต้องไม่เกินอัตราที่การประปาเรียกเก็บจริง',
+};
+
 export const LANDLORD_LABELS: Record<LandlordField, string> = {
   landlord_name: 'ชื่อผู้ให้เช่า',
   landlord_phone: 'เบอร์โทรผู้ให้เช่า',
@@ -48,6 +54,34 @@ export interface ContractParty {
 }
 
 const PARTY_DOTS = '..............................................';
+
+/** Deposit refund sentence of the contract: 7 days per the สคบ. notice, 14 days with deductions is the dorm's policy. */
+export const DEPOSIT_REFUND_TEXT =
+  'ผู้ให้เช่าจะคืนเงินประกันภายใน 7 วันนับแต่วันที่ผู้เช่าส่งมอบห้องคืน (ตามประกาศ สคบ. พ.ศ. 2568) หากมีการหักค่าเสียหายหรือค่าใช้จ่ายที่ค้างชำระ ผู้ให้เช่าจะแจ้งรายการหักเป็นหนังสือ และคืนเงินส่วนที่เหลือภายใน 14 วันนับแต่วันที่ผู้เช่าส่งมอบห้องคืน (ตามนโยบายหอพัก)';
+
+/** Clause 5 of the contract: charges per the rate list, invoice at least 3 days before the due date (lib/billing calcDueDate). */
+export const CHARGES_CLAUSE_TEXT =
+  'ค่าไฟฟ้า ค่าน้ำประปา และค่าบริการอื่น เรียกเก็บตาม "อัตราค่าบริการ" ท้ายสัญญานี้ โดยผู้ให้เช่าจะส่งใบแจ้งหนี้ให้ผู้เช่าล่วงหน้าไม่น้อยกว่า 3 วันก่อนวันครบกำหนดชำระ';
+
+type ChargeRates = { electricityPerUnit?: number | null; waterPerPerson?: number | null; commonFee?: number | null; cleaningFee?: number | null; lateFeePerDay?: number | null };
+
+/**
+ * "อัตราค่าบริการ" lines of the contract, from the settings page (no numbers written in the code).
+ * A rate that is not known is written as "ตามอัตราที่หอพักกำหนด".
+ */
+export function contractChargeLines(r: ChargeRates | null | undefined): string[] {
+  const n = (v: number | null | undefined) =>
+    v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 });
+  const or = (v: string | null, text: (s: string) => string) => (v === null ? 'ตามอัตราที่หอพักกำหนด' : text(v));
+  return [
+    `ค่าไฟฟ้า ${or(n(r?.electricityPerUnit), (s) => `หน่วยละ ${s} บาท`)} คิดตามหน่วยที่ใช้จริงจากมิเตอร์ไฟฟ้าของห้อง อัตราต่อหน่วยคิดจากยอดเงินในใบแจ้งค่าไฟฟ้าของหอพัก ÷ จำนวนหน่วยในใบแจ้ง และไม่เกินอัตราที่การไฟฟ้าเรียกเก็บจริง (ตามประกาศ สคบ. พ.ศ. 2568)`,
+    `ค่าน้ำประปาเหมาจ่าย${or(n(r?.waterPerPerson), (s) => `คนละ ${s} บาทต่อเดือน`)} (หอพักมีมิเตอร์น้ำรวม)`,
+    `ค่าส่วนกลาง${or(n(r?.commonFee), (s) => `ห้องละ ${s} บาทต่อเดือน`)}`,
+    `ค่าทำความสะอาดห้อง (เมื่อขอใช้บริการ) ${or(n(r?.cleaningFee), (s) => `ครั้งละ ${s} บาท`)}`,
+    `ค่าปรับชำระค่าเช่าล่าช้า ${or(n(r?.lateFeePerDay), (s) => `วันละ ${s} บาท`)} นับจากวันครบกำหนดชำระ`,
+    'ผู้ให้เช่าจะส่งใบแจ้งหนี้ให้ผู้เช่าล่วงหน้าไม่น้อยกว่า 3 วันก่อนวันครบกำหนดชำระ',
+  ];
+}
 
 /**
  * Text of the contract's landlord parts. Nothing is written into the code: a detail that is not set

@@ -802,6 +802,16 @@ export default function OwnerContractsPage() {
                               </>
                             )}
 
+                            <button
+                              type="button"
+                              onClick={() => { setPrintingContract(c); setIsPrintModalOpen(true); }}
+                              className="px-3 py-1.5 bg-slate-500/20 hover:bg-slate-500/30 text-slate-200 border border-slate-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
+                              title="เปิดหน้าพิมพ์สัญญา (A4)"
+                            >
+                              <span>🖨️</span>
+                              <span>พิมพ์สัญญา</span>
+                            </button>
+
                             {/* Print / Download Contract Button */}
                             <a
                               href={`/api/contracts/export-docx?id=${c.id}`}

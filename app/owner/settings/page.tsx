@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { FIELD_LABELS, LANDLORD_LABELS, RATE_FIELDS } from '@/lib/settings-fields';
+import { FIELD_LABELS, LANDLORD_LABELS, RATE_FIELDS, RATE_NOTES } from '@/lib/settings-fields';
 
 // The one place for rates and payment details (lib/settings.ts). Owner edits; manager sees it read-only.
 // Bills already sent or paid keep their amounts and late fee; draft monthly bills are re-priced on save.
@@ -354,6 +354,7 @@ export default function OwnerSettings() {
                       className="w-full bg-card border border-white/20 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-primary disabled:opacity-60"
                     />
                     <p className="text-[11px] text-muted-foreground pl-1">{RATE_HINTS[f]}</p>
+                    {RATE_NOTES[f] && <p className="text-[11px] text-amber-400 pl-1">⚖️ {RATE_NOTES[f]}</p>}
                   </div>
                 ))}
                 <div className="space-y-2">

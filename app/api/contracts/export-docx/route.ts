@@ -3,7 +3,7 @@ import { getDb } from '@/lib/db';
 import { getCurrentUser } from '@/lib/authz';
 import { canViewContract, formDeposit } from '@/lib/contract-files';
 import { depositFor, getContractParty, getPaymentInfo, getRates, ratesForRoom, type PaymentInfo, type Rates } from '@/lib/billing';
-import { contractPartyText, contractPaymentLines, type ContractParty } from '@/lib/settings-fields';
+import { CHARGES_CLAUSE_TEXT, DEPOSIT_REFUND_TEXT, contractChargeLines, contractPartyText, contractPaymentLines, type ContractParty } from '@/lib/settings-fields';
 import { Document, Paragraph, TextRun, Packer, AlignmentType } from 'docx';
 
 const rateText = (n: number) => n.toLocaleString('th-TH', { maximumFractionDigits: 2 });
@@ -102,7 +102,7 @@ function createContractDocx(data: any, rates: Rates, payment: PaymentInfo, party
         }),
         new Paragraph({
           children: [
-            new TextRun({ text: `ข้อ 2. ผู้เช่าตกลงชำระค่าเช่าให้แก่ผู้ให้เช่าล่วงหน้า ผู้เช่าได้วางเงินประกันจำนวน ${depositAmount} บาท ผู้ให้เช่าจะคืนเงินประกันภายใน 7 วันนับแต่วันที่ผู้เช่าส่งมอบห้องคืน หากมีการหักค่าเสียหายหรือค่าใช้จ่ายที่ค้างชำระ ผู้ให้เช่าจะแจ้งรายการหักเป็นหนังสือ และคืนเงินส่วนที่เหลือภายใน 14 วันนับแต่วันที่ผู้เช่าส่งมอบห้องคืน ค่าเช่าจำนวน ${monthlyRent} บาท เป็นค่าเช่าของเดือน ${startMonthStr} ส่วนค่าเช่าชำระโดยกำหนดชำระค่าเช่าภายในวันที่ 5 ของทุกเดือน ในอัตราค่าเช่าเดือนละ ${monthlyRent} บาท หากผู้เช่าชำระเงินล่าช้ากว่ากำหนด ผู้ให้เช่ามีสิทธิ์เรียกขอค่าล่าช้าวันละ ${rateText(rates.lateFeePerDay)} บาท`, size: 24, font: 'TH Sarabun New' })
+            new TextRun({ text: `ข้อ 2. ผู้เช่าตกลงชำระค่าเช่าให้แก่ผู้ให้เช่าล่วงหน้า ผู้เช่าได้วางเงินประกันจำนวน ${depositAmount} บาท ${DEPOSIT_REFUND_TEXT} ค่าเช่าจำนวน ${monthlyRent} บาท เป็นค่าเช่าของเดือน ${startMonthStr} ส่วนค่าเช่าชำระโดยกำหนดชำระค่าเช่าภายในวันที่ 5 ของทุกเดือน ในอัตราค่าเช่าเดือนละ ${monthlyRent} บาท หากผู้เช่าชำระเงินล่าช้ากว่ากำหนด ผู้ให้เช่ามีสิทธิ์เรียกขอค่าล่าช้าวันละ ${rateText(rates.lateFeePerDay)} บาท`, size: 24, font: 'TH Sarabun New' })
           ]
         }),
         new Paragraph({
@@ -117,7 +117,7 @@ function createContractDocx(data: any, rates: Rates, payment: PaymentInfo, party
         }),
         new Paragraph({
           children: [
-            new TextRun({ text: 'ข้อ 5. ค่าน้ำประปา ค่าไฟฟ้า และค่าใช้จ่ายอื่น ถ้ามิให้เรียกเก็บตามอัตราในมิเตอร์หรือโดยเฉลี่ยจากผู้เช่า', size: 24, font: 'TH Sarabun New' })
+            new TextRun({ text: `ข้อ 5. ${CHARGES_CLAUSE_TEXT}`, size: 24, font: 'TH Sarabun New' })
           ]
         }),
         new Paragraph({
@@ -191,9 +191,12 @@ function createContractDocx(data: any, rates: Rates, payment: PaymentInfo, party
         }),
         new Paragraph({
           children: [
-            new TextRun({ text: `• ค่าน้ำคนละ ${rateText(rates.waterPerPerson)} บาท  • ค่าไฟหน่วยละ ${rateText(rates.electricityPerUnit)} บาท`, size: 22, font: 'TH Sarabun New' })
+            new TextRun({ text: 'อัตราค่าบริการ (ตามที่หอพักตั้งไว้ ณ วันทำสัญญา)', bold: true, size: 22, font: 'TH Sarabun New' })
           ]
         }),
+        ...contractChargeLines(rates).map((line) => new Paragraph({
+          children: [new TextRun({ text: `• ${line}`, size: 22, font: 'TH Sarabun New' })]
+        })),
         new Paragraph({
           children: [
             new TextRun({ text: `• ${landlord.contact}`, size: 22, font: 'TH Sarabun New' })

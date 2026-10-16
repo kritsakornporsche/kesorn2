@@ -138,7 +138,7 @@ export default function OwnerMoveOutPage() {
 
       {dueAlerts.length > 0 && (
         <div className="p-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 space-y-1">
-          <p className="text-sm font-black text-amber-300">⏰ เงินประกันที่ต้องคืนใกล้ครบกำหนด / เลยกำหนด (สคบ. ข้อ 10)</p>
+          <p className="text-sm font-black text-amber-300">⏰ เงินประกันที่ต้องคืนใกล้ครบกำหนด / เลยกำหนด (7 วัน ตามประกาศ สคบ. พ.ศ. 2568 · 14 วันเมื่อมีรายการหัก ตามนโยบายหอพัก)</p>
           {dueAlerts.map((r) => (
             <p key={r.request_id} className={`text-xs font-bold ${r.settlement!.money!.refund_due_status === 'overdue' ? 'text-rose-300' : 'text-amber-200'}`}>
               ห้อง {r.room_number} · {r.tenant_name || '-'} · {baht(r.settlement!.money!.refund)} · ภายใน {thaiDate(r.settlement!.money!.refund_due_date)}
@@ -249,7 +249,7 @@ function MoveOutCard({ row, onDone }: { row: Row; onDone: () => void }) {
           {row.reason && <p className="text-slate-400">เหตุผล: {row.reason}</p>}
         </div>
         <div className="bg-slate-950/60 p-3 rounded-2xl border border-white/5 space-y-1">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">สคบ. ข้อ 13</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">ย้ายออกก่อนครบสัญญา (ตามประกาศ สคบ. พ.ศ. 2568)</p>
           {!c13 ? (
             <p className="text-slate-400">ตรวจตอนบันทึกการคืนห้อง</p>
           ) : !c13.early ? (

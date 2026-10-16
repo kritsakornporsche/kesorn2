@@ -374,8 +374,8 @@ export function requestMoveOut(user: Actor, input: MoveOutNoticeInput, now: Date
     if (!check.notice) warnings.push(`แจ้งล่วงหน้า ${check.noticeDays} วัน (กติกาหอคือแจ้งล่วงหน้าอย่างน้อย ${NOTICE_DAYS} วัน)`);
     if (check.early) {
       warnings.push(check.refundable
-        ? 'ย้ายออกก่อนครบสัญญา: จะได้รับเงินประกันคืนเมื่อไม่มียอดค้างชำระทั้งวันแจ้งและวันคืนห้อง (สคบ. ข้อ 13)'
-        : 'ย้ายออกก่อนครบสัญญา และไม่เข้าเงื่อนไข สคบ. ข้อ 13 ครบทั้ง 3 ข้อ — เงินประกันจะถูกยึดหลังหักยอดค้าง');
+        ? 'ย้ายออกก่อนครบสัญญา: จะได้รับเงินประกันคืนเมื่อไม่มียอดค้างชำระทั้งวันแจ้งและวันคืนห้อง (ตามประกาศ สคบ. พ.ศ. 2568)'
+        : 'ย้ายออกก่อนครบสัญญา และไม่เข้าเงื่อนไขตามประกาศ สคบ. พ.ศ. 2568 ครบทั้ง 3 ข้อ — เงินประกันจะถูกยึดหลังหักยอดค้าง');
     }
     return { requestId, settlementId, tenantUserId: (c.tenant_user_id as number) || null, roomId: Number(c.room_id), clause13: check, warnings };
   });
@@ -736,8 +736,8 @@ export function settleMoveOut(settlementId: number, by: Actor, now: Date) {
     if (Number(s.refundable) !== 1) {
       forfeit = remaining;
       if (forfeit > 0) {
-        await entry(client, s, 'Liability', FORFEIT_CATEGORY, -forfeit, `ริบเงินประกัน ${room} (ย้ายออกก่อนครบสัญญา ไม่เข้า สคบ. ข้อ 13)`, 'settlement_forfeit', now);
-        await entry(client, s, 'Income', FORFEIT_CATEGORY, forfeit, `ริบเงินประกัน ${room} (ย้ายออกก่อนครบสัญญา ไม่เข้า สคบ. ข้อ 13)`, 'settlement_forfeit', now);
+        await entry(client, s, 'Liability', FORFEIT_CATEGORY, -forfeit, `ริบเงินประกัน ${room} (ย้ายออกก่อนครบสัญญา ไม่เข้าเงื่อนไขตามประกาศ สคบ. พ.ศ. 2568)`, 'settlement_forfeit', now);
+        await entry(client, s, 'Income', FORFEIT_CATEGORY, forfeit, `ริบเงินประกัน ${room} (ย้ายออกก่อนครบสัญญา ไม่เข้าเงื่อนไขตามประกาศ สคบ. พ.ศ. 2568)`, 'settlement_forfeit', now);
       }
     } else {
       refund = remaining;
