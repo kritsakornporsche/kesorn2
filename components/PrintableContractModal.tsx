@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { parseThaiAddress } from '@/lib/address-parser';
 import type { PaymentInfo } from '@/lib/billing';
-import { CHARGES_CLAUSE_TEXT, DEPOSIT_REFUND_TEXT, contractChargeLines, contractPartyText, contractPaymentLines, type ContractParty } from '@/lib/settings-fields';
+import { BREACH_CLAUSE_TEXT, CHARGES_CLAUSE_TEXT, DEPOSIT_REFUND_TEXT, INSPECTION_CLAUSE_TEXT, contractChargeLines, contractPartyText, contractPaymentLines, type ContractParty } from '@/lib/settings-fields';
 import { ratesForRoom, type Rates } from '@/lib/billing';
 
 interface PrintableContractModalProps {
@@ -388,7 +388,7 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
                   </p>
 
                   <p className="indent-8">
-                    <strong>ข้อ 9.</strong> ถ้าผู้เช่าผิดสัญญาไม่ชำระค่าเช่าตามกำหนดไว้ในข้อ 2. ผู้ให้เช่าต้องทวงสิทธิไว้ในการกลับเข้าครอบครองทรัพย์สินที่เช่าตามสัญญานี้โดยฉับพลัน และผู้เช่ายอมให้ผู้ให้เช่าย้ายบุคคลหรือทรัพย์สินของผู้เช่าออกไปจากทรัพย์ที่เช่าตามสัญญานี้
+                    <strong>ข้อ 9.</strong> {BREACH_CLAUSE_TEXT}
                   </p>
 
                   <p className="indent-8">
@@ -396,7 +396,7 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
                   </p>
 
                   <p className="indent-8">
-                    <strong>ข้อ 11.</strong> ในวันทำสัญญานี้ผู้เช่าได้ตรวจตราทรัพย์สินที่เช่าแล้วเห็นว่ามีสภาพปกติดีทุกประการและผู้ให้เช่าได้ส่งมอบทรัพย์สินที่เช่าให้แก่ผู้เช่าแล้ว
+                    <strong>ข้อ 11.</strong> {INSPECTION_CLAUSE_TEXT}
                   </p>
 
                   <p className="indent-8">

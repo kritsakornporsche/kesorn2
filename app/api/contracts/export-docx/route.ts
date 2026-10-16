@@ -3,7 +3,7 @@ import { getDb } from '@/lib/db';
 import { getCurrentUser } from '@/lib/authz';
 import { canViewContract, formDeposit } from '@/lib/contract-files';
 import { depositFor, getContractParty, getPaymentInfo, getRates, ratesForRoom, type PaymentInfo, type Rates } from '@/lib/billing';
-import { CHARGES_CLAUSE_TEXT, DEPOSIT_REFUND_TEXT, contractChargeLines, contractPartyText, contractPaymentLines, type ContractParty } from '@/lib/settings-fields';
+import { BREACH_CLAUSE_TEXT, CHARGES_CLAUSE_TEXT, DEPOSIT_REFUND_TEXT, INSPECTION_CLAUSE_TEXT, contractChargeLines, contractPartyText, contractPaymentLines, type ContractParty } from '@/lib/settings-fields';
 import { Document, Paragraph, TextRun, Packer, AlignmentType } from 'docx';
 
 const rateText = (n: number) => n.toLocaleString('th-TH', { maximumFractionDigits: 2 });
@@ -137,7 +137,7 @@ function createContractDocx(data: any, rates: Rates, payment: PaymentInfo, party
         }),
         new Paragraph({
           children: [
-            new TextRun({ text: 'ข้อ 9. ถ้าผู้เช่าผิดสัญญาไม่ชำระค่าเช่าตามกำหนดไว้ในข้อ 2. ผู้ให้เช่าต้องทวงสิทธิไว้ในการกลับเข้าครอบครองทรัพย์สินที่เช่าตามสัญญานี้โดยฉับพลัน และผู้เช่ายอมให้ผู้ให้เช่าย้ายบุคคลหรือทรัพย์สินของผู้เช่าออกไปจากทรัพย์ที่เช่าตามสัญญานี้', size: 24, font: 'TH Sarabun New' })
+            new TextRun({ text: `ข้อ 9. ${BREACH_CLAUSE_TEXT}`, size: 24, font: 'TH Sarabun New' })
           ]
         }),
         new Paragraph({
@@ -147,7 +147,7 @@ function createContractDocx(data: any, rates: Rates, payment: PaymentInfo, party
         }),
         new Paragraph({
           children: [
-            new TextRun({ text: 'ข้อ 11. ในวันทำสัญญานี้ ผู้เช่าได้ตรวจตราทรัพย์สินที่เช่าแล้วเห็นว่ามีสภาพปกติดีทุกประการและผู้ให้เช่าได้ส่งมอบทรัพย์สินที่เช่าให้แก่ผู้เช่าแล้ว', size: 24, font: 'TH Sarabun New' })
+            new TextRun({ text: `ข้อ 11. ${INSPECTION_CLAUSE_TEXT}`, size: 24, font: 'TH Sarabun New' })
           ]
         }),
         new Paragraph({

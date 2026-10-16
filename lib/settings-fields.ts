@@ -57,7 +57,15 @@ const PARTY_DOTS = '..............................................';
 
 /** Deposit refund sentence of the contract: 7 days per the สคบ. notice, 14 days with deductions is the dorm's policy. */
 export const DEPOSIT_REFUND_TEXT =
-  'ผู้ให้เช่าจะคืนเงินประกันภายใน 7 วันนับแต่วันที่ผู้เช่าส่งมอบห้องคืน (ตามประกาศ สคบ. พ.ศ. 2568) หากมีการหักค่าเสียหายหรือค่าใช้จ่ายที่ค้างชำระ ผู้ให้เช่าจะแจ้งรายการหักเป็นหนังสือ และคืนเงินส่วนที่เหลือภายใน 14 วันนับแต่วันที่ผู้เช่าส่งมอบห้องคืน (ตามนโยบายหอพัก)';
+  'เมื่อสัญญาสิ้นสุด หากห้องและทรัพย์สินไม่เสียหายและไม่มียอดค้างชำระ ผู้ให้เช่าจะคืนเงินประกันเต็มจำนวนภายใน 7 วันนับแต่วันที่สัญญาสิ้นสุดและผู้เช่าส่งมอบห้องคืน (ตามประกาศ สคบ. พ.ศ. 2568) หากมีการหักค่าเสียหายหรือค่าใช้จ่ายที่ค้างชำระ ผู้ให้เช่าจะแจ้งรายการหักเป็นหนังสือ และคืนเงินส่วนที่เหลือภายใน 14 วันนับแต่วันที่ผู้เช่าส่งมอบห้องคืน (ตามนโยบายหอพัก)';
+
+/** Clause 9: ending the contract for a breach needs a written notice of at least 30 days (สคบ. พ.ศ. 2568). */
+export const BREACH_CLAUSE_TEXT =
+  'หากผู้เช่าผิดสัญญา ผู้ให้เช่าจะบอกเลิกสัญญาได้ต่อเมื่อได้แจ้งเป็นหนังสือให้ผู้เช่าปฏิบัติตามสัญญาภายในเวลาไม่น้อยกว่า 30 วัน และผู้เช่ามิได้ปฏิบัติตามภายในเวลาดังกล่าว';
+
+/** Clause 11: the room is checked together, recorded on the inspection sheet attached to the contract. */
+export const INSPECTION_CLAUSE_TEXT =
+  'ในวันทำสัญญานี้ คู่สัญญาได้ตรวจสภาพห้องและทรัพย์สินที่เช่าร่วมกัน ตามบันทึกการตรวจสภาพห้องแนบท้ายสัญญา ซึ่งให้ถือเป็นส่วนหนึ่งของสัญญานี้';
 
 /** Clause 5 of the contract: charges per the rate list, invoice at least 3 days before the due date (lib/billing calcDueDate). */
 export const CHARGES_CLAUSE_TEXT =

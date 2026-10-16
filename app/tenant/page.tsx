@@ -3,6 +3,7 @@ import { auth } from '@/auth';
 import { daysPastDue, getRates, lateFeeRateOf } from '@/lib/billing';
 import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
 import { formatBaht, formatThaiDate } from '@/lib/format';
+import { contractDepositLabel } from '@/lib/status-text';
 import Link from 'next/link';
 import AnnouncementsSection from '../components/AnnouncementsSection';
 import DormRulesCard from './components/DormRulesCard';
@@ -193,7 +194,7 @@ export default async function TenantDashboard() {
               <div className="space-y-1">
                 <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">ค่าเช่า / ประกันสัญญา</span>
                 <p className="text-lg font-bold text-white">฿{Number(pendingContract.price || 0).toLocaleString()} <span className="text-xs font-normal text-white/50">/เดือน</span></p>
-                <p className="text-[11px] text-emerald-400 font-semibold">เงินประกัน: ฿{Number(pendingContract.deposit_amount || 0).toLocaleString()}</p>
+                <p className="text-[11px] text-emerald-400 font-semibold">{contractDepositLabel(pendingContract.contract_status)}: ฿{Number(pendingContract.deposit_amount || 0).toLocaleString()}</p>
               </div>
 
               <div className="space-y-1">

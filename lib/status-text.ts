@@ -71,6 +71,14 @@ export function knownStatuses(kind: StatusKind): string[] {
   return Object.keys(TEXT[kind]);
 }
 
+// contracts.deposit_amount holds the booking fee until the contract takes effect (signContract sets the full deposit)
+const DEPOSIT_HELD = new Set(['active', 'renewed', 'ended', 'terminated', 'moveoutpending']);
+
+/** Name of contracts.deposit_amount for this contract status: the deposit held, or the booking fee paid so far. */
+export function contractDepositLabel(status: unknown): string {
+  return DEPOSIT_HELD.has(norm(status)) ? 'เงินประกัน' : 'ค่าจอง (ส่วนหนึ่งของเงินประกัน)';
+}
+
 /** True only for a bill that has been paid in full (case-insensitive). */
 export function isPaidStatus(value: unknown): boolean {
   return norm(value) === 'paid';

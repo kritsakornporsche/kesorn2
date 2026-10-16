@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
-import { daysPastDue, getRates } from '@/lib/billing';
+import { bookingFeeFor, daysPastDue, getRates } from '@/lib/billing';
 import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
 import { expireDueBookings } from '@/lib/bookings';
 import { OVERDUE_ALERT_DAYS } from '@/lib/reminders';
@@ -143,19 +143,24 @@ export async function GET(req: Request) {
       });
     });
 
-    // Recent bookings
+    // Recent bookings (web / walk-in): not owner-made contracts or renewals. The amount is the booking bill
+    // (contracts.deposit_amount becomes the full deposit once the contract takes effect).
     const recentBook = await sql`
-      SELECT r.room_number, c.deposit_amount, c.created_at, COALESCE(t.name, 'ผู้จอง') as tenant_name
+      SELECT r.room_number, bb.amount AS booking_amount, c.created_at, COALESCE(t.name, 'ผู้จอง') as tenant_name
       FROM contracts c
       JOIN rooms r ON c.room_id = r.id
       LEFT JOIN tenants t ON c.tenant_id = t.id
+      LEFT JOIN bills bb ON bb.id = c.booking_bill_id
+      WHERE c.parent_contract_id IS NULL
+        AND (c.booking_bill_id IS NOT NULL
+             OR c.status IN ('BookingRequested', 'BookingApproved', 'PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Expired', 'Rejected'))
       ORDER BY c.id DESC
       LIMIT 3
     `;
     recentBook.forEach((b: any) => {
       recentActivities.push({
         type: 'booking',
-        title: `มีการจองห้อง ${b.room_number} จากคุณ${b.tenant_name} (ค่าจอง ฿${Number(b.deposit_amount).toLocaleString()})`,
+        title: `มีการจองห้อง ${b.room_number} จากคุณ${b.tenant_name} (ค่าจอง ฿${Number(b.booking_amount ?? bookingFeeFor(b.room_number)).toLocaleString()})`,
         time: b.created_at,
         badge: '🟡 รายการจองใหม่'
       });

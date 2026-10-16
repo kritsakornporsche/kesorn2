@@ -9,7 +9,7 @@ import PremiumDatePicker from '@/app/components/PremiumDatePicker';
 import PrintableContractModal from '@/components/PrintableContractModal';
 import { PdpaOcrConsentModal } from '@/app/components/PdpaOcrConsentModal';
 import { checkPaperFile } from '@/lib/paper-file-check';
-import { statusText } from '@/lib/status-text';
+import { contractDepositLabel, statusText } from '@/lib/status-text';
 
 interface Contract {
   id: number;
@@ -732,6 +732,9 @@ export default function OwnerContractsPage() {
                           <span className="font-bold text-emerald-400 block">
                             ฿{Number(c.deposit_amount || 0).toLocaleString()}
                           </span>
+                          {contractDepositLabel(c.status) !== 'เงินประกัน' && (
+                            <span className="text-[10px] text-muted-foreground block">{contractDepositLabel(c.status)}</span>
+                          )}
                           {c.slip_url ? (
                             <button
                               onClick={() => {

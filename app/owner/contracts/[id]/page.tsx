@@ -8,7 +8,7 @@ import Image from 'next/image';
 
 import PrintableContractModal from '@/components/PrintableContractModal';
 import { checkPaperFile } from '@/lib/paper-file-check';
-import { statusText } from '@/lib/status-text';
+import { contractDepositLabel, statusText } from '@/lib/status-text';
 import { InspectionButton } from '@/components/InspectionModal';
 
 interface ContractDetail {
@@ -282,7 +282,7 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             <span className="text-2xl font-black text-white">฿{Number(contract.monthly_rent || contract.room_price || 0).toLocaleString()}</span>
           </div>
           <div>
-            <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider block mb-1">เงินประกันตามสัญญา</span>
+            <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider block mb-1">{contractDepositLabel(contract.status) === 'เงินประกัน' ? 'เงินประกันตามสัญญา' : contractDepositLabel(contract.status)}</span>
             <span className="text-2xl font-black text-emerald-400">฿{Number(contract.deposit_amount).toLocaleString()}</span>
           </div>
         </div>
