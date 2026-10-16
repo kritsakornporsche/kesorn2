@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { formatBaht } from '@/lib/format';
-import { INCOME_SPLIT_NOTE, TODAY_NOTE, UNPAID_NOTE } from '@/lib/report-text';
+import { INCOME_SPLIT_NOTE, TODAY_NOTE, UNPAID_NOTE, legacyDepositNote } from '@/lib/report-text';
 import type { OwnerReport } from '@/lib/reports';
 
 // Owner report (lib/reports.ts): a month of income / expense from the accounts, the 6-month chart, deposits held,
@@ -107,11 +107,12 @@ const Card = ({ title, children, className = '' }: { title: string; children: Re
   </section>
 );
 
-const Tile = ({ label, value, sub }: { label: string; value: string; sub?: string }) => (
+const Tile = ({ label, value, sub, note }: { label: string; value: string; sub?: string; note?: string | null }) => (
   <div className="bg-card border border-border rounded-2xl p-4">
     <p className="text-xs text-muted-foreground">{label}</p>
     <p className="text-xl sm:text-2xl font-black text-foreground mt-1 tabular-nums">{value}</p>
     {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
+    {note && <p className="text-[11px] text-amber-400 mt-1.5 leading-snug">{note}</p>}
   </div>
 );
 
@@ -166,7 +167,7 @@ export default function OwnerReportsPage() {
                 <Tile label="รายรับ" value={formatBaht(money.incomeTotal)} sub={longMonth(report.month)} />
                 <Tile label="รายจ่าย" value={formatBaht(money.expenseTotal)} sub={longMonth(report.month)} />
                 <Tile label="กำไรสุทธิ" value={formatBaht(money.profit)} sub="รายรับ − รายจ่าย" />
-                <Tile label="เงินประกันที่ถืออยู่" value={formatBaht(money.depositsHeld)} sub="ณ วันนี้ (หนี้สิน ไม่ใช่รายรับ)" />
+                <Tile label="เงินประกันที่ถืออยู่" value={formatBaht(money.depositsHeld)} sub="ณ วันนี้ (หนี้สิน ไม่ใช่รายรับ)" note={legacyDepositNote(money.legacyDeposits)} />
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

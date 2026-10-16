@@ -17,3 +17,13 @@ export const INCOME_GROUP_LABELS: Record<IncomeGroup, string> = {
 export const INCOME_SPLIT_NOTE = 'แยกตามรายการในบิลที่ชำระ ยอดรวมตรงกับบัญชีรายรับ';
 export const TODAY_NOTE = 'อัตราการเข้าพักและบิลค้างชำระ แสดงสถานะ ณ วันนี้';
 export const UNPAID_NOTE = 'ยอดค้างรวมค่าปรับถึงวันนี้';
+
+/**
+ * Line under "เงินประกันที่ถืออยู่": Active contracts from before deposits were booked as a liability (legacy in
+ * lib/moveOut depositBase). Their deposit is confirmed and booked at move-out, so it is NOT in the accounts. null when none.
+ */
+export function legacyDepositNote(l: { count: number; amount: number } | null | undefined): string | null {
+  if (!l || l.count <= 0) return null;
+  const amount = l.amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `สัญญาเดิมก่อนระบบบัญชีใหม่ ${l.count} สัญญา: เงินประกันตามสัญญา ${amount} บาท · ยืนยันยอดและบันทึกบัญชีตอนย้ายออก`;
+}

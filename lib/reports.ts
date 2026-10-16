@@ -8,7 +8,9 @@
 import { getDb } from '@/lib/db';
 import { bangkokDate } from '@/lib/billing';
 import { unpaidBillsToday, type UnpaidBill } from '@/lib/payments';
-import { INCOME_GROUPS, INCOME_GROUP_LABELS, INCOME_SPLIT_NOTE, TODAY_NOTE, UNPAID_NOTE, type IncomeGroup } from '@/lib/report-text';
+import { withTransaction } from '@/lib/bill-status';
+import { depositBase } from '@/lib/moveOut';
+import { INCOME_GROUPS, INCOME_GROUP_LABELS, INCOME_SPLIT_NOTE, TODAY_NOTE, UNPAID_NOTE, legacyDepositNote, type IncomeGroup } from '@/lib/report-text';
 
 export { INCOME_GROUPS, INCOME_GROUP_LABELS, INCOME_SPLIT_NOTE, TODAY_NOTE, UNPAID_NOTE, type IncomeGroup };
 
@@ -128,6 +130,8 @@ export interface OwnerReport {
     expenseTotal: number;
     profit: number;
     depositsHeld: number;
+    /** Active contracts whose deposit is not in the accounts yet (legacy, lib/moveOut depositBase) — a note only */
+    legacyDeposits: { count: number; amount: number };
     months: { month: string; income: number; expense: number }[];
   };
   occupancy: { occupied: number; total: number; rate: number };
@@ -179,6 +183,25 @@ async function incomeSplit(sql: any, first: string, last: string) {
     for (const [g, v] of Object.entries(parts) as [IncomeGroup, number][]) sums[g] += v;
   }
   return sums;
+}
+
+/**
+ * Active contracts whose deposit is "legacy" by the move-out rule (lib/moveOut depositBase: no booking / move-in bill
+ * along the renewal chain, not outside the system) and their contract deposit. Read only; never added to the accounts.
+ */
+export async function legacyDeposits(sql: any): Promise<{ count: number; amount: number }> {
+  const active = await sql`SELECT id, deposit_amount FROM contracts WHERE status = 'Active' ORDER BY id`;
+  if (active.length === 0) return { count: 0, amount: 0 };
+  return withTransaction(async (client) => {
+    let count = 0;
+    let satang = 0;
+    for (const c of active as any[]) {
+      if ((await depositBase(client, Number(c.id))).kind !== 'legacy') continue;
+      count++;
+      satang += toSatang(c.deposit_amount);
+    }
+    return { count, amount: baht(satang) };
+  });
 }
 
 /** The report of a month (YYYY-MM). `now` decides "today" for occupancy and unpaid bills. */
@@ -233,6 +256,7 @@ export async function ownerReport(month: string, role: 'owner' | 'manager', now:
     expenseTotal: baht(expenseTotal),
     profit: baht(incomeTotal - expenseTotal),
     depositsHeld: baht(toSatang(held?.held)),
+    legacyDeposits: await legacyDeposits(sql),
     months: months.map((m) => ({ month: m, income: baht(toSatang(byMonth.get(m)?.income)), expense: baht(toSatang(byMonth.get(m)?.expense)) })),
   };
   return report;
@@ -262,7 +286,10 @@ export function reportCsv(r: OwnerReport): string {
     rows.push(['รายจ่าย', 'บาท']);
     for (const e of r.money.expense) rows.push([e.label, num(e.amount)]);
     rows.push(['รวมรายจ่าย', num(r.money.expenseTotal)], ['กำไรสุทธิ', num(r.money.profit)], []);
-    rows.push(['เงินประกันที่ถืออยู่ (ณ วันนี้)', num(r.money.depositsHeld)], []);
+    rows.push(['เงินประกันที่ถืออยู่ (ณ วันนี้)', num(r.money.depositsHeld)]);
+    const legacyNote = legacyDepositNote(r.money.legacyDeposits);
+    if (legacyNote) rows.push(['หมายเหตุ', legacyNote]); // a note only: not part of any accounting figure
+    rows.push([]);
     rows.push(['รายรับ/รายจ่าย 6 เดือน', 'รายรับ', 'รายจ่าย']);
     for (const m of r.money.months) rows.push([thaiMonth(m.month), num(m.income), num(m.expense)]);
     rows.push([]);

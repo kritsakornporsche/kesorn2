@@ -191,7 +191,7 @@ async function contractChain(client: Client, contractId: number) {
  * legacy  — no linked bills (before deposits were a Liability, or a contract the owner created): the owner confirms the
  *           amount by hand (the contract's deposit_amount is offered as the starting value).
  */
-async function depositBase(client: Client, contractId: number) {
+export async function depositBase(client: Client, contractId: number) {
   const chain = await contractChain(client, contractId);
   const billIds = chain.flatMap((c) => [c.booking_bill_id, c.move_in_bill_id]).filter(Boolean).map(Number);
   if (chain.some((c) => Number(c.deposit_outside_system) === 1)) {
