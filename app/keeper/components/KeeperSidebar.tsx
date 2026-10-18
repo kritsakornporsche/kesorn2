@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import { handleSignOut } from '@/lib/auth-client';
 import { useState, useEffect } from 'react';
 import ThemeToggle from '@/app/components/ThemeToggle';
+import NotificationsPopover from '@/components/NotificationsPopover';
 import KeeperBottomNav from './KeeperBottomNav';
 
 const navItems = [
@@ -142,6 +143,7 @@ export default function KeeperSidebar({ onDormChange }: { onDormChange?: (dormId
             })}
           </div>
 
+          <NotificationsPopover />
           <ThemeToggle />
 
           {/* User Info (Desktop) */}

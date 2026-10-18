@@ -30,6 +30,12 @@ export const metadata: Metadata = {
   description: "ระบบบริหารจัดการหอพักเกษร 2 สำหรับผู้เช่าและเจ้าของหอพัก บริการห้องพักคุณภาพ สะอาด ปลอดภัย",
   keywords: ["หอพักเกษร 2", "Kesorn 2", "หอพักพะเยา", "ห้องเช่าพะเยา"],
   authors: [{ name: "หอพักเกษร 2" }],
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "หอพักเกษร 2",
+  },
 };
 
 export const viewport: Viewport = {

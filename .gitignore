@@ -62,3 +62,7 @@ report_flow/
 scripts/*.json
 public/uploads/*/*
 !public/uploads/*/.gitkeep
+
+# runtime data
+data/
+

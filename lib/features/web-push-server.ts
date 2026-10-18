@@ -1,0 +1,187 @@
+import fs from 'fs';
+import path from 'path';
+import webpush, { PushSubscription } from 'web-push';
+
+export interface StoredPushSubscription {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+  role: string;
+  subRole?: string;
+  userName?: string;
+  userEmail?: string;
+  userAgent?: string;
+  createdAt: string;
+}
+
+const DATA_DIR = path.join(process.cwd(), 'data');
+const VAPID_FILE = path.join(DATA_DIR, 'vapid-keys.json');
+const SUBS_FILE = path.join(DATA_DIR, 'push-subscriptions.json');
+
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+export function getOrGenerateVapidKeys(): { publicKey: string; privateKey: string } {
+  if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+    return {
+      publicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+      privateKey: process.env.VAPID_PRIVATE_KEY,
+    };
+  }
+
+  ensureDataDir();
+  if (fs.existsSync(VAPID_FILE)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(VAPID_FILE, 'utf8'));
+      if (raw.publicKey && raw.privateKey) {
+        return raw;
+      }
+    } catch {
+      // regenerate if corrupted
+    }
+  }
+
+  const generated = webpush.generateVAPIDKeys();
+  fs.writeFileSync(VAPID_FILE, JSON.stringify(generated, null, 2), 'utf8');
+  return generated;
+}
+
+export function loadPushSubscriptions(): StoredPushSubscription[] {
+  ensureDataDir();
+  if (!fs.existsSync(SUBS_FILE)) return [];
+  try {
+    const raw = JSON.parse(fs.readFileSync(SUBS_FILE, 'utf8'));
+    if (!Array.isArray(raw)) return [];
+    // Filter out any unauthenticated or guest entries so only authenticated roles receive push
+    return raw.filter(
+      (s: StoredPushSubscription) =>
+        s &&
+        s.endpoint &&
+        s.role &&
+        String(s.role).toLowerCase() !== 'guest' &&
+        Boolean(s.userEmail || s.userName)
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function savePushSubscription(sub: StoredPushSubscription): StoredPushSubscription[] {
+  const list = loadPushSubscriptions();
+  const filtered = list.filter((item) => item.endpoint !== sub.endpoint);
+  filtered.unshift(sub);
+  ensureDataDir();
+  fs.writeFileSync(SUBS_FILE, JSON.stringify(filtered, null, 2), 'utf8');
+  return filtered;
+}
+
+export function removePushSubscription(endpoint?: string, userEmail?: string): StoredPushSubscription[] {
+  const list = loadPushSubscriptions();
+  const filtered = list.filter((item) => {
+    if (endpoint && item.endpoint === endpoint) return false;
+    if (userEmail && item.userEmail && item.userEmail.toLowerCase() === userEmail.toLowerCase()) {
+      return false;
+    }
+    return true;
+  });
+  ensureDataDir();
+  fs.writeFileSync(SUBS_FILE, JSON.stringify(filtered, null, 2), 'utf8');
+  return filtered;
+}
+
+export function formatRoleThaiLabel(role?: string, subRole?: string): string {
+  const r = String(role || '').toLowerCase();
+  if (r === 'owner') return 'Owner (เจ้าของหอพัก)';
+  if (r === 'tenant') return 'Tenant (ผู้เช่า)';
+  if (r === 'keeper') {
+    if (subRole === 'maid') return 'Keeper (แม่บ้าน)';
+    if (subRole === 'technician') return 'Keeper (ช่างซ่อมบำรุง)';
+    return 'Keeper (แม่บ้าน/ช่างซ่อม)';
+  }
+  if (r === 'researcher') return 'Researcher (ผู้วิจัยระบบ)';
+  if (r === 'platform_admin' || r === 'admin') return 'Admin (ผู้ดูแลระบบ)';
+  return 'ผู้ใช้งานระบบ';
+}
+
+export async function sendWebPushToAllSubscriptions(payload: {
+  title: string;
+  body: string;
+  senderLabel?: string;
+  recipientLabel?: string;
+  url?: string;
+  tag?: string;
+}): Promise<{ sentCount: number; failedCount: number; totalSubscribers: number }> {
+  const keys = getOrGenerateVapidKeys();
+  webpush.setVapidDetails(
+    'mailto:kritsakorn801@gmail.com',
+    keys.publicKey,
+    keys.privateKey
+  );
+
+  const subs = loadPushSubscriptions();
+  if (subs.length === 0) {
+    return { sentCount: 0, failedCount: 0, totalSubscribers: 0 };
+  }
+
+  let sentCount = 0;
+  let failedCount = 0;
+  const validSubs: StoredPushSubscription[] = [];
+  const fromText = payload.senderLabel || 'Researcher (ผู้วิจัยระบบ)';
+
+  await Promise.all(
+    subs.map(async (sub) => {
+      try {
+        const roleDisplay = formatRoleThaiLabel(sub.role, sub.subRole);
+        const identityDisplay = sub.userName || sub.userEmail || '';
+        const toText =
+          payload.recipientLabel ||
+          `${roleDisplay}${identityDisplay ? ` • ${identityDisplay}` : ''}`;
+
+        const personalizedTitle = `🔔 จาก: ${fromText} ➔ ถึง: ${toText}`;
+        const personalizedBody = `${payload.body} (จาก: ${fromText} ➔ ถึง: ${toText})`;
+
+        const messageString = JSON.stringify({
+          title: personalizedTitle,
+          body: personalizedBody,
+          url: payload.url || '/',
+          tag: payload.tag || `smartdorm-push-${Date.now()}`,
+        });
+
+        await webpush.sendNotification(
+          {
+            endpoint: sub.endpoint,
+            keys: sub.keys,
+          } as PushSubscription,
+          messageString,
+          {
+            TTL: 86400,
+            urgency: 'high',
+          }
+        );
+        sentCount++;
+        validSubs.push(sub);
+      } catch (err: any) {
+        failedCount++;
+        if (err?.statusCode !== 404 && err?.statusCode !== 410) {
+          validSubs.push(sub);
+        }
+      }
+    })
+  );
+
+  if (validSubs.length !== subs.length) {
+    ensureDataDir();
+    fs.writeFileSync(SUBS_FILE, JSON.stringify(validSubs, null, 2), 'utf8');
+  }
+
+  return {
+    sentCount,
+    failedCount,
+    totalSubscribers: validSubs.length,
+  };
+}

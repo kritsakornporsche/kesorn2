@@ -83,7 +83,7 @@ export default function DepositRefundModal({
   const isDeficit = deposit < totalDeductions;
   const deficitAmount = isDeficit ? totalDeductions - deposit : 0;
 
-  const promptpayTarget = (request?.promptpay_target || request?.tenant_phone || '0829853519').replace(/[\s-]/g, '');
+  const promptpayTarget = (request?.promptpay_target || request?.tenant_phone || '0636040550').replace(/[\s-]/g, '');
 
   // Live QR Code Generation whenever netRefund changes
   useEffect(() => {
@@ -157,17 +157,17 @@ export default function DepositRefundModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-md flex justify-center items-center p-4 sm:p-6 animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-white/20 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl space-y-6 max-h-[92vh] flex flex-col">
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/80 backdrop-blur-md flex justify-center items-start sm:items-center p-3 sm:p-6 animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-white/20 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl max-h-[85dvh] flex flex-col my-auto">
         
         {/* Header */}
-        <div className="bg-slate-800/80 px-6 py-5 border-b border-white/10 flex items-center justify-between shrink-0">
+        <div className="bg-slate-800/80 px-5 sm:px-6 py-4 sm:py-5 border-b border-white/10 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center text-xl">
               💰
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white tracking-tight">
+              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
                 ตรวจสอบและคืนเงินประกันห้องพัก (ห้อง {request.room_number})
               </h2>
               <p className="text-xs text-white/50">
@@ -184,7 +184,7 @@ export default function DepositRefundModal({
         </div>
 
         {/* Scrollable Content */}
-        <div className="p-6 space-y-6 overflow-y-auto flex-1 text-sm font-sans custom-scrollbar">
+        <div className="p-5 sm:p-6 space-y-6 overflow-y-auto overscroll-contain flex-1 text-sm font-sans custom-scrollbar">
 
           {/* Section 1: Contract Term Verification */}
           <div className="bg-slate-950/60 p-4 rounded-2xl border border-white/10 space-y-3">

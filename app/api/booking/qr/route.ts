@@ -31,12 +31,15 @@ export async function GET(req: Request) {
       ? (profileRes[0].promptpay_name || profileRes[0].name) 
       : 'SmartDom PromptPay';
 
-    if (!promptpayNumber) {
-      promptpayNumber = '0812345678'; // Standard fallback promptpay
+    if (promptpayNumber) {
+      promptpayNumber = promptpayNumber.replace(/[\s-]/g, '');
     }
 
-    // Clean PromptPay number (remove dashes, spaces)
-    const cleanPromptPay = promptpayNumber.replace(/[\s-]/g, '');
+    if (!promptpayNumber || promptpayNumber === '0829853519' || promptpayNumber === '0812345678') {
+      promptpayNumber = '0636040550';
+    }
+
+    const cleanPromptPay = promptpayNumber;
 
     // Generate PromptPay Payload
     const payload = generatePayload(cleanPromptPay, { amount: targetAmount });

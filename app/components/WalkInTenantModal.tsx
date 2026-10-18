@@ -314,28 +314,28 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
   const depositAmount = isTestRoom ? 1 : 1000;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl my-8">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto overscroll-contain animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-3xl max-h-[85dvh] flex flex-col overflow-hidden shadow-2xl my-auto">
         
         {/* Header */}
-        <div className="bg-slate-950/80 px-6 py-5 border-b border-white/10 flex items-center justify-between">
+        <div className="shrink-0 bg-slate-950/80 px-5 sm:px-6 py-4 sm:py-5 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-2xl">🚶</span>
             <div>
-              <h2 className="text-lg font-black text-white">เพิ่มผู้เช่าแบบ Walk-in (เคาน์เตอร์หอพัก)</h2>
+              <h2 className="text-base sm:text-lg font-black text-white">เพิ่มผู้เช่าแบบ Walk-in (เคาน์เตอร์หอพัก)</h2>
               <p className="text-xs text-slate-400">สร้างบัญชีผู้เช่า สแกนบัตรปชช. และตรวจสลิปมัดจำอัตโนมัติ</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white flex items-center justify-center transition-colors text-sm"
+            className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white flex items-center justify-center transition-colors text-sm shrink-0"
           >
             ✕
           </button>
         </div>
 
         {/* Step Indicator */}
-        <div className="grid grid-cols-3 bg-slate-950/40 border-b border-white/5 px-6 py-3 text-xs font-bold">
+        <div className="shrink-0 grid grid-cols-3 bg-slate-950/40 border-b border-white/5 px-5 sm:px-6 py-3 text-xs font-bold">
           <div className={`flex items-center gap-2 ${step === 1 ? 'text-primary' : 'text-slate-500'}`}>
             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${step === 1 ? 'bg-primary text-white' : 'bg-white/10'}`}>1</span>
             <span>1. เตรียมข้อมูล & สแกนบัตร</span>
@@ -351,7 +351,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
         </div>
 
         {/* Content Body */}
-        <div className="p-6 sm:p-8 space-y-6">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-8 space-y-6">
 
           {/* STEP 1: Info & OCR */}
           {step === 1 && (

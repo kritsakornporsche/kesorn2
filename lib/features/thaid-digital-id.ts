@@ -17,6 +17,9 @@ export interface ThaIdVerifiedPayload {
   full_name_th: string;
   full_name_en: string;
   birth_date: string;
+  birth_year_be: number;
+  age: number;
+  age_group: '18-20 ปี (นักศึกษาชั้นปีต้น)' | '21-23 ปี (นักศึกษาชั้นปีปลาย)' | '24-30 ปี (วัยเริ่มทำงาน/บัณฑิต)' | '31 ปีขึ้นไป';
   address: string;
   address_parts: ThaiAddressParts;
   /** บังคับค่าว่างเสมอตามหลัก PDPA Zero-ID Storage */
@@ -24,6 +27,33 @@ export interface ThaIdVerifiedPayload {
   verified_at: string;
   provider: 'D.DOPA ThaID OpenID Connect (OAuth 2.0)';
   mode: 'production_oidc' | 'sandbox_simulation';
+}
+
+/**
+ * คำนวณอายุปีบริบูรณ์และกลุ่มอายุจากวันเกิดภาษาไทยหรือ ISO (เช่น "14 พ.ค. 2547" หรือ "2004-05-14")
+ */
+export function calculateAgeFromThaiBirthDate(birthDateStr: string): {
+  birthYearBe: number;
+  age: number;
+  ageGroup: ThaIdVerifiedPayload['age_group'];
+} {
+  const currentYearAd = new Date().getFullYear();
+  const currentYearBe = currentYearAd + 543;
+  let birthYearBe = 2547; // default fallback (22 yrs)
+
+  const yearMatch = (birthDateStr || '').match(/(\d{4})/);
+  if (yearMatch) {
+    const y = parseInt(yearMatch[1], 10);
+    birthYearBe = y > 2400 ? y : y + 543;
+  }
+
+  const age = Math.max(15, Math.min(99, currentYearBe - birthYearBe));
+  let ageGroup: ThaIdVerifiedPayload['age_group'] = '24-30 ปี (วัยเริ่มทำงาน/บัณฑิต)';
+  if (age <= 20) ageGroup = '18-20 ปี (นักศึกษาชั้นปีต้น)';
+  else if (age <= 23) ageGroup = '21-23 ปี (นักศึกษาชั้นปีปลาย)';
+  else if (age > 30) ageGroup = '31 ปีขึ้นไป';
+
+  return { birthYearBe, age, ageGroup };
 }
 
 export interface ThaIdAuthSession {
@@ -42,7 +72,7 @@ export interface ThaIdAuthSession {
 
 /**
  * สร้าง OAuth 2.0 + PKCE (RFC 7636) Session ตามมาตรฐานกรมการปกครอง (D.DOPA ThaID)
- * โดยขอ Scope เฉพาะ ชื่อ-นามสกุล และ ที่อยู่ตามทะเบียนราษฎร์ (ไม่ขอScope pid เลข 13 หลัก)
+ * โดยขอ Scope เฉพาะ ชื่อ-นามสกุล, วันเกิด (เพื่อคำนวณอายุ), และ ที่อยู่ตามทะเบียนราษฎร์ (ไม่ขอ Scope pid เลข 13 หลัก)
  */
 export function createThaIdOAuthSession(originUrl = 'http://localhost:3000'): ThaIdAuthSession {
   const sessionId = `THAID-SES-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
@@ -72,7 +102,7 @@ export function createThaIdOAuthSession(originUrl = 'http://localhost:3000'): Th
     session_id: sessionId,
     state,
     code_challenge: codeChallenge,
-    scope: 'name,address (Zero-PID PDPA Mode)',
+    scope: 'name,birthdate,address (Zero-PID PDPA Mode)',
   });
 
   return {
@@ -97,45 +127,46 @@ export function createThaIdOAuthSession(originUrl = 'http://localhost:3000'): Th
 export const THAID_SANDBOX_PROFILES = [
   {
     id: 'citizen-up-student',
-    label: 'นักศึกษา ม.พะเยา (ต.แม่กา อ.เมืองพะเยา)',
+    label: 'นักศึกษา ม.พะเยา ชั้นปีที่ 2 (พะเยา)',
     title_th: 'นาย',
     first_name_th: 'กิตติพงศ์',
     last_name_th: 'เจริญรัตน์',
     full_name_en: 'Mr. Kittipong Charoenrat',
-    birth_date: '14 พ.ค. 2547',
+    birth_date: '14 พ.ค. 2549',
     address: '199/4 หมู่ 2 ตำบลแม่กา อำเภอเมืองพะเยา จังหวัดพะเยา 56000',
   },
   {
     id: 'citizen-chiangrai',
-    label: 'ผู้เช่าจังหวัดใกล้เคียง (อ.เมืองเชียงราย)',
+    label: 'นักศึกษา ม.พะเยา ชั้นปีที่ 4 (เชียงราย)',
     title_th: 'นางสาว',
     first_name_th: 'พิมพ์ชนก',
     last_name_th: 'วงศ์สวัสดิ์',
     full_name_en: 'Miss Pimchanok Wongsawat',
-    birth_date: '22 ต.ค. 2546',
+    birth_date: '22 ต.ค. 2547',
     address: '88/12 หมู่ 5 ถนนพหลโยธิน ตำบลรอบเวียง อำเภอเมืองเชียงราย จังหวัดเชียงราย 57000',
   },
   {
     id: 'citizen-bangkok',
-    label: 'ผู้เช่าจากกรุงเทพมหานคร (เขตจตุจักร)',
+    label: 'วัยเริ่มทำงาน / ป.โท (กรุงเทพมหานคร)',
     title_th: 'นาย',
     first_name_th: 'ธนภัทร',
     last_name_th: 'อัครเดชโชติ',
     full_name_en: 'Mr. Thanaphat Akkaradejchot',
-    birth_date: '09 ม.ค. 2545',
+    birth_date: '09 ม.ค. 2543',
     address: '99/50 หมู่ 3 ซอยงามวงศ์วาน 54 แขวงลาดยาว เขตจตุจักร กรุงเทพมหานคร 10900',
   },
 ];
 
 /**
  * ประมวลผลการแลกเปลี่ยน Authorization Code เป็นข้อมูลผู้เช่าที่ผ่านการรับรอง (Verified Claims)
- * พร้อมสร้างลายเซ็นดิจิทัล HMAC-SHA256 เพื่อใช้ยืนยันในสัญญาเช่าโดยไม่เก็บเลข 13 หลัก
+ * พร้อมคำนวณอายุจากวันเกิดอัตโนมัติ และสร้างลายเซ็นดิจิทัล HMAC-SHA256
  */
 export function verifyAndCreateThaIdClaims(input: {
   sessionId?: string;
   state?: string;
   profileId?: string;
   customName?: string;
+  customBirthDate?: string;
   customAddress?: string;
 }): ThaIdVerifiedPayload {
   const preset =
@@ -152,6 +183,13 @@ export function verifyAndCreateThaIdClaims(input: {
     firstNameTh = parts[0] || fullNameTh;
     lastNameTh = parts.slice(1).join(' ') || '';
   }
+
+  const birthDate =
+    input.customBirthDate && input.customBirthDate.trim()
+      ? input.customBirthDate.trim()
+      : preset.birth_date;
+
+  const { birthYearBe, age, ageGroup } = calculateAgeFromThaiBirthDate(birthDate);
 
   const address =
     input.customAddress && input.customAddress.trim()
@@ -170,7 +208,7 @@ export function verifyAndCreateThaIdClaims(input: {
     'PPID-' +
     crypto
       .createHmac('sha256', secretSalt)
-      .update(`${fullNameTh}|${address}`)
+      .update(`${fullNameTh}|${birthDate}|${address}`)
       .digest('hex')
       .slice(0, 16)
       .toUpperCase();
@@ -178,7 +216,7 @@ export function verifyAndCreateThaIdClaims(input: {
   // สร้างลายเซ็นดิจิทัลรับรองผลการพิสูจน์ตัวตน (Cryptographic KYC Attestation)
   const kycSignature = crypto
     .createHmac('sha256', secretSalt)
-    .update(`${kycSessionId}|${subPidHash}|${fullNameTh}|${address}|IAL2.3|${verifiedAt}`)
+    .update(`${kycSessionId}|${subPidHash}|${fullNameTh}|${birthDate}|${address}|IAL2.3|${verifiedAt}`)
     .digest('hex')
     .slice(0, 24)
     .toUpperCase();
@@ -194,7 +232,10 @@ export function verifyAndCreateThaIdClaims(input: {
     last_name_th: lastNameTh,
     full_name_th: fullNameTh,
     full_name_en: preset.full_name_en,
-    birth_date: preset.birth_date,
+    birth_date: birthDate,
+    birth_year_be: birthYearBe,
+    age,
+    age_group: ageGroup,
     address,
     address_parts: addressParts,
     id_card_number: '',

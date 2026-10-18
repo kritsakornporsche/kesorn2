@@ -22,11 +22,11 @@ export const PdpaOcrConsentModal: React.FC<PdpaOcrConsentModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[100] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh] text-slate-100">
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[100] flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto overscroll-contain animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col max-h-[85dvh] my-auto text-slate-100">
         
         {/* Header */}
-        <div className="px-6 py-5 bg-gradient-to-r from-blue-950/60 via-slate-900 to-indigo-950/60 border-b border-slate-800 flex items-center justify-between shrink-0">
+        <div className="px-6 py-4 sm:py-5 bg-gradient-to-r from-blue-950/60 via-slate-900 to-indigo-950/60 border-b border-slate-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-xl">
               🛡️
@@ -50,7 +50,7 @@ export const PdpaOcrConsentModal: React.FC<PdpaOcrConsentModalProps> = ({
         </div>
 
         {/* Scrollable Consent Body */}
-        <div className="p-6 overflow-y-auto space-y-4 text-xs text-slate-300 leading-relaxed custom-scrollbar">
+        <div className="p-5 sm:p-6 flex-1 overflow-y-auto overscroll-contain space-y-4 text-xs text-slate-300 leading-relaxed custom-scrollbar">
           <div className="p-3.5 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex items-start gap-2.5 text-blue-200 text-[11px]">
             <span className="text-base leading-none">💡</span>
             <p>

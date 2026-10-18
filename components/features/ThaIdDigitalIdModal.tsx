@@ -22,6 +22,7 @@ export const ThaIdDigitalIdButton: React.FC<ThaIdDigitalIdButtonProps> = ({
   const [selectedProfileId, setSelectedProfileId] = useState<string>('citizen-up-student');
   const [useCustomInput, setUseCustomInput] = useState(false);
   const [customName, setCustomName] = useState('');
+  const [customBirthDate, setCustomBirthDate] = useState('14 พ.ค. 2547');
   const [customAddress, setCustomAddress] = useState('');
   const [verifiedData, setVerifiedData] = useState<ThaIdVerifiedPayload | null>(null);
 
@@ -63,6 +64,7 @@ export const ThaIdDigitalIdButton: React.FC<ThaIdDigitalIdButtonProps> = ({
           state: sessionData?.state,
           profileId: selectedProfileId,
           customName: useCustomInput ? customName : undefined,
+          customBirthDate: useCustomInput ? customBirthDate : undefined,
           customAddress: useCustomInput ? customAddress : undefined,
         }),
       });
@@ -107,7 +109,7 @@ export const ThaIdDigitalIdButton: React.FC<ThaIdDigitalIdButtonProps> = ({
               </div>
               {!compact && (
                 <p className="text-[11px] text-blue-200/80 mt-0.5">
-                  ดึงเฉพาะชื่อ-นามสกุลและที่อยู่ตามทะเบียนราษฎร์โดยตรงจากกรมการปกครอง (ไม่เก็บเลขบัตร 13 หลัก)
+                  ดึงเฉพาะชื่อ-นามสกุล วันเกิด (คำนวณอายุ) และที่อยู่ตามทะเบียนราษฎร์โดยตรงจากกรมการปกครอง (ไม่เก็บเลขบัตร 13 หลัก)
                 </p>
               )}
             </div>
@@ -126,10 +128,11 @@ export const ThaIdDigitalIdButton: React.FC<ThaIdDigitalIdButtonProps> = ({
         {/* Verified Badge */}
         {verifiedData && (
           <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-between gap-2 flex-wrap text-xs text-emerald-300">
-            <div className="flex items-center gap-2 font-bold">
+            <div className="flex items-center gap-2 font-bold flex-wrap">
               <span>✅</span>
               <span>
-                ยืนยันตัวตนด้วย ThaID สำเร็จ: <strong className="text-white">{verifiedData.full_name_th}</strong> ({verifiedData.ial_level})
+                ยืนยันตัวตนด้วย ThaID สำเร็จ: <strong className="text-white">{verifiedData.full_name_th}</strong> • อายุ{' '}
+                <strong className="text-amber-300">{verifiedData.age} ปี</strong> ({verifiedData.ial_level})
               </span>
             </div>
             <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-slate-950/60 text-amber-300 border border-amber-400/20">
@@ -139,22 +142,22 @@ export const ThaIdDigitalIdButton: React.FC<ThaIdDigitalIdButtonProps> = ({
         )}
       </div>
 
-      {/* Modal */}
+      {/* Modal — 3-Rule Safe-Viewport Architecture (max-h-[85dvh] + items-start sm:items-center + my-auto + Sticky Header/Footer) */}
       {isOpen && (
-        <div className="fixed inset-0 z-[110] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-amber-400/30 rounded-3xl max-w-3xl w-full overflow-hidden shadow-2xl my-6 text-slate-100">
-            {/* Header */}
-            <div className="px-6 py-4 bg-gradient-to-r from-[#0f1a3d] via-[#172860] to-[#0f1a3d] border-b border-white/10 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 font-black flex flex-col items-center justify-center text-xs leading-none">
+        <div className="fixed inset-0 z-[110] bg-slate-950/85 backdrop-blur-md flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto overscroll-contain animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-amber-400/30 rounded-3xl max-w-3xl w-full max-h-[85dvh] flex flex-col overflow-hidden shadow-2xl my-auto text-slate-100">
+            {/* 1. Sticky Header (shrink-0 — ไม่โดนตัดตกขอบบน) */}
+            <div className="shrink-0 px-4 sm:px-6 py-3.5 sm:py-4 bg-gradient-to-r from-[#0f1a3d] via-[#172860] to-[#0f1a3d] border-b border-white/10 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-400 text-slate-950 font-black flex flex-col items-center justify-center text-xs leading-none shrink-0">
                   <span className="text-[9px]">D.DOPA</span>
                   <span>ThaID</span>
                 </div>
-                <div>
-                  <h3 className="text-sm sm:text-base font-black text-white">
+                <div className="min-w-0">
+                  <h3 className="text-xs sm:text-base font-black text-white truncate">
                     ระบบพิสูจน์และยืนยันตัวตนทางดิจิทัล (D.DOPA ThaID OAuth 2.0)
                   </h3>
-                  <p className="text-[11px] text-amber-300/90">
+                  <p className="text-[10px] sm:text-[11px] text-amber-300/90 truncate">
                     OpenID Connect (OIDC) + PKCE S256 • มาตรฐานความมั่นคงปลอดภัยระดับ IAL 2.3
                   </p>
                 </div>
@@ -162,14 +165,14 @@ export const ThaIdDigitalIdButton: React.FC<ThaIdDigitalIdButtonProps> = ({
               <button
                 type="button"
                 onClick={() => !verifying && setIsOpen(false)}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-bold cursor-pointer"
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-bold cursor-pointer shrink-0"
               >
                 ✕
               </button>
             </div>
 
-            {/* Body */}
-            <div className="p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
+            {/* 2. Scrollable Body (flex-1 overflow-y-auto overscroll-contain) */}
+            <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 grid grid-cols-1 md:grid-cols-12 gap-5 sm:gap-6">
               {/* Left Column: QR Code & OAuth 2.0 PKCE Inspector */}
               <div className="md:col-span-5 flex flex-col items-center justify-between bg-slate-950/70 p-4 rounded-2xl border border-white/10 space-y-3">
                 <div className="text-center space-y-1">
@@ -179,7 +182,7 @@ export const ThaIdDigitalIdButton: React.FC<ThaIdDigitalIdButtonProps> = ({
                   <p className="text-xs font-bold text-white pt-1">QR Code สำหรับยืนยันตัวตน</p>
                 </div>
 
-                <div className="p-3 bg-white rounded-2xl shadow-lg flex items-center justify-center w-48 h-48">
+                <div className="p-2.5 sm:p-3 bg-white rounded-2xl shadow-lg flex items-center justify-center w-40 h-40 sm:w-44 sm:h-44 shrink-0">
                   {loadingSession ? (
                     <span className="text-xs font-bold text-slate-600 animate-pulse">
                       กำลังสร้าง OAuth QR...
@@ -194,9 +197,9 @@ export const ThaIdDigitalIdButton: React.FC<ThaIdDigitalIdButtonProps> = ({
                 {/* OAuth 2.0 / PDPA Scope Inspector */}
                 {sessionData && (
                   <div className="w-full p-3 rounded-xl bg-slate-900 border border-white/10 text-[10px] space-y-1 font-mono">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between gap-2">
                       <span className="text-slate-400">Session:</span>
-                      <span className="text-amber-300 font-bold">{sessionData.session_id}</span>
+                      <span className="text-amber-300 font-bold truncate">{sessionData.session_id}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-400">PKCE Method:</span>
@@ -207,6 +210,8 @@ export const ThaIdDigitalIdButton: React.FC<ThaIdDigitalIdButtonProps> = ({
                         🛡️ Scope ที่ร้องขอ (PDPA Minimization):
                       </span>
                       <span>✓ ชื่อ-นามสกุล (`given_name`, `family_name`)</span>
+                      <br />
+                      <span>✓ วันเกิดเพื่อคำนวณอายุ (`birthdate`)</span>
                       <br />
                       <span>✓ ที่อยู่ทะเบียนบ้าน (`address`)</span>
                       <br />
@@ -227,8 +232,8 @@ export const ThaIdDigitalIdButton: React.FC<ThaIdDigitalIdButtonProps> = ({
                       <span>โหมดจำลองการกดอนุญาตบนแอปมือถือ ThaID (D.DOPA Sandbox)</span>
                     </div>
                     <p className="text-[11px] text-slate-300 leading-relaxed">
-                      สำหรับการทดสอบและสาธิตงานวิจัย: เลือกโปรไฟล์พลเมืองจำลองด้านล่าง (หรือระบุชื่อ-ที่อยู่เอง) แล้วกดปุ่ม{' '}
-                      <strong className="text-white">&quot;อนุญาตบนแอป ThaID&quot;</strong> เพื่อจำลองการส่ง Callback Token กลับมายังระบบหอพัก
+                      สำหรับการทดสอบและสาธิตงานวิจัย: เลือกโปรไฟล์พลเมืองจำลองด้านล่าง (หรือระบุชื่อ-วันเกิด-ที่อยู่เอง) แล้วกดปุ่ม{' '}
+                      <strong className="text-white">&quot;กดอนุญาตบนแอป ThaID&quot;</strong> เพื่อจำลองการส่ง Callback Token กลับมายังระบบหอพัก
                     </p>
                   </div>
 
@@ -254,7 +259,7 @@ export const ThaIdDigitalIdButton: React.FC<ThaIdDigitalIdButtonProps> = ({
                           : 'bg-slate-950 border-white/10 text-slate-400'
                       }`}
                     >
-                      ✏️ กำหนดชื่อ-ที่อยู่เอง
+                      ✏️ กำหนดชื่อ-วันเกิด-ที่อยู่เอง
                     </button>
                   </div>
 
@@ -272,7 +277,7 @@ export const ThaIdDigitalIdButton: React.FC<ThaIdDigitalIdButtonProps> = ({
                                 : 'bg-slate-950/60 border-white/10 hover:border-white/25'
                             }`}
                           >
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
                               <span className="text-xs font-black text-white">
                                 {p.title_th}
                                 {p.first_name_th} {p.last_name_th}
@@ -281,24 +286,41 @@ export const ThaIdDigitalIdButton: React.FC<ThaIdDigitalIdButtonProps> = ({
                                 {p.label}
                               </span>
                             </div>
-                            <p className="text-[11px] text-slate-300 mt-1">{p.address}</p>
+                            <div className="flex items-center gap-2 mt-1 text-[10px] text-cyan-300 font-semibold">
+                              <span>🎂 เกิด: {p.birth_date}</span>
+                            </div>
+                            <p className="text-[11px] text-slate-300 mt-0.5">{p.address}</p>
                           </label>
                         );
                       })}
                     </div>
                   ) : (
                     <div className="space-y-3 bg-slate-950/60 p-3.5 rounded-2xl border border-white/10">
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-300 block mb-1">
-                          ชื่อ-นามสกุล (จากทะเบียนราษฎร์):
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="เช่น นายกฤษกร บัวอินทร์"
-                          value={customName}
-                          onChange={(e) => setCustomName(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/15 text-xs text-white"
-                        />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                            ชื่อ-นามสกุล (จากทะเบียนราษฎร์):
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="เช่น นายกฤษกร บัวอินทร์"
+                            value={customName}
+                            onChange={(e) => setCustomName(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/15 text-xs text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                            วันเดือนปีเกิด (พ.ศ. หรือ ค.ศ.):
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="เช่น 14 พ.ค. 2547"
+                            value={customBirthDate}
+                            onChange={(e) => setCustomBirthDate(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/15 text-xs text-white"
+                          />
+                        </div>
                       </div>
                       <div>
                         <label className="text-[11px] font-bold text-slate-300 block mb-1">
@@ -322,7 +344,7 @@ export const ThaIdDigitalIdButton: React.FC<ThaIdDigitalIdButtonProps> = ({
                         {verifyStep >= 1 ? '✓' : '○'} 1. ตรวจสอบ OAuth 2.0 State & PKCE Code Verifier (S256)
                       </div>
                       <div className={verifyStep >= 2 ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                        {verifyStep >= 2 ? '✓' : '○'} 2. ยืนยันตัวตนระดับ IAL 2.3 และสร้างรหัสอ้างอิง PPID Hash (ไม่ส่งเลข 13 หลัก)
+                        {verifyStep >= 2 ? '✓' : '○'} 2. ยืนยันตัวตนระดับ IAL 2.3 + คำนวณอายุจากวันเกิด (ไม่ส่งเลข 13 หลัก)
                       </div>
                       <div className={verifyStep >= 3 ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
                         {verifyStep >= 3 ? '✓' : '○'} 3. แยกโครงสร้างที่อยู่ (บ้านเลขที่/หมู่/ตำบล/อำเภอ/จังหวัด) อัตโนมัติ
@@ -333,32 +355,32 @@ export const ThaIdDigitalIdButton: React.FC<ThaIdDigitalIdButtonProps> = ({
                     </div>
                   )}
                 </div>
-
-                {/* Action Buttons */}
-                <div className="pt-3 border-t border-white/10 flex items-center justify-end gap-3">
-                  <button
-                    type="button"
-                    disabled={verifying}
-                    onClick={() => setIsOpen(false)}
-                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer"
-                  >
-                    ยกเลิก
-                  </button>
-                  <button
-                    type="button"
-                    disabled={verifying}
-                    onClick={handleConfirmThaIdCallback}
-                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs shadow-lg flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
-                  >
-                    <span>📲</span>
-                    <span>
-                      {verifying
-                        ? 'กำลังแลกเปลี่ยน Token กับ ThaID...'
-                        : 'กดอนุญาตบนแอป ThaID (ส่งข้อมูลเข้าสัญญาเช่า)'}
-                    </span>
-                  </button>
-                </div>
               </div>
+            </div>
+
+            {/* 3. Sticky Footer (shrink-0 — ปุ่มกดอยู่ติดขอบล่างเสมอ ไม่ต้องเลื่อนหา) */}
+            <div className="shrink-0 px-4 sm:px-6 py-3.5 bg-slate-950 border-t border-white/10 flex items-center justify-end gap-3 flex-wrap">
+              <button
+                type="button"
+                disabled={verifying}
+                onClick={() => setIsOpen(false)}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                disabled={verifying}
+                onClick={handleConfirmThaIdCallback}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs shadow-lg flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
+              >
+                <span>📲</span>
+                <span>
+                  {verifying
+                    ? 'กำลังแลกเปลี่ยน Token กับ ThaID...'
+                    : 'กดอนุญาตบนแอป ThaID (ส่งข้อมูลเข้าสัญญาเช่า)'}
+                </span>
+              </button>
             </div>
           </div>
         </div>

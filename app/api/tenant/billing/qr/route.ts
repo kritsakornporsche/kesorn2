@@ -66,21 +66,15 @@ export async function GET(req: Request) {
     let promptpayNumber = profileRes.length > 0 ? profileRes[0].promptpay_number : null;
     let dormDisplayName = profileRes.length > 0 ? (profileRes[0].name || profileRes[0].promptpay_name) : null;
     
-    if (!promptpayNumber) {
-      // Check dormitory_registry (use phone as promptpay number)
-      const regRes = await sql`SELECT dorm_name, phone FROM dormitory_registry WHERE id = ${dormId} LIMIT 1`;
-      if (regRes.length > 0) {
-        if (regRes[0].phone) promptpayNumber = regRes[0].phone;
-        if (!dormDisplayName && regRes[0].dorm_name) dormDisplayName = regRes[0].dorm_name;
-      }
-    }
-
-    if (!promptpayNumber) {
-      promptpayNumber = '0829853519'; // Kesorn 2 verified PromptPay
-    }
-
     // Clean PromptPay number (remove dashes, spaces)
-    promptpayNumber = promptpayNumber.replace(/[\s-]/g, '');
+    if (promptpayNumber) {
+      promptpayNumber = promptpayNumber.replace(/[\s-]/g, '');
+    }
+
+    // Do not allow dormitory contact number 0829853519 in payment system; use 0636040550
+    if (!promptpayNumber || promptpayNumber === '0829853519') {
+      promptpayNumber = '0636040550';
+    }
 
     // 3. Generate PromptPay Payload & QR Code
     const payload = generatePayload(promptpayNumber, { amount });

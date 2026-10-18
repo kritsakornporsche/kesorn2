@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCaseGroups, diagrams } from '@/lib/diagramsData';
 import { SYSTEM_UPDATES } from '@/lib/updatesData';
+import { LAB_FUNCTION_BUTTONS } from '@/components/features/ResearcherLabNavBar';
 
 export default function ResearcherDashboardPage() {
   const totalUseCases = useCaseGroups.reduce((acc, g) => acc + g.useCases.length, 0);
@@ -14,22 +15,82 @@ export default function ResearcherDashboardPage() {
       {/* Hero Section */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-cyan-950/40 to-slate-900 border border-cyan-500/20 p-8 shadow-2xl">
         <div className="absolute -right-10 -top-10 w-72 h-72 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative z-10 space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="px-3 py-1 rounded-full text-xs font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-              🎓 THESIS RESEARCH & SYSTEM ARCHITECTURE
-            </span>
-            <span className="px-3 py-1 rounded-full text-xs font-black bg-purple-500/20 text-purple-300 border border-purple-500/30">
-              UNIVERSITY OF PHAYAO
-            </span>
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-3 py-1 rounded-full text-xs font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                🎓 THESIS RESEARCH & SYSTEM ARCHITECTURE
+              </span>
+              <span className="px-3 py-1 rounded-full text-xs font-black bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                UNIVERSITY OF PHAYAO
+              </span>
+            </div>
+
+            <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
+              แดชบอร์ดงานวิจัยและสถาปัตยกรรมระบบ
+            </h1>
+            <p className="text-slate-300 text-sm sm:text-base max-w-3xl leading-relaxed">
+              ศูนย์รวมการพัฒนาระบบสนับสนุนการตัดสินใจ (MIS) ทั้ง 6 ฟังก์ชันใหม่ และเอกสารวิเคราะห์สถาปัตยกรรม แพลตฟอร์มหอพักหน้ามหาวิทยาลัยพะเยา (SmartDom SaaS)
+            </p>
           </div>
 
-          <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
-            แดชบอร์ดงานวิจัยและสถาปัตยกรรมระบบ
-          </h1>
-          <p className="text-slate-300 text-sm sm:text-base max-w-3xl leading-relaxed">
-            ศูนย์รวมเอกสารและการวิเคราะห์สถาปัตยกรรม แพลตฟอร์มหอพักหน้ามหาวิทยาลัยพะเยา (SmartDom SaaS) สำหรับผู้วิจัยและอาจารย์ที่ปรึกษา ครอบคลุมการวิเคราะห์กรณีการใช้งาน (Use Cases), แผนภาพลำดับการทำงาน (Sequence Diagrams), และบันทึกประวัติการพัฒนาระบบ
-          </p>
+          <Link
+            href="/researcher/lab"
+            className="px-6 py-4 rounded-2xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 flex items-center gap-2.5 shrink-0 transition-all hover:scale-[1.02] active:scale-95"
+          >
+            <span className="text-xl">🧪</span>
+            <span>เปิดศูนย์รวมทั้ง 6 ฟังก์ชันใหม่ (MIS Lab) →</span>
+          </Link>
+        </div>
+      </div>
+
+      {/* 6 New MIS & High-Tech Function Dashboard Buttons */}
+      <div className="rounded-3xl bg-slate-900/80 border border-cyan-500/30 p-6 sm:p-8 shadow-2xl space-y-5">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <span className="text-[11px] font-black uppercase tracking-widest text-amber-400 block">
+              🚀 6 NEW MIS & HIGH-TECH MODULES (ISOLATED RESEARCH LAB)
+            </span>
+            <h2 className="text-xl sm:text-2xl font-black text-white mt-0.5">
+              ทางเข้าแดชบอร์ดระบบพัฒนาใหม่ทั้ง 6 ฟังก์ชัน (สำหรับผู้วิจัย)
+            </h2>
+          </div>
+          <Link
+            href="/researcher/lab"
+            className="px-4 py-2 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs font-bold transition-all"
+          >
+            ดูแผนผังรวมทั้ง 6 ระบบ →
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {LAB_FUNCTION_BUTTONS.map((fn) => (
+            <Link
+              key={fn.id}
+              href={fn.href}
+              className="group p-5 rounded-2xl bg-slate-950/80 border border-white/10 hover:border-cyan-400/60 hover:bg-slate-950 transition-all flex flex-col justify-between gap-4 shadow-lg"
+            >
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="w-11 h-11 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                    {fn.icon}
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                    {fn.badge}
+                  </span>
+                </div>
+                <h3 className="text-sm sm:text-base font-black text-white group-hover:text-cyan-300 transition-colors leading-snug">
+                  {fn.title}
+                </h3>
+                <p className="text-xs text-slate-400 leading-relaxed">{fn.desc}</p>
+              </div>
+
+              <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs font-black text-amber-300 group-hover:text-cyan-300">
+                <span>เข้าสู่แดชบอร์ดฟังก์ชันที่ {fn.id}</span>
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </div>
+            </Link>
+          ))}
         </div>
       </div>
 

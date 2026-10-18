@@ -454,8 +454,6 @@ export async function verifySlipWithSlipOK(
       const accountMatches = cleanAccounts.some((acc) =>
         (targetPromptPay && acc.includes(targetPromptPay)) ||
         (last4 && acc.includes(last4)) ||
-        acc.includes('0829853519') ||
-        acc.includes('3519') ||
         acc.includes('0636040550') ||
         acc.includes('0550')
       );

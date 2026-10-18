@@ -11,6 +11,18 @@ interface ResearcherSidebarProps {
 
 const navItems = [
   {
+    group: 'ห้องปฏิบัติการฟีเจอร์ใหม่ (6 MIS Lab)',
+    items: [
+      { href: '/researcher/lab', label: 'ศูนย์รวม 6 โมดูลใหม่ (Lab Hub)', icon: '🧪', exact: true },
+      { href: '/researcher/lab/digital-id', label: '1. ThaID & อายุผู้เช่า (DSS)', icon: '🇹🇭' },
+      { href: '/researcher/lab/dynamic-qr', label: '2. Dynamic QR & SlipOK', icon: '📲' },
+      { href: '/researcher/lab/digital-twin', label: '3. 2D Digital Twin Heatmap', icon: '🏢' },
+      { href: '/researcher/lab/iot-meter', label: '4. IoT Smart Meter (ห้อง 1+จำลอง)', icon: '⚡' },
+      { href: '/researcher/lab/forecasting', label: '5. พยากรณ์ค่าไฟล่วงหน้า', icon: '📈' },
+      { href: '/researcher/lab/econtract-verify', label: '6. สแกนยืนยันสัญญา SHA-256', icon: '🔐' },
+    ],
+  },
+  {
     group: 'สถาปัตยกรรม & งานวิจัย',
     items: [
       { href: '/researcher', label: 'ภาพรวมงานวิจัย (Overview)', icon: '📊', exact: true },

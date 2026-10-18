@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { handleSignOut } from '@/lib/auth-client';
 import ThemeToggle from '@/app/components/ThemeToggle';
+import NotificationsPopover from '@/components/NotificationsPopover';
 
 interface ResearcherNavbarProps {
   onToggleMobileMenu: () => void;
@@ -59,7 +60,16 @@ export default function ResearcherNavbar({ onToggleMobileMenu }: ResearcherNavba
           </span>
         </div>
 
+        <NotificationsPopover />
         <ThemeToggle />
+
+        <Link
+          href="/researcher/lab"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 text-xs font-black transition-colors border border-amber-400/30"
+        >
+          <span>🧪</span>
+          <span>6 ฟังก์ชันใหม่ (MIS Lab)</span>
+        </Link>
 
         <Link
           href="/explore"
