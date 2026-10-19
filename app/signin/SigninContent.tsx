@@ -258,6 +258,8 @@ export default function SignInContent() {
             <div className="grid grid-cols-3 gap-2">
               {[
                 { label: '👑 เจ้าของหอ', user: 'owner', email: 'owner@kesorn.com', dest: '/owner' },
+                // commit 24: demo manager (same pattern as the others: password = the role name; the account is created separately)
+                { label: '🗂️ ผู้จัดการ', user: 'manager', email: 'manager@kesorn.com', dest: '/owner' },
                 { label: '🏠 ลูกหอ', user: 'tenant', email: 'tenant@kesorn.com', dest: '/tenant' },
                 { label: '🧹 แม่บ้าน', user: 'maid', email: 'maid@kesorn.com', dest: '/keeper/maid' },
                 { label: '🔧 ช่างซ่อม', user: 'technician', email: 'technician@kesorn.com', dest: '/keeper/technician' },

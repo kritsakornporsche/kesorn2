@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import { formatBaht } from '@/lib/format';
 import { statusText } from '@/lib/status-text';
+import { badRoomNumber, isNegative, NEGATIVE_TEXT } from '@/lib/room-fields';
 
 interface Room {
   id: number;
@@ -133,8 +134,13 @@ export default function RoomsManagement() {
     return list;
   };
 
+  // commit 24: number fields may not be negative — red "ห้ามติดลบ" under the field and the save button disabled
+  const formNegative = !!badRoomNumber(formData);
+  const batchNegative = [batchForm.floor, batchForm.startRoom, batchForm.endRoom, batchForm.price, batchForm.deposit_amount].some(isNegative);
+
   const handleBatchSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (batchNegative) return;
     const roomNumbers = getGeneratedRoomNumbers();
     if (roomNumbers.length === 0) {
       alert('กรุณาระบุช่วงเลขห้องให้ถูกต้อง');
@@ -176,6 +182,7 @@ export default function RoomsManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (formNegative) return;
     const url = editingRoom ? `/api/rooms/${editingRoom.id}` : '/api/rooms';
     const method = editingRoom ? 'PUT' : 'POST';
 
@@ -581,6 +588,7 @@ export default function RoomsManagement() {
                             onChange={(e) => setFormData({...formData, floor: parseInt(e.target.value) || 1})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground focus:bg-card transition-all"
                         />
+                    {isNegative(formData.floor) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                     </div>
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">สถานะ</label>
@@ -615,6 +623,7 @@ export default function RoomsManagement() {
                             placeholder="4500"
                           />
                       </div>
+                    {isNegative(formData.price) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
@@ -632,6 +641,7 @@ export default function RoomsManagement() {
                             placeholder="3000"
                           />
                         </div>
+                      {isNegative(formData.deposit_amount) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                       </div>
 
                       <div className="space-y-1.5 sm:col-span-2">
@@ -691,7 +701,8 @@ export default function RoomsManagement() {
                     </button>
                     <button 
                       type="submit" 
-                      className="flex-[2] py-4 sm:py-5 bg-primary text-white font-black rounded-[24px] sm:rounded-[28px] shadow-xl hover:brightness-110 active:scale-95 transition-all text-sm"
+                      disabled={formNegative}
+                      className="flex-[2] py-4 sm:py-5 bg-primary text-white font-black rounded-[24px] sm:rounded-[28px] shadow-xl hover:brightness-110 active:scale-95 transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {editingRoom ? 'อัปเดตข้อมูล' : 'บันทึกลงฐานข้อมูล'}
                     </button>
@@ -736,6 +747,7 @@ export default function RoomsManagement() {
                           onChange={(e) => setBatchForm({...batchForm, floor: parseInt(e.target.value) || 1})}
                           className="w-full px-6 py-4 bg-background border border-border rounded-[24px] focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 focus:bg-card outline-none font-black text-foreground text-lg transition-all"
                         />
+                    {isNegative(batchForm.floor) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                     </div>
                   </div>
 
@@ -751,6 +763,7 @@ export default function RoomsManagement() {
                           className="w-full px-6 py-4 bg-background border border-border rounded-[24px] focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 focus:bg-card outline-none font-black text-foreground text-lg transition-all"
                           placeholder="1"
                         />
+                    {isNegative(batchForm.startRoom) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                     </div>
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">เลขห้องสิ้นสุด (End)</label>
@@ -763,6 +776,7 @@ export default function RoomsManagement() {
                           className="w-full px-6 py-4 bg-background border border-border rounded-[24px] focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 focus:bg-card outline-none font-black text-foreground text-lg transition-all"
                           placeholder="10"
                         />
+                    {isNegative(batchForm.endRoom) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                     </div>
                   </div>
 
@@ -837,6 +851,7 @@ export default function RoomsManagement() {
                             className="w-full pl-14 pr-6 py-4 bg-white/5 border border-emerald-500/40 rounded-[24px] font-black outline-none text-foreground text-2xl text-center focus:ring-4 focus:ring-emerald-500/10 focus:bg-card transition-all"
                           />
                       </div>
+                    {isNegative(batchForm.price) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
@@ -854,6 +869,7 @@ export default function RoomsManagement() {
                             placeholder="3000"
                           />
                         </div>
+                      {isNegative(batchForm.deposit_amount) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                       </div>
 
                       <div className="space-y-1.5 sm:col-span-2">
@@ -897,7 +913,7 @@ export default function RoomsManagement() {
                     </button>
                     <button 
                       type="submit" 
-                      disabled={batchLoading || getGeneratedRoomNumbers().length === 0}
+                      disabled={batchLoading || batchNegative || getGeneratedRoomNumbers().length === 0}
                       className="flex-[2] py-4 bg-emerald-600 text-white font-black rounded-[24px] shadow-xl hover:bg-emerald-500 active:scale-95 transition-all disabled:opacity-50 text-sm flex items-center justify-center gap-2"
                     >
                       {batchLoading ? (

@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { expireDueBookings } from '@/lib/bookings';
 import { expireDueMoveIns } from '@/lib/moveIn';
 import { capCheck, depositFor } from '@/lib/billing';
+import { badRoomNumber } from '@/lib/room-fields';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -94,6 +95,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     if (!id || !room_number || !room_type || price === undefined) {
       return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
+    }
+    // commit 24: no negative rent / deposit / floor (same rule as the rooms page)
+    const bad = badRoomNumber(body);
+    if (bad) {
+      return NextResponse.json({ success: false, message: bad.message, field: bad.field }, { status: 400 });
     }
 
     const sql = getDormDbFromSession(session);

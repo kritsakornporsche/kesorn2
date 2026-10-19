@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import { capCheck, depositFor } from '@/lib/billing';
+import { badRoomNumber } from '@/lib/room-fields';
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,6 +27,11 @@ export async function POST(req: NextRequest) {
 
     // Deposit + first month's rent paid in advance may be at most 3 months of rent (checked before anything is created)
     for (const room of rooms) {
+      // commit 24: no negative rent / deposit / floor — nothing is created if any room has one
+      const bad = badRoomNumber(room);
+      if (bad) {
+        return NextResponse.json({ success: false, message: `ห้อง ${room?.room_number ?? '-'}: ${bad.message}`, field: bad.field }, { status: 400 });
+      }
       if (!room?.room_number || room.price === undefined) continue;
       const deposit = room.deposit_amount !== undefined && room.deposit_amount !== null && room.deposit_amount !== '' ? parseFloat(room.deposit_amount) : 3000;
       const cap = capCheck(Number(room.price), depositFor({ room_number: room.room_number, deposit_amount: deposit }));
