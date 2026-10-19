@@ -19,6 +19,10 @@ async function verifyDormOwner(sql: any, user: any, dormId: number) {
 }
 
 // GET: Fetch rules for a dormitory
+// commit 24b: the fine may be left out (0 / unchanged) but never negative or not a number
+const FINE_MESSAGE = 'ค่าปรับต้องเป็นตัวเลขและห้ามติดลบ';
+const badFine = (v: unknown) => v !== undefined && v !== null && v !== '' && !(Number.isFinite(Number(v)) && Number(v) >= 0);
+
 export async function GET(req: Request) {
   try {
     const session = await auth();
@@ -80,6 +84,9 @@ export async function POST(req: Request) {
     if (!dormId || !title || !description) {
       return NextResponse.json({ success: false, message: 'กรุณากรอกหัวข้อและรายละเอียดกฎระเบียบ' }, { status: 400 });
     }
+    if (badFine(fineAmount)) {
+      return NextResponse.json({ success: false, message: FINE_MESSAGE }, { status: 400 });
+    }
 
     const sql = getDb();
     const isOwner = await verifyDormOwner(sql, session.user, dormId);
@@ -133,6 +140,9 @@ export async function PUT(req: Request) {
 
     if (!id) {
       return NextResponse.json({ success: false, message: 'Missing rule ID' }, { status: 400 });
+    }
+    if (badFine(fineAmount)) {
+      return NextResponse.json({ success: false, message: FINE_MESSAGE }, { status: 400 });
     }
 
     const sql = getDb();

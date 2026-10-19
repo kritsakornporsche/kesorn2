@@ -57,6 +57,10 @@ export default function RoomsManagement() {
 
   const [ownerDormId, setOwnerDormId] = useState<number | null>(1);
   // The rates monthly bills actually use (dormitory_profile via /api/rates), not per-room columns
+  // commit 24b: managers see the rooms read-only (the rooms API saves for the owner only)
+  const canEdit = (session?.user as any)?.role === 'owner';
+  const [formError, setFormError] = useState<string | null>(null);
+  const NO_RIGHT = 'ไม่มีสิทธิ์แก้ไข หรือหมดเวลาเข้าระบบ กรุณาเข้าสู่ระบบใหม่';
   const [billingRates, setBillingRates] = useState<{ waterPerPerson: number; commonFee: number } | null>(null);
   useEffect(() => {
     fetch('/api/rates').then((res) => res.json()).then((json) => { if (json.success) setBillingRates(json.data); }).catch(() => {});
@@ -183,6 +187,7 @@ export default function RoomsManagement() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (formNegative) return;
+    setFormError(null);
     const url = editingRoom ? `/api/rooms/${editingRoom.id}` : '/api/rooms';
     const method = editingRoom ? 'PUT' : 'POST';
 
@@ -201,6 +206,7 @@ export default function RoomsManagement() {
       });
       const data = await res.json();
       if (data.success) {
+        setFormError(null);
         setIsModalOpen(false);
         setEditingRoom(null);
         setFormData({ 
@@ -214,7 +220,7 @@ export default function RoomsManagement() {
         });
         if (ownerDormId) fetchRooms(ownerDormId);
       } else {
-        alert(`${data.message}${data.error ? `: ${data.error}` : ''}`);
+        setFormError(res.status === 401 || res.status === 403 ? NO_RIGHT : `${data.message}${data.error ? `: ${data.error}` : ''}`);
       }
     } catch (err) {
       console.error(err);
@@ -247,6 +253,7 @@ export default function RoomsManagement() {
       status: room.status,
       images: parsedImages
     });
+    setFormError(null);
     setIsModalOpen(true);
   };
 
@@ -355,6 +362,7 @@ export default function RoomsManagement() {
             </svg>
           </div>
 
+          {canEdit ? (<>
           <button 
             onClick={() => setIsBatchModalOpen(true)}
             className="px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center gap-2 transition-all duration-300 group bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg hover:brightness-110 active:scale-95 cursor-pointer whitespace-nowrap"
@@ -380,7 +388,8 @@ export default function RoomsManagement() {
                 status: 'Available', 
                 images: [] 
               }); 
-              setIsModalOpen(true); 
+              setFormError(null);
+              setIsModalOpen(true);
             }}
             className="px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center gap-2 transition-all duration-300 group bg-primary text-white shadow-lg hover:brightness-110 active:scale-95 cursor-pointer whitespace-nowrap"
           >
@@ -389,6 +398,9 @@ export default function RoomsManagement() {
             </div>
             <span>เพิ่มห้องพัก</span>
           </button>
+          </>) : (
+          <span className="px-3 py-2 rounded-2xl bg-secondary text-muted-foreground text-xs font-bold whitespace-nowrap">ผู้จัดการดูข้อมูลห้องได้อย่างเดียว</span>
+          )}
         </div>
       </header>
 
@@ -518,7 +530,7 @@ export default function RoomsManagement() {
                       </span>
                    </div>
 
-                   <div className="mt-auto flex items-center gap-3 pt-6 border-t border-[#F3EFE9]">
+                   {canEdit && (<div className="mt-auto flex items-center gap-3 pt-6 border-t border-[#F3EFE9]">
                       <button 
                         onClick={() => handleEdit(room)}
                         className="flex-1 bg-card text-muted-foreground py-3.5 rounded-2xl text-xs font-bold border border-border hover:bg-primary/90 hover:text-white hover:border-primary hover:shadow-lg hover:shadow-primary/20 transition-all active:scale-95"
@@ -531,7 +543,7 @@ export default function RoomsManagement() {
                       >
                          <svg className="w-5 h-5 group-hover/del:scale-125 duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                       </button>
-                   </div>
+                   </div>)}
                 </div>
               </div>
             )})}
@@ -691,6 +703,7 @@ export default function RoomsManagement() {
                     </div>
                   </div>
 
+                  {formError && <p role="alert" className="px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-500 text-sm font-bold text-center">{formError}</p>}
                   <div className="flex gap-4 sm:gap-6 pt-4 sm:pt-6 sr-only-btn-container shrink-0">
                     <button 
                       type="button" 

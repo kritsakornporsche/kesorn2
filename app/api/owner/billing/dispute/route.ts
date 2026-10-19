@@ -118,6 +118,11 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const { billId, newElectricReading, reason, evidencePhotoUrl } = body;
+    // commit 24b: a negative (or non-number) reading would give negative units and lower the bill
+    if (newElectricReading === undefined || newElectricReading === null || newElectricReading === ''
+      || !Number.isFinite(Number(newElectricReading)) || Number(newElectricReading) < 0) {
+      return NextResponse.json({ success: false, message: 'เลขมิเตอร์ต้องเป็นตัวเลขและห้ามติดลบ' }, { status: 400 });
+    }
 
     const sql = getDb();
 
@@ -273,6 +278,11 @@ export async function PUT(req: Request) {
         success: false,
         message: '⚠️ คำขอนี้สร้างโดยลูกหอ ต้องรอให้เจ้าของหอพักเป็นผู้อนุมัติหรือปฏิเสธ'
       }, { status: 403 });
+    }
+
+    if (action === 'approve' && !(Number(corr.new_electric_reading) >= 0 && Number(corr.new_total_amount) >= 0)) {
+      // commit 24b: a request saved before the check above cannot lower the bill below zero units
+      return NextResponse.json({ success: false, message: 'คำขอนี้มีเลขมิเตอร์ติดลบ อนุมัติไม่ได้ กรุณาปฏิเสธแล้วส่งใหม่' }, { status: 400 });
     }
 
     if (action === 'approve') {

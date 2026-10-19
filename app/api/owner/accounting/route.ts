@@ -103,6 +103,10 @@ export async function POST(req: Request) {
     if (!Number.isFinite(Number(amount))) {
       return NextResponse.json({ success: false, message: 'จำนวนเงินไม่ถูกต้อง' }, { status: 400 });
     }
+    // commit 24b: a negative expense would raise the profit, a negative income hide revenue
+    if (Number(amount) < 0) {
+      return NextResponse.json({ success: false, message: 'จำนวนเงินห้ามติดลบ' }, { status: 400 });
+    }
 
     const dormId = parseInt(dorm_id || (session.user as any)?.dormId || '1', 10);
     const sql = getDb();
