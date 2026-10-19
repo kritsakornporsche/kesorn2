@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
+import { roomTypeLabel } from '@/lib/room-types';
 
 interface BookingData {
   contract_id: number;
@@ -387,7 +388,7 @@ export default function GuestDashboardPage() {
                   <div>
                     <h2 className="text-2xl font-black text-white">ห้องพักหมายเลข {booking.room_number}</h2>
                     <p className="text-xs sm:text-sm text-slate-400">
-                      {booking.room_type || 'ห้องพักมาตรฐาน'} • ชั้น {booking.floor || 1} • {booking.dorm_name}
+                      {roomTypeLabel(booking.room_type)} • ชั้น {booking.floor || 1} • {booking.dorm_name}
                     </p>
                   </div>
                 </div>

@@ -11,6 +11,7 @@ import { formatBaht } from '@/lib/format';
 import PrintableContractModal from '@/components/PrintableContractModal';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
 import { BOOKING_REQUEST_NOTE } from '@/lib/booking-text';
+import { roomTypeLabel } from '@/lib/room-types';
 
 function getGoogleMapsEmbedUrl(mapUrl?: string, address?: string, dormName?: string) {
   if (mapUrl) {
@@ -383,7 +384,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   priority
                 />
                 <div className="absolute top-4 left-4 px-4 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-bold">
-                  {room.room_type || 'Standard Room'}
+                  {roomTypeLabel(room.room_type)}
                 </div>
                 <div className="absolute top-4 right-4 px-4 py-1.5 rounded-full bg-primary text-white text-xs font-black shadow-lg">
                   ฿{Number(room.price).toLocaleString()} / เดือน
@@ -433,7 +434,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                 </div>
                 <div className="p-4 bg-muted/40 rounded-2xl border border-border/50">
                   <span className="block text-[10px] uppercase font-bold text-muted-foreground tracking-wider mb-1">ประเภท</span>
-                  <span className="text-base font-black truncate">{room.room_type || 'Standard'}</span>
+                  <span className="text-base font-black truncate">{roomTypeLabel(room.room_type)}</span>
                 </div>
                 <div className="p-4 bg-muted/40 rounded-2xl border border-border/50">
                   <span className="block text-[10px] uppercase font-bold text-muted-foreground tracking-wider mb-1">ค่าเช่า</span>

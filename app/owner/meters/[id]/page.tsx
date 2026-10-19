@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { statusText } from '@/lib/status-text';
+import { roomTypeLabel } from '@/lib/room-types';
 
 interface HistoryItem {
   id: number;
@@ -115,7 +116,7 @@ export default function RoomMeterHistoryPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="p-4 bg-slate-900/80 rounded-2xl border border-white/10 space-y-0.5">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">ประเภทห้อง</span>
-            <p className="text-sm font-bold text-white">{room.room_type || 'มาตรฐาน'}</p>
+            <p className="text-sm font-bold text-white">{roomTypeLabel(room.room_type)}</p>
           </div>
           <div className="p-4 bg-slate-900/80 rounded-2xl border border-white/10 space-y-0.5">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">ชั้น</span>

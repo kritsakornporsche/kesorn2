@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { formatBaht } from '@/lib/format';
 import { statusText } from '@/lib/status-text';
 import { badRoomNumber, isNegative, NEGATIVE_TEXT } from '@/lib/room-fields';
+import { ROOM_TYPES, roomTypeLabel } from '@/lib/room-types';
 
 interface Room {
   id: number;
@@ -318,7 +319,8 @@ export default function RoomsManagement() {
   const filteredRooms = rooms
     .filter(room => {
       const matchesSearch = room.room_number.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            room.room_type.toLowerCase().includes(searchQuery.toLowerCase());
+                            room.room_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            roomTypeLabel(room.room_type).includes(searchQuery.trim());
       const matchesFilter = filterStatus === 'All' || room.status === filterStatus;
       return matchesSearch && matchesFilter;
     })
@@ -509,7 +511,7 @@ export default function RoomsManagement() {
 
                 <div className="p-8 flex flex-col flex-1">
                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">{room.room_type} (Type)</span>
+                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">{roomTypeLabel(room.room_type)}</span>
                       <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">ชั้น {room.floor} (Floor)</span>
                    </div>
                    <div className="flex items-end gap-1 mb-4">
@@ -583,10 +585,8 @@ export default function RoomsManagement() {
                             onChange={(e) => setFormData({...formData, room_type: e.target.value})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground transition-all focus:bg-card cursor-pointer"
                         >
-                            <option>Standard</option>
-                            <option>Deluxe</option>
-                            <option>Premium</option>
-                            <option>Suite</option>
+                            {ROOM_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                            {formData.room_type && !ROOM_TYPES.some((t) => t.value === formData.room_type) && <option value={formData.room_type}>{formData.room_type}</option>}
                         </select>
                     </div>
                   </div>
@@ -826,10 +826,8 @@ export default function RoomsManagement() {
                             onChange={(e) => setBatchForm({...batchForm, room_type: e.target.value})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground transition-all focus:bg-card cursor-pointer"
                         >
-                            <option>Standard</option>
-                            <option>Deluxe</option>
-                            <option>Premium</option>
-                            <option>Suite</option>
+                            {ROOM_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                            {batchForm.room_type && !ROOM_TYPES.some((t) => t.value === batchForm.room_type) && <option value={batchForm.room_type}>{batchForm.room_type}</option>}
                         </select>
                     </div>
                     <div className="space-y-2">

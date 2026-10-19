@@ -8,6 +8,7 @@ import Link from 'next/link';
 import AnnouncementsSection from '../components/AnnouncementsSection';
 import DormRulesCard from './components/DormRulesCard';
 import CancelBookingButton from './components/CancelBookingButton';
+import { roomTypeLabel } from '@/lib/room-types';
 
 async function getDashboardData() {
   const session = await auth();
@@ -186,7 +187,7 @@ export default async function TenantDashboard() {
               <div className="space-y-1">
                 <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">ห้องพักที่จอง</span>
                 <p className="text-2xl font-black text-amber-300">
-                  ห้อง {pendingContract.room_number} <span className="text-xs font-normal text-white/60">({pendingContract.room_type})</span>
+                  ห้อง {pendingContract.room_number} <span className="text-xs font-normal text-white/60">({roomTypeLabel(pendingContract.room_type)})</span>
                 </p>
                 <p className="text-[11px] text-white/40">ชั้น {pendingContract.floor || 1}</p>
               </div>
@@ -263,7 +264,7 @@ export default async function TenantDashboard() {
                       </div>
                       <div className="bg-card px-8 py-5 rounded-3xl border border-border text-center min-w-[130px] transform hover:scale-105 transition-transform">
                           <span className="block text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-1">Type</span>
-                          <span className="text-lg font-black text-foreground truncate max-w-[120px]">{roomInfo.room_type}</span>
+                          <span className="text-lg font-black text-foreground truncate max-w-[120px]">{roomTypeLabel(roomInfo.room_type)}</span>
                       </div>
                   </div>
               </div>

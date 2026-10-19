@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { InspectionButton, type InspectionStatus } from '@/components/InspectionModal';
+import { roomTypeLabel } from '@/lib/room-types';
 
 interface Booking {
   contract_id: number;
@@ -413,7 +414,7 @@ export default function OwnerBookingsPage() {
                     <div>
                       <h3 className="text-lg font-black text-white">
                         ห้อง {item.room_number}{' '}
-                        <span className="text-xs font-normal text-slate-400">({item.room_type || 'ห้องพัก'} • ชั้น {item.floor || 1})</span>
+                        <span className="text-xs font-normal text-slate-400">({roomTypeLabel(item.room_type)} • ชั้น {item.floor || 1})</span>
                       </h3>
                       <p className="text-[11px] text-slate-400">
                         จองเมื่อ: {item.booking_created_at ? new Date(item.booking_created_at).toLocaleDateString('th-TH') : '-'}

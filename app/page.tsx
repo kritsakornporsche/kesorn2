@@ -8,6 +8,7 @@ import { useSession } from 'next-auth/react';
 import Navbar from './components/Navbar';
 import ChatWidget from '@/app/components/ChatWidget';
 import { useRates } from '@/lib/use-rates';
+import { isAirconType, roomTypeLabel } from '@/lib/room-types';
 
 interface Room {
   id: number;
@@ -648,7 +649,7 @@ export default function Home() {
               {filteredRooms.map((room) => {
                 const available = isAvailable(room);
                 const movingOut = isMovingOut(room);
-                const isAirCon = (room.room_type || '').toLowerCase().includes('air') || (room.room_type || '').includes('แอร์');
+                const isAirCon = isAirconType(room.room_type);
 
                 return (
                   <Link
@@ -705,7 +706,7 @@ export default function Home() {
                         </div>
 
                         <p className="text-xs text-muted-foreground font-medium">
-                          ประเภท: {room.room_type || 'ห้องมาตรฐาน'} • ชั้น {room.floor || 1}
+                          ประเภท: {roomTypeLabel(room.room_type)} • ชั้น {room.floor || 1}
                         </p>
 
                         {movingOut && room.move_out_date && (
