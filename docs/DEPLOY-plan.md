@@ -107,6 +107,7 @@ mysql.exe -u root -p --default-character-set=utf8mb4 kesorn_new < C:\path\app\db
    - `AUTH_SECRET` = มีค่า (บังคับ — ไม่มีค่าสำรองในโค้ด)
    - `CRON_SECRET` = ค่าใหม่
    - `SLIPOK_API_KEY` และ `SLIPOK_ENDPOINT` = **คีย์ใหม่ที่สร้างเองที่ SlipOK** (บังคับ — โค้ดไม่มีค่าสำรองแล้ว · ไม่ตั้ง = ระบบตรวจสลิปตอบ "ยังไม่ได้ตั้งค่า SlipOK" และไม่รับสลิป) · คีย์เก่ายังอยู่ในประวัติ git → ห้ามใช้ต่อ ให้ยกเลิก (revoke) ที่ SlipOK
+   - `CLOUDFLARE_TURNSTILE_SECRET_KEY` และ `NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY` = คีย์จริงของเว็บจาก Cloudflare Turnstile (บังคับ — โค้ดไม่มีค่าสำรองแล้ว · ไม่ตั้ง = หน้าสมัครสมาชิกขึ้น "ยังไม่ได้ตั้งค่า" และส่ง OTP ไม่ได้ · คีย์ทดสอบ `1x000…` และโทเคน mock ใช้ได้เฉพาะเครื่อง dev) · `NEXT_PUBLIC_…` ถูกฝังตอน build → ต้องตั้ง**ก่อน** build/merge
    - **อย่ารีสตาร์ทแอปตรงนี้** — แอปที่รันอยู่ยังเป็นโค้ดเดิมกับ env เดิมจนกว่าจะ deploy
 4. **merge PR #1 → #2 → #3 ตามลำดับ** (`completeness` → `completeness-2` → `completeness-3` เข้า `main`) แบบ merge commit ธรรมดา (ไม่ squash/rebase — เก็บประวัติไว้ใช้ revert) → ระบบ deploy อัตโนมัติ build + รีสตาร์ทด้วยโค้ดใหม่ + env ใหม่ · ต้องรัน 018 + 019 (ข้อ 4.5) ก่อน merge #2 / #3
 5. รอ deploy เสร็จ · ดู log ตอนเริ่ม (เช่น `pm2 logs`) ต้องไม่มี `AUTH_SECRET is not set` / `DATABASE_URL is not set`
