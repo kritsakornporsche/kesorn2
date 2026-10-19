@@ -1,11 +1,13 @@
 'use client';
 
 // Owner/manager: room inspection (lib/inspections.ts) before move-in, or at move-out (kind 'move_out', compared item
-// by item with the move-in result). Items start from the room's inventory, a default list, or the move-in items; each
-// item has a condition, a note and one photo. Editable until the tenant acknowledges it.
+// by item with the move-in result). Items start from the dorm's item list for the room type (lib/room-items.ts) or the
+// move-in items; each item has a condition, a note and one photo, countable items a quantity (commit 26). Editable until
+// the tenant acknowledges it.
 
 import { useEffect, useState } from 'react';
 import { PHOTOS_TOTAL_MAX_BYTES, preparePhoto } from '@/lib/inspection-photo-check';
+import { QUANTITY_MAX, isCountableName } from '@/lib/room-items';
 
 type Condition = 'Good' | 'Damaged' | 'Missing';
 export type InspectionKind = 'move_in' | 'move_out';
@@ -20,13 +22,16 @@ export const INSPECTION_STATUS_TEXT: Record<InspectionStatus, string> = {
 export const CONDITION_TEXT: Record<Condition, string> = { Good: 'ปกติ', Damaged: 'ชำรุด', Missing: 'สูญหาย' };
 export const KIND_TITLE: Record<InspectionKind, string> = { move_in: 'ตรวจห้องก่อนเข้าอยู่', move_out: 'ตรวจห้องตอนย้ายออก' };
 
-type MoveInItem = { condition_status: Condition; note: string | null; photo_url: string | null };
+type MoveInItem = { condition_status: Condition; quantity: number | null; note: string | null; photo_url: string | null };
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 interface Row {
   key: number;
   name: string;
   condition: Condition;
+  /** countable item (keys, remote): quantity as typed ('' = not entered) */
+  countable: boolean;
+  quantity: string;
   note: string;
   /** photo already saved on the inspection */
   photoFile: string | null;
@@ -38,9 +43,11 @@ interface Row {
 }
 
 let nextKey = 1;
-const blankRow = (name = '', note: string | null = null): Row => ({
-  key: nextKey++, name, condition: 'Good', note: note || '', photoFile: null, photoUrl: null, newPhoto: null, newBytes: 0, error: null,
+const blankRow = (name = '', note: string | null = null, countable = false): Row => ({
+  key: nextKey++, name, condition: 'Good', countable, quantity: '', note: note || '', photoFile: null, photoUrl: null, newPhoto: null, newBytes: 0, error: null,
 });
+/** A row is counted when it came counted, or its name is one of the list's countable items */
+const counted = (r: Row) => r.countable || isCountableName(r.name);
 
 const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 
@@ -99,13 +106,14 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
       setMoveIn(data.move_in ? data.move_in.items.map((it: any) => ({ name: it.item_name, item: it })) : null);
       if (data.inspection) {
         setRows(data.inspection.items.map((it: any) => ({
-          ...blankRow(it.item_name, it.note),
+          ...blankRow(it.item_name, it.note, it.quantity !== null && it.quantity !== undefined),
+          quantity: it.quantity === null || it.quantity === undefined ? '' : String(it.quantity),
           condition: it.condition_status,
           photoFile: it.photo_file,
           photoUrl: it.photo_url,
         })));
       } else {
-        setRows((data.defaults || []).map((d: any) => blankRow(d.name, d.note)));
+        setRows((data.defaults || []).map((d: any) => blankRow(d.name, d.note, !!d.countable)));
       }
     } catch {
       setLoadError('โหลดผลตรวจห้องไม่สำเร็จ');
@@ -134,7 +142,7 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
   const save = async () => {
     setError(null);
     // A row left completely empty (added but not filled in) is skipped; a row with something in it needs a name
-    const isBlank = (r: Row) => !r.name.trim() && !r.note.trim() && !r.newPhoto && !r.photoFile && r.condition === 'Good';
+    const isBlank = (r: Row) => !r.name.trim() && !r.note.trim() && !r.quantity.trim() && !r.newPhoto && !r.photoFile && r.condition === 'Good';
     const unnamed = rows.filter((r) => !r.name.trim() && !isBlank(r));
     if (unnamed.length > 0) {
       setRows((list) => list.map((r) => (unnamed.some((u) => u.key === r.key) ? { ...r, error: 'กรุณากรอกชื่อรายการ' } : r)));
@@ -142,6 +150,12 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
       return;
     }
     const toSave = rows.filter((r) => !isBlank(r));
+    const badQty = toSave.filter((r) => counted(r) && (!/^\d+$/.test(r.quantity.trim()) || Number(r.quantity) > QUANTITY_MAX));
+    if (badQty.length > 0) {
+      setRows((list) => list.map((r) => (badQty.some((b) => b.key === r.key) ? { ...r, error: `กรุณาระบุจำนวนเป็นจำนวนเต็ม 0–${QUANTITY_MAX}` } : r)));
+      setError(`กรุณาระบุจำนวนของ: ${badQty.map((r) => r.name).join(', ')}`);
+      return;
+    }
     if (toSave.length === 0) {
       setError('กรุณาเพิ่มรายการตรวจอย่างน้อย 1 รายการ');
       return;
@@ -164,6 +178,7 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
           items: toSave.map((r) => ({
             name: r.name,
             condition: r.condition,
+            ...(counted(r) ? { quantity: Number(r.quantity) } : {}),
             note: r.note,
             ...(r.newPhoto ? { photo: r.newPhoto } : r.photoFile ? { keepPhoto: r.photoFile } : {}),
           })),
@@ -236,6 +251,22 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
                   >
                     {(Object.keys(CONDITION_TEXT) as Condition[]).map((c) => <option key={c} value={c}>{CONDITION_TEXT[c]}</option>)}
                   </select>
+                  {counted(row) && (
+                    <label className="flex items-center gap-1 text-[11px] font-bold text-slate-300">
+                      จำนวน
+                      <input
+                        type="number"
+                        min={0}
+                        max={QUANTITY_MAX}
+                        step={1}
+                        inputMode="numeric"
+                        value={row.quantity}
+                        disabled={!editable}
+                        onChange={(e) => update(row.key, { quantity: e.target.value, error: null })}
+                        className="w-16 bg-slate-950 border border-white/10 rounded-xl px-2 py-2 text-xs font-bold text-white text-center disabled:opacity-70"
+                      />
+                    </label>
+                  )}
                   {editable && (
                     <button
                       onClick={() => setRows((list) => list.filter((r) => r.key !== row.key))}
@@ -283,9 +314,13 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
                   const before = moveInOf(row.name);
                   if (!before) return row.name.trim() ? <p className="pl-7 text-[11px] text-slate-500">ตอนเข้าอยู่: ไม่มีรายการนี้</p> : null;
                   const changed = before.condition_status !== row.condition;
+                  // commit 26: a counted item with fewer than at move-in is a missing item → damage charges at the deposit step
+                  const short = before.quantity !== null && row.quantity.trim() !== '' && Number(row.quantity) < Number(before.quantity)
+                    ? Number(before.quantity) - Number(row.quantity) : 0;
                   return (
-                    <div className={`pl-7 flex items-center gap-2 text-[11px] ${changed ? 'text-amber-300 font-bold' : 'text-slate-400'}`}>
-                      <span>ตอนเข้าอยู่: {CONDITION_TEXT[before.condition_status]}{before.note ? ` · ${before.note}` : ''}{changed ? ' → เปลี่ยนไป' : ''}</span>
+                    <div className={`pl-7 flex flex-wrap items-center gap-2 text-[11px] ${changed || short ? 'text-amber-300 font-bold' : 'text-slate-400'}`}>
+                      <span>ตอนเข้าอยู่: {CONDITION_TEXT[before.condition_status]}{before.quantity !== null ? ` · จำนวน ${before.quantity}` : ''}{before.note ? ` · ${before.note}` : ''}{changed ? ' → เปลี่ยนไป' : ''}</span>
+                      {short > 0 && <span>ขาด {short} — เลือก "สูญหาย" แล้วคิดค่าเสียหายที่ขั้นสรุปเงินประกัน</span>}
                       {before.photo_url && (
                         <button onClick={() => setPreview(before.photo_url)} className="w-8 h-8 rounded overflow-hidden border border-white/20 shrink-0">
                           <img src={before.photo_url} alt={`${row.name} ตอนเข้าอยู่`} className="w-full h-full object-cover" />

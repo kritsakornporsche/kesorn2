@@ -1,9 +1,11 @@
-# แผน deploy ทาง ก — นำฐานข้อมูลในเครื่องขึ้นเว็บ (ฐานใหม่ `kesorn_new`) + merge PR #1
+# แผน deploy ทาง ก — นำฐานข้อมูลในเครื่องขึ้นเว็บ (ฐานใหม่ `kesorn_new`) + merge PR #1 → #2 → #3
 
 สำหรับเพื่อนที่ดูแลเว็บ (เป็นคน merge) · ไฟล์นี้ไม่มีรหัสผ่าน/secret — ค่าจริงส่งแยกช่องทางส่วนตัว
 อ้างอิง: [`docs/CHANGES-completeness.md`](CHANGES-completeness.md) (สิ่งที่เปลี่ยน) · [`docs/schema-changes.md`](schema-changes.md) (ฐานข้อมูล)
 
-**หลักการ:** import ไฟล์ฐานที่ส่งให้ลง **ฐานใหม่ชื่อ `kesorn_new`** (ฐานเดิม `kesorn_db` บนเว็บไม่ถูกแตะ = เป็น backup ในตัว) → query ตรวจ → เปลี่ยน `DATABASE_URL` ให้ชี้ `kesorn_new` → merge PR (= deploy อัตโนมัติ) · ฐานที่ส่งให้รัน migration 001–017 ครบแล้ว และล้างข้อมูลทดสอบ/เลขบัตรแล้ว → **ไม่ต้องรัน migration บนเว็บ** · ใช้เวลาประมาณ 30 นาที แนะนำทำช่วงคนใช้น้อย
+**หลักการ:** import ไฟล์ฐานที่ส่งให้ลง **ฐานใหม่ชื่อ `kesorn_new`** (ฐานเดิม `kesorn_db` บนเว็บไม่ถูกแตะ = เป็น backup ในตัว) → query ตรวจ → **รัน migration 018 → 019 บน `kesorn_new`** → แก้ `.env` ให้ `DATABASE_URL` ชี้ `kesorn_new` → merge PR #1 → #2 → #3 (= deploy อัตโนมัติ) → ตั้ง cron · ฐานที่ส่งให้รัน migration 001–017 ครบแล้ว และล้างข้อมูลทดสอบ/เลขบัตรแล้ว → บนเว็บรันเพิ่มแค่ **018 (PR #2) และ 019 (PR #3)** ในข้อ 4.5 · ใช้เวลาประมาณ 35 นาที แนะนำทำช่วงคนใช้น้อย
+
+**ลำดับทั้งหมด:** import (ข้อ 3) → ตรวจ (ข้อ 4) → 018 → 019 (ข้อ 4.5) → `.env` (ข้อ 5.3) → merge PR #1 → #2 → #3 (ข้อ 5.4) → cron (ข้อ 6)
 
 ---
 
@@ -74,6 +76,22 @@ SELECT name FROM job_runs;                                             -- remind
 ```
 ค่าไม่ตรง → หยุด (ไม่ต้องย้อนอะไร — เว็บยังใช้ `kesorn_db` เดิม) · แจ้งกลับพร้อมผล query
 
+## 4.5 รัน migration 018 → 019 บน `kesorn_new` (ตามลำดับ · ก่อนแก้ `.env`)
+ไฟล์อยู่ใน branch ของ PR (`db/migrations/`) · รันกับ **`kesorn_new` เท่านั้น** (ห้ามรันกับ `kesorn_db` เดิม) · ทั้งสองไฟล์แค่เพิ่มคอลัมน์ว่าง (NULL) ไม่แก้ข้อมูลเดิม
+```
+cd C:\xampp\mysql\bin
+mysql.exe -u root -p --default-character-set=utf8mb4 kesorn_new < C:\path\app\db\migrations\018_landlord_contact.up.sql
+mysql.exe -u root -p --default-character-set=utf8mb4 kesorn_new < C:\path\app\db\migrations\019_inspection_item_quantity.up.sql
+```
+(phpMyAdmin: เลือก `kesorn_new` → แท็บ *Import* → ไฟล์ 018 ก่อน แล้วค่อย 019)
+
+| migration | PR | ทำอะไร | ตรวจ (แท็บ SQL ของ `kesorn_new`) |
+|---|---|---|---|
+| 018 | #2 | `dormitory_profile.landlord_name`, `landlord_phone` (ชื่อ/โทรผู้ให้เช่าในสัญญา) | `SHOW COLUMNS FROM dormitory_profile LIKE 'landlord%';` → 2 แถว |
+| 019 | #3 | `contract_inspection_items.quantity` INT NULL (จำนวนของที่นับได้ เช่น กุญแจห้อง / รีโมทแอร์ ในผลตรวจห้อง) | `SHOW COLUMNS FROM contract_inspection_items LIKE 'quantity';` → 1 แถว `int(11)` `YES` |
+
+ย้อนกลับ (ถ้าต้อง): รัน `019_…down.sql` แล้ว `018_…down.sql` (ลำดับกลับกัน) · ไม่มีคอลัมน์ 018/019 แล้ว merge → หน้าตั้งค่า/สัญญา และหน้าตรวจห้อง error
+
 ## 5. ตั้งค่า → เปลี่ยน DATABASE_URL → merge
 ทำต่อเนื่องกัน ตามลำดับ:
 1. **โฟลเดอร์ที่แอปต้องเขียนได้** (นอก public — ไม่อยู่ใน git) ในโฟลเดอร์แอป:
@@ -84,7 +102,7 @@ SELECT name FROM job_runs;                                             -- remind
    - `AUTH_SECRET` = มีค่า (บังคับ — ไม่มีค่าสำรองในโค้ด)
    - `CRON_SECRET` = ค่าใหม่
    - **อย่ารีสตาร์ทแอปตรงนี้** — แอปที่รันอยู่ยังเป็นโค้ดเดิมกับ env เดิมจนกว่าจะ deploy
-4. **merge PR #1** (`completeness` → `main`) แบบ merge commit ธรรมดา (ไม่ squash/rebase — เก็บประวัติไว้ใช้ revert) → ระบบ deploy อัตโนมัติ build + รีสตาร์ทด้วยโค้ดใหม่ + env ใหม่
+4. **merge PR #1 → #2 → #3 ตามลำดับ** (`completeness` → `completeness-2` → `completeness-3` เข้า `main`) แบบ merge commit ธรรมดา (ไม่ squash/rebase — เก็บประวัติไว้ใช้ revert) → ระบบ deploy อัตโนมัติ build + รีสตาร์ทด้วยโค้ดใหม่ + env ใหม่ · ต้องรัน 018 + 019 (ข้อ 4.5) ก่อน merge #2 / #3
 5. รอ deploy เสร็จ · ดู log ตอนเริ่ม (เช่น `pm2 logs`) ต้องไม่มี `AUTH_SECRET is not set` / `DATABASE_URL is not set`
 6. ถ้าระบบ deploy อัตโนมัติไม่ได้รีสตาร์ทแอป → รีสตาร์ทเอง (เช่น `pm2 restart <app>`)
 
@@ -129,4 +147,7 @@ curl -fsS -X POST -H "Authorization: Bearer <CRON_SECRET>" http://localhost:<por
   - `public\uploads\contracts\contract_78_1790950277576.pdf`
   - `public\uploads\contracts\contract_80_1790962522046.pdf`
 - เก็บ `kesorn_db` เดิม + backup ข้อ 1 ไว้อย่างน้อย 30 วัน แล้วค่อยลบ
+- **ไฟล์ backup ในเครื่อง dev (มีข้อมูลส่วนตัว — ไม่อยู่ใน git ห้าม commit/ส่งต่อ) ลบหลัง deploy ผ่าน smoke test:**
+  - `docs\review\kesorn_db_before_019_20261019_1743.sql` (backup ก่อนรัน 019 บนฐาน dev)
+  - (ไฟล์ export ที่ส่งให้ `kesorn_db_20261015_1723.sql` — ลบทั้งฝั่งผู้ส่งและบน server หลัง import เสร็จ)
 - แจ้งเตือนจะเริ่มทำงานจริง: บิลห้อง 9 และ 11 (ครบกำหนด 5 ต.ค.) แจ้ง owner/manager "ค้างชำระเกิน 15 วัน" ตั้งแต่ 21 ต.ค. · เตือนจดมิเตอร์ตั้งแต่วันที่ 28

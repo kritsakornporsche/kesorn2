@@ -431,7 +431,7 @@ function DamagesForm({ s, act, url }: { s: Settlement; act: ReturnType<typeof us
       if (bad.length === 0) return setPullError(data.inspection ? 'ผลตรวจห้องตอนย้ายออกไม่มีรายการชำรุด/สูญหาย' : 'ยังไม่ได้ตรวจห้องตอนย้ายออก');
       setItems((list) => [...list, ...bad
         .filter((it: any) => !list.some((l) => l.reason.startsWith(it.item_name)))
-        .map((it: any) => ({ amount: '', reason: `${it.item_name} (${it.condition_status === 'Missing' ? 'สูญหาย' : 'ชำรุด'})${it.note ? ` ${it.note}` : ''}` }))]);
+        .map((it: any) => ({ amount: '', reason: `${it.item_name} (${it.condition_status === 'Missing' ? 'สูญหาย' : 'ชำรุด'})${it.quantity !== null && it.quantity !== undefined ? ` เหลือ ${it.quantity}` : ''}${it.note ? ` ${it.note}` : ''}` }))]);
     } catch {
       setPullError('โหลดผลตรวจห้องไม่สำเร็จ');
     }

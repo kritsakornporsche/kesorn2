@@ -20,7 +20,7 @@ interface Inspection {
   inspected_by_name: string | null;
   note: string | null;
   tenant_ack_at: string | null;
-  items: { id: number; item_name: string; condition_status: Condition; note: string | null; photo_url: string | null }[];
+  items: { id: number; item_name: string; condition_status: Condition; quantity?: number | null; note: string | null; photo_url: string | null }[];
 }
 
 export default function TenantInspectionCard({ contractId, kind = 'move_in' }: { contractId: number; kind?: 'move_in' | 'move_out' }) {
@@ -94,7 +94,7 @@ export default function TenantInspectionCard({ contractId, kind = 'move_in' }: {
           <div key={it.id} className="flex items-center gap-3 p-3 bg-black/20">
             <span className="text-[11px] text-muted-foreground w-5">{i + 1}.</span>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-white">{it.item_name}</p>
+              <p className="text-sm font-bold text-white">{it.item_name}{it.quantity !== null && it.quantity !== undefined ? ` · จำนวน ${it.quantity}` : ''}</p>
               {it.note && <p className="text-xs text-muted-foreground">{it.note}</p>}
               {kind === 'move_out' && moveIn && (() => {
                 const before = moveIn.items.find((m) => m.item_name.trim().toLowerCase() === it.item_name.trim().toLowerCase());
@@ -102,7 +102,7 @@ export default function TenantInspectionCard({ contractId, kind = 'move_in' }: {
                 const changed = before.condition_status !== it.condition_status;
                 return (
                   <p className={`text-[11px] ${changed ? 'text-amber-300 font-bold' : 'text-muted-foreground'}`}>
-                    ตอนเข้าอยู่: {CONDITION_TEXT[before.condition_status]}{changed ? ' → เปลี่ยนไป' : ''}
+                    ตอนเข้าอยู่: {CONDITION_TEXT[before.condition_status]}{before.quantity !== null && before.quantity !== undefined ? ` · จำนวน ${before.quantity}` : ''}{changed ? ' → เปลี่ยนไป' : ''}
                   </p>
                 );
               })()}

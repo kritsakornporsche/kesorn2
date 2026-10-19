@@ -12,6 +12,7 @@ import PrintableContractModal from '@/components/PrintableContractModal';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
 import { BOOKING_REQUEST_NOTE } from '@/lib/booking-text';
 import { roomTypeLabel } from '@/lib/room-types';
+import { itemsForRoomType } from '@/lib/room-items';
 
 function getGoogleMapsEmbedUrl(mapUrl?: string, address?: string, dormName?: string) {
   if (mapUrl) {
@@ -442,13 +443,13 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                 </div>
               </div>
 
-              {/* Amenities */}
+              {/* Room items (commit 26): the dorm's list for this room type (lib/room-items.ts) — same list as the inspection */}
               <div className="space-y-3 pt-2">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">สิ่งอำนวยความสะดวกในห้องพัก</h3>
+                <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">ของในห้อง ({roomTypeLabel(room.room_type)})</h3>
                 <div className="flex flex-wrap gap-2">
-                  {['เครื่องปรับอากาศ', 'เครื่องทำน้ำอุ่น', 'เตียงนอน & ฟูก', 'โต๊ะเขียนหนังสือ', 'ตู้เสื้อผ้า', 'ระเบียงส่วนตัว', 'Free Wi-Fi'].map((amenity, i) => (
-                    <span key={i} className="px-3.5 py-1.5 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl border border-border/60">
-                      ✓ {amenity}
+                  {itemsForRoomType(room.room_type).map((it) => (
+                    <span key={it.name} className="px-3.5 py-1.5 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl border border-border/60">
+                      ✓ {it.name}
                     </span>
                   ))}
                 </div>

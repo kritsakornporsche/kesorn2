@@ -17,7 +17,7 @@ export interface InspectionSheetData {
   party: ContractParty | null;
   inspection: {
     inspected_at: string; inspected_by_name: string | null; note: string | null; tenant_ack_at: string | null;
-    items: { id: number; item_name: string; condition_status: Condition; note: string | null; photo_url: string | null }[];
+    items: { id: number; item_name: string; condition_status: Condition; quantity?: number | null; note: string | null; photo_url: string | null }[];
   } | null;
 }
 
@@ -55,6 +55,7 @@ export default function InspectionSheetView({ data }: { data: InspectionSheetDat
               <tr className="bg-slate-100">
                 <th className="border border-slate-300 px-2 py-1.5 w-10">ลำดับ</th>
                 <th className="border border-slate-300 px-2 py-1.5 text-left">รายการทรัพย์สิน / อุปกรณ์</th>
+                <th className="border border-slate-300 px-2 py-1.5 w-14">จำนวน</th>
                 <th className="border border-slate-300 px-2 py-1.5 w-20">สภาพ</th>
                 <th className="border border-slate-300 px-2 py-1.5 text-left">หมายเหตุ</th>
                 <th className="border border-slate-300 px-2 py-1.5 w-28">รูปถ่าย</th>
@@ -65,6 +66,7 @@ export default function InspectionSheetView({ data }: { data: InspectionSheetDat
                 <tr key={it.id} style={{ breakInside: 'avoid' }}>
                   <td className="border border-slate-300 px-2 py-1.5 text-center">{i + 1}</td>
                   <td className="border border-slate-300 px-2 py-1.5">{it.item_name}</td>
+                  <td className="border border-slate-300 px-2 py-1.5 text-center">{it.quantity ?? '-'}</td>
                   <td className={`border border-slate-300 px-2 py-1.5 text-center font-bold ${it.condition_status === 'Good' ? 'text-emerald-700' : 'text-red-700'}`}>
                     {CONDITION_TEXT[it.condition_status] || '-'}
                   </td>

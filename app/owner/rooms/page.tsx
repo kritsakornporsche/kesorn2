@@ -8,6 +8,7 @@ import { formatBaht } from '@/lib/format';
 import { statusText } from '@/lib/status-text';
 import { badRoomNumber, isNegative, NEGATIVE_TEXT } from '@/lib/room-fields';
 import { ROOM_TYPES, roomTypeLabel } from '@/lib/room-types';
+import { itemsForRoomType } from '@/lib/room-items';
 
 interface Room {
   id: number;
@@ -531,6 +532,16 @@ export default function RoomsManagement() {
                         🧹 ส่วนกลาง {billingRates ? `฿${formatBaht(billingRates.commonFee)}` : '-'}
                       </span>
                    </div>
+
+                   {/* Room items (commit 26): lib/room-items.ts by room type — the starting list of the room inspections */}
+                   <details className="mb-6 text-xs">
+                      <summary className="cursor-pointer font-bold text-muted-foreground">ของในห้อง ({itemsForRoomType(room.room_type).length} รายการ)</summary>
+                      <ul className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-foreground">
+                        {itemsForRoomType(room.room_type).map((it) => (
+                          <li key={it.name}>• {it.name}{it.countable ? ' (นับจำนวน)' : ''}</li>
+                        ))}
+                      </ul>
+                   </details>
 
                    {canEdit && (<div className="mt-auto flex items-center gap-3 pt-6 border-t border-[#F3EFE9]">
                       <button 

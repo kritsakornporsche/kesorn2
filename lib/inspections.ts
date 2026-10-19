@@ -1,6 +1,7 @@
 // Room inspection before move-in: the owner/manager records the condition of each item in the room (with a photo),
-// the tenant acknowledges it. Items start from the room's room_inventory (read only) or a default list, and more can
-// be added. The inspection can be edited until the tenant acknowledges it, then it is locked. It does not hold up
+// the tenant acknowledges it. Items start from the dorm's room item list by room type (lib/room-items.ts, commit 26),
+// and more can be added; countable items (keys, remote) carry a quantity, compared at move-out. Each inspection keeps
+// its own copy of names and quantities. The inspection can be edited until the tenant acknowledges it, then it is locked. It does not hold up
 // the contract taking effect (lib/moveIn.ts is unchanged). Every function takes `now` from the app; MySQL NOW() is
 // never used for these times. The same inspection is done at move-out (kind 'move_out', commit 12): possible while
 // the move-out is open and before the deposit is settled, compared with the move-in result, acknowledged the same way.
@@ -9,6 +10,7 @@ import { getDb } from '@/lib/db';
 import { type Client } from '@/lib/bill-status';
 import { withRetry } from '@/lib/bookings';
 import { PHOTOS_TOTAL_MAX_BYTES, deletePhoto, isPhotoName, parsePhotoUpload, photoUrl, savePhoto } from '@/lib/inspection-files';
+import { QUANTITY_MAX, isCountableName, itemsForRoomType } from '@/lib/room-items';
 
 /** Booking fee paid up to the contract in effect */
 export const INSPECTABLE = ['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active'];
@@ -22,11 +24,8 @@ export const MAX_ITEMS = 30;
 const NAME_MAX = 255;
 const NOTE_MAX = 1000;
 
-/** Used when the room has no room_inventory rows (or the table is not there) */
-export const DEFAULT_ITEMS = [
-  'เตียง', 'ที่นอน', 'ตู้เสื้อผ้า', 'โต๊ะ', 'เก้าอี้', 'เครื่องปรับอากาศ', 'พัดลม',
-  'กุญแจห้อง', 'คีย์การ์ด', 'ผ้าม่าน', 'หลอดไฟ', 'ห้องน้ำ/สุขภัณฑ์',
-];
+/** A starting item of an inspection: countable items need a quantity (null = not counted yet / not a counted item) */
+export interface StartItem { name: string; note: string | null; countable: boolean; quantity: number | null }
 
 export type InspectionStatus = 'none' | 'pending_ack' | 'acknowledged';
 export const STATUS_TEXT: Record<InspectionStatus, string> = {
@@ -123,6 +122,8 @@ export interface InspectionItemInput {
   photo?: unknown;
   /** file name of a photo already saved on this inspection, to keep it */
   keepPhoto?: unknown;
+  /** count of a countable item (required for the list's countable items, e.g. กุญแจห้อง / รีโมทแอร์) */
+  quantity?: unknown;
 }
 
 export interface InspectionInput {
@@ -131,7 +132,7 @@ export interface InspectionInput {
 }
 
 type CleanItem = {
-  name: string; condition: Condition; note: string | null;
+  name: string; condition: Condition; note: string | null; quantity: number | null;
   upload: { bytes: Buffer; ext: string } | null; keepPhoto: string | null;
   /** set once the new photo is written */
   photoFile?: string;
@@ -154,6 +155,14 @@ function cleanItems(raw: unknown): CleanItem[] {
     if (!condition) refuse('bad_items', `${itemLabel(index, name)}: กรุณาเลือกสภาพ (ปกติ / ชำรุด / สูญหาย)`, index);
     const note = typeof item.note === 'string' && item.note.trim() ? item.note.trim() : null;
     if (note && note.length > NOTE_MAX) refuse('bad_items', `${itemLabel(index, name)}: หมายเหตุยาวเกิน ${NOTE_MAX} ตัวอักษร`, index);
+    // commit 26: countable items carry a whole number 0..QUANTITY_MAX (required for the list's countable items)
+    const rawQty = item.quantity;
+    const hasQty = rawQty !== undefined && rawQty !== null && rawQty !== '';
+    const quantity = hasQty ? Number(rawQty) : null;
+    if (hasQty && !(Number.isInteger(quantity) && quantity! >= 0 && quantity! <= QUANTITY_MAX)) {
+      refuse('bad_items', `${itemLabel(index, name)}: จำนวนต้องเป็นจำนวนเต็ม 0–${QUANTITY_MAX}`, index);
+    }
+    if (!hasQty && isCountableName(name)) refuse('bad_items', `${itemLabel(index, name)}: กรุณาระบุจำนวน`, index);
 
     let upload: CleanItem['upload'] = null;
     if (item.photo !== undefined && item.photo !== null && item.photo !== '') {
@@ -163,7 +172,7 @@ function cleanItems(raw: unknown): CleanItem[] {
       upload = parsed;
     }
     const keepPhoto = !upload && isPhotoName(item.keepPhoto) ? item.keepPhoto : null;
-    return { name, condition, note, upload, keepPhoto };
+    return { name, condition, note, quantity, upload, keepPhoto };
   });
   if (total > PHOTOS_TOTAL_MAX_BYTES) refuse('too_large');
   return items;
@@ -216,6 +225,22 @@ export async function saveInspection(
       )).rows[0];
       if (existing?.tenant_ack_at) refuse('locked');
 
+      // commit 26: at move-out a counted item with fewer than at move-in cannot be "ปกติ" — it is marked missing /
+      // damaged so it goes to the damage charges (move-out page "ดึงจากผลตรวจห้อง")
+      if (kind === 'move_out') {
+        const before = (await client.query(
+          `SELECT it.item_name, it.quantity FROM contract_inspection_items it JOIN contract_inspections i ON i.id = it.inspection_id
+           WHERE i.contract_id = ? AND i.kind = 'move_in' AND it.quantity IS NOT NULL`,
+          [contractId]
+        )).rows as { item_name: string; quantity: number }[];
+        items.forEach((item, index) => {
+          const b = before.find((r) => r.item_name.trim().toLowerCase() === item.name.toLowerCase());
+          if (b && item.quantity !== null && item.quantity < Number(b.quantity) && item.condition === 'Good') {
+            refuse('bad_items', `${itemLabel(index, item.name)}: จำนวน ${item.quantity} น้อยกว่าตอนเข้าอยู่ (${b.quantity}) — กรุณาเลือก "สูญหาย" หรือ "ชำรุด"`, index);
+          }
+        });
+      }
+
       let inspectionId: number;
       let previous: string[] = [];
       if (existing) {
@@ -243,8 +268,8 @@ export async function saveInspection(
         const photo = item.photoFile || (item.keepPhoto && previous.includes(item.keepPhoto) ? item.keepPhoto : null);
         if (photo && !item.photoFile) kept.add(photo);
         await client.query(
-          'INSERT INTO contract_inspection_items (inspection_id, item_name, condition_status, note, photo_file) VALUES (?, ?, ?, ?, ?)',
-          [inspectionId, item.name, item.condition, item.note, photo]
+          'INSERT INTO contract_inspection_items (inspection_id, item_name, condition_status, quantity, note, photo_file) VALUES (?, ?, ?, ?, ?, ?)',
+          [inspectionId, item.name, item.condition, item.quantity, item.note, photo]
         );
       }
       unused = previous.filter((p) => !kept.has(p));
@@ -297,32 +322,28 @@ export interface InspectionView {
   inspected_by_name: string | null;
   note: string | null;
   tenant_ack_at: string | null;
-  items: { id: number; item_name: string; condition_status: Condition; note: string | null; photo_file: string | null; photo_url: string | null }[];
+  items: { id: number; item_name: string; condition_status: Condition; quantity: number | null; note: string | null; photo_file: string | null; photo_url: string | null }[];
 }
 
-/** Starting items for a move-out inspection: the move-in items (same names and notes), else as for move-in. */
-export async function defaultItemsFor(contractId: number, roomId: number, kind: InspectionKind) {
+/**
+ * Starting items for a move-out inspection: the move-in items (same names, counted items counted again), else as for
+ * move-in. The quantity starts empty so it is counted, not copied.
+ */
+export async function defaultItemsFor(contractId: number, roomId: number, kind: InspectionKind): Promise<StartItem[]> {
   if (kind === 'move_out') {
     const moveIn = await getInspection(contractId, 'move_in');
-    if (moveIn && moveIn.items.length > 0) return moveIn.items.map((it) => ({ name: it.item_name, note: null as string | null }));
+    if (moveIn && moveIn.items.length > 0) {
+      return moveIn.items.map((it) => ({ name: it.item_name, note: null, countable: it.quantity !== null || isCountableName(it.item_name), quantity: null }));
+    }
   }
   return defaultItems(roomId);
 }
 
-/** Starting items for a new inspection: the room's room_inventory, or the default list. */
-export async function defaultItems(roomId: number): Promise<{ name: string; note: string | null }[]> {
-  try {
-    const sql = getDb();
-    const rows = await sql`SELECT item_name, notes FROM room_inventory WHERE room_id = ${roomId} ORDER BY id`;
-    const items = (rows as any[])
-      .filter((r) => typeof r.item_name === 'string' && r.item_name.trim())
-      .slice(0, MAX_ITEMS)
-      .map((r) => ({ name: r.item_name.trim().slice(0, NAME_MAX), note: r.notes ? String(r.notes).slice(0, NOTE_MAX) : null }));
-    if (items.length > 0) return items;
-  } catch {
-    // room_inventory is created outside the migrations; without it the default list is used
-  }
-  return DEFAULT_ITEMS.map((name) => ({ name, note: null }));
+/** Starting items for a new inspection: the dorm's item list for the room's type (lib/room-items.ts). */
+export async function defaultItems(roomId: number): Promise<StartItem[]> {
+  const sql = getDb();
+  const rows = await sql`SELECT room_type FROM rooms WHERE id = ${roomId} LIMIT 1`;
+  return itemsForRoomType(rows[0]?.room_type).map((it) => ({ name: it.name, note: null, countable: it.countable, quantity: null }));
 }
 
 /** The move-in inspection of a contract, with photo links; null when not inspected yet. */
@@ -359,7 +380,7 @@ export async function getInspection(contractId: number, kindInput: InspectionKin
   const { user_name, user_email, user_role, landlord_name, ...row } = found;
   row.inspected_by_name = inspectorName({ name: user_name, email: user_email, role: user_role }, landlord_name);
   const items = await sql`
-    SELECT id, item_name, condition_status, note, photo_file FROM contract_inspection_items
+    SELECT id, item_name, condition_status, quantity, note, photo_file FROM contract_inspection_items
     WHERE inspection_id = ${row.id} ORDER BY id
   `;
   const status = statusOf(row);
