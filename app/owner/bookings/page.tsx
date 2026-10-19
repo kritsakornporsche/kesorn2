@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { InspectionButton, type InspectionStatus } from '@/components/InspectionModal';
-import IdCardOcr from '@/components/IdCardOcr';
 
 interface Booking {
   contract_id: number;
@@ -76,7 +75,7 @@ export default function OwnerBookingsPage() {
   // Move-in bill (with the starting meter) and the signed paper contract are two separate steps
   const [issueBooking, setIssueBooking] = useState<Booking | null>(null);
   const [initialMeterReading, setInitialMeterReading] = useState<string>('');
-  // Tenant name / address for the contract: what the booker typed, checked against the ID card (typed or read by OCR)
+  // Tenant name / address for the contract: what the booker typed, checked against the ID card by hand
   const [issueName, setIssueName] = useState('');
   const [issueAddress, setIssueAddress] = useState('');
   const [paperBooking, setPaperBooking] = useState<Booking | null>(null);
@@ -818,16 +817,9 @@ export default function OwnerBookingsPage() {
                 </div>
               )}
 
-              {/* Tenant on the contract: check against the ID card; OCR (same component as walk-in) fills name / address only */}
+              {/* Tenant on the contract: typed / checked against the ID card by hand (no OCR, commit 24c) */}
               <div className="p-4 bg-slate-950 rounded-2xl border border-white/10 space-y-3">
                 <p className="text-xs font-black text-white">ข้อมูลผู้เช่าในสัญญา (ตรวจกับบัตรประชาชน)</p>
-                <IdCardOcr
-                  key={issueBooking.contract_id}
-                  onRead={({ name, address }) => {
-                    if (name) setIssueName(name);
-                    if (address) setIssueAddress(address);
-                  }}
-                />
                 <label className="block space-y-1">
                   <span className="text-[11px] font-bold text-slate-300">ชื่อ-นามสกุล</span>
                   <input

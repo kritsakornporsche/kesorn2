@@ -534,6 +534,10 @@ export default function OwnerSettings() {
                     <p className="text-xs text-muted-foreground mt-0.5">
                       เจ้าของหอพักสามารถระบุ Google Gemini API Key ส่วนตัว เพื่อใช้อ่านมิเตอร์ด้วย AI ความแม่นยำสูง
                     </p>
+                    {/* commit 24c: ID card OCR removed — the key is for meter photos only */}
+                    <p className="text-xs font-bold text-cyan-300 mt-1">
+                      ใช้สำหรับอ่านค่ามิเตอร์เท่านั้น (ภาพหน้าปัดมิเตอร์ไม่มีข้อมูลส่วนบุคคล)
+                    </p>
                   </div>
                 </div>
 

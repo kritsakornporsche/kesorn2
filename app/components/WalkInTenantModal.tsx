@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
-import IdCardOcr from '@/components/IdCardOcr';
 
 interface WalkInModalProps {
   isOpen: boolean;
@@ -22,7 +21,7 @@ interface Room {
 }
 
 export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkInModalProps) {
-  const [step, setStep] = useState(1); // 1: Info & OCR, 2: Payment & SlipOK, 3: Completed
+  const [step, setStep] = useState(1); // 1: Info, 2: Payment & SlipOK, 3: Completed
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loadingRooms, setLoadingRooms] = useState(false);
 
@@ -37,9 +36,6 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
   const [endDate, setEndDate] = useState(
     new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10)
   );
-
-  // ID card OCR (components/IdCardOcr): a new key gives a fresh form
-  const [ocrKey, setOcrKey] = useState(0);
 
   // Payment / QR & Slip State
   const [qrData, setQrData] = useState<{ qrImage: string; amount: number; promptpayNumber: string; promptpayName: string } | null>(null);
@@ -70,7 +66,6 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
     setEmail('');
     setPhone('');
     setParentPhone('');
-    setOcrKey((k) => k + 1); // new OCR form: messages cleared, camera stopped
     setSlipData(null);
     setSubmitResult(null);
   };
@@ -231,7 +226,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
             <span className="text-2xl">🚶</span>
             <div>
               <h2 className="text-lg font-black text-white">เพิ่มผู้เช่าแบบ Walk-in (เคาน์เตอร์หอพัก)</h2>
-              <p className="text-xs text-slate-400">สร้างบัญชีผู้เช่า สแกนบัตรปชช. และตรวจสลิปค่าจองอัตโนมัติ</p>
+              <p className="text-xs text-slate-400">สร้างบัญชีผู้เช่า กรอกชื่อ-ที่อยู่ตามบัตรประชาชน และตรวจสลิปค่าจองอัตโนมัติ</p>
             </div>
           </div>
           <button
@@ -246,7 +241,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
         <div className="shrink-0 grid grid-cols-3 bg-slate-950/40 border-b border-white/5 px-6 py-3 text-xs font-bold">
           <div className={`flex items-center gap-2 ${step === 1 ? 'text-primary' : 'text-slate-500'}`}>
             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${step === 1 ? 'bg-primary text-white' : 'bg-white/10'}`}>1</span>
-            <span>1. เตรียมข้อมูล & สแกนบัตร</span>
+            <span>1. ข้อมูลผู้เช่า</span>
           </div>
           <div className={`flex items-center gap-2 ${step === 2 ? 'text-primary' : 'text-slate-500'}`}>
             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${step === 2 ? 'bg-primary text-white' : 'bg-white/10'}`}>2</span>
@@ -261,7 +256,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
         {/* Content Body (the only part that scrolls) */}
         <div className="flex-1 min-h-0 overflow-y-auto p-6 sm:p-8 space-y-6">
 
-          {/* STEP 1: Info & OCR */}
+          {/* STEP 1: Info (name / address typed from the ID card — no OCR, commit 24c) */}
           {step === 1 && (
             <div className="space-y-6 animate-in fade-in">
               
@@ -321,15 +316,6 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                   </div>
                 )}
               </div>
-
-              {/* ID Card AI OCR (components/IdCardOcr) — fills name / address only */}
-              <IdCardOcr
-                key={ocrKey}
-                onRead={({ name, address }) => {
-                  if (name) setTenantName(name);
-                  if (address) setTenantAddress(address);
-                }}
-              />
 
               {/* Form Input Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

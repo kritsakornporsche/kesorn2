@@ -6,7 +6,6 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import PremiumDatePicker from '@/app/components/PremiumDatePicker';
-import { PdpaOcrConsentModal } from '@/app/components/PdpaOcrConsentModal';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { contractDepositLabel, statusText } from '@/lib/status-text';
 
@@ -73,12 +72,6 @@ export default function OwnerContractsPage() {
   const [signedFileError, setSignedFileError] = useState<string | null>(null);
   const [signedDate, setSignedDate] = useState('');
   const [isUploadingSigned, setIsUploadingSigned] = useState(false);
-
-  // ID Card OCR state
-  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
-  const [ocrSuccessMsg, setOcrSuccessMsg] = useState<string | null>(null);
-  const [isPdpaModalOpen, setIsPdpaModalOpen] = useState(false);
-  const [pendingOcrData, setPendingOcrData] = useState<{ base64: string; fileName: string } | null>(null);
 
   // New Contract Form State
   const [formData, setFormData] = useState({
@@ -148,75 +141,6 @@ export default function OwnerContractsPage() {
     }
   }, [authStatus, session, router]);
 
-  const processOcrImage = async (base64Data: string, fileName: string) => {
-    setIsOcrProcessing(true);
-    setOcrSuccessMsg(null);
-    try {
-      const res = await fetch('/api/owner/contracts/ocr-id', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64Data })
-      });
-      const ocrJson = await res.json();
-
-      if (ocrJson.success && ocrJson.data) {
-        const d = ocrJson.data;
-        setFormData(prev => ({
-          ...prev,
-          tenant_name: d.full_name_th || prev.tenant_name,
-          tenant_address: d.address || prev.tenant_address,
-          tenant_email: prev.tenant_email || '',
-          tenant_phone: prev.tenant_phone || '',
-        }));
-        setOcrSuccessMsg(`✓ อ่านชื่อและที่อยู่จากบัตรสำเร็จ: ${d.full_name_th} (ระบบไม่เก็บเลขบัตรประชาชนและรูปบัตร)`);
-      } else {
-        alert(ocrJson.message || 'ไม่สามารถอ่านข้อมูลบัตรได้ กรุณากรอกด้วยตนเอง');
-      }
-    } catch (err) {
-      console.error('OCR Error:', err);
-      alert('เกิดข้อผิดพลาดในการอ่านบัตรประชาชน');
-    } finally {
-      setIsOcrProcessing(false);
-    }
-  };
-
-  // ID Card Image Upload & OCR
-  const handleIdCardUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setOcrSuccessMsg(null);
-
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const base64Data = reader.result as string;
-      setPendingOcrData({ base64: base64Data, fileName: file.name });
-      setIsPdpaModalOpen(true);
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  };
-
-  // Smart Demo ID Card Quick Scan
-  const handleDemoIdCard = () => {
-    setIsOcrProcessing(true);
-    setOcrSuccessMsg(null);
-    setTimeout(() => {
-      const firstRoom = rooms[0];
-      setFormData(prev => ({
-        ...prev,
-        tenant_name: 'นายสมชาย ใจดี',
-        tenant_email: 'tenant@kesorn.com',
-        tenant_phone: '089-123-4567',
-        tenant_address: '99/50 หมู่ 3 ซอยงามวงศ์วาน 54 แขวงลาดยาว เขตจตุจักร กรุงเทพมหานคร 10900',
-      }));
-      // Room and deposit come from the same path as choosing a room (deposit from the server)
-      if (firstRoom) handleCreateRoomChange(firstRoom.id.toString());
-      setIsOcrProcessing(false);
-      setOcrSuccessMsg('✓ อ่านข้อมูลบัตรประชาชนตัวอย่างสำเร็จ (นายสมชาย ใจดี)');
-    }, 400);
-  };
-
   // File Upload Handlers for Contract File
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, isRenewal = false) => {
     const file = e.target.files?.[0];
@@ -284,7 +208,6 @@ export default function OwnerContractsPage() {
           contract_file_url: '',
           contract_file_name: '',
         });
-        setOcrSuccessMsg(null);
         if (ownerDormId) fetchData(ownerDormId);
       } else {
         alert(data.message || 'เกิดข้อผิดพลาดในการบันทึกสัญญา');
@@ -877,7 +800,7 @@ export default function OwnerContractsPage() {
           </div>
         )}
 
-        {/* Modal 1: Create Contract with Thai ID OCR */}
+        {/* Modal 1: Create Contract (name / address typed from the ID card — no OCR, commit 24c) */}
         {isCreateModalOpen && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-6 overflow-y-auto">
             <div className="bg-card rounded-[36px] w-full max-w-2xl border border-border shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
@@ -885,7 +808,7 @@ export default function OwnerContractsPage() {
                 <div>
                   <h2 className="text-2xl font-black text-foreground">📝 บันทึกสัญญาเช่าห้องพักใหม่</h2>
                   <p className="text-xs text-muted-foreground font-medium mt-1">
-                    ถ่ายรูปบัตรประชาชนเพื่ออ่านข้อมูลอัตโนมัติ หรือกรอกข้อมูลด้วยตนเอง
+                    กรอกชื่อและที่อยู่ตามบัตรประชาชนด้วยตนเอง (ระบบไม่เก็บเลขบัตรและรูปบัตร)
                   </p>
                 </div>
                 <button 
@@ -897,59 +820,6 @@ export default function OwnerContractsPage() {
               </div>
 
               <div className="overflow-y-auto p-8 custom-scrollbar space-y-6">
-
-                {/* ID Card Smart OCR Banner */}
-                <div className="p-6 bg-gradient-to-br from-blue-950/40 to-indigo-950/40 rounded-3xl border border-blue-500/30 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-3xl">🪪</span>
-                      <div>
-                        <h4 className="text-sm font-bold text-white">
-                          สแกนอ่านข้อมูลจากบัตรประชาชน (Smart ID Card OCR)
-                        </h4>
-                        <p className="text-xs text-white/60">
-                          ถ่ายรูปหรือแนบไฟล์รูปบัตรประชาชน ระบบจะกรอกชื่อและที่อยู่อัตโนมัติ (ไม่เก็บเลขบัตรและรูปบัตร)
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className="flex-1 min-w-[200px] px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      {isOcrProcessing ? 'กำลังอ่านบัตรด้วย AI...' : '📸 ถ่ายรูป / อัปโหลดบัตรประชาชน'}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleIdCardUpload}
-                        disabled={isOcrProcessing}
-                        className="hidden"
-                      />
-                    </label>
-
-                    {process.env.NODE_ENV === 'development' && (
-                    <button
-                      type="button"
-                      onClick={handleDemoIdCard}
-                      disabled={isOcrProcessing}
-                      className="px-4 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold border border-white/20 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
-                    >
-                      <span>⚡</span>
-                      <span>บัตรตัวอย่าง (Quick Test)</span>
-                    </button>
-                    )}
-                  </div>
-
-                  {ocrSuccessMsg && (
-                    <div className="p-3 bg-emerald-500/15 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 font-bold flex items-center gap-2 animate-in fade-in">
-                      <span>✓</span>
-                      <span>{ocrSuccessMsg}</span>
-                    </div>
-                  )}
-                </div>
 
                 <form onSubmit={handleCreateSubmit} className="space-y-6">
                   {/* Select Room */}
@@ -1407,24 +1277,6 @@ export default function OwnerContractsPage() {
             </div>
           </div>
         )}
-
-        {/* PDPA OCR Consent Modal */}
-        <PdpaOcrConsentModal
-          isOpen={isPdpaModalOpen}
-          title="ยินยอมให้ประมวลผลภาพบัตรประชาชนเพื่ออ่านชื่อและที่อยู่ (PDPA)"
-          actionText="ยินยอมและอ่านข้อมูลบัตรด้วย AI"
-          onClose={() => {
-            setIsPdpaModalOpen(false);
-            setPendingOcrData(null);
-          }}
-          onConsent={() => {
-            setIsPdpaModalOpen(false);
-            if (pendingOcrData) {
-              processOcrImage(pendingOcrData.base64, pendingOcrData.fileName);
-              setPendingOcrData(null);
-            }
-          }}
-        />
 
       </div>
     </div>

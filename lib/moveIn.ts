@@ -89,7 +89,7 @@ export interface IssueMoveInInput {
   startMeter: unknown;
   by: number | null;
   /**
-   * Tenant name / address for the contract, checked against the ID card (typed, or read by components/IdCardOcr).
+   * Tenant name / address for the contract, checked against the ID card (typed by hand; no OCR since commit 24c).
    * Empty = keep what the booker typed. PDPA: no ID number or card photo is ever taken here.
    */
   tenantName?: unknown;
