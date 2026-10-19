@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { InspectionButton, type InspectionStatus } from '@/components/InspectionModal';
+import IdCardOcr from '@/components/IdCardOcr';
 
 interface Booking {
   contract_id: number;
@@ -75,6 +76,9 @@ export default function OwnerBookingsPage() {
   // Move-in bill (with the starting meter) and the signed paper contract are two separate steps
   const [issueBooking, setIssueBooking] = useState<Booking | null>(null);
   const [initialMeterReading, setInitialMeterReading] = useState<string>('');
+  // Tenant name / address for the contract: what the booker typed, checked against the ID card (typed or read by OCR)
+  const [issueName, setIssueName] = useState('');
+  const [issueAddress, setIssueAddress] = useState('');
   const [paperBooking, setPaperBooking] = useState<Booking | null>(null);
   const [paperFile, setPaperFile] = useState<string | null>(null);
   const [paperError, setPaperError] = useState<string | null>(null);
@@ -124,7 +128,7 @@ export default function OwnerBookingsPage() {
       const res = await fetch('/api/owner/contracts', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contract_id: issueBooking.contract_id, initial_meter_reading: initialMeterReading }),
+        body: JSON.stringify({ contract_id: issueBooking.contract_id, initial_meter_reading: initialMeterReading, tenant_name: issueName, tenant_address: issueAddress }),
       });
       const data = await res.json();
       if (data.success) {
@@ -610,7 +614,7 @@ export default function OwnerBookingsPage() {
 
                     {is81 && item.can_issue_move_in && (
                       <button
-                        onClick={() => { setIssueBooking(item); setInitialMeterReading(''); }}
+                        onClick={() => { setIssueBooking(item); setInitialMeterReading(''); setIssueName(item.guest_name && item.guest_name !== 'ไม่ระบุชื่อ' ? item.guest_name : ''); setIssueAddress(item.tenant_address || ''); }}
                         className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs rounded-xl shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
                       >
                         <span>🧾</span>
@@ -813,6 +817,41 @@ export default function OwnerBookingsPage() {
                   )}
                 </div>
               )}
+
+              {/* Tenant on the contract: check against the ID card; OCR (same component as walk-in) fills name / address only */}
+              <div className="p-4 bg-slate-950 rounded-2xl border border-white/10 space-y-3">
+                <p className="text-xs font-black text-white">ข้อมูลผู้เช่าในสัญญา (ตรวจกับบัตรประชาชน)</p>
+                <IdCardOcr
+                  key={issueBooking.contract_id}
+                  onRead={({ name, address }) => {
+                    if (name) setIssueName(name);
+                    if (address) setIssueAddress(address);
+                  }}
+                />
+                <label className="block space-y-1">
+                  <span className="text-[11px] font-bold text-slate-300">ชื่อ-นามสกุล</span>
+                  <input
+                    type="text"
+                    maxLength={255}
+                    value={issueName}
+                    onChange={(e) => setIssueName(e.target.value)}
+                    placeholder="นาย/นางสาว..."
+                    className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-white focus:outline-none focus:border-primary"
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-[11px] font-bold text-slate-300">ที่อยู่ตามบัตรประชาชน</span>
+                  <textarea
+                    rows={2}
+                    maxLength={500}
+                    value={issueAddress}
+                    onChange={(e) => setIssueAddress(e.target.value)}
+                    placeholder="บ้านเลขที่ หมู่ ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
+                    className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-primary"
+                  />
+                </label>
+                <p className="text-[10px] text-slate-400">ชื่อและที่อยู่นี้จะขึ้นในสัญญา (PDF / Word) · ระบบไม่เก็บเลขบัตรประชาชนและรูปบัตร</p>
+              </div>
 
               {/* Initial Meter Reading Input */}
               <div className="p-4 bg-slate-950 rounded-2xl border border-amber-500/20 space-y-2">

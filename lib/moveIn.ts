@@ -18,7 +18,7 @@ const BOOKING_PAID = ['PendingOwnerSignature', 'PendingContract'];
 const WAITING = [...BOOKING_PAID, 'PendingFirstBill'];
 
 export type MoveInRefusal = 'not_found' | 'not_paid_booking' | 'already_issued' | 'start_passed' | 'over_cap'
-  | 'meter_required' | 'legacy' | 'invalid_status' | 'signed_date' | 'paper_locked' | 'bad_file';
+  | 'meter_required' | 'legacy' | 'invalid_status' | 'signed_date' | 'paper_locked' | 'bad_file' | 'bad_identity';
 export type Missing = 'move_in_bill' | 'paper';
 
 export type MoveInResult<T> = ({ ok: true } & T) | { ok: false; reason: MoveInRefusal; message: string };
@@ -42,7 +42,11 @@ const MESSAGES: Record<MoveInRefusal, string> = {
   signed_date: 'กรุณาระบุวันที่เซ็นสัญญา (ไม่เกินวันนี้)',
   paper_locked: 'สัญญานี้มีผลแล้วและมีไฟล์สัญญาที่เซ็นแล้ว แก้ไขไม่ได้',
   bad_file: 'ไฟล์สัญญาไม่ถูกต้อง',
+  bad_identity: 'ชื่อ-นามสกุลต้องไม่เกิน 255 ตัวอักษร และที่อยู่ต้องไม่เกิน 500 ตัวอักษร',
 };
+
+const NAME_MAX = 255;
+const ADDRESS_MAX = 500;
 
 const MISSING_TEXT: Record<Missing, string> = {
   move_in_bill: 'ยังไม่ได้ชำระบิลเข้าอยู่',
@@ -84,6 +88,12 @@ export interface IssueMoveInInput {
   /** Electricity meter when the room is handed over (required) */
   startMeter: unknown;
   by: number | null;
+  /**
+   * Tenant name / address for the contract, checked against the ID card (typed, or read by components/IdCardOcr).
+   * Empty = keep what the booker typed. PDPA: no ID number or card photo is ever taken here.
+   */
+  tenantName?: unknown;
+  tenantAddress?: unknown;
 }
 
 /**
@@ -105,6 +115,16 @@ export function issueMoveInBill(contractId: number, input: IssueMoveInInput, now
     const amounts = moveInAmounts({ room_number: c.room_number, price: c.room_price, deposit_amount: c.room_deposit });
     const cap = capCheck(amounts.rent, amounts.deposit);
     if (!cap.ok) refuse('over_cap', cap.message);
+
+    // Name / address on the contract (printed by /contract-print and the Word file from tenants.name / contracts.tenant_address)
+    const name = typeof input.tenantName === 'string' ? input.tenantName.trim() : '';
+    const address = typeof input.tenantAddress === 'string' ? input.tenantAddress.trim() : '';
+    if (name.length > NAME_MAX || address.length > ADDRESS_MAX) refuse('bad_identity');
+    if (name) await client.query('UPDATE tenants SET name = ? WHERE id = ?', [name, c.tenant_id]);
+    if (address) {
+      await client.query('UPDATE tenants SET address = ? WHERE id = ?', [address, c.tenant_id]);
+      await client.query('UPDATE contracts SET tenant_address = ? WHERE id = ?', [address, contractId]);
+    }
 
     const dueDate = bangkokDate(c.start_date);
     const billId = Number((await client.query(

@@ -270,7 +270,13 @@ export async function PUT(req: Request) {
       return NextResponse.json({ success: false, message: 'Missing contract_id' }, { status: 400 });
     }
 
-    const result = await issueMoveInBill(contractId, { startMeter: body.initial_meter_reading, by: guard.user.id }, new Date());
+    // Only the name and address are taken (never an ID number or a card photo, whatever the page sends)
+    const result = await issueMoveInBill(contractId, {
+      startMeter: body.initial_meter_reading,
+      by: guard.user.id,
+      tenantName: body.tenant_name,
+      tenantAddress: body.tenant_address,
+    }, new Date());
     if (!result.ok) {
       return NextResponse.json({ success: false, message: result.message }, { status: result.reason === 'not_found' ? 404 : 400 });
     }
