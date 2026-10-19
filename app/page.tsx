@@ -8,6 +8,7 @@ import { useSession } from 'next-auth/react';
 import Navbar from './components/Navbar';
 import ChatWidget from '@/app/components/ChatWidget';
 import { useRates } from '@/lib/use-rates';
+import { mapDirectUrl, mapEmbedUrl } from '@/lib/maps';
 import { isAirconType, roomTypeLabel } from '@/lib/room-types';
 
 interface Room {
@@ -39,43 +40,10 @@ interface DormInfo {
   electricity_rate: number;
   facilities: string;
   map_url: string;
+  /** commit 27b: embed URL from the server (lib/maps) */
+  map_embed_url?: string;
   min_price: number;
   available_rooms_count: number;
-}
-
-function getGoogleMapsEmbedUrl(mapUrl?: string, address?: string, dormName?: string) {
-  if (mapUrl) {
-    const trimmed = mapUrl.trim();
-    if (trimmed.includes('/embed')) {
-      return trimmed;
-    }
-    const coordMatch = trimmed.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
-    if (coordMatch) {
-      const lat = coordMatch[1];
-      const lng = coordMatch[2];
-      return `https://maps.google.com/maps?q=${lat},${lng}&t=&z=16&ie=UTF8&iwloc=&output=embed`;
-    }
-    try {
-      const url = new URL(trimmed);
-      const q = url.searchParams.get('q') || url.searchParams.get('query');
-      if (q) {
-        return `https://maps.google.com/maps?q=${encodeURIComponent(q)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
-      }
-    } catch (e) {}
-    if (trimmed.startsWith('http')) {
-      return `https://maps.google.com/maps?q=${encodeURIComponent(trimmed)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
-    }
-  }
-  const query = [dormName, address, 'พะเยา'].filter(Boolean).join(' ');
-  return `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
-}
-
-function getGoogleMapsDirectUrl(mapUrl?: string, address?: string, dormName?: string) {
-  if (mapUrl && !mapUrl.includes('/embed') && mapUrl.startsWith('http')) {
-    return mapUrl;
-  }
-  const query = [dormName, address, 'พะเยา'].filter(Boolean).join(' ');
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
 const DORM_GALLERY = [
@@ -549,7 +517,7 @@ export default function Home() {
                 <span>ขอเส้นทางนำทาง ↗</span>
               </a>
               <a
-                href={getGoogleMapsDirectUrl(dormInfo?.map_url, dormInfo?.address, dormName)}
+                href={mapDirectUrl(dormInfo?.map_url, dormInfo?.address, dormName)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-4 py-2.5 bg-secondary hover:bg-secondary/80 text-foreground text-xs font-bold rounded-xl border border-border flex items-center gap-1.5 transition-all"
@@ -563,7 +531,7 @@ export default function Home() {
           <div className="w-full h-72 sm:h-96 rounded-2xl overflow-hidden border border-border shadow-inner relative bg-muted/40">
             <iframe
               title={`แผนที่ ${dormName}`}
-              src={getGoogleMapsEmbedUrl(dormInfo?.map_url, dormInfo?.address, dormName)}
+              src={dormInfo?.map_embed_url || mapEmbedUrl(dormInfo?.map_url, dormInfo?.address, dormName)}
               className="w-full h-full border-0"
               loading="lazy"
               allowFullScreen

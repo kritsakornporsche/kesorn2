@@ -9,6 +9,7 @@ import PremiumDatePicker from '@/app/components/PremiumDatePicker';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { contractDepositLabel, statusText } from '@/lib/status-text';
 import TestRoomBadge from '@/components/TestRoomBadge';
+import { testRoomSuffix, testRoomsLast } from '@/lib/test-rooms';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 
 interface Contract {
@@ -114,7 +115,8 @@ export default function OwnerContractsPage() {
       const moveOutJson = await moveOutRes.json();
 
       if (contractsJson.success) setContracts(contractsJson.data);
-      if (roomsJson.success) setRooms(roomsJson.data.filter((r: Room) => r.status === 'Available'));
+      // commit 27b: test rooms (T01) last, marked "(ทดสอบ)"
+      if (roomsJson.success) setRooms(testRoomsLast(roomsJson.data.filter((r: Room) => r.status === 'Available'), (r: Room) => r.room_number));
       if (moveOutJson.success) setMoveOutRequests(moveOutJson.data || []);
     } catch (err) {
       console.error('Fetch error:', err);
@@ -839,7 +841,7 @@ export default function OwnerContractsPage() {
                       <option value="" className="bg-card">-- เลือกห้องพัก --</option>
                       {rooms.map(r => (
                         <option key={r.id} value={r.id} className="bg-card">
-                          ห้อง {r.room_number} (ราคา ฿{r.price.toLocaleString()}/เดือน)
+                          ห้อง {r.room_number}{testRoomSuffix(r.room_number)} (ราคา ฿{r.price.toLocaleString()}/เดือน)
                         </option>
                       ))}
                     </select>

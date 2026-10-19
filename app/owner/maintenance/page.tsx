@@ -8,6 +8,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { statusText } from '@/lib/status-text';
+import { testRoomSuffix, testRoomsLast } from '@/lib/test-rooms';
 import {
   CHARGE_REASON_TEXT, KIND_TEXT, PhotoPicker, kindAndTopic, PhotoStrip, StateBadge, baht, postJson, thaiDateTime,
   type ChargeReason, type Job, type Kind,
@@ -56,7 +57,7 @@ function Board() {
       setJobs(d.data);
       setKeepers(d.keepers);
       setLegacyCleaning(d.legacyCleaning || []);
-      setRooms(d.rooms || []);
+      setRooms(testRoomsLast(d.rooms || [], (r: any) => r.room_number)); // test rooms last (commit 27b)
     } catch {
       setLoadError('โหลดบอร์ดงานไม่สำเร็จ');
     } finally {
@@ -144,7 +145,7 @@ function CreateForm({ rooms, initialKind, onDone }: { rooms: { id: number; room_
         </select>
         <select value={roomId} onChange={(e) => setRoomId(e.target.value)} className={inputClass}>
           <option value="">— เลือกห้อง —</option>
-          {rooms.map((r) => <option key={r.id} value={r.id}>ห้อง {r.room_number}</option>)}
+          {rooms.map((r) => <option key={r.id} value={r.id}>ห้อง {r.room_number}{testRoomSuffix(r.room_number)}</option>)}
         </select>
         <input value={issueType} onChange={(e) => setIssueType(e.target.value)} placeholder="หัวข้อ เช่น ไฟฟ้า / ประปา" className={`${inputClass} w-48`} />
       </div>

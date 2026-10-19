@@ -8,6 +8,7 @@ import Image from 'next/image';
 import { useRates } from '@/lib/use-rates';
 import { ratesForRoom } from '@/lib/billing';
 import TestRoomBadge from '@/components/TestRoomBadge';
+import { testRoomSuffix, testRoomsLast } from '@/lib/test-rooms';
 
 interface RoomRecord {
   id: number;
@@ -93,7 +94,7 @@ export default function MeterRecordMobileFlowPage() {
           }));
         // Rooms not recorded yet first
         formatted.sort((a, b) => Number(a.recorded) - Number(b.recorded));
-        setRooms(formatted);
+        setRooms(testRoomsLast(formatted, (r: any) => r.room_number)); // test rooms last (commit 27b)
         setCurrentIndex(0);
       }
     } catch (e) {
@@ -474,7 +475,7 @@ export default function MeterRecordMobileFlowPage() {
               >
                 {rooms.map((r, idx) => (
                   <option key={r.id} value={idx}>
-                    ห้อง {r.room_number} {r.recorded ? '✅ (จดแล้ว)' : '⏳ (ยังไม่จด)'}
+                    ห้อง {r.room_number}{testRoomSuffix(r.room_number)} {r.recorded ? '✅ (จดแล้ว)' : '⏳ (ยังไม่จด)'}
                   </option>
                 ))}
               </select>

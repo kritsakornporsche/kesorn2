@@ -61,6 +61,14 @@ export function testRoomAccountSql(a: string): string {
                       AND UPPER(tr.room_number) IN ${SQL_LIST}))`;
 }
 
+/** Room pickers of owner / manager (commit 27b): the same list with test rooms moved to the end (order kept otherwise). */
+export function testRoomsLast<T>(list: T[], roomNumberOf: (item: T) => string | null | undefined): T[] {
+  return [...list.filter((x) => !isTestRoom(roomNumberOf(x))), ...list.filter((x) => isTestRoom(roomNumberOf(x)))];
+}
+
+/** Text after a room number in a <select> option, where a badge cannot be drawn: " (ทดสอบ)" for a test room. */
+export const testRoomSuffix = (roomNumber: string | null | undefined) => (isTestRoom(roomNumber) ? ` (${TEST_ROOM_BADGE})` : '');
+
 /** Badge texts */
 export const TEST_ROOM_BADGE = 'ทดสอบ';
 export const TEST_ROOM_PAGE_BADGE = 'ห้องทดสอบระบบ';

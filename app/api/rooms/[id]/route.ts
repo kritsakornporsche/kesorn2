@@ -5,6 +5,7 @@ import { expireDueBookings } from '@/lib/bookings';
 import { expireDueMoveIns } from '@/lib/moveIn';
 import { capCheck, depositFor, ratesForRoom, type Rates } from '@/lib/billing';
 import { isTestRoom } from '@/lib/test-rooms';
+import { mapEmbedUrl, resolveMapUrl } from '@/lib/maps';
 import { badRoomNumber } from '@/lib/room-fields';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -70,6 +71,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // A test room (T01) opens from a direct link (commit 26c); is_test_room drives the "ห้องทดสอบระบบ" badge.
     // Its demo prices come from lib/billing (the one place) instead of being written in this query.
     room.is_test_room = isTestRoom(room.room_number);
+    // commit 27b: embed URL from the server (a short map link is resolved to its coordinates — lib/maps)
+    room.dorm_map_embed_url = mapEmbedUrl(await resolveMapUrl(room.dorm_map_url), room.dorm_address, room.dorm_name);
     const rates = ratesForRoom({ electricityPerUnit: Number(room.electricity_rate), waterPerPerson: Number(room.water_rate), commonFee: Number(room.common_fee) } as Rates, room.room_number);
     room.electricity_rate = rates.electricityPerUnit;
     room.water_rate = rates.waterPerPerson;

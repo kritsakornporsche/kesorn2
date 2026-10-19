@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
+import { testRoomsLast } from '@/lib/test-rooms';
+import TestRoomBadge from '@/components/TestRoomBadge';
 
 interface WalkInModalProps {
   isOpen: boolean;
@@ -85,7 +87,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
           const disp = (r.display_status || '').toLowerCase();
           return st === 'available' || st === 'ว่าง' || disp === 'available' || st === 'movingout' || disp === 'movingout';
         });
-        setRooms(available);
+        setRooms(testRoomsLast(available, (r: any) => r.room_number)); // test rooms last (commit 27b)
         if (available.length > 0) {
           setSelectedRoomId(String(available[0].id));
         }
@@ -301,7 +303,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                           }`}
                         >
                           <div className="flex items-center justify-between mb-1">
-                            <span className="font-black text-sm text-white">ห้อง {r.room_number}</span>
+                            <span className="font-black text-sm text-white">ห้อง {r.room_number}<TestRoomBadge roomNumber={r.room_number} /></span>
                             <span className={`w-2 h-2 rounded-full ${isMovingOut ? 'bg-amber-400' : 'bg-emerald-400'}`} />
                           </div>
                           <div className="text-[11px] text-slate-400 flex items-center justify-between">

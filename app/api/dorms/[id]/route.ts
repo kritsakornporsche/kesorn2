@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { DEFAULT_RATES } from '@/lib/billing';
 import { getDb } from '@/lib/db';
 import { TEST_ROOM_NUMBERS, testRoomsHidden } from '@/lib/test-rooms';
+import { mapEmbedUrl, resolveMapUrl } from '@/lib/maps';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -49,6 +50,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         electricity_rate: dorm.electricity_rate !== null && dorm.electricity_rate !== undefined ? Number(dorm.electricity_rate) : DEFAULT_RATES.electricityPerUnit,
         facilities: dorm.facilities || '',
         map_url: dorm.map_url || '',
+        // commit 27b: embed URL from the server (a short map link is resolved to its coordinates — lib/maps)
+        map_embed_url: mapEmbedUrl(await resolveMapUrl(dorm.map_url), dorm.address, dorm.name),
         min_price: Number(dorm.min_price),
         available_rooms_count: Number(dorm.available_rooms_count),
       }

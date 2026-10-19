@@ -15,41 +15,7 @@ import { roomTypeLabel } from '@/lib/room-types';
 import { itemsForRoomType } from '@/lib/room-items';
 import { TEST_ROOM_PAGE_BADGE, isTestRoom } from '@/lib/test-rooms';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
-
-function getGoogleMapsEmbedUrl(mapUrl?: string, address?: string, dormName?: string) {
-  if (mapUrl) {
-    const trimmed = mapUrl.trim();
-    if (trimmed.includes('/embed')) {
-      return trimmed;
-    }
-    const coordMatch = trimmed.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
-    if (coordMatch) {
-      const lat = coordMatch[1];
-      const lng = coordMatch[2];
-      return `https://maps.google.com/maps?q=${lat},${lng}&t=&z=16&ie=UTF8&iwloc=&output=embed`;
-    }
-    try {
-      const url = new URL(trimmed);
-      const q = url.searchParams.get('q') || url.searchParams.get('query');
-      if (q) {
-        return `https://maps.google.com/maps?q=${encodeURIComponent(q)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
-      }
-    } catch (e) {}
-    if (trimmed.startsWith('http')) {
-      return `https://maps.google.com/maps?q=${encodeURIComponent(trimmed)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
-    }
-  }
-  const query = [dormName, address, 'พะเยา'].filter(Boolean).join(' ');
-  return `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
-}
-
-function getGoogleMapsDirectUrl(mapUrl?: string, address?: string, dormName?: string) {
-  if (mapUrl && !mapUrl.includes('/embed') && mapUrl.startsWith('http')) {
-    return mapUrl;
-  }
-  const query = [dormName, address, 'พะเยา'].filter(Boolean).join(' ');
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
-}
+import { mapDirectUrl, mapEmbedUrl } from '@/lib/maps';
 
 export default function RoomBookingPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -626,7 +592,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     <span>📍</span> พิกัดตำแหน่งหอพัก
                   </span>
                   <a
-                    href={getGoogleMapsDirectUrl(room.dorm_map_url, room.dorm_address, room.dorm_name)}
+                    href={mapDirectUrl(room.dorm_map_url, room.dorm_address, room.dorm_name)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-[11px] font-bold text-primary hover:underline"
@@ -637,7 +603,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                 <div className="w-full h-48 rounded-2xl overflow-hidden border border-border shadow-inner relative bg-muted/40">
                   <iframe
                     title={`แผนที่ ${room.dorm_name}`}
-                    src={getGoogleMapsEmbedUrl(room.dorm_map_url, room.dorm_address, room.dorm_name)}
+                    src={room.dorm_map_embed_url || mapEmbedUrl(room.dorm_map_url, room.dorm_address, room.dorm_name)}
                     className="w-full h-full border-0"
                     loading="lazy"
                     allowFullScreen
