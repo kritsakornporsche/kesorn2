@@ -90,8 +90,10 @@ mysql.exe -u root -p --default-character-set=utf8mb4 kesorn_new < C:\path\app\db
 | 018 | #2 | `dormitory_profile.landlord_name`, `landlord_phone` (ชื่อ/โทรผู้ให้เช่าในสัญญา) | `SHOW COLUMNS FROM dormitory_profile LIKE 'landlord%';` → 2 แถว |
 | 019 | #3 | `contract_inspection_items.quantity` INT NULL (จำนวนของที่นับได้ เช่น กุญแจห้อง / รีโมทแอร์ ในผลตรวจห้อง) | `SHOW COLUMNS FROM contract_inspection_items LIKE 'quantity';` → 1 แถว `int(11)` `YES` |
 
-**ห้องทดสอบ T01 (มีอยู่ในไฟล์ฐานที่ import):** โค้ดใน PR #3 ซ่อน T01 จากหน้าสาธารณะเองเมื่อรันแบบ production — ไม่อยู่ในรายการห้อง/ราคาเริ่มต้น · หน้าห้องตอบ 404 · จองไม่ได้ · ราคาเดโม (ค่าจอง 1 บาท ฯลฯ) ปิด · หน้า owner/manager ยังเห็น T01
-เพื่อนเลือกได้ว่าจะตั้ง T01 เป็น **Maintenance** ในหน้า owner (จัดการห้องพัก → แก้ไขข้อมูล → สถานะ "ปิดปรับปรุง") หรือไม่ · **ไม่แนะนำให้ลบ** เพราะมีงานแจ้งซ่อมและการแจ้งเตือนผูกอยู่ · ไม่ต้องแก้ฐานข้อมูลด้วย SQL
+**ห้องทดสอบ T01 (id 21 — มีอยู่ในไฟล์ฐานที่ import):** T01 (id 21) = ห้องทดสอบ ซ่อนจากหน้าสาธารณะ ไม่นับในรายงาน เข้าได้ด้วยลิงก์ตรง `/explore/room/21`
+- หน้าห้องมีป้าย "ห้องทดสอบระบบ" · จองได้ตามปกติ (เจ้าของหออนุมัติ) · ใช้ราคาเดโม (ค่าจอง 1 บาท ฯลฯ) ไว้ทดสอบรับเงินจริง
+- ตัวเลขของเจ้าของหอ (รายงาน / dashboard / ยอดสรุปบัญชี) ไม่นับ T01 · รายการของ T01 ในบัญชี / บิล / สัญญา / หน้าห้อง ยังแสดง พร้อมป้าย "ทดสอบ"
+- **ไม่ต้องตั้ง Maintenance · ห้ามลบ · ห้ามแก้ฐานข้อมูล**
 
 ย้อนกลับ (ถ้าต้อง): รัน `019_…down.sql` แล้ว `018_…down.sql` (ลำดับกลับกัน) · ไม่มีคอลัมน์ 018/019 แล้ว merge → หน้าตั้งค่า/สัญญา และหน้าตรวจห้อง error
 
@@ -104,6 +106,7 @@ mysql.exe -u root -p --default-character-set=utf8mb4 kesorn_new < C:\path\app\db
    - `DATABASE_URL` = `mysql://<user>:<pass>@localhost:3306/kesorn_new`
    - `AUTH_SECRET` = มีค่า (บังคับ — ไม่มีค่าสำรองในโค้ด)
    - `CRON_SECRET` = ค่าใหม่
+   - `SLIPOK_API_KEY` และ `SLIPOK_ENDPOINT` = **คีย์ใหม่ที่สร้างเองที่ SlipOK** (บังคับ — โค้ดไม่มีค่าสำรองแล้ว · ไม่ตั้ง = ระบบตรวจสลิปตอบ "ยังไม่ได้ตั้งค่า SlipOK" และไม่รับสลิป) · คีย์เก่ายังอยู่ในประวัติ git → ห้ามใช้ต่อ ให้ยกเลิก (revoke) ที่ SlipOK
    - **อย่ารีสตาร์ทแอปตรงนี้** — แอปที่รันอยู่ยังเป็นโค้ดเดิมกับ env เดิมจนกว่าจะ deploy
 4. **merge PR #1 → #2 → #3 ตามลำดับ** (`completeness` → `completeness-2` → `completeness-3` เข้า `main`) แบบ merge commit ธรรมดา (ไม่ squash/rebase — เก็บประวัติไว้ใช้ revert) → ระบบ deploy อัตโนมัติ build + รีสตาร์ทด้วยโค้ดใหม่ + env ใหม่ · ต้องรัน 018 + 019 (ข้อ 4.5) ก่อน merge #2 / #3
 5. รอ deploy เสร็จ · ดู log ตอนเริ่ม (เช่น `pm2 logs`) ต้องไม่มี `AUTH_SECRET is not set` / `DATABASE_URL is not set`

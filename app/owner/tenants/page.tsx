@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 
 import WalkInTenantModal from '@/app/components/WalkInTenantModal';
 import { statusText } from '@/lib/status-text';
+import TestRoomBadge from '@/components/TestRoomBadge';
 
 interface Tenant {
   id: number;
@@ -165,7 +166,7 @@ export default function TenantsManagement() {
                 {filteredTenants.map((tenant) => (
                   <tr key={tenant.id} className="hover:bg-white/5 transition-colors">
                     <td className="px-6 py-4 font-black text-primary text-base font-mono">
-                      ห้อง {tenant.room_number || '-'}
+                      ห้อง {tenant.room_number || '-'}<TestRoomBadge roomNumber={tenant.room_number} />
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">

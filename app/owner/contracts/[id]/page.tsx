@@ -9,6 +9,7 @@ import Image from 'next/image';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { contractDepositLabel, statusText } from '@/lib/status-text';
 import { InspectionButton } from '@/components/InspectionModal';
+import TestRoomBadge from '@/components/TestRoomBadge';
 
 interface ContractDetail {
   id: number;
@@ -263,7 +264,7 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider block">ห้องพัก</span>
-                <span className="text-2xl font-black text-amber-300">ห้อง {contract.room_number}</span>
+                <span className="text-2xl font-black text-amber-300">ห้อง {contract.room_number}<TestRoomBadge roomNumber={contract.room_number} /></span>
               </div>
               <div>
                 <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider block">ระยะเวลา</span>

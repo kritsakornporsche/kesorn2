@@ -15,6 +15,7 @@ import { bangkokDate, daysPastDue, getRates, lateFeeRateOf } from '@/lib/billing
 import { formatBaht } from '@/lib/format';
 import { cycleFor } from '@/lib/meters';
 import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
+import { notTestRoomSql } from '@/lib/test-rooms';
 
 export const METER_REMINDER_DAY = 28;
 export const DUE_SOON_DAYS = 3;
@@ -62,14 +63,15 @@ async function toStaff(sql: any, key: string, n: Notice, now: Date) {
 export async function meterReminder(sql: any, now: Date) {
   if (Number(bangkokDate(now).slice(8, 10)) < METER_REMINDER_DAY) return 0;
   const cycle = cycleFor(now);
-  const rows = await sql`
+  // Test rooms (T01) are not counted (commit 26c) — their meters can still be recorded and billed as usual
+  const rows = await sql(`
     SELECT COUNT(DISTINCT r.id) AS n FROM rooms r
     JOIN contracts c ON c.room_id = r.id AND c.status = 'Active'
-    WHERE NOT EXISTS (
+    WHERE ${notTestRoomSql('r.room_number')} AND NOT EXISTS (
       SELECT 1 FROM meter_readings m
-      WHERE m.room_id = r.id AND m.kind = 'cycle' AND m.type IN ('Electricity', 'Electric') AND m.billing_cycle = ${cycle}
+      WHERE m.room_id = r.id AND m.kind = 'cycle' AND m.type IN ('Electricity', 'Electric') AND m.billing_cycle = ?
     )
-  `;
+  `, [cycle]);
   const missing = Number(rows[0]?.n || 0);
   if (missing === 0) return 0;
   return toStaff(sql, `meter:${cycle}`, {

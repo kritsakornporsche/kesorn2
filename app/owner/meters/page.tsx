@@ -6,6 +6,8 @@ import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { useRates } from '@/lib/use-rates';
 import { statusText } from '@/lib/status-text';
+import { isTestRoom } from '@/lib/test-rooms';
+import TestRoomBadge from '@/components/TestRoomBadge';
 
 interface RoomMeterSummary {
   room_id: number;
@@ -112,8 +114,9 @@ export default function MetersOverviewPage() {
     return filteredRooms.slice(startIndex, startIndex + pageSize);
   }, [filteredRooms, currentPage, pageSize]);
 
-  const occupiedCount = rooms.filter((r) => r.room_status === 'Occupied').length;
-  const availableCount = rooms.filter((r) => r.room_status === 'Available' || r.room_status === 'ว่าง').length;
+  // commit 26c: room counts leave test rooms (T01) out; its card stays (badge "ทดสอบ") so it can still be read
+  const occupiedCount = rooms.filter((r) => r.room_status === 'Occupied' && !isTestRoom(r.room_number)).length;
+  const availableCount = rooms.filter((r) => (r.room_status === 'Available' || r.room_status === 'ว่าง') && !isTestRoom(r.room_number)).length;
   const recordedCount = rooms.filter((r) => r.latest_reading !== null).length;
   const needCount = rooms.filter((r) => r.needs_reading).length;
   const cycleRecorded = rooms.filter((r) => r.needs_reading && r.cycle_reading).length;
@@ -308,7 +311,7 @@ export default function MetersOverviewPage() {
                 {paginatedRooms.map((room) => (
                   <tr key={room.room_id} className="hover:bg-white/5 transition-colors">
                     <td className="px-6 py-4 font-black text-white text-base font-mono">
-                      ห้อง {room.room_number}
+                      ห้อง {room.room_number}<TestRoomBadge roomNumber={room.room_number} />
                     </td>
 
                     <td className="px-6 py-4">

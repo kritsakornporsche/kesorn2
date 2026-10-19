@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
+import TestRoomBadge from '@/components/TestRoomBadge';
 
 interface Transaction {
   id: number;
@@ -12,6 +13,8 @@ interface Transaction {
   transaction_date: string;
   legacy?: boolean;
   category_label?: string;
+  /** commit 26c: row of a test room (T01) — shown, badge "ทดสอบ", not in the totals */
+  is_test_room?: boolean;
 }
 
 interface MonthlySummary {
@@ -101,6 +104,9 @@ export default function OwnerAccounting() {
       <div className="flex-1 overflow-y-auto p-10">
         <div className="max-w-6xl mx-auto space-y-8">
 
+          {transactions.some((t) => t.is_test_room) && (
+            <p className="text-xs text-amber-500 font-bold">ยอดสรุปด้านล่างไม่รวมรายการของห้องทดสอบ (ป้าย &quot;ทดสอบ&quot;)</p>
+          )}
           {/* KPI Row */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
             <div className="bg-card border border-white/20/10 shadow-sm rounded-2xl p-6">
@@ -162,7 +168,7 @@ export default function OwnerAccounting() {
                         )}
                       </td>
                       <td className="px-6 py-4 text-white/80">{t.category_label || t.category}</td>
-                      <td className="px-6 py-4 text-white">{t.description || '-'}</td>
+                      <td className="px-6 py-4 text-white">{t.description || '-'}{t.is_test_room && <TestRoomBadge force />}</td>
                       {(() => {
                         // Income adds, expense subtracts; a reversal has a negative amount.
                         // Liability rows change the deposit held (received +, refunded/forfeited −), not profit.

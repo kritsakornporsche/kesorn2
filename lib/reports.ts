@@ -10,6 +10,7 @@ import { bangkokDate } from '@/lib/billing';
 import { unpaidBillsToday, type UnpaidBill } from '@/lib/payments';
 import { withTransaction } from '@/lib/bill-status';
 import { depositBase } from '@/lib/moveOut';
+import { notTestRoomSql, testRoomAccountSql } from '@/lib/test-rooms';
 import { INCOME_GROUPS, INCOME_GROUP_LABELS, INCOME_SPLIT_NOTE, TODAY_NOTE, UNPAID_NOTE, legacyDepositNote, type IncomeGroup } from '@/lib/report-text';
 
 export { INCOME_GROUPS, INCOME_GROUP_LABELS, INCOME_SPLIT_NOTE, TODAY_NOTE, UNPAID_NOTE, type IncomeGroup };
@@ -139,14 +140,15 @@ export interface OwnerReport {
 }
 
 async function incomeSplit(sql: any, first: string, last: string) {
-  const rows = await sql`
+  // commit 26c: money of test rooms (T01) is not part of the owner's figures
+  const rows = await sql(`
     SELECT a.id, a.category, a.amount, a.reference_type, a.reference_id,
            CASE WHEN a.reference_type IN ('bill_payment', 'bill_payment_reversal') THEN p.bill_id
                 WHEN a.reference_type IN ('bill', 'bill_reversal') THEN a.reference_id END AS bill_id
     FROM accounting_transactions a
     LEFT JOIN bill_payments p ON a.reference_type IN ('bill_payment', 'bill_payment_reversal') AND p.id = a.reference_id
-    WHERE a.dorm_id = ${DORM_ID} AND a.type = 'Income' AND a.transaction_date BETWEEN ${first} AND ${last}
-  `;
+    WHERE a.dorm_id = ? AND a.type = 'Income' AND a.transaction_date BETWEEN ? AND ? AND NOT ${testRoomAccountSql('a')}
+  `, [DORM_ID, first, last]);
   const billIds = [...new Set((rows as any[]).map((r) => Number(r.bill_id)).filter((id) => id > 0))];
   const bills = new Map<number, BillForSplit>();
   if (billIds.length > 0) {
@@ -190,7 +192,9 @@ async function incomeSplit(sql: any, first: string, last: string) {
  * along the renewal chain, not outside the system) and their contract deposit. Read only; never added to the accounts.
  */
 export async function legacyDeposits(sql: any): Promise<{ count: number; amount: number }> {
-  const active = await sql`SELECT id, deposit_amount FROM contracts WHERE status = 'Active' ORDER BY id`;
+  // test rooms (T01) left out (commit 26c)
+  const active = await sql(`SELECT c.id, c.deposit_amount FROM contracts c LEFT JOIN rooms r ON r.id = c.room_id
+    WHERE c.status = 'Active' AND ${notTestRoomSql('r.room_number')} ORDER BY c.id`, []);
   if (active.length === 0) return { count: 0, amount: 0 };
   return withTransaction(async (client) => {
     let count = 0;
@@ -208,13 +212,14 @@ export async function legacyDeposits(sql: any): Promise<{ count: number; amount:
 export async function ownerReport(month: string, role: 'owner' | 'manager', now: Date): Promise<OwnerReport> {
   const sql = getDb();
 
-  const [{ total }] = await sql`SELECT COUNT(*) AS total FROM rooms`;
-  const [{ occupied }] = await sql`SELECT COUNT(*) AS occupied FROM rooms WHERE status = 'Occupied'`;
+  // commit 26c: test rooms (T01) are not counted — the dorm has its 20 real rooms
+  const [{ total }] = await sql(`SELECT COUNT(*) AS total FROM rooms WHERE ${notTestRoomSql('room_number')}`, []);
+  const [{ occupied }] = await sql(`SELECT COUNT(*) AS occupied FROM rooms WHERE status = 'Occupied' AND ${notTestRoomSql('room_number')}`, []);
   const totalRooms = Number(total || 0);
   const occupiedRooms = Number(occupied || 0);
 
   // Same formula as the dashboard (lib/payments unpaidBillsToday): amount + late fee to today − payments, never below 0
-  const unpaid = await unpaidBillsToday(sql, now);
+  const unpaid = await unpaidBillsToday(sql, now, { excludeTestRooms: true });
 
   const report: OwnerReport = {
     month,
@@ -228,22 +233,23 @@ export async function ownerReport(month: string, role: 'owner' | 'manager', now:
 
   const [first, last] = monthRange(month);
   const split = await incomeSplit(sql, first, last);
-  const expenseRows = await sql`
-    SELECT category, SUM(amount) AS amount FROM accounting_transactions
-    WHERE dorm_id = ${DORM_ID} AND type = 'Expense' AND transaction_date BETWEEN ${first} AND ${last}
-    GROUP BY category ORDER BY SUM(amount) DESC
-  `;
+  const expenseRows = await sql(`
+    SELECT a.category, SUM(a.amount) AS amount FROM accounting_transactions a
+    WHERE a.dorm_id = ? AND a.type = 'Expense' AND a.transaction_date BETWEEN ? AND ? AND NOT ${testRoomAccountSql('a')}
+    GROUP BY a.category ORDER BY SUM(a.amount) DESC
+  `, [DORM_ID, first, last]);
   const months = lastMonths(month);
   const [seriesFirst] = monthRange(months[0]);
-  const seriesRows = await sql`
-    SELECT DATE_FORMAT(transaction_date, '%Y-%m') AS month,
-           SUM(CASE WHEN type = 'Income' THEN amount ELSE 0 END) AS income,
-           SUM(CASE WHEN type = 'Expense' THEN amount ELSE 0 END) AS expense
-    FROM accounting_transactions
-    WHERE dorm_id = ${DORM_ID} AND transaction_date BETWEEN ${seriesFirst} AND ${last}
-    GROUP BY DATE_FORMAT(transaction_date, '%Y-%m')
-  `;
-  const [held] = await sql`SELECT COALESCE(SUM(amount), 0) AS held FROM accounting_transactions WHERE dorm_id = ${DORM_ID} AND type = 'Liability'`;
+  const seriesRows = await sql(`
+    SELECT DATE_FORMAT(a.transaction_date, '%Y-%m') AS month,
+           SUM(CASE WHEN a.type = 'Income' THEN a.amount ELSE 0 END) AS income,
+           SUM(CASE WHEN a.type = 'Expense' THEN a.amount ELSE 0 END) AS expense
+    FROM accounting_transactions a
+    WHERE a.dorm_id = ? AND a.transaction_date BETWEEN ? AND ? AND NOT ${testRoomAccountSql('a')}
+    GROUP BY DATE_FORMAT(a.transaction_date, '%Y-%m')
+  `, [DORM_ID, seriesFirst, last]);
+  const [held] = await sql(`SELECT COALESCE(SUM(a.amount), 0) AS held FROM accounting_transactions a
+    WHERE a.dorm_id = ? AND a.type = 'Liability' AND NOT ${testRoomAccountSql('a')}`, [DORM_ID]);
 
   const incomeTotal = INCOME_GROUPS.reduce((s, g) => s + split[g], 0);
   const expense = (expenseRows as any[]).map((r) => ({ category: String(r.category), label: EXPENSE_LABELS[r.category] || String(r.category), amount: baht(toSatang(r.amount)) }));

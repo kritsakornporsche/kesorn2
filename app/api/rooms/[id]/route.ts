@@ -4,7 +4,7 @@ import { auth } from '@/auth';
 import { expireDueBookings } from '@/lib/bookings';
 import { expireDueMoveIns } from '@/lib/moveIn';
 import { capCheck, depositFor, ratesForRoom, type Rates } from '@/lib/billing';
-import { isHiddenTestRoom } from '@/lib/test-rooms';
+import { isTestRoom } from '@/lib/test-rooms';
 import { badRoomNumber } from '@/lib/room-fields';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -67,14 +67,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const room = result[0];
-    // commit 26c: in production a test room (T01) is not found for the public (owner / manager still see it)
-    if (isHiddenTestRoom(room.room_number)) {
-      const role = String(((await auth().catch(() => null))?.user as any)?.role || '');
-      if (role !== 'owner' && role !== 'manager') {
-        return NextResponse.json({ success: false, message: 'Room not found' }, { status: 404 });
-      }
-    }
-    // Demo prices of a test room come from lib/billing (off in production) instead of being written in this query
+    // A test room (T01) opens from a direct link (commit 26c); is_test_room drives the "ห้องทดสอบระบบ" badge.
+    // Its demo prices come from lib/billing (the one place) instead of being written in this query.
+    room.is_test_room = isTestRoom(room.room_number);
     const rates = ratesForRoom({ electricityPerUnit: Number(room.electricity_rate), waterPerPerson: Number(room.water_rate), commonFee: Number(room.common_fee) } as Rates, room.room_number);
     room.electricity_rate = rates.electricityPerUnit;
     room.water_rate = rates.waterPerPerson;

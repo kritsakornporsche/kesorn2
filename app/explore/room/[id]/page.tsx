@@ -13,6 +13,7 @@ import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
 import { BOOKING_REQUEST_NOTE } from '@/lib/booking-text';
 import { roomTypeLabel } from '@/lib/room-types';
 import { itemsForRoomType } from '@/lib/room-items';
+import { TEST_ROOM_PAGE_BADGE, isTestRoom } from '@/lib/test-rooms';
 
 function getGoogleMapsEmbedUrl(mapUrl?: string, address?: string, dormName?: string) {
   if (mapUrl) {
@@ -413,6 +414,12 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b border-border">
                 <div>
                   <h1 className="text-3xl font-black tracking-tight">ห้อง {room.room_number}</h1>
+                  {isTestRoom(room.room_number) && (
+                    // commit 26c: T01 opens from a direct link only — say clearly it is the system test room
+                    <p className="inline-block mt-2 px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/50 text-amber-500 text-sm font-black">
+                      🧪 {TEST_ROOM_PAGE_BADGE} — ห้องนี้ใช้ทดสอบการจองและชำระเงินเท่านั้น
+                    </p>
+                  )}
                   <p className="text-sm text-muted-foreground font-medium mt-1">
                     {room.dorm_name || 'SmartDom Dormitory'} • ชั้น {room.floor || 1}
                   </p>

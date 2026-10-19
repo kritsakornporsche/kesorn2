@@ -12,7 +12,8 @@ const LABELS: Record<string, string> = { standard: 'ห้องพัดลม'
 export function roomTypeLabel(type: string | null | undefined, fallback = 'ห้องพัก'): string {
   const t = String(type ?? '').trim();
   if (!t) return fallback;
-  return LABELS[t.toLowerCase()] ?? t;
+  // a note in brackets after the type (e.g. "Standard (Test Room)" of T01) does not change the type
+  return LABELS[t.toLowerCase()] ?? LABELS[t.toLowerCase().replace(/\s*\(.*\)\s*$/, '')] ?? t;
 }
 
 /** Air-conditioned room: Deluxe, or a type that already says air / แอร์. */

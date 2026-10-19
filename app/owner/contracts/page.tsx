@@ -8,6 +8,7 @@ import Image from 'next/image';
 import PremiumDatePicker from '@/app/components/PremiumDatePicker';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { contractDepositLabel, statusText } from '@/lib/status-text';
+import TestRoomBadge from '@/components/TestRoomBadge';
 
 interface Contract {
   id: number;
@@ -617,6 +618,7 @@ export default function OwnerContractsPage() {
                             <div className="w-10 h-10 bg-primary/20 text-primary font-black rounded-xl flex items-center justify-center text-sm border border-primary/30">
                               {c.room_number}
                             </div>
+                            <TestRoomBadge roomNumber={c.room_number} />
                             <div>
                               <p className="font-black text-foreground">{c.tenant_name}</p>
                               <p className="text-xs text-muted-foreground">{c.tenant_phone || c.tenant_email || '-'}</p>

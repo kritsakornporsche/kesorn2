@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
+import { testRoomAccountSql } from '@/lib/test-rooms';
 
 export async function GET(req: Request) {
   try {
@@ -16,47 +17,51 @@ export async function GET(req: Request) {
     const dormId = parseInt(searchParams.get('dormId') || (session.user as any)?.dormId || '1', 10);
     const sql = getDb();
     
-    // The list shows the latest 100 rows; totals below are summed over every row
-    const rows = await sql`
-      SELECT * FROM accounting_transactions
-      WHERE dorm_id = ${dormId}
-      ORDER BY transaction_date DESC, created_at DESC
+    // The list shows the latest 100 rows; totals below are summed over every row.
+    // Commit 26c: rows of a test room (T01) stay in the list (real money is never hidden) with is_test_room → "ทดสอบ"
+    // badge, and are left out of the totals.
+    const isTest = testRoomAccountSql('a');
+    const rows = await sql(`
+      SELECT a.*, ${isTest} AS is_test_room FROM accounting_transactions a
+      WHERE a.dorm_id = ?
+      ORDER BY a.transaction_date DESC, a.created_at DESC
       LIMIT 100
-    `;
+    `, [dormId]);
     // Before deposits were recorded as a liability, they were booked as Income/Deposit and refunds as Expense
     const transactions = rows.map((t: any) => ({
       ...t,
+      is_test_room: Boolean(Number(t.is_test_room)),
       legacy: (t.type === 'Income' && t.category === 'Deposit') || (t.type === 'Expense' && t.category === 'Deposit Refund'),
       category_label: t.category === 'deposit_reclass' ? 'ปรับปรุงเงินประกันแบบเดิม' : t.category,
     }));
 
     // Monthly summary
-    const monthlySummary = await sql`
-      SELECT 
-        YEAR(transaction_date) as year,
-        MONTH(transaction_date) as month,
-        SUM(CASE WHEN type = 'Income' THEN amount ELSE 0 END) as income,
-        SUM(CASE WHEN type = 'Income' AND category = 'deposit_reclass' THEN amount ELSE 0 END) as deposit_reclass,
-        SUM(CASE WHEN type = 'Expense' THEN amount ELSE 0 END) as expense
-      FROM accounting_transactions
-      WHERE dorm_id = ${dormId}
-      GROUP BY YEAR(transaction_date), MONTH(transaction_date)
+    const monthlySummary = await sql(`
+      SELECT
+        YEAR(a.transaction_date) as year,
+        MONTH(a.transaction_date) as month,
+        SUM(CASE WHEN a.type = 'Income' THEN a.amount ELSE 0 END) as income,
+        SUM(CASE WHEN a.type = 'Income' AND a.category = 'deposit_reclass' THEN a.amount ELSE 0 END) as deposit_reclass,
+        SUM(CASE WHEN a.type = 'Expense' THEN a.amount ELSE 0 END) as expense
+      FROM accounting_transactions a
+      WHERE a.dorm_id = ? AND NOT ${isTest}
+      GROUP BY YEAR(a.transaction_date), MONTH(a.transaction_date)
       ORDER BY year DESC, month DESC
       LIMIT 12
-    `;
+    `, [dormId]);
 
     // Income and profit never include deposits (Liability); deposits held = sum of Liability rows only.
     // deposit_reclass rows are included in income: an old deposit once booked as Income is taken back out (negative) when
     // it is moved to Liability at move-out (lib/moveOut.ts), so after the refund it adds nothing to income. Shown as its own line.
-    const [sums] = await sql`
+    const [sums] = await sql(`
       SELECT
-        COALESCE(SUM(CASE WHEN type = 'Income' THEN amount ELSE 0 END), 0) as income,
-        COALESCE(SUM(CASE WHEN type = 'Income' AND category = 'deposit_reclass' THEN amount ELSE 0 END), 0) as deposit_reclass,
-        COALESCE(SUM(CASE WHEN type = 'Expense' THEN amount ELSE 0 END), 0) as expense,
-        COALESCE(SUM(CASE WHEN type = 'Liability' THEN amount ELSE 0 END), 0) as liability
-      FROM accounting_transactions
-      WHERE dorm_id = ${dormId}
-    `;
+        COALESCE(SUM(CASE WHEN a.type = 'Income' THEN a.amount ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN a.type = 'Income' AND a.category = 'deposit_reclass' THEN a.amount ELSE 0 END), 0) as deposit_reclass,
+        COALESCE(SUM(CASE WHEN a.type = 'Expense' THEN a.amount ELSE 0 END), 0) as expense,
+        COALESCE(SUM(CASE WHEN a.type = 'Liability' THEN a.amount ELSE 0 END), 0) as liability
+      FROM accounting_transactions a
+      WHERE a.dorm_id = ? AND NOT ${isTest}
+    `, [dormId]);
     const round2 = (n: number) => Math.round(n * 100) / 100;
     const totalIncome = round2(Number(sums?.income || 0));
     const totalExpense = round2(Number(sums?.expense || 0));

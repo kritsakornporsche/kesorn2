@@ -9,6 +9,8 @@ import { statusText } from '@/lib/status-text';
 import { badRoomNumber, isNegative, NEGATIVE_TEXT } from '@/lib/room-fields';
 import { ROOM_TYPES, roomTypeLabel } from '@/lib/room-types';
 import { itemsForRoomType } from '@/lib/room-items';
+import { isTestRoom } from '@/lib/test-rooms';
+import TestRoomBadge from '@/components/TestRoomBadge';
 
 interface Room {
   id: number;
@@ -330,11 +332,13 @@ export default function RoomsManagement() {
       return a.room_number.localeCompare(b.room_number, undefined, { numeric: true });
     });
 
+  // commit 26c: the counts leave test rooms (T01) out — the card still shows it, with a "ทดสอบ" badge
+  const realRooms = rooms.filter((r) => !isTestRoom(r.room_number));
   const stats = {
-    total: rooms.length,
-    available: rooms.filter(r => r.status === 'Available').length,
-    occupied: rooms.filter(r => r.status === 'Occupied' || r.status === 'มีผู้เช่า').length,
-    maintenance: rooms.filter(r => r.status === 'Maintenance' || r.status === 'ปิดปรับปรุง').length,
+    total: realRooms.length,
+    available: realRooms.filter(r => r.status === 'Available').length,
+    occupied: realRooms.filter(r => r.status === 'Occupied' || r.status === 'มีผู้เช่า').length,
+    maintenance: realRooms.filter(r => r.status === 'Maintenance' || r.status === 'ปิดปรับปรุง').length,
   };
 
   return (
@@ -500,7 +504,7 @@ export default function RoomsManagement() {
                      </div>
                    )}
                    <div className="absolute top-4 left-4 bg-card/90 border border-border backdrop-blur-md text-foreground px-4 py-2 rounded-2xl text-sm font-black shadow-lg z-10">
-                      ห้อง {room.room_number}
+                      ห้อง {room.room_number}<TestRoomBadge roomNumber={room.room_number} />
                    </div>
                    <div className={`absolute top-4 right-4 px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest border backdrop-blur-md shadow-xl z-10 ${
                      room.status === 'Available' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 

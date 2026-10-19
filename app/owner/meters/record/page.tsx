@@ -7,6 +7,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRates } from '@/lib/use-rates';
 import { ratesForRoom } from '@/lib/billing';
+import TestRoomBadge from '@/components/TestRoomBadge';
 
 interface RoomRecord {
   id: number;
@@ -496,7 +497,7 @@ export default function MeterRecordMobileFlowPage() {
                     }`}
                   >
                     <div className="flex justify-between items-center w-full mb-1">
-                      <span className="font-mono font-black text-sm">ห้อง {r.room_number}</span>
+                      <span className="font-mono font-black text-sm">ห้อง {r.room_number}<TestRoomBadge roomNumber={r.room_number} /></span>
                       <span className="text-xs">{r.recorded ? '✅' : '⏳'}</span>
                     </div>
                     <span className="text-[10px] opacity-70 font-mono">

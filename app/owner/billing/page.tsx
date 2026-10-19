@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { useRates } from '@/lib/use-rates';
 import { bangkokDate } from '@/lib/billing';
 import { formatBaht, formatThaiDate, formatThaiDateTime, PAYMENT_METHOD_LABEL } from '@/lib/format';
+import TestRoomBadge from '@/components/TestRoomBadge';
 
 interface BillPayment {
   id: number;
@@ -542,7 +543,7 @@ export default function OwnerMonthlyBillingPage() {
               readyRooms.map((r) => (
                 <div key={r.room_id} className="bg-slate-900/90 border border-white/10 rounded-2xl p-5 shadow-xl space-y-4">
                   <div className="flex justify-between items-center pb-3 border-b border-white/10">
-                    <span className="text-base font-black text-white">ห้อง {r.room_number}</span>
+                    <span className="text-base font-black text-white">ห้อง {r.room_number}<TestRoomBadge roomNumber={r.room_number} /></span>
                     <span className="text-xs font-mono font-bold text-amber-400">รอบ {r.billing_cycle}</span>
                   </div>
 
@@ -621,7 +622,7 @@ export default function OwnerMonthlyBillingPage() {
                     <div className="flex justify-between items-center pb-3 border-b border-white/10">
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="text-base font-black text-white">ห้อง {bill.room_number}</span>
+                          <span className="text-base font-black text-white">ห้อง {bill.room_number}<TestRoomBadge roomNumber={bill.room_number} /></span>
                           <span className="px-2 py-0.5 rounded-md bg-white/10 text-slate-300 text-[10px] font-mono font-bold">
                             บิล #{bill.id}
                           </span>
@@ -767,7 +768,7 @@ export default function OwnerMonthlyBillingPage() {
                 <div key={bill.id} className="bg-slate-900/90 border border-sky-500/30 rounded-2xl p-5 shadow-xl space-y-4">
                   <div className="flex justify-between items-center pb-3 border-b border-white/10">
                     <div>
-                      <span className="text-base font-black text-white">ห้อง {bill.room_number}</span>
+                      <span className="text-base font-black text-white">ห้อง {bill.room_number}<TestRoomBadge roomNumber={bill.room_number} /></span>
                       <p className="text-[11px] text-slate-400">{bill.tenant_name}</p>
                     </div>
                     <span className="px-3 py-1 rounded-full text-[10px] font-black bg-sky-500/10 text-sky-300 border border-sky-500/30">📝 ร่าง</span>
@@ -827,7 +828,7 @@ export default function OwnerMonthlyBillingPage() {
                     <div className="flex justify-between items-center pb-3 border-b border-white/10">
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="text-base font-black text-white">ห้อง {bill.room_number}</span>
+                          <span className="text-base font-black text-white">ห้อง {bill.room_number}<TestRoomBadge roomNumber={bill.room_number} /></span>
                           <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold">
                             บิล #{bill.id}
                           </span>
@@ -932,7 +933,7 @@ export default function OwnerMonthlyBillingPage() {
                   <tbody className="divide-y divide-white/5">
                     {disputes.map((d) => (
                       <tr key={d.id} className="hover:bg-white/5 transition-colors">
-                        <td className="px-6 py-4 font-black text-white text-sm">ห้อง {d.room_number}</td>
+                        <td className="px-6 py-4 font-black text-white text-sm">ห้อง {d.room_number}<TestRoomBadge roomNumber={d.room_number} /></td>
                         <td className="px-6 py-4 text-xs text-slate-300">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             d.requested_by === 'owner' ? 'bg-amber-500/20 text-amber-300' : 'bg-blue-500/20 text-blue-300'

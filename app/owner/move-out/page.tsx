@@ -11,6 +11,7 @@ import { InspectionButton } from '@/components/InspectionModal';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { kindAndTopic } from '@/components/maintenance/shared';
 import { statusText } from '@/lib/status-text';
+import TestRoomBadge from '@/components/TestRoomBadge';
 
 type State = 'Notified' | 'Returned' | 'Settled' | 'Closed' | 'Cancelled';
 
@@ -227,7 +228,7 @@ function MoveOutCard({ row, onDone }: { row: Row; onDone: () => void }) {
     <div className="bg-slate-900/90 border border-white/10 rounded-3xl p-6 space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-white/10">
         <div>
-          <h3 className="text-lg font-black text-white">ห้อง {s.room_number} · {row.tenant_name || '-'}</h3>
+          <h3 className="text-lg font-black text-white">ห้อง {s.room_number}<TestRoomBadge roomNumber={s.room_number} /> · {row.tenant_name || '-'}</h3>
           <p className="text-[11px] text-slate-400">
             📞 {row.tenant_phone || '-'} · สัญญา {thaiDate(s.contract_start)} – {thaiDate(s.contract_end)} · คำขอ #{row.request_id}
           </p>
@@ -570,7 +571,7 @@ function LegacyCard({ row, isOwner, onDone }: { row: Row; isOwner: boolean; onDo
   return (
     <div className="bg-slate-900/90 border border-slate-500/30 rounded-3xl p-6 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-lg font-black text-white">ห้อง {row.room_number} · {row.tenant_name || '-'}</h3>
+        <h3 className="text-lg font-black text-white">ห้อง {row.room_number}<TestRoomBadge roomNumber={row.room_number} /> · {row.tenant_name || '-'}</h3>
         <span className="px-3 py-1 rounded-xl border border-slate-500/40 text-slate-300 text-[11px] font-black">คำขอแบบเดิม — จัดการด้วยมือ</span>
       </div>
       <p className="text-xs text-slate-400">

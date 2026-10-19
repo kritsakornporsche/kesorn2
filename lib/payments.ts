@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db';
 import { Pool } from '@/lib/mysql-adapter';
 import { bangkokDate, calcLateFee, getRates, type Rates } from '@/lib/billing';
 import { isStatus, logStatus } from '@/lib/bill-status';
+import { isTestRoom } from '@/lib/test-rooms';
 
 /** deposit_offset: paid from the tenant's deposit at move-out (lib/moveOut.ts writes the matching Liability row) */
 export type PaymentMethod = 'slip' | 'cash' | 'transfer' | 'deposit_offset';
@@ -96,13 +97,16 @@ export interface UnpaidBill {
  * Bills still owed today (Unpaid / Overdue / Partial — not drafts, held corrections or cancelled bills).
  * Owed = bill amount + late fee up to `now` (calcLateFee, Thai date; 0 for a bill that has no late fee)
  * − payments not voided, never below 0. The dashboard (/api/owner/stats) and the owner report (lib/reports.ts) use this.
+ * `excludeTestRooms` (owner figures, commit 26c) leaves test rooms (T01) out; off by default, so anything a tenant sees
+ * of their own bills is never cut.
  */
-export async function unpaidBillsToday(sql: any, now: Date): Promise<{ count: number; total: number; bills: UnpaidBill[] }> {
-  const rows = await sql`
+export async function unpaidBillsToday(sql: any, now: Date, options: { excludeTestRooms?: boolean } = {}): Promise<{ count: number; total: number; bills: UnpaidBill[] }> {
+  const all = await sql`
     SELECT id, room_number, title, billing_cycle, due_date, status, amount, bill_type, late_fee_rate
     FROM bills WHERE LOWER(status) IN ('unpaid', 'overdue', 'partial')
     ORDER BY room_number + 0, room_number, due_date, id
   `;
+  const rows = options.excludeTestRooms ? (all as any[]).filter((b) => !isTestRoom(b.room_number)) : all;
   const rates = await getRates(sql);
   const summaries = await getPaymentSummaries(sql, rows.map((b: any) => Number(b.id)));
   const bills: UnpaidBill[] = rows.map((b: any) => {
