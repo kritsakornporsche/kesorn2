@@ -3,7 +3,8 @@ import { getDb, getPlatformDb, getDormDb, getDormDbFromSession } from '@/lib/db'
 import { auth } from '@/auth';
 import { expireDueBookings } from '@/lib/bookings';
 import { expireDueMoveIns } from '@/lib/moveIn';
-import { capCheck, depositFor } from '@/lib/billing';
+import { capCheck, depositFor, ratesForRoom, type Rates } from '@/lib/billing';
+import { isHiddenTestRoom } from '@/lib/test-rooms';
 import { badRoomNumber } from '@/lib/room-fields';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -29,20 +30,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         ku.email as keeper_email,
         mor.move_out_date,
         mor.status as move_out_status,
-        CASE 
-          WHEN UPPER(r.room_number) = 'T01' THEN 5.00 
-          ELSE dp.water_rate 
-        END as water_rate,
-        CASE WHEN UPPER(r.room_number) = 'T01' THEN 1.00 ELSE dp.electricity_rate END as electricity_rate,
-        CASE 
-          WHEN UPPER(r.room_number) = 'T01' THEN 5.00 
-          ELSE dp.common_fee 
-        END as common_fee,
-        CASE 
-          WHEN UPPER(r.room_number) = 'T01' THEN 20.00 
-          WHEN r.deposit_amount IS NOT NULL THEN r.deposit_amount
-          ELSE 3000.00 
-        END as deposit_amount,
+        dp.water_rate,
+        dp.electricity_rate,
+        dp.common_fee,
+        COALESCE(r.deposit_amount, 3000.00) as deposit_amount,
         dp.pet_friendly,
         dp.has_parking,
         dp.has_air_con,
@@ -74,8 +65,23 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (result.length === 0) {
       return NextResponse.json({ success: false, message: 'Room not found' }, { status: 404 });
     }
-    
-    return NextResponse.json({ success: true, data: result[0] }, { status: 200 });
+
+    const room = result[0];
+    // commit 26c: in production a test room (T01) is not found for the public (owner / manager still see it)
+    if (isHiddenTestRoom(room.room_number)) {
+      const role = String(((await auth().catch(() => null))?.user as any)?.role || '');
+      if (role !== 'owner' && role !== 'manager') {
+        return NextResponse.json({ success: false, message: 'Room not found' }, { status: 404 });
+      }
+    }
+    // Demo prices of a test room come from lib/billing (off in production) instead of being written in this query
+    const rates = ratesForRoom({ electricityPerUnit: Number(room.electricity_rate), waterPerPerson: Number(room.water_rate), commonFee: Number(room.common_fee) } as Rates, room.room_number);
+    room.electricity_rate = rates.electricityPerUnit;
+    room.water_rate = rates.waterPerPerson;
+    room.common_fee = rates.commonFee;
+    room.deposit_amount = depositFor(room);
+
+    return NextResponse.json({ success: true, data: room }, { status: 200 });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: 'Failed to fetch room', error: error.message }, { status: 500 });
   }

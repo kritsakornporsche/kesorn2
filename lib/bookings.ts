@@ -10,6 +10,7 @@ import { ROOM_HOLDING_STATUSES, createContractTx, Refused, contractMessage, with
 import { recordPaymentInTransaction, slipPaidAt } from '@/lib/payments';
 import { forfeitBookingFee } from '@/lib/deposits';
 import { formatBaht } from '@/lib/format';
+import { isHiddenTestRoom } from '@/lib/test-rooms';
 
 export const PAY_MINUTES = 10; // transfer within 10 minutes of approval
 export const UPLOAD_MINUTES = 15; // slip upload accepted until approval + 15 minutes
@@ -158,6 +159,8 @@ export function requestBooking(input: BookingRequestInput, now: Date) {
 
     const room = (await client.query('SELECT room_number FROM rooms WHERE id = ?', [input.roomId])).rows[0];
     if (!room) refuse('room_not_found');
+    // commit 26c: test rooms (T01) cannot be booked in production
+    if (isHiddenTestRoom(room.room_number)) refuse('room_unavailable');
     const created = await createContractTx(client, {
       account: {
         email: input.email, name: input.name, phone: input.phone,

@@ -33,9 +33,14 @@ export const ROOM_ITEMS: readonly RoomItem[] = [
   { name: 'รีโมทแอร์', roomType: 'aircon', countable: true },
 ];
 
-/** Range of a countable item's quantity (keys, remotes): at least 1 at move-in and at move-out (commit 26b) */
+/** Range of a countable item's quantity (keys, remotes): at least 1 at move-in (commit 26b); 0 allowed at move-out (26c) */
 export const QUANTITY_MIN = 1;
 export const QUANTITY_MAX = 99;
+
+/** Least quantity of a countable item for an inspection: move-in ≥ 1 · move-out ≥ 0 (all lost = 0, marked สูญหาย) */
+export function quantityMin(kind: 'move_in' | 'move_out'): number {
+  return kind === 'move_out' ? 0 : QUANTITY_MIN;
+}
 
 /** The items of a room of this type (stored room_type: Standard = fan room, Deluxe = air-conditioned). */
 export function itemsForRoomType(roomType: string | null | undefined): RoomItem[] {

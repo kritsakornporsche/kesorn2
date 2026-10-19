@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { PHOTOS_TOTAL_MAX_BYTES, preparePhoto } from '@/lib/inspection-photo-check';
-import { QUANTITY_MAX, QUANTITY_MIN, isCountableName } from '@/lib/room-items';
+import { QUANTITY_MAX, isCountableName, quantityMin } from '@/lib/room-items';
 
 type Condition = 'Good' | 'Damaged' | 'Missing';
 export type InspectionKind = 'move_in' | 'move_out';
@@ -150,9 +150,9 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
       return;
     }
     const toSave = rows.filter((r) => !isBlank(r));
-    const badQty = toSave.filter((r) => counted(r) && (!/^\d+$/.test(r.quantity.trim()) || Number(r.quantity) < QUANTITY_MIN || Number(r.quantity) > QUANTITY_MAX));
+    const badQty = toSave.filter((r) => counted(r) && (!/^\d+$/.test(r.quantity.trim()) || Number(r.quantity) < quantityMin(kind) || Number(r.quantity) > QUANTITY_MAX));
     if (badQty.length > 0) {
-      setRows((list) => list.map((r) => (badQty.some((b) => b.key === r.key) ? { ...r, error: `กรุณาระบุจำนวนเป็นจำนวนเต็ม ${QUANTITY_MIN}–${QUANTITY_MAX}` } : r)));
+      setRows((list) => list.map((r) => (badQty.some((b) => b.key === r.key) ? { ...r, error: `กรุณาระบุจำนวนเป็นจำนวนเต็ม ${quantityMin(kind)}–${QUANTITY_MAX}` } : r)));
       setError(`กรุณาระบุจำนวนของ: ${badQty.map((r) => r.name).join(', ')}`);
       return;
     }
@@ -268,7 +268,7 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
                       จำนวน
                       <input
                         type="number"
-                        min={QUANTITY_MIN}
+                        min={quantityMin(kind)}
                         max={QUANTITY_MAX}
                         step={1}
                         inputMode="numeric"

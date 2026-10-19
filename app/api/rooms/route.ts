@@ -5,6 +5,7 @@ import { auth } from '@/auth';
 import { expireDueBookings } from '@/lib/bookings';
 import { expireDueMoveIns } from '@/lib/moveIn';
 import { capCheck, depositFor } from '@/lib/billing';
+import { isHiddenTestRoom } from '@/lib/test-rooms';
 import { badRoomNumber } from '@/lib/room-fields';
 
 export async function GET(req: NextRequest) {
@@ -71,8 +72,8 @@ export async function GET(req: NextRequest) {
           OR mor.id IS NOT NULL
         )
         ORDER BY 
-          CASE WHEN r.room_number LIKE '%T01%' OR r.room_number LIKE '%TC01%' THEN 0 ELSE 1 END ASC,
-          r.floor ASC, 
+          r.floor ASC,
+          (r.room_number REGEXP '^[0-9]+$') DESC,
           CAST(r.room_number AS UNSIGNED) ASC, 
           r.room_number ASC
       `;
@@ -98,15 +99,18 @@ export async function GET(req: NextRequest) {
         ) mor ON mor.room_id = r.id
         WHERE (r.dorm_id = ${targetDormId} OR r.dorm_id IS NULL)
         ORDER BY 
-          CASE WHEN r.room_number LIKE '%T01%' OR r.room_number LIKE '%TC01%' THEN 0 ELSE 1 END ASC,
-          r.floor ASC, 
+          r.floor ASC,
+          (r.room_number REGEXP '^[0-9]+$') DESC,
           CAST(r.room_number AS UNSIGNED) ASC, 
           r.room_number ASC
       `;
     }
 
     const rooms = await query;
-    return NextResponse.json({ success: true, data: rooms });
+    // commit 26c: in production test rooms (T01) are listed for the owner / manager only
+    const viewerRole = String(((await auth().catch(() => null))?.user as any)?.role || '');
+    const staff = viewerRole === 'owner' || viewerRole === 'manager';
+    return NextResponse.json({ success: true, data: staff ? rooms : (rooms as any[]).filter((r) => !isHiddenTestRoom(r.room_number)) });
 
   } catch (error: any) {
     console.error('[API Rooms GET Error]', error);

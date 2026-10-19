@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { DEFAULT_RATES } from '@/lib/billing';
 import { getDb } from '@/lib/db';
+import { TEST_ROOM_NUMBERS, testRoomsHidden } from '@/lib/test-rooms';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -17,7 +18,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         COALESCE(MIN(rm.price), 0) as min_price,
         COUNT(CASE WHEN rm.status IN ('Available', 'ว่าง', 'available') THEN 1 END) as available_rooms_count
       FROM dormitory_profile p
-      LEFT JOIN rooms rm ON 1=1
+      LEFT JOIN rooms rm ON UPPER(rm.room_number) NOT IN (${testRoomsHidden() ? TEST_ROOM_NUMBERS : ['']})
       GROUP BY p.id, p.name, p.address, p.phone, p.cover_image, p.description, p.pet_friendly, p.has_parking, p.has_air_con, p.has_wifi, p.has_lan, p.water_rate, p.electricity_rate, p.facilities, p.map_url
       LIMIT 1
     `;

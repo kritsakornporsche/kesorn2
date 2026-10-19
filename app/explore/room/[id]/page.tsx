@@ -344,7 +344,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
   }
 
   const images = getImagesArray(room.images || room.image_url);
-  const isTestRoom = (room.room_number || '').toUpperCase() === 'T01';
   // Booking fee and total deposit come from the server (/api/rates?roomNumber=)
   const totalDeposit = costs?.bookingFee ?? 0;
   const fullDeposit = costs?.deposit ?? 0;

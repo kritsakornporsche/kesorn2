@@ -2,6 +2,7 @@
 // Every day count uses the calendar date in Asia/Bangkok, never UTC or the server's local time.
 
 import { formatBaht } from '@/lib/format';
+import { demoPricing } from '@/lib/test-rooms';
 import { RENT_DUE_DAY, type ContractParty } from '@/lib/settings-fields';
 
 export interface Rates {
@@ -22,8 +23,8 @@ export const DEFAULT_RATES: Rates = {
   cleaningFee: 300,
 };
 
-// Demo room used to test real payments with tiny amounts (rent comes from rooms.price)
-const DEMO_ROOM_NUMBER = 'T01';
+// Demo room (T01) used to test real payments with tiny amounts (rent comes from rooms.price) — off in production
+// (lib/test-rooms.ts demoPricing, commit 26c)
 const DEMO_ROOM_RATES = { electricityPerUnit: 1, waterPerPerson: 5, commonFee: 5 };
 
 const BOOKING_FEE = 1000;
@@ -119,7 +120,7 @@ export async function getContractParty(sql: any): Promise<ContractParty> {
 }
 
 export function ratesForRoom(rates: Rates, roomNumber?: string | null): Rates {
-  return String(roomNumber || '').toUpperCase() === DEMO_ROOM_NUMBER ? { ...rates, ...DEMO_ROOM_RATES } : rates;
+  return demoPricing(roomNumber) ? { ...rates, ...DEMO_ROOM_RATES } : rates;
 }
 
 export interface BillLine {
@@ -287,12 +288,12 @@ export function daysPastDue(dueDate: Date | string, asOf: Date | string | number
 
 /** Booking fee (it becomes part of the deposit). Set by the server, never taken from the client. */
 export function bookingFeeFor(roomNumber?: string | null): number {
-  return String(roomNumber || '').toUpperCase() === DEMO_ROOM_NUMBER ? DEMO_BOOKING_FEE : BOOKING_FEE;
+  return demoPricing(roomNumber) ? DEMO_BOOKING_FEE : BOOKING_FEE;
 }
 
 /** Total deposit held for a room (the booking fee is part of it). */
 export function depositFor(room: { room_number?: string | null; deposit_amount?: number | string | null }): number {
-  if (String(room.room_number || '').toUpperCase() === DEMO_ROOM_NUMBER) return DEMO_DEPOSIT;
+  if (demoPricing(room.room_number)) return DEMO_DEPOSIT;
   return toNumber(room.deposit_amount, DEFAULT_DEPOSIT) || DEFAULT_DEPOSIT;
 }
 

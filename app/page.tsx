@@ -405,7 +405,7 @@ export default function Home() {
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center font-bold text-xs shrink-0">✕</span>
-                  <span><strong>ห้ามสูบบุหรี่และสิ่งเสพติด:</strong> ปลอดบุหรี่ในห้องพักและอาคารเด็ดขาด</span>
+                  <span><strong>ห้ามสูบบุหรี่และสิ่งเสพติด:</strong> ห้ามสูบบุหรี่ทุกพื้นที่ภายในหอพัก</span>
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center font-bold text-xs shrink-0">ℹ</span>
