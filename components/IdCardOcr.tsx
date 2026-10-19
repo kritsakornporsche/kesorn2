@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { PdpaOcrConsentModal } from '@/app/components/PdpaOcrConsentModal';
 
 // ID card OCR (moved from app/components/WalkInTenantModal.tsx in commit 23b; used by walk-in and by the move-in bill
-// step in owner/bookings). PDPA: the photo goes to /api/booking/ocr-id only to read the name and address — the ID number
-// and the photo are not stored or sent anywhere else; the result is handed to the page through onRead.
+// step in owner/bookings — both owner / manager screens). PDPA: the photo goes to /api/owner/contracts/ocr-id (owner /
+// manager only) just to read the name and address — the ID number and the photo are not stored or sent anywhere else;
+// the result is handed to the page through onRead.
 export interface IdCardOcrResult {
   name: string;
   address: string;
@@ -95,10 +96,10 @@ export default function IdCardOcr({ onRead }: { onRead: (result: IdCardOcrResult
     setOcrErrorMsg(null);
 
     try {
-      const res = await fetch('/api/booking/ocr-id', {
+      const res = await fetch('/api/owner/contracts/ocr-id', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: base64 }),
+        body: JSON.stringify({ image: base64 }),
       });
       const result = await res.json();
 

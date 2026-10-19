@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
-import { getDb } from '@/lib/db';
 
 /**
- * Thai National ID Card OCR API
- * SEC-10: Restricted to dormitory owners only.
- * Extracts Citizen ID (13 digits), Full Name, Birth Date, and Address.
- * If unable to extract, returns an error message prompting manual entry.
+ * Thai ID card OCR (components/IdCardOcr: walk-in and the move-in bill step).
+ * SEC-08 / SEC-10: owner or manager only. PDPA (commit 16): reads the name and address only — the ID number is never
+ * returned (lib/id-card-ocr drops it) and neither the photo nor the result is stored or logged.
+ * If it cannot read the card, the form is filled in by hand (no made-up data).
  */
 export async function POST(req: Request) {
   try {
