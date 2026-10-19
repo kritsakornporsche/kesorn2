@@ -154,8 +154,10 @@ export async function verifySlipWithSlipOK(
   optionsOrAmount?: number | SlipVerificationOptions,
   legacyExpectedReceiver?: { name?: string; promptpay?: string; dormName?: string; isBooking?: boolean; checkPromptPayOnly?: boolean }
 ): Promise<SlipVerificationResult> {
-  const endpoint = process.env.SLIPOK_ENDPOINT || 'https://api.slipok.com/api/line/apikey/77132';
-  const apiKey = process.env.SLIPOK_API_KEY || 'SLIPOK7R7FAWL';
+  // commit 26c: endpoint and key from the environment only (no built-in fallback). Not set → a clear refusal before
+  // the API call (the development mock slips below still work)
+  const endpoint = (process.env.SLIPOK_ENDPOINT || '').trim();
+  const apiKey = (process.env.SLIPOK_API_KEY || '').trim();
 
   if (!slipData) {
     return { 
@@ -272,6 +274,15 @@ export async function verifySlipWithSlipOK(
           sender: { displayName: sName, account: { value: sAcc }, bank: { name: sBank } },
           receiver: { displayName: rName, account: { value: rAcc }, bank: { name: rBank } },
         },
+      };
+    }
+
+    if (!endpoint || !apiKey) {
+      return {
+        success: false,
+        readSuccess: false,
+        reason: 'ยังไม่ได้ตั้งค่า SlipOK',
+        message: '❌ ระบบตรวจสลิปยังไม่ได้ตั้งค่า (SLIPOK_ENDPOINT / SLIPOK_API_KEY) กรุณาแจ้งผู้ดูแลระบบ',
       };
     }
 
