@@ -548,7 +548,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     <span className="text-lg">🚭</span>
                     <div className="text-xs">
                       <span className="font-bold block">การสูบบุหรี่</span>
-                      <span className="text-muted-foreground text-[11px]">ห้ามสูบบุหรี่ภายในห้องพักและพื้นที่ส่วนกลาง</span>
+                      <span className="text-muted-foreground text-[11px]">ห้ามสูบบุหรี่ทุกพื้นที่ภายในหอพัก</span>
                     </div>
                   </div>
 
@@ -556,7 +556,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     <span className="text-lg">🕒</span>
                     <div className="text-xs">
                       <span className="font-bold block">เวลาเข้า-ออก</span>
-                      <span className="text-muted-foreground text-[11px]">เข้า-ออกได้ตลอด 24 ชม. (ระบบคีย์การ์ด/สแกน)</span>
+                      <span className="text-muted-foreground text-[11px]">เข้า-ออกได้ตลอด 24 ชม.</span>
                     </div>
                   </div>
 

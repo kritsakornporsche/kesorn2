@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { PHOTOS_TOTAL_MAX_BYTES, preparePhoto } from '@/lib/inspection-photo-check';
-import { QUANTITY_MAX, isCountableName } from '@/lib/room-items';
+import { QUANTITY_MAX, QUANTITY_MIN, isCountableName } from '@/lib/room-items';
 
 type Condition = 'Good' | 'Damaged' | 'Missing';
 export type InspectionKind = 'move_in' | 'move_out';
@@ -150,9 +150,9 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
       return;
     }
     const toSave = rows.filter((r) => !isBlank(r));
-    const badQty = toSave.filter((r) => counted(r) && (!/^\d+$/.test(r.quantity.trim()) || Number(r.quantity) > QUANTITY_MAX));
+    const badQty = toSave.filter((r) => counted(r) && (!/^\d+$/.test(r.quantity.trim()) || Number(r.quantity) < QUANTITY_MIN || Number(r.quantity) > QUANTITY_MAX));
     if (badQty.length > 0) {
-      setRows((list) => list.map((r) => (badQty.some((b) => b.key === r.key) ? { ...r, error: `กรุณาระบุจำนวนเป็นจำนวนเต็ม 0–${QUANTITY_MAX}` } : r)));
+      setRows((list) => list.map((r) => (badQty.some((b) => b.key === r.key) ? { ...r, error: `กรุณาระบุจำนวนเป็นจำนวนเต็ม ${QUANTITY_MIN}–${QUANTITY_MAX}` } : r)));
       setError(`กรุณาระบุจำนวนของ: ${badQty.map((r) => r.name).join(', ')}`);
       return;
     }
@@ -234,15 +234,27 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
 
             {rows.map((row, index) => (
               <div key={row.key} className={`p-3 rounded-2xl border space-y-2 ${row.error ? 'border-rose-500/60 bg-rose-500/5' : 'border-white/10 bg-slate-950/60'}`}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] text-slate-500 w-5">{index + 1}.</span>
+                {/* commit 26b: number, name and ✕ on one line (also on phones); condition / quantity on the next */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-slate-500 w-5 shrink-0">{index + 1}.</span>
                   <input
                     value={row.name}
                     disabled={!editable}
                     onChange={(e) => update(row.key, { name: e.target.value, error: null })}
                     placeholder="ชื่อรายการ"
-                    className="flex-1 min-w-[140px] bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white disabled:opacity-70"
+                    className="flex-1 min-w-0 bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white disabled:opacity-70"
                   />
+                  {editable && (
+                    <button
+                      onClick={() => setRows((list) => list.filter((r) => r.key !== row.key))}
+                      className="px-2 py-1 text-rose-300 hover:text-rose-200 text-xs font-bold shrink-0"
+                      title="ลบรายการ"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 pl-7">
                   <select
                     value={row.condition}
                     disabled={!editable}
@@ -256,7 +268,7 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
                       จำนวน
                       <input
                         type="number"
-                        min={0}
+                        min={QUANTITY_MIN}
                         max={QUANTITY_MAX}
                         step={1}
                         inputMode="numeric"
@@ -266,15 +278,6 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
                         className="w-16 bg-slate-950 border border-white/10 rounded-xl px-2 py-2 text-xs font-bold text-white text-center disabled:opacity-70"
                       />
                     </label>
-                  )}
-                  {editable && (
-                    <button
-                      onClick={() => setRows((list) => list.filter((r) => r.key !== row.key))}
-                      className="px-2 py-1 text-rose-300 hover:text-rose-200 text-xs font-bold"
-                      title="ลบรายการ"
-                    >
-                      ✕
-                    </button>
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 pl-7">

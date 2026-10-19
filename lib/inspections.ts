@@ -10,7 +10,7 @@ import { getDb } from '@/lib/db';
 import { type Client } from '@/lib/bill-status';
 import { withRetry } from '@/lib/bookings';
 import { PHOTOS_TOTAL_MAX_BYTES, deletePhoto, isPhotoName, parsePhotoUpload, photoUrl, savePhoto } from '@/lib/inspection-files';
-import { QUANTITY_MAX, isCountableName, itemsForRoomType } from '@/lib/room-items';
+import { QUANTITY_MAX, QUANTITY_MIN, isCountableName, itemsForRoomType } from '@/lib/room-items';
 
 /** Booking fee paid up to the contract in effect */
 export const INSPECTABLE = ['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active'];
@@ -155,12 +155,12 @@ function cleanItems(raw: unknown): CleanItem[] {
     if (!condition) refuse('bad_items', `${itemLabel(index, name)}: กรุณาเลือกสภาพ (ปกติ / ชำรุด / สูญหาย)`, index);
     const note = typeof item.note === 'string' && item.note.trim() ? item.note.trim() : null;
     if (note && note.length > NOTE_MAX) refuse('bad_items', `${itemLabel(index, name)}: หมายเหตุยาวเกิน ${NOTE_MAX} ตัวอักษร`, index);
-    // commit 26: countable items carry a whole number 0..QUANTITY_MAX (required for the list's countable items)
+    // commit 26 / 26b: countable items carry a whole number QUANTITY_MIN..QUANTITY_MAX (required for the list's countable items)
     const rawQty = item.quantity;
     const hasQty = rawQty !== undefined && rawQty !== null && rawQty !== '';
     const quantity = hasQty ? Number(rawQty) : null;
-    if (hasQty && !(Number.isInteger(quantity) && quantity! >= 0 && quantity! <= QUANTITY_MAX)) {
-      refuse('bad_items', `${itemLabel(index, name)}: จำนวนต้องเป็นจำนวนเต็ม 0–${QUANTITY_MAX}`, index);
+    if (hasQty && !(Number.isInteger(quantity) && quantity! >= QUANTITY_MIN && quantity! <= QUANTITY_MAX)) {
+      refuse('bad_items', `${itemLabel(index, name)}: จำนวนต้องเป็นจำนวนเต็ม ${QUANTITY_MIN}–${QUANTITY_MAX}`, index);
     }
     if (!hasQty && isCountableName(name)) refuse('bad_items', `${itemLabel(index, name)}: กรุณาระบุจำนวน`, index);
 
