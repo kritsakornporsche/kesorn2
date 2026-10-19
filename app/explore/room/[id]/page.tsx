@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, use, useRef } from 'react';
+import { useState, useEffect, use } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -10,7 +10,7 @@ import ContractSimulator from '@/app/components/ContractSimulator';
 import { formatBaht } from '@/lib/format';
 import PrintableContractModal from '@/components/PrintableContractModal';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
-import { PdpaOcrConsentModal } from '@/app/components/PdpaOcrConsentModal';
+import { BOOKING_REQUEST_NOTE } from '@/lib/booking-text';
 
 function getGoogleMapsEmbedUrl(mapUrl?: string, address?: string, dormName?: string) {
   if (mapUrl) {
@@ -55,7 +55,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
   const [room, setRoom] = useState<any>(null);
   // Rates, deposit and booking fee for this room from the server (lib/billing moveInCosts) — no amounts in the page
   const [costs, setCosts] = useState<{ rent: number; deposit: number; bookingFee: number; dueAtMoveIn: number; rates: { electricityPerUnit: number; waterPerPerson: number; commonFee: number; lateFeePerDay: number } } | null>(null);
-  const [step, setStep] = useState(1); // 1: Info, 2: Info & Dates, 3: ID Card OCR & Contract Review, 4: QR Payment & Slip, 5: Finished
+  const [step, setStep] = useState(1); // 1: Info, 2: Info & Dates, 3: Tenant name / address (typed) & Contract Review, 4: QR Payment & Slip, 5: Finished
   const [loading, setLoading] = useState(true);
   const [bookingData, setBookingData] = useState({
     name: '',
@@ -77,30 +77,11 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
   const [showSimulator, setShowSimulator] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
 
-  // OCR and Document States (Google Gemini Vision AI)
-  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
-  const [ocrSuccessMsg, setOcrSuccessMsg] = useState<string | null>(null);
-  const [ocrStats, setOcrStats] = useState<string | null>(null);
-  const [ocrErrorMsg, setOcrErrorMsg] = useState<string | null>(null);
   const [createdContractId, setCreatedContractId] = useState<number | string | null>(null);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
 
-  // PDPA Consent Modal & Checkbox State
-  const [pdpaConsent, setPdpaConsent] = useState(false);
-  const [isPdpaModalOpen, setIsPdpaModalOpen] = useState(false);
-  const [pendingOcrImage, setPendingOcrImage] = useState<string | null>(null);
-
-  // Camera state for guest ID scan
-  const [cameraActive, setCameraActive] = useState<boolean>(false);
-  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-
   // QR Code & Slip Payment States
-  // Requests are accepted 08:00–20:00 (decided by the server)
-  const [bookingOpen, setBookingOpen] = useState(true);
   const [contractSignature, setContractSignature] = useState<string>('CONFIRMED_E_CONTRACT');
 
   const router = useRouter();
@@ -137,7 +118,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
       .then((res) => res.json())
       .then((json) => {
         if (json.success && json.room) setCosts(json.room);
-        if (json.success && typeof json.booking_open === 'boolean') setBookingOpen(json.booking_open);
       })
       .catch(() => {});
   }, [room?.room_number]);
@@ -228,227 +208,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
   }, [step, bookingData, sessionStatus, roomId]);
 
 
-  // Camera controls for ID Card Scanner
-  const startCamera = async (mode: 'environment' | 'user' = facingMode) => {
-    setCameraError(null);
-    setCameraActive(true);
-    try {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('เบราว์เซอร์ไม่รองรับ WebRTC กล้องสด กรุณาใช้ปุ่ม "ถ่ายรูปด้วยกล้องมือถือ"');
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: mode,
-          width: { ideal: 1920, min: 640 },
-          height: { ideal: 1080, min: 480 },
-        },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.setAttribute('playsinline', 'true');
-        videoRef.current.setAttribute('webkit-playsinline', 'true');
-        videoRef.current.muted = true;
-        await videoRef.current.play().catch(() => {});
-      }
-    } catch (err: any) {
-      console.error('Camera access error:', err);
-      setCameraError('ไม่สามารถเปิดกล้องสดได้: ' + (err.message || 'กรุณาอนุญาตการเข้าถึงกล้อง หรือใช้ปุ่มถ่ายรูปด้วยกล้องมือถือ/อัปโหลดไฟล์'));
-    }
-  };
-
-  // Ensure stream is attached when video element mounts
-  useEffect(() => {
-    if (cameraActive && streamRef.current && videoRef.current) {
-      const videoEl = videoRef.current;
-      videoEl.srcObject = streamRef.current;
-      videoEl.setAttribute('playsinline', 'true');
-      videoEl.setAttribute('webkit-playsinline', 'true');
-      videoEl.muted = true;
-      videoEl.play().catch((err) => console.warn('Video play error:', err));
-    }
-  }, [cameraActive]);
-
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
-    setCameraActive(false);
-  };
-
-  const toggleCameraFacing = async () => {
-    const nextMode = facingMode === 'environment' ? 'user' : 'environment';
-    setFacingMode(nextMode);
-    if (cameraActive) {
-      await startCamera(nextMode);
-    }
-  };
-
-  const optimizeImageForOcr = (dataUrl: string, maxDim = 1280): Promise<string> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        let { width, height } = img;
-        if (width <= maxDim && height <= maxDim) {
-          // Re-encode through canvas anyway to ensure standard JPEG under 500KB and clean orientation
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/jpeg', 0.85));
-            return;
-          }
-          resolve(dataUrl);
-          return;
-        }
-        if (width > height) {
-          height = Math.round((height * maxDim) / width);
-          width = maxDim;
-        } else {
-          width = Math.round((width * maxDim) / height);
-          height = maxDim;
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.85));
-        } else {
-          resolve(dataUrl);
-        }
-      };
-      img.onerror = () => resolve(dataUrl);
-      img.src = dataUrl;
-    });
-  };
-
-  const capturePhoto = async () => {
-    if (!videoRef.current) return;
-    const video = videoRef.current;
-    const width = video.videoWidth || 1280;
-    const height = video.videoHeight || 720;
-    
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(video, 0, 0, width, height);
-    const base64Data = canvas.toDataURL('image/jpeg', 0.88);
-    stopCamera();
-
-    // Immediately save image to bookingData so image is never lost
-    setBookingData((prev) => ({ ...prev, id_card_image: base64Data }));
-
-    const optimized = await optimizeImageForOcr(base64Data);
-    setPendingOcrImage(optimized);
-    setIsPdpaModalOpen(true);
-  };
-
-  // Google Gemini Vision AI OCR Processor
-  const processIdImage = async (base64Data: string) => {
-    setIsOcrProcessing(true);
-    setOcrSuccessMsg(null);
-    setOcrStats(null);
-    setOcrErrorMsg(null);
-
-    // Save image to state
-    setBookingData((prev) => ({
-      ...prev,
-      id_card_image: base64Data,
-    }));
-
-    const t0 = Date.now();
-
-    try {
-      const res = await fetch('/api/booking/ocr-id', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64Data }),
-      });
-
-      const ocrJson = await res.json();
-      const elapsedSec = ((Date.now() - t0) / 1000).toFixed(1);
-
-      if (ocrJson.success && ocrJson.data) {
-        const d = ocrJson.data;
-        const addrParts = d.address_parts || {};
-        
-        // Extract extracted name cleanly (prioritizing full_name_th)
-        const extractedName = d.full_name_th || (d.first_name_th ? `${d.title_th ? d.title_th + ' ' : ''}${d.first_name_th} ${d.last_name_th || ''}`.trim() : '');
-
-        setBookingData((prev) => ({
-          ...prev,
-          name: extractedName || (prev.name === 'guest' ? '' : prev.name),
-          id_card_address: d.address || prev.id_card_address,
-          id_card_image: base64Data,
-          houseNo: addrParts.houseNo || prev.houseNo,
-          village: addrParts.village || prev.village,
-          road: addrParts.road || prev.road,
-          subdistrict: addrParts.subdistrict || prev.subdistrict,
-          district: addrParts.district || prev.district,
-          province: addrParts.province || prev.province,
-        }));
-        setOcrSuccessMsg(`✓ อ่านชื่อและที่อยู่จากบัตรสำเร็จ: ${extractedName || ''} (ระบบไม่เก็บเลขบัตรประชาชน)`);
-        setOcrStats(`อ่านสำเร็จใน ${elapsedSec} วินาที (Google Gemini AI Vision)`);
-      } else {
-        const errMsg = ocrJson.message || 'ไม่สามารถอ่านตัวอักษรบนบัตรได้ชัดเจน กรุณาตรวจสอบหรือกรอกเพิ่มเติมในช่องด้านล่าง';
-        setOcrErrorMsg(errMsg);
-      }
-    } catch (err: any) {
-      console.error('OCR Error:', err);
-      setOcrErrorMsg('เกิดข้อผิดพลาดในการเชื่อมต่อ AI OCR: ' + (err.message || 'กรุณาลองใหม่อีกครั้ง'));
-    } finally {
-      setIsOcrProcessing(false);
-    }
-  };
-
-  // ID Card Smart OCR Handler
-  const handleIdCardUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setOcrErrorMsg(null);
-    setOcrSuccessMsg(null);
-
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const rawBase64 = reader.result as string;
-      let imgToProcess = rawBase64;
-      try {
-        imgToProcess = await optimizeImageForOcr(rawBase64);
-      } catch (err: any) {
-        console.warn('Canvas optimization skipped/failed, using raw image:', err);
-        imgToProcess = rawBase64;
-      }
-      setBookingData((prev) => ({ ...prev, id_card_image: imgToProcess }));
-      setPendingOcrImage(imgToProcess);
-      setIsPdpaModalOpen(true);
-    };
-    reader.onerror = () => {
-      setOcrErrorMsg('ไม่สามารถอ่านไฟล์ภาพจากอุปกรณ์ได้ กรุณาลองใหม่อีกครั้ง');
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  };
-
   // Download Word Contract
   const handleDownloadDocx = async () => {
     setDownloadingDocx(true);
@@ -533,7 +292,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
       const data = await res.json();
       if (!data.success) {
-        if (data.reason === 'outside_hours') setBookingOpen(false);
         if (data.reason === 'has_open_contract' && data.statusUrl) {
           if (confirm(`${data.message}\n\nไปหน้าสถานะการจองตอนนี้?`)) router.push(data.statusUrl);
           return;
@@ -1029,7 +787,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                 <div className="space-y-4">
                   <div className="p-3.5 bg-primary/10 border border-primary/20 rounded-2xl text-xs text-primary flex items-center gap-2.5">
                     <span className="text-base">🪪</span>
-                    <span><strong>ชื่อ-นามสกุลและที่อยู่:</strong> จะถูกอ่านและกรอกจากบัตรประชาชนอัตโนมัติในขั้นตอนถัดไป (AI OCR) · ระบบไม่จัดเก็บเลขบัตรและรูปบัตร</span>
+                    <span><strong>ชื่อ-นามสกุลและที่อยู่:</strong> กรอกเองในขั้นตอนถัดไป · ระบบไม่จัดเก็บเลขบัตรและรูปบัตร</span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1123,7 +881,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     disabled={!bookingData.phone || !bookingData.parent_phone}
                     className="w-full py-5 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-sm transition-all shadow-xl shadow-primary/25 hover:scale-[1.02] active:scale-95 disabled:opacity-40 cursor-pointer"
                   >
-                    ถัดไป: สแกนบัตรประชาชน (AI OCR) →
+                    ถัดไป: ข้อมูลผู้เช่าและสัญญา →
                   </button>
                   <div className="flex items-center gap-3">
                     <button
@@ -1155,302 +913,15 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
               </div>
             )}
 
-            {/* Step 3: Smart Thai ID Card OCR & Contract Review */}
+            {/* Step 3: Tenant name / address (typed by the booker) & Contract Review */}
             {step === 3 && (
               <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-xl space-y-6 animate-in fade-in duration-300">
                 <div className="space-y-2">
                   <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 3 จาก 3</span>
-                  <h2 className="text-2xl font-black tracking-tight">สแกนบัตรประชาชนและข้อมูลสัญญา</h2>
+                  <h2 className="text-2xl font-black tracking-tight">ข้อมูลผู้เช่าและสัญญา</h2>
                   <p className="text-xs text-muted-foreground">
-                    ระบบ AI OCR (Google Gemini Vision AI) จะอ่านข้อมูลบัตรประชาชนและนำไปกรอกลงในแบบฟอร์มสัญญาเช่าหอพักเกษรฉบับจริงให้อัตโนมัติ
+                    กรอกชื่อ-นามสกุลและที่อยู่ตามบัตรประชาชนเพื่อใช้ในสัญญาเช่า (หอพักตรวจกับบัตรจริงอีกครั้งตอนทำสัญญา)
                   </p>
-                </div>
-
-                {/* ID Card Scanner Banner */}
-                <div className="p-5 bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-primary/10 border border-primary/20 rounded-3xl space-y-4">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">🪪</span>
-                      <div>
-                        <span className="text-xs font-black text-primary block">
-                          AI Smart OCR บัตรประชาชน (Google Gemini AI Vision)
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">
-                          สแกนอ่านข้อมูลแม่นยำ • กรอกสัญญาอัตโนมัติ
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {ocrSuccessMsg && (
-                    <div className="p-3 bg-emerald-500/15 border border-emerald-500/30 rounded-2xl text-emerald-400 text-xs font-bold flex items-center justify-between animate-in fade-in">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">✓</span>
-                        <span>{ocrSuccessMsg}</span>
-                      </div>
-                      {ocrStats && (
-                        <span className="text-[10px] bg-emerald-500/20 px-2 py-0.5 rounded-full text-emerald-300 font-mono">
-                          {ocrStats}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {ocrErrorMsg && (
-                    <div className="p-3.5 bg-rose-500/15 border border-rose-500/30 rounded-2xl text-rose-400 text-xs font-bold flex items-center justify-between animate-in fade-in">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">⚠️</span>
-                        <span>{ocrErrorMsg}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setOcrErrorMsg(null)}
-                        className="text-[10px] text-muted-foreground hover:text-white px-2 py-1 bg-white/10 rounded-lg cursor-pointer"
-                      >
-                        ปิด
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Camera Scanner View */}
-                  {cameraActive && (
-                    <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-primary/40 shadow-2xl space-y-3 p-3">
-                      <div className="relative aspect-[16/10] max-h-[360px] mx-auto rounded-xl overflow-hidden flex items-center justify-center bg-slate-950">
-                        <video
-                          ref={videoRef}
-                          autoPlay
-                          playsInline
-                          muted
-                          className="w-full h-full object-cover"
-                        />
-                        {/* ID Card Overlay guide */}
-                        <div className="absolute inset-4 sm:inset-8 border-2 border-dashed border-cyan-400/80 rounded-2xl pointer-events-none flex flex-col justify-between p-3">
-                          <span className="text-[10px] font-bold text-cyan-300 bg-black/60 px-2 py-0.5 rounded self-start">
-                            วางบัตรประชาชนให้อยู่ในกรอบ
-                          </span>
-                          <span className="text-[10px] text-cyan-300/80 bg-black/60 px-2 py-0.5 rounded self-end">
-                            ให้เห็นตัวอักษรและรูปถ่ายชัดเจน
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-center gap-3 pt-1">
-                        <button
-                          type="button"
-                          onClick={capturePhoto}
-                          className="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/25 active:scale-95 cursor-pointer"
-                        >
-                          <span>📸</span> ถ่ายภาพบัตรทันที
-                        </button>
-                        <button
-                          type="button"
-                          onClick={toggleCameraFacing}
-                          className="p-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all border border-slate-700 cursor-pointer"
-                          title="สลับกล้องหน้า/หลัง"
-                        >
-                          🔄
-                        </button>
-                        <button
-                          type="button"
-                          onClick={stopCamera}
-                          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white/80 hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
-                        >
-                          ยกเลิก
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {cameraError && (
-                    <div className="p-3 bg-rose-500/15 border border-rose-500/30 rounded-xl text-rose-400 text-xs">
-                      {cameraError}
-                    </div>
-                  )}
-
-                  {/* Processing Indicator */}
-                  {isOcrProcessing && (
-                    <div className="py-8 flex flex-col items-center justify-center gap-3 text-primary bg-primary/5 rounded-2xl border border-primary/20">
-                      <div className="relative">
-                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />
-                        <span className="absolute inset-0 flex items-center justify-center text-sm">🤖</span>
-                      </div>
-                      <div className="text-center space-y-1">
-                        <span className="text-xs font-black animate-pulse block">
-                          Google Gemini AI Vision กำลังอ่านข้อมูลบัตรประชาชน...
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">
-                          กำลังอ่านชื่อ-นามสกุลและที่อยู่จากบัตร...
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Mandatory PDPA Checkbox before scanning/uploading ID card */}
-                  <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 space-y-2.5">
-                    <label className="flex items-start gap-3 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        id="mandatory-pdpa-consent"
-                        checked={pdpaConsent}
-                        onChange={(e) => setPdpaConsent(e.target.checked)}
-                        className="mt-1 w-4 h-4 rounded border-blue-400 text-primary focus:ring-primary cursor-pointer shrink-0"
-                      />
-                      <div className="space-y-1.5">
-                        <span className="text-xs font-bold text-foreground leading-tight block">
-                          ยินยอมให้ประมวลผลข้อมูลส่วนบุคคลและภาพถ่ายบัตรประชาชน (PDPA & AI Data Privacy) <span className="text-rose-500">*</span>
-                        </span>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed">
-                          ข้าพเจ้ายินยอมให้ส่งภาพถ่ายบัตรประชาชนเพื่อประมวลผลด้วย <strong>Google Gemini AI Vision API</strong> สำหรับการอ่านตัวอักษรและกรอกสัญญาเช่าหอพักเกษร 2 อัตโนมัติ
-                        </p>
-                        <div className="p-2.5 bg-background/60 rounded-xl border border-border/80 text-[10px] text-muted-foreground space-y-1 leading-relaxed">
-                          <p className="font-bold text-foreground">🛡️ มาตรฐานความปลอดภัยข้อมูลของ Google Gemini API:</p>
-                          <p>• <strong>ไม่นำข้อมูลไปเทรน AI:</strong> ข้อมูลภาพและตัวอักษรจะ<strong>ไม่ถูกนำไปใช้ฝึกฝน (Train AI)</strong> โมเดลสาธารณะของ Google แต่อย่างใด</p>
-                          <p>• <strong>เข้ารหัสระดับสูง:</strong> ส่งข้อมูลผ่านการเข้ารหัส HTTPS/TLS ไปยัง Google Cloud เพื่อแปลงข้อความแล้วส่งกลับมายังระบบหอพักทันที</p>
-                          <p>• <strong>ไม่เผยแพร่ต่อบุคคลภายนอก:</strong> นำข้อมูลไปใช้เพื่อตรวจสอบและสร้างเอกสารสัญญาเช่าฉบับจริงเท่านั้น</p>
-                        </div>
-                      </div>
-                    </label>
-                  </div>
-
-                  {/* Upload & Camera Actions when not active and not processing */}
-                  {!cameraActive && !isOcrProcessing && (
-                    <div className="space-y-3">
-                      {/* If Image Already Uploaded: Preview Box */}
-                      {bookingData.id_card_image ? (
-                        <div className="p-4 bg-background/80 rounded-2xl border border-primary/30 flex items-center justify-between gap-4 flex-wrap">
-                          <div className="flex items-center gap-3">
-                            <div className="w-16 h-12 rounded-lg overflow-hidden border border-border bg-slate-900 flex-shrink-0">
-                              <img
-                                src={bookingData.id_card_image}
-                                alt="รูปบัตรประชาชน"
-                                className="w-full h-full object-cover"
-                              />
-                            </div>
-                            <div>
-                              <span className="text-xs font-bold text-foreground block">
-                                อ่านข้อมูลจากบัตรแล้ว (ระบบไม่บันทึกรูปบัตร)
-                              </span>
-                              <span className="text-[10px] text-emerald-400 font-bold">
-                                ✓ กรอกชื่อและที่อยู่ลงในแบบฟอร์มแล้ว
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!pdpaConsent) {
-                                  alert('กรุณากดยินยอม PDPA ด้านบนก่อนเปิดกล้อง');
-                                  return;
-                                }
-                                startCamera();
-                              }}
-                              className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-foreground rounded-xl text-xs font-bold border border-border cursor-pointer"
-                            >
-                              📷 ถ่ายกล้องสด
-                            </button>
-                            <label className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
-                              pdpaConsent
-                                ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30 cursor-pointer'
-                                : 'bg-muted/40 text-muted-foreground border-border opacity-50 cursor-not-allowed'
-                            }`}>
-                              📱 กล้องมือถือ
-                              <input
-                                type="file"
-                                accept="image/*"
-                                capture="environment"
-                                className="hidden"
-                                disabled={!pdpaConsent}
-                                onChange={handleIdCardUpload}
-                              />
-                            </label>
-                            <label className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
-                              pdpaConsent
-                                ? 'bg-primary/10 hover:bg-primary/20 text-primary border-primary/20 cursor-pointer'
-                                : 'bg-muted/40 text-muted-foreground border-border opacity-50 cursor-not-allowed'
-                            }`}>
-                              📁 อัปโหลดไฟล์
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                disabled={!pdpaConsent}
-                                onChange={handleIdCardUpload}
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="relative">
-                          {!pdpaConsent && (
-                            <div className="mb-2 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-2 text-amber-400 text-xs font-semibold">
-                              <span>🔒</span>
-                              <span>กรุณากดทำเครื่องหมายยินยอม PDPA ด้านบนก่อน จึงจะสามารถเปิดกล้องหรืออัปโหลดรูปบัตรได้</span>
-                            </div>
-                          )}
-
-                          <div className={`grid grid-cols-1 sm:grid-cols-3 gap-3 transition-opacity ${!pdpaConsent ? 'opacity-40 pointer-events-none' : ''}`}>
-                            {/* Option 1: Live WebRTC Camera */}
-                            <button
-                              type="button"
-                              disabled={!pdpaConsent}
-                              onClick={() => startCamera()}
-                              className="p-4 bg-primary/10 hover:bg-primary/20 border-2 border-primary/30 hover:border-primary rounded-2xl flex flex-col items-center justify-center gap-2 transition-all cursor-pointer group active:scale-98 disabled:cursor-not-allowed"
-                            >
-                              <div className="w-10 h-10 rounded-2xl bg-primary text-white flex items-center justify-center text-lg shadow-md group-hover:scale-110 transition-transform">
-                                📸
-                              </div>
-                              <span className="text-xs font-black text-foreground">เปิดกล้องสด (Live)</span>
-                              <span className="text-[10px] text-muted-foreground text-center">
-                                ส่องบัตรผ่านหน้าจอแบบเรียลไทม์
-                              </span>
-                            </button>
-
-                            {/* Option 2: Mobile Native Camera */}
-                            <label className={`p-4 bg-emerald-500/10 hover:bg-emerald-500/20 border-2 border-dashed border-emerald-500/30 hover:border-emerald-500/60 rounded-2xl flex flex-col items-center justify-center gap-2 transition-all group active:scale-98 ${
-                              pdpaConsent ? 'cursor-pointer' : 'cursor-not-allowed'
-                            }`}>
-                              <div className="w-10 h-10 rounded-2xl bg-emerald-500 text-slate-950 flex items-center justify-center text-lg shadow-md group-hover:scale-110 transition-transform">
-                                📱
-                              </div>
-                              <span className="text-xs font-black text-emerald-400">ถ่ายรูปด้วยกล้องมือถือ</span>
-                              <span className="text-[10px] text-muted-foreground text-center">
-                                เปิดแอปกล้องในโทรศัพท์ทันที
-                              </span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                capture="environment"
-                                className="hidden"
-                                disabled={!pdpaConsent}
-                                onChange={handleIdCardUpload}
-                              />
-                            </label>
-
-                            {/* Option 3: File Upload */}
-                            <label className={`p-4 bg-background/80 hover:bg-background border-2 border-dashed border-primary/30 hover:border-primary rounded-2xl flex flex-col items-center justify-center gap-2 transition-all group active:scale-98 ${
-                              pdpaConsent ? 'cursor-pointer' : 'cursor-not-allowed'
-                            }`}>
-                              <div className="w-10 h-10 rounded-2xl bg-secondary text-primary flex items-center justify-center text-lg group-hover:scale-110 transition-transform">
-                                📁
-                              </div>
-                              <span className="text-xs font-black text-foreground">เลือกไฟล์รูปบัตร</span>
-                              <span className="text-[10px] text-muted-foreground text-center">
-                                อัปโหลด JPG / PNG จากเครื่อง
-                              </span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                disabled={!pdpaConsent}
-                                onChange={handleIdCardUpload}
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
 
                 {/* Extracted Fields */}
@@ -1469,7 +940,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                       />
                     </div>
                   </div>
-                  <p className="text-[11px] text-muted-foreground">🔒 ระบบไม่เก็บเลขบัตรประชาชนและรูปบัตร — ใช้บัตรเพื่อกรอกชื่อและที่อยู่เท่านั้น (เลขบัตรกรอกด้วยมือในสัญญากระดาษตอนเซ็น)</p>
+                  <p className="text-[11px] text-muted-foreground">🔒 ระบบไม่เก็บเลขบัตรประชาชนและรูปบัตร (เลขบัตรกรอกด้วยมือในสัญญากระดาษตอนเซ็น)</p>
 
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
@@ -1525,14 +996,12 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-400 leading-relaxed">
                     ค่าจอง ฿{totalDeposit.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ชำระหลังหอพักอนุมัติคำขอ และเป็นส่วนหนึ่งของเงินประกันรวม ฿{fullDeposit.toLocaleString('th-TH', { minimumFractionDigits: 2 })} · ไม่คืนหากยกเลิกการจองหรือไม่มาเข้าพักตามวันนัด
                   </div>
-                  {!bookingOpen && (
-                    <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-[11px] text-rose-400 leading-relaxed">
-                      รับคำขอจองทุกวัน 08:00–20:00 น. — ตอนนี้นอกเวลา กรุณาส่งคำขอใหม่ในช่วงเวลาดังกล่าว
-                    </div>
-                  )}
+                  <div className="p-3 bg-sky-500/10 border border-sky-500/20 rounded-xl text-[11px] text-sky-300 leading-relaxed">
+                    {BOOKING_REQUEST_NOTE}
+                  </div>
                   <button
                     onClick={handleFinalSubmit}
-                    disabled={!bookingData.name || !bookingData.id_card_address || !bookingOpen || isProcessing || !costs}
+                    disabled={!bookingData.name || !bookingData.id_card_address || isProcessing || !costs}
                     className="w-full py-5 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-sm transition-all shadow-xl shadow-primary/25 hover:scale-[1.02] active:scale-95 disabled:opacity-40 cursor-pointer"
                   >
                     {isProcessing ? 'กำลังส่งคำขอจอง...' : 'ส่งคำขอจอง →'}
@@ -1565,7 +1034,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500">ส่งคำขอจองแล้ว</span>
                   <h3 className="text-2xl font-black tracking-tight">ส่งคำขอจองแล้ว รอหอพักอนุมัติ</h3>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    หากไม่ได้รับการอนุมัติภายใน 20:00 น. วันนี้ คำขอจะหมดอายุ · เมื่อหอพักอนุมัติแล้ว กรุณาชำระค่าจองภายใน 10 นาทีที่หน้าสถานะการจอง
+                    {BOOKING_REQUEST_NOTE} (ชำระที่หน้าสถานะการจอง)
                   </p>
                 </div>
 
@@ -1659,21 +1128,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
       {/* Chat Widget */}
       {room && <ChatWidget dormId={room.dorm_id} ownerName={room.owner_name} />}
 
-      {/* PDPA OCR Consent Modal */}
-      <PdpaOcrConsentModal
-        isOpen={isPdpaModalOpen}
-        onClose={() => {
-          setIsPdpaModalOpen(false);
-          setPendingOcrImage(null);
-        }}
-        onConsent={() => {
-          setIsPdpaModalOpen(false);
-          if (pendingOcrImage) {
-            processIdImage(pendingOcrImage);
-            setPendingOcrImage(null);
-          }
-        }}
-      />
     </div>
   );
 }

@@ -540,7 +540,7 @@ export default function OwnerBookingsPage() {
                     {isReq && (
                       <>
                         <span className="text-[11px] text-orange-300 font-bold">
-                          หมดอายุใน {Math.floor(Number(item.seconds_to_expire || 0) / 60)} นาที (20:00 น.)
+                          รออนุมัติ — ติดต่อผู้จองแล้วกดอนุมัติหรือปฏิเสธ (ไม่มีหมดเวลา)
                         </span>
                         <button
                           onClick={() => runAction('approve', item)}

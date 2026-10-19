@@ -1,5 +1,6 @@
-// Booking flow (approve, then pay): request -> owner/manager approves or rejects -> guest pays the booking fee
-// within 10 minutes. There is no scheduler: expired bookings are expired when bookings or rooms are read or written
+// Booking flow (approve, then pay): request (any time of day, commit 23a) -> owner/manager approves or rejects
+// (a request waits, holding the room, until then — it never expires) -> guest pays the booking fee within 10 minutes.
+// There is no scheduler: approved bookings not paid in time are expired when bookings or rooms are read or written
 // (expireBookings). Every function takes `now` from the app; MySQL NOW() is never used for booking times.
 // Times are stored as Thai local time (the pool in lib/mysql-adapter.js uses timezone +07:00).
 
@@ -10,8 +11,6 @@ import { recordPaymentInTransaction, slipPaidAt } from '@/lib/payments';
 import { forfeitBookingFee } from '@/lib/deposits';
 import { formatBaht } from '@/lib/format';
 
-export const OPEN_HOUR = 8; // requests from 08:00:00
-export const CLOSE_HOUR = 20; // until 19:59:59; requests not approved by 20:00 expire
 export const PAY_MINUTES = 10; // transfer within 10 minutes of approval
 export const UPLOAD_MINUTES = 15; // slip upload accepted until approval + 15 minutes
 
@@ -20,7 +19,7 @@ const OPEN = ['BookingRequested', 'BookingApproved'];
 // Booking fee paid; the owner prepares the contract and the move-in bill
 const PAID = ['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill'];
 
-export type BookingRefusal = ContractRefusal | 'outside_hours' | 'not_found' | 'not_owner'
+export type BookingRefusal = ContractRefusal | 'not_found' | 'not_owner'
   | 'not_requested' | 'not_approved' | 'expired' | 'slip_rejected' | 'slip_time' | 'payment_failed'
   | 'not_paid_booking' | 'too_early' | 'first_bill_paid' | 'legacy';
 
@@ -34,7 +33,6 @@ function refuse(reason: BookingRefusal, detail?: string): never {
 }
 
 const MESSAGES: Partial<Record<BookingRefusal, string>> = {
-  outside_hours: 'รับคำขอจองทุกวัน 08:00–20:00 น. — ตอนนี้นอกเวลา กรุณาส่งคำขอใหม่ในช่วงเวลาดังกล่าว',
   not_found: 'ไม่พบข้อมูลการจอง',
   not_owner: 'ไม่พบข้อมูลการจอง',
   not_requested: 'การจองนี้ไม่ได้อยู่ในสถานะรออนุมัติ',
@@ -60,21 +58,6 @@ async function run<T>(work: (client: Client) => Promise<T>): Promise<BookingResu
     }
     throw error;
   }
-}
-
-/** Hour and minute in Asia/Bangkok. */
-function bangkokClock(now: Date) {
-  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
-    .formatToParts(now);
-  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value || 0);
-  return { hour: get('hour'), minute: get('minute') };
-}
-
-/** Whether requests are accepted at `now` (08:00:00–19:59:59 Thai time) and when today's requests expire (20:00). */
-export function bookingWindow(now: Date) {
-  const { hour } = bangkokClock(now);
-  const closesAt = new Date(`${bangkokDate(now)}T${String(CLOSE_HOUR).padStart(2, '0')}:00:00+07:00`);
-  return { open: hour >= OPEN_HOUR && hour < CLOSE_HOUR, closesAt };
 }
 
 /** Deadlines of an approved booking. */
@@ -117,9 +100,7 @@ async function notifyExpired(client: Client, c: { id: number; status: string }, 
   )).rows[0];
   if (!who?.user_id) return;
   const room = who.room_number || '-';
-  const message = c.status === 'BookingRequested'
-    ? `คำขอจองห้อง ${room} หมดเวลา: หอพักยังไม่ได้อนุมัติภายใน 20:00 — ส่งคำขอใหม่ได้ (รับคำขอ 08:00–20:00)`
-    : `การจองห้อง ${room} หมดเวลา: ไม่ได้ชำระค่าจองภายในเวลาที่กำหนด — ห้องถูกปล่อยว่างแล้ว`;
+  const message = `การจองห้อง ${room} หมดเวลา: ไม่ได้ชำระค่าจองภายในเวลาที่กำหนด — ห้องถูกปล่อยว่างแล้ว`;
   await client.query(
     `INSERT IGNORE INTO notifications (user_id, title, message, type, is_read, link, created_at, event_key)
      VALUES (?, 'การจองหมดเวลา', ?, 'booking', 0, '/explore/booking-status', ?, ?)`,
@@ -128,12 +109,13 @@ async function notifyExpired(client: Client, c: { id: number; status: string }, 
 }
 
 /**
- * Expire requests not approved by 20:00 and approved bookings not paid within the upload window.
+ * Expire approved bookings not paid within the upload window. A request waiting for approval never expires (even an
+ * older one that still has an expires_at from before commit 23a).
  * Rows are locked, so a payment arriving at the same moment either completes first or sees the booking expired.
  */
 export async function expireBookings(client: Client, now: Date): Promise<number> {
   const due = (await client.query(
-    "SELECT id, status, room_id, booking_bill_id FROM contracts WHERE status IN ('BookingRequested', 'BookingApproved') AND expires_at <= ? FOR UPDATE",
+    "SELECT id, status, room_id, booking_bill_id FROM contracts WHERE status = 'BookingApproved' AND expires_at <= ? FOR UPDATE",
     [now]
   )).rows;
   for (const c of due) {
@@ -172,8 +154,6 @@ export interface BookingRequestInput {
 /** A guest asks to book a room (no payment yet). One booking/contract per account until it ends; the room must be free. */
 export function requestBooking(input: BookingRequestInput, now: Date) {
   return run(async (client) => {
-    const window = bookingWindow(now);
-    if (!window.open) refuse('outside_hours');
     await expireBookings(client, now);
 
     const room = (await client.query('SELECT room_number FROM rooms WHERE id = ?', [input.roomId])).rows[0];
@@ -194,9 +174,10 @@ export function requestBooking(input: BookingRequestInput, now: Date) {
       signature: input.signature || 'CONFIRMED_E_CONTRACT',
       tenantAddress: input.address,
       parentPhone: input.parentPhone,
-      expiresAt: window.closesAt,
+      // no expiry: waits until the owner/manager approves or rejects
+      expiresAt: null,
     });
-    return { contractId: created.contractId, tenantId: created.tenantId, roomNumber: created.roomNumber, expiresAt: window.closesAt };
+    return { contractId: created.contractId, tenantId: created.tenantId, roomNumber: created.roomNumber, expiresAt: null };
   });
 }
 
@@ -216,7 +197,7 @@ export function approveBooking(contractId: number, by: number, now: Date) {
   return run(async (client) => {
     await expireBookings(client, now);
     const c = await lockBooking(client, contractId);
-    if (c.status === 'Expired') refuse('expired', 'คำขอนี้หมดอายุแล้ว (เลย 20:00 น.)');
+    if (c.status === 'Expired') refuse('expired', 'คำขอนี้หมดอายุแล้ว');
     if (c.status !== 'BookingRequested') refuse('not_requested');
 
     const { payBy, uploadBy } = bookingDeadlines(now);

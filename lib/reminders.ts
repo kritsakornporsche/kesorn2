@@ -8,7 +8,7 @@
 //   due_today:<bill>       on the due date
 //   overdue15:<bill>       more than 15 days past due (staff; commit 8, moved here from /api/owner/stats)
 //   movein_due:<contract>  the move-in bill is unpaid the day before (or on) the contract start date
-//   booking_expired:<contract> is sent by lib/bookings.ts expireBookings when a booking runs out of time
+//   booking_expired:<contract> is sent by lib/bookings.ts expireBookings when an approved booking is not paid in time
 
 import { getDb } from '@/lib/db';
 import { bangkokDate, daysPastDue, getRates, lateFeeRateOf } from '@/lib/billing';

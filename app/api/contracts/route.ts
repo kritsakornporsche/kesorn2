@@ -4,7 +4,7 @@ import { auth } from '@/auth';
 import { requestBooking } from '@/lib/bookings';
 
 // A guest asks to book a room (approve first, then pay): no slip and no payment here.
-// Accepted 08:00–20:00 (Thai time); one open request per account; the room must be free.
+// Accepted at any time (it waits for approval); one open request per account; the room must be free.
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session || !session.user) {
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Tell owners/managers there is a request to approve (it expires at 20:00 today)
+    // Tell owners/managers there is a request to approve (it waits until they approve or reject)
     try {
       const staff = await sql`SELECT id FROM users WHERE role IN ('owner', 'manager') AND COALESCE(is_active, 1) = 1`;
       const guestDisplay = tenantName || session.user.name || 'ผู้จอง';
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
           VALUES (
             ${u.id},
             '🛎️ มีคำขอจองห้องพักใหม่ (รออนุมัติ)',
-            ${`คุณ ${guestDisplay} ขอจองห้อง ${result.roomNumber} — กรุณาอนุมัติหรือปฏิเสธก่อน 20:00 น. วันนี้`},
+            ${`คุณ ${guestDisplay} ขอจองห้อง ${result.roomNumber} — กรุณาติดต่อผู้จองแล้วอนุมัติหรือปฏิเสธ (ห้องถูกกันไว้จนกว่าจะตัดสิน)`},
             'booking',
             0,
             '/owner/bookings',

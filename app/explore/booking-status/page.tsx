@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
 import { formatBaht } from '@/lib/format';
+import { BOOKING_REQUEST_NOTE } from '@/lib/booking-text';
 
 interface Booking {
   contract_id: number;
@@ -223,7 +224,6 @@ export default function BookingStatusPage() {
 
         {current.map((booking) => {
           const cfg = statusConfig[booking.status] || { label: booking.status, color: 'text-muted-foreground', bg: 'bg-muted', icon: '•' };
-          const toExpire = left(booking.seconds_to_expire);
           const toPay = left(booking.seconds_to_pay);
           const toUpload = left(booking.seconds_to_upload);
           const uploadOver = booking.status === 'BookingApproved' && toUpload === 0;
@@ -239,8 +239,8 @@ export default function BookingStatusPage() {
 
               {booking.status === 'BookingRequested' && (
                 <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-xs text-amber-300 leading-relaxed">
-                  ส่งคำขอจองแล้ว รอหอพักอนุมัติ (หากไม่ได้รับการอนุมัติภายใน 20:00 น. วันนี้ คำขอจะหมดอายุ)
-                  {toExpire !== null && <span className="block mt-1 text-amber-400/80">เหลือเวลารออนุมัติ {clock(toExpire)} · หน้านี้อัปเดตเองทุก 10 วินาที</span>}
+                  ส่งคำขอจองแล้ว รอหอพักอนุมัติ
+                  <span className="block mt-1 text-amber-300/90">{BOOKING_REQUEST_NOTE}</span>
                 </div>
               )}
 
