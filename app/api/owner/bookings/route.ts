@@ -47,6 +47,7 @@ export async function GET(req: Request) {
         c.contract_file_url,
         c.id_card_number,
         c.tenant_address,
+        c.occupants,
         c.id_card_image,
         c.parent_phone,
         c.created_at as booking_created_at,

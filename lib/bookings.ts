@@ -149,6 +149,8 @@ export interface BookingRequestInput {
   startDate: string;
   endDate: string;
   signature?: string | null;
+  /** occupants of the room (lib/occupants, checked by the API) — on the contract from the booking (commit 27) */
+  occupants?: number | null;
 }
 
 /** A guest asks to book a room (no payment yet). One booking/contract per account until it ends; the room must be free. */
@@ -174,6 +176,7 @@ export function requestBooking(input: BookingRequestInput, now: Date) {
       signature: input.signature || 'CONFIRMED_E_CONTRACT',
       tenantAddress: input.address,
       parentPhone: input.parentPhone,
+      occupants: input.occupants ?? 1,
       // no expiry: waits until the owner/manager approves or rejects
       expiresAt: null,
     });

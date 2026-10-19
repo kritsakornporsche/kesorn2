@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
+import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 
 interface WalkInModalProps {
   isOpen: boolean;
@@ -32,6 +33,8 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [parentPhone, setParentPhone] = useState('');
+  // commit 27: occupants of the room (water per person); only the tenant's details are kept
+  const [occupants, setOccupants] = useState(1);
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [endDate, setEndDate] = useState(
     new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10)
@@ -66,6 +69,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
     setEmail('');
     setPhone('');
     setParentPhone('');
+    setOccupants(1);
     setSlipData(null);
     setSubmitResult(null);
   };
@@ -191,6 +195,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
           phone,
           parentPhone,
           tenantAddress,
+          occupants,
           paymentMethod: payMethod,
           ...(payMethod === 'cash' ? { cashAmount: roomFee, cashPaidAt } : { slipUrl: slipData }),
         }),
@@ -383,6 +388,17 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                     onChange={(e) => setTenantAddress(e.target.value)}
                     className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-primary resize-none"
                   />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-300">จำนวนผู้พัก (1–{MAX_OCCUPANTS} คน)</label>
+                  <select
+                    value={occupants}
+                    onChange={(e) => setOccupants(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-primary"
+                  >
+                    {OCCUPANT_CHOICES.map((n) => <option key={n} value={n}>{n} คน</option>)}
+                  </select>
                 </div>
 
                 <div className="space-y-1.5">

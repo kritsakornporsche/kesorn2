@@ -9,9 +9,12 @@ import Image from 'next/image';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { contractDepositLabel, statusText } from '@/lib/status-text';
 import { InspectionButton } from '@/components/InspectionModal';
+import OccupantsEditor from '@/components/OccupantsEditor';
 import TestRoomBadge from '@/components/TestRoomBadge';
 
 interface ContractDetail {
+  /** commit 27 */
+  occupants?: number | null;
   id: number;
   tenant_name: string;
   tenant_email: string;
@@ -287,6 +290,9 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             <span className="text-2xl font-black text-emerald-400">฿{Number(contract.deposit_amount).toLocaleString()}</span>
           </div>
         </div>
+
+        {/* commit 27: occupants during the lease — owner / manager can change it (history kept, tenant notified) */}
+        <OccupantsEditor contractId={contract.id} />
 
         {/* Payment Slip Proof Section */}
         <div className="space-y-4 pt-2">

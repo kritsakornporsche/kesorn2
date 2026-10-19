@@ -9,6 +9,7 @@ import PremiumDatePicker from '@/app/components/PremiumDatePicker';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { contractDepositLabel, statusText } from '@/lib/status-text';
 import TestRoomBadge from '@/components/TestRoomBadge';
+import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 
 interface Contract {
   id: number;
@@ -908,14 +909,14 @@ export default function OwnerContractsPage() {
 
                   <div className="space-y-2">
                     <label className="block text-[10px] font-black text-foreground/50 uppercase tracking-widest">
-                      จำนวนผู้พัก
+                      จำนวนผู้พัก (1–{MAX_OCCUPANTS} คน)
                     </label>
                     <select
                       value={formData.occupants}
                       onChange={(e) => setFormData({ ...formData, occupants: Number(e.target.value) })}
                       className="w-full px-6 py-4 bg-background border border-border rounded-2xl text-foreground font-bold outline-none focus:border-primary transition-all cursor-pointer"
                     >
-                      {[1, 2].map((n) => <option key={n} value={n} className="bg-card">{n} คน</option>)}
+                      {OCCUPANT_CHOICES.map((n) => <option key={n} value={n} className="bg-card">{n} คน</option>)}
                     </select>
                   </div>
 

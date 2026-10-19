@@ -10,7 +10,7 @@ import { contractAddress, type ContractTextInput } from '@/lib/settings-fields';
 export async function contractPrintData(contractId: number): Promise<{ id: number; input: ContractTextInput; inspection: InspectionView | null } | null> {
   const sql = getDb();
   const rows = await sql`
-    SELECT c.id, c.status, c.deposit_amount, c.start_date, c.end_date, c.created_at, c.parent_phone,
+    SELECT c.id, c.status, c.deposit_amount, c.start_date, c.end_date, c.created_at, c.parent_phone, c.occupants,
            COALESCE(NULLIF(c.tenant_address, ''), t.address) AS address,
            r.room_number, r.floor, r.price, r.deposit_amount AS room_deposit_amount,
            t.name AS tenant_name, t.phone AS tenant_phone
@@ -29,6 +29,7 @@ export async function contractPrintData(contractId: number): Promise<{ id: numbe
     tenantName: c.tenant_name,
     tenantPhone: c.tenant_phone,
     parentPhone: c.parent_phone,
+    occupants: Number(c.occupants) || null,
     address: contractAddress(c.address),
     startDate: c.start_date,
     endDate: c.end_date,

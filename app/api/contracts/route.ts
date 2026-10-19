@@ -1,6 +1,7 @@
 import { getDb } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { parseOccupants } from '@/lib/occupants';
 import { requestBooking } from '@/lib/bookings';
 
 // A guest asks to book a room (approve first, then pay): no slip and no payment here.
@@ -17,11 +18,13 @@ export async function POST(req: NextRequest) {
   const sql = getDb();
 
   try {
-    const { roomId, signature, startDate, endDate, tenantName, phone, parentPhone, idCardNumber, tenantAddress, idCardImage } = await req.json();
+    const { roomId, signature, startDate, endDate, tenantName, phone, parentPhone, idCardNumber, tenantAddress, idCardImage, occupants } = await req.json();
 
     if (!roomId) {
       return NextResponse.json({ success: false, message: 'Room ID is required' }, { status: 400 });
     }
+    const occ = parseOccupants(occupants);
+    if (!occ.ok) return NextResponse.json({ success: false, message: occ.message }, { status: 400 });
 
     const result = await requestBooking({
       email: userEmail,
@@ -35,6 +38,7 @@ export async function POST(req: NextRequest) {
       startDate,
       endDate,
       signature: signature || null,
+      occupants: occ.value,
     }, new Date());
 
     if (!result.ok) {

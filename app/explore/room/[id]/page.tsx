@@ -14,6 +14,7 @@ import { BOOKING_REQUEST_NOTE } from '@/lib/booking-text';
 import { roomTypeLabel } from '@/lib/room-types';
 import { itemsForRoomType } from '@/lib/room-items';
 import { TEST_ROOM_PAGE_BADGE, isTestRoom } from '@/lib/test-rooms';
+import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 
 function getGoogleMapsEmbedUrl(mapUrl?: string, address?: string, dormName?: string) {
   if (mapUrl) {
@@ -69,6 +70,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
     id_card_address: '',
     id_card_image: '',
+    occupants: 1,
     houseNo: '',
     village: '',
     road: '',
@@ -290,6 +292,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
           phone: bookingData.phone,
           parentPhone: bookingData.parent_phone,
           tenantAddress: bookingData.id_card_address,
+          occupants: bookingData.occupants,
         })
       });
 
@@ -969,6 +972,21 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                       onChange={(e) => setBookingData({ ...bookingData, id_card_address: e.target.value })}
                     />
                   </div>
+
+                  {/* commit 27: occupants (water is charged per person); only the tenant's details are kept */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                      จำนวนผู้พัก (1–{MAX_OCCUPANTS} คน) <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      className="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-bold text-xs"
+                      value={bookingData.occupants ?? 1}
+                      onChange={(e) => setBookingData({ ...bookingData, occupants: Number(e.target.value) })}
+                    >
+                      {OCCUPANT_CHOICES.map((n) => <option key={n} value={n}>{n} คน</option>)}
+                    </select>
+                    <p className="text-[11px] text-muted-foreground">ค่าน้ำคิดต่อคน · สัญญามีผู้เช่าเป็นตัวแทนคนเดียว ไม่ต้องกรอกข้อมูลผู้พักร่วม</p>
+                  </div>
                 </div>
 
                 {/* Contract Summary & Terms Preview */}
@@ -1107,6 +1125,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
           parent_phone: bookingData.parent_phone,
           tenant_email: bookingData.email,
           tenant_address: bookingData.id_card_address,
+          occupants: bookingData.occupants ?? 1,
           houseNo: bookingData.houseNo,
           village: bookingData.village,
           road: bookingData.road,

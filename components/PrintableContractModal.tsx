@@ -22,6 +22,7 @@ interface PrintableContractModalProps {
     parent_phone?: string;
     tenant_email?: string;
     tenant_address?: string;
+    occupants?: number | null;
     houseNo?: string; village?: string; road?: string; subdistrict?: string; district?: string; province?: string;
     floor?: number | null;
     start_date: string;
@@ -71,6 +72,7 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
     tenantName: contract.tenant_name,
     tenantPhone: contract.tenant_phone,
     parentPhone: contract.parent_phone,
+    occupants: contract.occupants ?? null,
     address: parts.some(Boolean)
       ? { houseNo: contract.houseNo, village: contract.village, road: contract.road, subdistrict: contract.subdistrict, district: contract.district, province: contract.province }
       : contractAddress(contract.tenant_address),

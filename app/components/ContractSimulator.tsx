@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { formatBaht } from '@/lib/format';
+import { OCCUPANT_CHOICES } from '@/lib/occupants';
 
 interface SimulatorProps {
   roomNumber: string;
@@ -92,7 +93,7 @@ export default function ContractSimulator({ roomNumber, onClose }: SimulatorProp
                 onChange={(e) => setOccupants(Number(e.target.value))}
                 className="px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-xs font-bold cursor-pointer"
               >
-                {[1, 2].map((n) => <option key={n} value={n}>{n} คน</option>)}
+                {OCCUPANT_CHOICES.map((n) => <option key={n} value={n}>{n} คน</option>)}
               </select>
             </div>
             <p className="text-3xl font-display font-black tracking-tight">฿{formatBaht(monthly)}</p>

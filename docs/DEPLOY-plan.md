@@ -3,9 +3,9 @@
 สำหรับเพื่อนที่ดูแลเว็บ (เป็นคน merge) · ไฟล์นี้ไม่มีรหัสผ่าน/secret — ค่าจริงส่งแยกช่องทางส่วนตัว
 อ้างอิง: [`docs/CHANGES-completeness.md`](CHANGES-completeness.md) (สิ่งที่เปลี่ยน) · [`docs/schema-changes.md`](schema-changes.md) (ฐานข้อมูล)
 
-**หลักการ:** import ไฟล์ฐานที่ส่งให้ลง **ฐานใหม่ชื่อ `kesorn_new`** (ฐานเดิม `kesorn_db` บนเว็บไม่ถูกแตะ = เป็น backup ในตัว) → query ตรวจ → **รัน migration 018 → 019 บน `kesorn_new`** → แก้ `.env` ให้ `DATABASE_URL` ชี้ `kesorn_new` → merge PR #1 → #2 → #3 (= deploy อัตโนมัติ) → ตั้ง cron · ฐานที่ส่งให้รัน migration 001–017 ครบแล้ว และล้างข้อมูลทดสอบ/เลขบัตรแล้ว → บนเว็บรันเพิ่มแค่ **018 (PR #2) และ 019 (PR #3)** ในข้อ 4.5 · ใช้เวลาประมาณ 35 นาที แนะนำทำช่วงคนใช้น้อย
+**หลักการ:** import ไฟล์ฐานที่ส่งให้ลง **ฐานใหม่ชื่อ `kesorn_new`** (ฐานเดิม `kesorn_db` บนเว็บไม่ถูกแตะ = เป็น backup ในตัว) → query ตรวจ → **รัน migration 018 → 019 → 020 บน `kesorn_new`** → แก้ `.env` ให้ `DATABASE_URL` ชี้ `kesorn_new` → merge PR #1 → #2 → #3 (= deploy อัตโนมัติ) → ตั้ง cron · ฐานที่ส่งให้รัน migration 001–017 ครบแล้ว และล้างข้อมูลทดสอบ/เลขบัตรแล้ว → บนเว็บรันเพิ่มแค่ **018 (PR #2), 019 และ 020 (PR #3)** ในข้อ 4.5 · ใช้เวลาประมาณ 35 นาที แนะนำทำช่วงคนใช้น้อย
 
-**ลำดับทั้งหมด:** import (ข้อ 3) → ตรวจ (ข้อ 4) → 018 → 019 (ข้อ 4.5) → `.env` (ข้อ 5.3) → merge PR #1 → #2 → #3 (ข้อ 5.4) → cron (ข้อ 6)
+**ลำดับทั้งหมด:** import (ข้อ 3) → ตรวจ (ข้อ 4) → 018 → 019 → 020 (ข้อ 4.5) → `.env` (ข้อ 5.3) → merge PR #1 → #2 → #3 (ข้อ 5.4) → cron (ข้อ 6)
 
 ---
 
@@ -76,26 +76,28 @@ SELECT name FROM job_runs;                                             -- remind
 ```
 ค่าไม่ตรง → หยุด (ไม่ต้องย้อนอะไร — เว็บยังใช้ `kesorn_db` เดิม) · แจ้งกลับพร้อมผล query
 
-## 4.5 รัน migration 018 → 019 บน `kesorn_new` (ตามลำดับ · ก่อนแก้ `.env`)
-ไฟล์อยู่ใน branch ของ PR (`db/migrations/`) · รันกับ **`kesorn_new` เท่านั้น** (ห้ามรันกับ `kesorn_db` เดิม) · ทั้งสองไฟล์แค่เพิ่มคอลัมน์ว่าง (NULL) ไม่แก้ข้อมูลเดิม
+## 4.5 รัน migration 018 → 019 → 020 บน `kesorn_new` (ตามลำดับ · ก่อนแก้ `.env`)
+ไฟล์อยู่ใน branch ของ PR (`db/migrations/`) · รันกับ **`kesorn_new` เท่านั้น** (ห้ามรันกับ `kesorn_db` เดิม) · 018/019 แค่เพิ่มคอลัมน์ว่าง (NULL) · 020 เพิ่มตารางใหม่ว่าง ๆ · ไม่แก้ข้อมูลเดิม (สัญญาเดิมยังมีผู้พัก 1 คนตามที่บันทึกไว้)
 ```
 cd C:\xampp\mysql\bin
 mysql.exe -u root -p --default-character-set=utf8mb4 kesorn_new < C:\path\app\db\migrations\018_landlord_contact.up.sql
 mysql.exe -u root -p --default-character-set=utf8mb4 kesorn_new < C:\path\app\db\migrations\019_inspection_item_quantity.up.sql
+mysql.exe -u root -p --default-character-set=utf8mb4 kesorn_new < C:\path\app\db\migrations\020_contract_occupant_changes.up.sql
 ```
-(phpMyAdmin: เลือก `kesorn_new` → แท็บ *Import* → ไฟล์ 018 ก่อน แล้วค่อย 019)
+(phpMyAdmin: เลือก `kesorn_new` → แท็บ *Import* → ไฟล์ 018 ก่อน แล้ว 019 แล้ว 020)
 
 | migration | PR | ทำอะไร | ตรวจ (แท็บ SQL ของ `kesorn_new`) |
 |---|---|---|---|
 | 018 | #2 | `dormitory_profile.landlord_name`, `landlord_phone` (ชื่อ/โทรผู้ให้เช่าในสัญญา) | `SHOW COLUMNS FROM dormitory_profile LIKE 'landlord%';` → 2 แถว |
 | 019 | #3 | `contract_inspection_items.quantity` INT NULL (จำนวนของที่นับได้ เช่น กุญแจห้อง / รีโมทแอร์ ในผลตรวจห้อง) | `SHOW COLUMNS FROM contract_inspection_items LIKE 'quantity';` → 1 แถว `int(11)` `YES` |
+| 020 | #3 | ตารางใหม่ `contract_occupant_changes` (ประวัติการแก้จำนวนผู้พักระหว่างสัญญา: เดิม → ใหม่, ใครแก้, เมื่อไร, เหตุผล) | `SELECT COUNT(*) FROM contract_occupant_changes;` → 0 · `SELECT occupants, COUNT(*) FROM contracts GROUP BY occupants;` → 1 คน ทุกสัญญา (ไม่เปลี่ยน) |
 
 **ห้องทดสอบ T01 (id 21 — มีอยู่ในไฟล์ฐานที่ import):** T01 (id 21) = ห้องทดสอบ ซ่อนจากหน้าสาธารณะ ไม่นับในรายงาน เข้าได้ด้วยลิงก์ตรง `/explore/room/21`
 - หน้าห้องมีป้าย "ห้องทดสอบระบบ" · จองได้ตามปกติ (เจ้าของหออนุมัติ) · ใช้ราคาเดโม (ค่าจอง 1 บาท ฯลฯ) ไว้ทดสอบรับเงินจริง
 - ตัวเลขของเจ้าของหอ (รายงาน / dashboard / ยอดสรุปบัญชี) ไม่นับ T01 · รายการของ T01 ในบัญชี / บิล / สัญญา / หน้าห้อง ยังแสดง พร้อมป้าย "ทดสอบ"
 - **ไม่ต้องตั้ง Maintenance · ห้ามลบ · ห้ามแก้ฐานข้อมูล**
 
-ย้อนกลับ (ถ้าต้อง): รัน `019_…down.sql` แล้ว `018_…down.sql` (ลำดับกลับกัน) · ไม่มีคอลัมน์ 018/019 แล้ว merge → หน้าตั้งค่า/สัญญา และหน้าตรวจห้อง error
+ย้อนกลับ (ถ้าต้อง): รัน `020_…down.sql` → `019_…down.sql` → `018_…down.sql` (ลำดับกลับกัน) · ไม่มีคอลัมน์/ตาราง 018–020 แล้ว merge → หน้าตั้งค่า/สัญญา หน้าตรวจห้อง และการแก้จำนวนผู้พัก error
 
 ## 5. ตั้งค่า → เปลี่ยน DATABASE_URL → merge
 ทำต่อเนื่องกัน ตามลำดับ:
@@ -159,5 +161,6 @@ curl -fsS -X POST -H "Authorization: Bearer <CRON_SECRET>" http://localhost:<por
 - เก็บ `kesorn_db` เดิม + backup ข้อ 1 ไว้อย่างน้อย 30 วัน แล้วค่อยลบ
 - **ไฟล์ backup ในเครื่อง dev (มีข้อมูลส่วนตัว — ไม่อยู่ใน git ห้าม commit/ส่งต่อ) ลบหลัง deploy ผ่าน smoke test:**
   - `docs\review\kesorn_db_before_019_20261019_1743.sql` (backup ก่อนรัน 019 บนฐาน dev)
+  - `docs\review\kesorn_db_before_020_20261020_0057.sql` (backup ก่อนรัน 020 บนฐาน dev)
   - (ไฟล์ export ที่ส่งให้ `kesorn_db_20261015_1723.sql` — ลบทั้งฝั่งผู้ส่งและบน server หลัง import เสร็จ)
 - แจ้งเตือนจะเริ่มทำงานจริง: บิลห้อง 9 และ 11 (ครบกำหนด 5 ต.ค.) แจ้ง owner/manager "ค้างชำระเกิน 15 วัน" ตั้งแต่ 21 ต.ค. · เตือนจดมิเตอร์ตั้งแต่วันที่ 28

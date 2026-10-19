@@ -12,13 +12,14 @@ import { releaseRoom, withRetry } from '@/lib/bookings';
 import { forfeitBookingFee } from '@/lib/deposits';
 import { deletePaper, isPaper, parsePaperUpload, savePaper } from '@/lib/contract-files';
 import { formatBaht } from '@/lib/format';
+import { parseOccupants, OCCUPANTS_MESSAGE } from '@/lib/occupants';
 
 // Booking fee paid, contract and move-in bill not done yet
 const BOOKING_PAID = ['PendingOwnerSignature', 'PendingContract'];
 const WAITING = [...BOOKING_PAID, 'PendingFirstBill'];
 
 export type MoveInRefusal = 'not_found' | 'not_paid_booking' | 'already_issued' | 'start_passed' | 'over_cap'
-  | 'meter_required' | 'legacy' | 'invalid_status' | 'signed_date' | 'paper_locked' | 'bad_file' | 'bad_identity';
+  | 'meter_required' | 'legacy' | 'invalid_status' | 'signed_date' | 'paper_locked' | 'bad_file' | 'bad_identity' | 'bad_occupants';
 export type Missing = 'move_in_bill' | 'paper';
 
 export type MoveInResult<T> = ({ ok: true } & T) | { ok: false; reason: MoveInRefusal; message: string };
@@ -43,6 +44,7 @@ const MESSAGES: Record<MoveInRefusal, string> = {
   paper_locked: 'สัญญานี้มีผลแล้วและมีไฟล์สัญญาที่เซ็นแล้ว แก้ไขไม่ได้',
   bad_file: 'ไฟล์สัญญาไม่ถูกต้อง',
   bad_identity: 'ชื่อ-นามสกุลต้องไม่เกิน 255 ตัวอักษร และที่อยู่ต้องไม่เกิน 500 ตัวอักษร',
+  bad_occupants: OCCUPANTS_MESSAGE,
 };
 
 const NAME_MAX = 255;
@@ -94,6 +96,8 @@ export interface IssueMoveInInput {
    */
   tenantName?: unknown;
   tenantAddress?: unknown;
+  /** occupants (commit 27): left out = keep the number from the booking; else 1–MAX_OCCUPANTS */
+  occupants?: unknown;
 }
 
 /**
@@ -120,6 +124,10 @@ export function issueMoveInBill(contractId: number, input: IssueMoveInInput, now
     const name = typeof input.tenantName === 'string' ? input.tenantName.trim() : '';
     const address = typeof input.tenantAddress === 'string' ? input.tenantAddress.trim() : '';
     if (name.length > NAME_MAX || address.length > ADDRESS_MAX) refuse('bad_identity');
+    // Occupants (commit 27): the booking's number unless changed here, before the bill — water is charged per person
+    const occ = parseOccupants(input.occupants, Number(c.occupants) || 1);
+    if (!occ.ok) refuse('bad_occupants');
+    if (occ.value !== Number(c.occupants)) await client.query('UPDATE contracts SET occupants = ? WHERE id = ?', [occ.value, contractId]);
     if (name) await client.query('UPDATE tenants SET name = ? WHERE id = ?', [name, c.tenant_id]);
     if (address) {
       await client.query('UPDATE tenants SET address = ? WHERE id = ?', [address, c.tenant_id]);

@@ -38,6 +38,7 @@ export default function ContractDocument({ text }: { text: ContractText }) {
       <div className="mt-3 text-justify">
         <p style={{ textIndent: '2.5em' }}>{text.parties[0]}</p>
         <p>{text.parties[1]}</p>
+        <p>{text.roomLine}</p>
         <p>{text.parties[2]}</p>
       </div>
 

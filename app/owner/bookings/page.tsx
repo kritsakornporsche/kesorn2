@@ -8,9 +8,12 @@ import { checkPaperFile } from '@/lib/paper-file-check';
 import { InspectionButton, type InspectionStatus } from '@/components/InspectionModal';
 import { roomTypeLabel } from '@/lib/room-types';
 import TestRoomBadge from '@/components/TestRoomBadge';
+import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 
 interface Booking {
   contract_id: number;
+  /** commit 27: occupants from the booking */
+  occupants?: number | null;
   tenant_id: number;
   room_id: number;
   start_date: string;
@@ -79,6 +82,7 @@ export default function OwnerBookingsPage() {
   const [initialMeterReading, setInitialMeterReading] = useState<string>('');
   // Tenant name / address for the contract: what the booker typed, checked against the ID card by hand
   const [issueName, setIssueName] = useState('');
+  const [issueOccupants, setIssueOccupants] = useState(1);
   const [issueAddress, setIssueAddress] = useState('');
   const [paperBooking, setPaperBooking] = useState<Booking | null>(null);
   const [paperFile, setPaperFile] = useState<string | null>(null);
@@ -129,7 +133,7 @@ export default function OwnerBookingsPage() {
       const res = await fetch('/api/owner/contracts', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contract_id: issueBooking.contract_id, initial_meter_reading: initialMeterReading, tenant_name: issueName, tenant_address: issueAddress }),
+        body: JSON.stringify({ contract_id: issueBooking.contract_id, initial_meter_reading: initialMeterReading, tenant_name: issueName, tenant_address: issueAddress, occupants: issueOccupants }),
       });
       const data = await res.json();
       if (data.success) {
@@ -615,7 +619,7 @@ export default function OwnerBookingsPage() {
 
                     {is81 && item.can_issue_move_in && (
                       <button
-                        onClick={() => { setIssueBooking(item); setInitialMeterReading(''); setIssueName(item.guest_name && item.guest_name !== 'ไม่ระบุชื่อ' ? item.guest_name : ''); setIssueAddress(item.tenant_address || ''); }}
+                        onClick={() => { setIssueBooking(item); setInitialMeterReading(''); setIssueName(item.guest_name && item.guest_name !== 'ไม่ระบุชื่อ' ? item.guest_name : ''); setIssueAddress(item.tenant_address || ''); setIssueOccupants(Number(item.occupants) || 1); }}
                         className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs rounded-xl shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
                       >
                         <span>🧾</span>
@@ -844,7 +848,17 @@ export default function OwnerBookingsPage() {
                     className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-primary"
                   />
                 </label>
-                <p className="text-[10px] text-slate-400">ชื่อและที่อยู่นี้จะขึ้นในสัญญา (PDF / Word) · ระบบไม่เก็บเลขบัตรประชาชนและรูปบัตร</p>
+                <label className="block space-y-1">
+                  <span className="text-[11px] font-bold text-slate-300">จำนวนผู้พัก (1–{MAX_OCCUPANTS} คน) — จากการจอง แก้ได้ก่อนออกบิล</span>
+                  <select
+                    value={issueOccupants}
+                    onChange={(e) => setIssueOccupants(Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-primary"
+                  >
+                    {OCCUPANT_CHOICES.map((n) => <option key={n} value={n}>{n} คน</option>)}
+                  </select>
+                </label>
+                <p className="text-[10px] text-slate-400">ชื่อ ที่อยู่ และจำนวนผู้พักนี้จะขึ้นในสัญญา (PDF / Word) · ค่าน้ำคิดตามจำนวนผู้พัก · ระบบไม่เก็บเลขบัตรประชาชนและรูปบัตร</p>
               </div>
 
               {/* Initial Meter Reading Input */}

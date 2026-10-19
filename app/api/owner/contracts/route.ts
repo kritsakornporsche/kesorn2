@@ -6,6 +6,7 @@ import { createContract, temporaryPassword, contractMessage } from '@/lib/contra
 import { issueMoveInBill, missingMessage, recordSignedPaper } from '@/lib/moveIn';
 import { formDeposit, withPaperLink } from '@/lib/contract-files';
 import { formatBaht, formatThaiDate } from '@/lib/format';
+import { parseOccupants } from '@/lib/occupants';
 
 export async function GET(req: Request) {
   try {
@@ -55,6 +56,7 @@ export async function GET(req: Request) {
         c.renewal_note,
         c.parent_contract_id,
         c.paper_signed_date,
+        c.occupants,
         COALESCE(c.id_card_number, t.id_card_number, '') as id_card_number,
         COALESCE(c.tenant_address, t.address, '') as tenant_address,
         COALESCE(c.id_card_image, t.id_card_image, '') as id_card_image,
@@ -145,6 +147,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'กำหนดเงินประกันเอง (ผู้เช่าเดิม) ทำได้เฉพาะเจ้าของหอ' }, { status: 403 });
     }
 
+    const occ = parseOccupants(body.occupants);
+    if (!occ.ok) return NextResponse.json({ success: false, message: occ.message }, { status: 400 });
+
     // Account + Active contract through the single contract service (room becomes Occupied).
     // A new account gets a random temporary password, returned once so the owner can pass it on.
     const tempPassword = temporaryPassword();
@@ -168,7 +173,7 @@ export async function POST(req: Request) {
       idCardNumber: id_card_number?.trim() || null,
       idCardImage: id_card_image || null,
       tenantAddress: tenant_address?.trim() || null,
-      occupants: Number(body.occupants) || 1,
+      occupants: occ.value,
       depositOutsideSystem: outsideSystem ? { reason: String(body.deposit_note || '') } : null,
     });
     if (!created.ok) {
@@ -276,6 +281,7 @@ export async function PUT(req: Request) {
       by: guard.user.id,
       tenantName: body.tenant_name,
       tenantAddress: body.tenant_address,
+      occupants: body.occupants,
     }, new Date());
     if (!result.ok) {
       return NextResponse.json({ success: false, message: result.message }, { status: result.reason === 'not_found' ? 404 : 400 });

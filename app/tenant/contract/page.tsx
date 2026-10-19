@@ -8,6 +8,8 @@ import TenantInspectionCard from '@/components/TenantInspectionCard';
 import { statusText } from '@/lib/status-text';
 
 interface Contract {
+  /** commit 27 */
+  occupants?: number | null;
   id: number;
   room_number?: string;
   room_type?: string;
@@ -174,6 +176,13 @@ export default function TenantContractPage() {
                   <p className="text-white font-bold text-sm">
                     {new Date(activeContract.start_date).toLocaleDateString('th-TH')} - {new Date(activeContract.end_date).toLocaleDateString('th-TH')}
                   </p>
+                </div>
+
+                <div className="bg-white/5 p-6 rounded-2xl border border-border">
+                  {/* commit 27: set by the dorm (ask the owner / manager to change it) */}
+                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">จำนวนผู้พักอาศัย</p>
+                  <p className="text-foreground font-black text-xl">{Number(activeContract.occupants) || 1} คน</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">ค่าน้ำคิดตามจำนวนผู้พัก · ต้องการเปลี่ยนแจ้งเจ้าของหอ</p>
                 </div>
 
                 <div className="bg-white/5 p-6 rounded-2xl border border-border">

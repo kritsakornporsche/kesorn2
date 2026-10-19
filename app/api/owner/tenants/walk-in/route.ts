@@ -7,6 +7,7 @@ import { recordPayment, slipPaidAt } from '@/lib/payments';
 import { bookingFeeFor, getDormPromptPay } from '@/lib/billing';
 import { createContract, contractMessage } from '@/lib/contracts';
 import { voidFailedBooking } from '@/lib/bookings';
+import { parseOccupants } from '@/lib/occupants';
 
 /**
  * POST /api/owner/tenants/walk-in
@@ -58,6 +59,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'วิธีชำระค่าจองไม่ถูกต้อง (สลิปโอน หรือ เงินสด)' }, { status: 400 });
     }
     const isCash = paymentMethod === 'cash';
+    // commit 27: occupants of the room (1–MAX_OCCUPANTS, lib/occupants)
+    const occ = parseOccupants(body.occupants);
+    if (!occ.ok) return NextResponse.json({ success: false, message: occ.message }, { status: 400 });
 
     // Validation
     if (!roomId || !tenantName || !email || !phone || (!isCash && !slipUrl)) {
@@ -208,6 +212,7 @@ export async function POST(req: Request) {
       oneOpenContract: true,
       signature: 'WALK_IN_VERIFIED',
       signedAt: new Date(),
+      occupants: occ.value,
       // Staff on site counts as the approval
       approvedAt: new Date(),
       approvedBy: guard.user.id,

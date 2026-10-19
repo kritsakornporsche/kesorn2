@@ -73,6 +73,8 @@ export interface ContractTextInput {
   tenantName?: string | null;
   tenantPhone?: string | null;
   parentPhone?: string | null;
+  /** occupants of the room (commit 27, lib/occupants) — printed on the room line; null prints a dotted line */
+  occupants?: number | null;
   address?: { houseNo?: string; village?: string; road?: string; subdistrict?: string; district?: string; province?: string } | null;
   startDate?: string | Date | null;
   endDate?: string | Date | null;
@@ -91,6 +93,8 @@ export interface ContractText {
   dateLine: string;
   /** opening paragraph: the parties (3 lines in the original) */
   parties: string[];
+  /** room details line, printed between parties[1] and parties[2] (commit 27) */
+  roomLine: string;
   /** clause number → paragraphs (the first one starts with "ข้อ n.") */
   clauses: { no: number; paragraphs: string[] }[];
   closing: string;
@@ -163,6 +167,7 @@ export function buildContractText(c: ContractTextInput): ContractText {
       `หมู่บ้าน ${v(a.village, 20)} ถนน ${v(a.road, 20)} ตำบล/แขวง ${v(a.subdistrict, 20)} อำเภอ/เขต ${v(a.district, 20)} จังหวัด ${v(a.province, 20)} เบอร์โทรผู้พัก ${v(c.tenantPhone, 25)} เบอร์โทรผู้ปกครอง ${v(c.parentPhone, 25)}`,
       'ซึ่งต่อไปในสัญญานี้จะเรียกว่า "ผู้เช่า" อีกฝ่ายหนึ่ง คู่สัญญาได้ตกลงกันดังนี้',
     ],
+    roomLine: `ข้อมูลห้องพัก: ห้องเลขที่ ${v(c.roomNumber, 12)} จำนวนผู้พักอาศัย ${c.occupants ? Number(c.occupants) : blank(6)} คน`,
     clauses: [
       { no: 1, paragraphs: [`ข้อ 1. ผู้ให้เช่าตกลงให้เช่าและผู้เช่าตกลงเช่าห้องพักเลขที่ ${v(c.roomNumber, 12)} ชั้นที่ ${v(c.floor, 12)} ในอาคารของผู้ให้เช่าเพื่อเป็นที่อยู่อาศัยภายใต้ระเบียบที่ผู้ให้เช่ากำหนด โดยเฉพาะไม่ก่อกวน ต้องสงบในยามวิกาล ไม่ทะเลาะวิวาท ไม่ทำผิดศีลธรรมและกฎหมาย สัญญาเช่านี้มีกำหนด ${months ?? blank(10)} เดือน เริ่มวันที่ ${start ? thaiDate(start) : blank(20)} สิ้นสุดวันที่ ${end ? thaiDate(end) : blank(20)}`] },
       { no: 2, paragraphs: [
