@@ -51,7 +51,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
   const [createdContractId, setCreatedContractId] = useState<number | string | null>(null);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-  const [downloadingDocx, setDownloadingDocx] = useState(false);
 
   // QR Code & Slip Payment States
   const [contractSignature, setContractSignature] = useState<string>('CONFIRMED_E_CONTRACT');
@@ -179,48 +178,6 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     return () => clearTimeout(timer);
   }, [step, bookingData, sessionStatus, roomId]);
 
-
-  // Download Word Contract
-  const handleDownloadDocx = async () => {
-    setDownloadingDocx(true);
-    try {
-      const contractPayload = {
-        room_number: room?.room_number,
-        floor: room?.floor,
-        price: room?.price,
-        monthly_rent: room?.price,
-        deposit_amount: costs?.deposit ?? 0, // deposit in total, from /api/rates (server)
-        tenant_name: bookingData.name,
-        tenant_phone: bookingData.phone,
-        parent_phone: bookingData.parent_phone,
-        tenant_email: bookingData.email,
-        tenant_address: bookingData.id_card_address,
-        start_date: bookingData.start_date,
-        end_date: bookingData.end_date,
-        created_at: new Date().toISOString()
-      };
-      const res = await fetch('/api/contracts/export-docx', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contract: contractPayload }),
-      });
-      if (!res.ok) throw new Error('Export DOCX failed');
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `สัญญาเช่า_หอพักเกษร_ห้อง${room?.room_number}_${(bookingData.name || '').replace(/\s+/g, '_')}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (e: any) {
-      console.error(e);
-      alert('เกิดข้อผิดพลาดในการดาวน์โหลดไฟล์ Word');
-    } finally {
-      setDownloadingDocx(false);
-    }
-  };
 
   // Cancel booking in progress and reset
   const handleCancelCurrentBooking = async () => {
@@ -980,7 +937,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   </div>
 
                   <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-[11px] text-blue-400 leading-relaxed">
-                    ℹ️ <strong>วิธีลงนามสัญญา:</strong> เมื่อท่านชำระเงินจองสำเร็จ ระบบจะส่งไฟล์ Word (.docx) และ PDF ที่พิมพ์ด้วยแบบฟอร์มทางการ <strong>TH Sarabun New</strong> ไปยังเจ้าของหอพัก เพื่อพิมพ์เอกสารให้ท่านและเจ้าของหอพักลงลายมือชื่อจริงร่วมกันในวันเข้าหอพัก
+                    ℹ️ <strong>วิธีลงนามสัญญา:</strong> เมื่อท่านชำระเงินจองสำเร็จ ระบบจะเตรียมสัญญาฉบับ PDF ที่พิมพ์ด้วยแบบฟอร์มทางการ <strong>TH Sarabun New</strong> ให้เจ้าของหอพัก เพื่อพิมพ์เอกสารให้ท่านและเจ้าของหอพักลงลายมือชื่อจริงร่วมกันในวันเข้าหอพัก
                   </div>
                 </div>
 
@@ -1034,21 +991,23 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                 {/* Contract Download Box */}
                 <div className="p-5 bg-secondary/50 rounded-3xl border border-border space-y-3 text-left">
                   <span className="text-xs font-black text-foreground flex items-center gap-2">
-                    <span>📄</span> เอกสารสัญญาเช่าของคุณ (พร้อมพิมพ์/แก้ไข)
+                    <span>📄</span> เอกสารสัญญาเช่าของคุณ (PDF)
                   </span>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
                     คุณสามารถดาวน์โหลดเอกสารสัญญาเช่าที่กรอกข้อมูลครบถ้วนแล้วเก็บไว้เป็นหลักฐาน หรือเจ้าของหอจะพิมพ์ฉบับจริงให้เซ็นชื่อเมื่อเข้าหอพัก
                   </p>
 
                   <div className="grid grid-cols-1 gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={handleDownloadDocx}
-                      disabled={downloadingDocx}
-                      className="py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50"
+                    {/* commit 28a: PDF only for guests / tenants — the print page of the saved contract (save as PDF) */}
+                    <a
+                      href={createdContractId ? `/contract-print/${createdContractId}?print=1` : undefined}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-disabled={!createdContractId}
+                      className={`py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 ${createdContractId ? 'cursor-pointer' : 'opacity-50 pointer-events-none'}`}
                     >
-                      <span>{downloadingDocx ? '⏳ กำลังสร้างไฟล์ Word...' : '📄 ดาวน์โหลด Word (.docx)'}</span>
-                    </button>
+                      <span>📄 ดาวน์โหลดสัญญา (PDF)</span>
+                    </a>
                   </div>
                 </div>
 
@@ -1078,7 +1037,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
         </div>
       </div>
 
-      {/* Printable Contract Modal (Word/PDF/Print) */}
+      {/* Printable Contract Modal (PDF / print; Word for staff only) */}
       <PrintableContractModal
         isOpen={isPrintModalOpen}
         onClose={() => setIsPrintModalOpen(false)}

@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getCurrentUser } from '@/lib/authz';
+
+// commit 28a: guests and tenants get the contract as PDF only (/contract-print); the Word file is for owner / manager
+const STAFF = ['owner', 'manager'];
+const WORD_STAFF_ONLY = 'ไฟล์ Word สำหรับเจ้าของหอ/ผู้จัดการเท่านั้น — ดาวน์โหลดสัญญาเป็น PDF ได้ที่หน้าสัญญา';
 import { canViewContract } from '@/lib/contract-files';
 import { contractPrintData } from '@/lib/contract-print';
 import { depositFor, getContractParty, getPaymentInfo, getRates, ratesForRoom } from '@/lib/billing';
@@ -77,9 +81,11 @@ async function docxResponse(input: ContractTextInput) {
 // landlord and payment details from the database. With an id of a saved contract → as GET (access checked).
 export async function POST(req: Request) {
   try {
-    if (!(await getCurrentUser())) {
+    const user = await getCurrentUser();
+    if (!user) {
       return NextResponse.json({ success: false, message: 'กรุณาเข้าสู่ระบบ' }, { status: 401 });
     }
+    if (!STAFF.includes(user.role)) return NextResponse.json({ success: false, message: WORD_STAFF_ONLY }, { status: 403 });
     const body = await req.json().catch(() => ({}));
     const c = { ...(body?.contract || body) };
     if (Number(c.id) > 0) {
@@ -118,6 +124,8 @@ export async function POST(req: Request) {
 // GET ?id= — a saved contract. Owner/manager, or the contract's own tenant.
 export async function GET(req: Request) {
   try {
+    const user = await getCurrentUser();
+    if (user && !STAFF.includes(user.role)) return NextResponse.json({ success: false, message: WORD_STAFF_ONLY }, { status: 403 });
     const id = new URL(req.url).searchParams.get('id');
     if (!id) return NextResponse.json({ success: false, message: 'Missing contract id' }, { status: 400 });
     const access = await canViewContract(Number(id));
