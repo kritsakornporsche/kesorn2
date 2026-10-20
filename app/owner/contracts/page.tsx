@@ -10,6 +10,7 @@ import { addDays, addMonths, leaseEnd, todayTh, ymdTh } from '@/lib/thai-date';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { contractDepositLabel, statusText } from '@/lib/status-text';
 import TestRoomBadge from '@/components/TestRoomBadge';
+import OccupiedRooms from '@/components/OccupiedRooms';
 import { testRoomSuffix, testRoomsLast } from '@/lib/test-rooms';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
@@ -850,6 +851,9 @@ export default function OwnerContractsPage() {
                         </option>
                       ))}
                     </select>
+                    {rooms.length === 0 && <p className="text-xs font-bold text-rose-400">ไม่มีห้องว่างในขณะนี้</p>}
+                    {/* commit 28-12: a room with a tenant is not offered; a second person goes on that room's contract */}
+                    <OccupiedRooms tone="theme" />
                   </div>
 
                   {/* Name (the ID number is not stored — PDPA) */}

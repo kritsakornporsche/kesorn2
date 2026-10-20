@@ -548,6 +548,16 @@ export default function RoomsManagement() {
                       </ul>
                    </details>
 
+                   {/* commit 28-12: the room as a tenant sees it (new tab) */}
+                   <a
+                      href={`/explore/room/${room.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mb-4 inline-flex items-center justify-center gap-1.5 w-full py-2.5 rounded-2xl text-xs font-bold border border-border text-muted-foreground hover:text-primary hover:border-primary transition-colors"
+                   >
+                      👁 ดูหน้าที่ผู้เช่าเห็น ↗
+                   </a>
+
                    {canEdit && (<div className="mt-auto flex items-center gap-3 pt-6 border-t border-[#F3EFE9]">
                       <button 
                         onClick={() => handleEdit(room)}
@@ -605,6 +615,17 @@ export default function RoomsManagement() {
                             {formData.room_type && !ROOM_TYPES.some((t) => t.value === formData.room_type) && <option value={formData.room_type}>{formData.room_type}</option>}
                         </select>
                     </div>
+                  </div>
+
+                  {/* commit 28-12: the items of the chosen type, read-only (lib/room-items) */}
+                  <div className="p-4 rounded-[24px] bg-secondary/50 border border-border space-y-2" data-room-items>
+                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">ของในห้อง ({itemsForRoomType(formData.room_type).length} รายการ)</p>
+                    <ul className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1 text-xs text-foreground">
+                      {itemsForRoomType(formData.room_type).map((it) => (
+                        <li key={it.name}>• {it.name}{it.countable ? ' (นับจำนวน)' : ''}</li>
+                      ))}
+                    </ul>
+                    <p className="text-[11px] text-muted-foreground">รายการกำหนดตามประเภทห้อง ห้องไหนต่างจากนี้ เพิ่ม/ลบได้ในใบตรวจสภาพห้อง</p>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">

@@ -8,6 +8,7 @@ import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 import { testRoomsLast } from '@/lib/test-rooms';
 import TestRoomBadge from '@/components/TestRoomBadge';
+import OccupiedRooms from '@/components/OccupiedRooms';
 import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
 
 interface WalkInModalProps {
@@ -24,6 +25,8 @@ interface Room {
   floor: number;
   status: string;
   display_status?: string;
+  /** an open move-out request (api/rooms) */
+  move_out_request_id?: number | null;
 }
 
 export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkInModalProps) {
@@ -84,11 +87,9 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
       const res = await fetch('/api/rooms?explore=true');
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
-        const available = data.data.filter((r: Room) => {
-          const st = (r.status || '').toLowerCase();
-          const disp = (r.display_status || '').toLowerCase();
-          return st === 'available' || st === 'ว่าง' || disp === 'available' || st === 'movingout' || disp === 'movingout';
-        });
+        // commit 28-12: free rooms only — a room being moved out of still has its tenant's contract, which the server
+        // refuses (lib/contracts createContractTx); rooms with a tenant are listed below the grid instead
+        const available = data.data.filter((r: Room) => (r.display_status || '').toLowerCase() === 'available' && !r.move_out_request_id);
         setRooms(testRoomsLast(available, (r: any) => r.room_number)); // test rooms last (commit 27b)
         if (available.length > 0) {
           setSelectedRoomId(String(available[0].id));
@@ -273,7 +274,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                    <span>🚪</span> เลือกห้องพักที่ต้องการจอง (เฉพาะห้องว่าง & กำลังจะว่าง) <span className="text-red-400">*</span>
+                    <span>🚪</span> เลือกห้องพักที่ต้องการจอง (เฉพาะห้องว่าง) <span className="text-red-400">*</span>
                   </label>
                   <span className="text-[11px] font-bold text-emerald-400">
                     {rooms.length} ห้องพร้อมจอง
@@ -286,13 +287,12 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                   </div>
                 ) : rooms.length === 0 ? (
                   <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl text-xs text-center font-bold">
-                    ⚠️ ไม่มีห้องพักว่างหรือกำลังจะว่างในขณะนี้
+                    ⚠️ ไม่มีห้องพักว่างในขณะนี้
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 p-1">
                     {rooms.map((r) => {
                       const isSelected = String(r.id) === String(selectedRoomId);
-                      const isMovingOut = (r.status || '').toLowerCase().includes('moving') || (r.display_status || '').toLowerCase().includes('moving');
                       return (
                         <button
                           key={r.id}
@@ -306,17 +306,15 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                         >
                           <div className="flex items-center justify-between mb-1">
                             <span className="font-black text-sm text-white">ห้อง {r.room_number}<TestRoomBadge roomNumber={r.room_number} /></span>
-                            <span className={`w-2 h-2 rounded-full ${isMovingOut ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                            <span className="w-2 h-2 rounded-full bg-emerald-400" />
                           </div>
                           <div className="text-[11px] text-slate-400 flex items-center justify-between">
                             <span>ชั้น {r.floor || 1}</span>
                             <span className="font-bold text-primary">฿{Number(r.price).toLocaleString()}</span>
                           </div>
                           <div className="mt-1">
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
-                              isMovingOut ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20' : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
-                            }`}>
-                              {isMovingOut ? '🟡 ว่างเร็วๆ นี้' : '🟢 ว่างพร้อมอยู่'}
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                              🟢 ว่างพร้อมอยู่
                             </span>
                           </div>
                         </button>
@@ -324,6 +322,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                     })}
                   </div>
                 )}
+                <OccupiedRooms tone="dark" />
               </div>
 
               {/* Form Input Fields */}
