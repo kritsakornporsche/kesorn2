@@ -12,7 +12,7 @@ import { InspectionButton } from '@/components/InspectionModal';
 import { ContractDataButton } from '@/components/ContractDataModal';
 import OccupantsEditor from '@/components/OccupantsEditor';
 import TestRoomBadge from '@/components/TestRoomBadge';
-import { signedPaperText, type SignedPaper } from '@/lib/signed-paper';
+import { PAPER_CONFIRM_TEXT, signedPaperText, type SignedPaper } from '@/lib/signed-paper';
 
 interface ContractDetail {
   /** commit 27 */
@@ -100,6 +100,7 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
       alert('กรุณาระบุวันที่เซ็นสัญญาก่อนอัปโหลด');
       return;
     }
+    if (!confirm(PAPER_CONFIRM_TEXT)) return;
     const reader = new FileReader();
     reader.onloadend = async () => {
       const base64Data = reader.result as string;
@@ -112,6 +113,7 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             contractId: contract?.id,
             file: base64Data,
             signedDate,
+            confirm: true,
           }),
         });
         const data = await res.json();

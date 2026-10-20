@@ -1,25 +1,32 @@
-// Move-in: after the booking fee is paid, the owner/manager issues the move-in bill (first month of rent in full +
-// the rest of the deposit, from the room's figures on the server) with the starting electricity meter. The contract
-// takes effect (Active) only when both are done: the move-in bill is paid AND the signed paper contract is uploaded
-// with its signing date. A move-in bill not paid by the contract start date cancels the contract (checked when read,
-// no scheduler). Every function takes `now` from the app; MySQL NOW() is never used for these times.
-// Contracts waiting for a move-in bill without move_in_bill_id are older ones: they are left for the owner to handle.
+// Move-in (steps 4–7 of booking → tenant, commit 28 — lib/booking-steps.ts). After the booking fee is paid and the
+// contract data confirmed (step 3, lib/contract-data.ts): the room is inspected and the tenant acknowledges it (step 4),
+// the contract is printed, signed and the signed paper uploaded with its signing date (step 5, only after 3 and 4,
+// confirmed by the uploader), then the owner/manager issues the move-in bill (step 6, only when 3–5 are done — first
+// month of rent in full + the rest of the deposit, from the room's figures on the server, with the starting electricity
+// meter). The contract takes effect (Active) when that bill is paid (step 7). Uploading the paper never makes a new
+// contract Active by itself (its bill does not exist yet). A move-in bill not paid by the contract start date cancels
+// the contract (checked when read, no scheduler). Every function takes `now` from the app; MySQL NOW() is never used.
+// Contracts whose move-in bill was issued before step 3 existed ("ขั้นตอนเดิม") keep the old rule: Active when the bill
+// is paid and the signed paper uploaded, in either order. Contracts waiting without move_in_bill_id are older ones:
+// they are left for the owner to handle.
 
 import { bangkokDate, capCheck, depositFor, moveInAmounts } from '@/lib/billing';
 import { type Client } from '@/lib/bill-status';
 import { Refused, contractMessage, signContractTx } from '@/lib/contracts';
 import { releaseRoom, withRetry } from '@/lib/bookings';
 import { forfeitBookingFee } from '@/lib/deposits';
-import { deletePaper, isPaper, parsePaperUpload, savePaper } from '@/lib/contract-files';
+import { deletePaper, isPaper, parsePaperUpload, savePaper, signedPaperOf } from '@/lib/contract-files';
+import { MISSING_TEXT as STEP_MISSING, missingForMoveIn, type InspectionState } from '@/lib/booking-steps';
 import { formatBaht } from '@/lib/format';
-import { parseOccupants, OCCUPANTS_MESSAGE } from '@/lib/occupants';
+import { OCCUPANTS_MESSAGE } from '@/lib/occupants';
 
 // Booking fee paid, contract and move-in bill not done yet
 const BOOKING_PAID = ['PendingOwnerSignature', 'PendingContract'];
 const WAITING = [...BOOKING_PAID, 'PendingFirstBill'];
 
 export type MoveInRefusal = 'not_found' | 'not_paid_booking' | 'already_issued' | 'start_passed' | 'over_cap'
-  | 'meter_required' | 'legacy' | 'invalid_status' | 'signed_date' | 'paper_locked' | 'bad_file' | 'bad_identity' | 'bad_occupants';
+  | 'meter_required' | 'legacy' | 'invalid_status' | 'signed_date' | 'paper_locked' | 'bad_file' | 'bad_identity' | 'bad_occupants'
+  | 'steps_missing' | 'upload_not_confirmed';
 export type Missing = 'move_in_bill' | 'paper';
 
 export type MoveInResult<T> = ({ ok: true } & T) | { ok: false; reason: MoveInRefusal; message: string };
@@ -45,10 +52,24 @@ const MESSAGES: Record<MoveInRefusal, string> = {
   bad_file: 'ไฟล์สัญญาไม่ถูกต้อง',
   bad_identity: 'ชื่อ-นามสกุลต้องไม่เกิน 255 ตัวอักษร และที่อยู่ต้องไม่เกิน 500 ตัวอักษร',
   bad_occupants: OCCUPANTS_MESSAGE,
+  steps_missing: 'ยังทำขั้นก่อนหน้าไม่ครบ',
+  upload_not_confirmed: 'กรุณายืนยันว่าไฟล์นี้คือสัญญาที่ผู้เช่าและผู้ให้เช่าลงนามแล้ว',
 };
 
-const NAME_MAX = 255;
-const ADDRESS_MAX = 500;
+/** HTTP status for a refusal (for the API routes): steps out of order are a conflict (409). */
+export function moveInStatus(reason: MoveInRefusal): number {
+  if (reason === 'not_found') return 404;
+  if (['steps_missing', 'already_issued', 'invalid_status', 'paper_locked', 'legacy', 'not_paid_booking'].includes(reason)) return 409;
+  return 400;
+}
+
+/** Move-in inspection of a locked contract: none / waiting for the tenant / acknowledged (row locked too). */
+async function inspectionState(client: Client, contractId: number): Promise<InspectionState> {
+  const row = (await client.query(
+    "SELECT tenant_ack_at FROM contract_inspections WHERE contract_id = ? AND kind = 'move_in' FOR UPDATE", [contractId]
+  )).rows[0];
+  return !row ? 'none' : row.tenant_ack_at ? 'acknowledged' : 'pending_ack';
+}
 
 const MISSING_TEXT: Record<Missing, string> = {
   move_in_bill: 'ยังไม่ได้ชำระบิลเข้าอยู่',
@@ -90,19 +111,14 @@ export interface IssueMoveInInput {
   /** Electricity meter when the room is handed over (required) */
   startMeter: unknown;
   by: number | null;
-  /**
-   * Tenant name / address for the contract, checked against the ID card (typed by hand; no OCR since commit 24c).
-   * Empty = keep what the booker typed. PDPA: no ID number or card photo is ever taken here.
-   */
-  tenantName?: unknown;
-  tenantAddress?: unknown;
-  /** occupants (commit 27): left out = keep the number from the booking; else 1–MAX_OCCUPANTS */
-  occupants?: unknown;
+  // Name, address, occupants and dates are confirmed in step 3 (lib/contract-data.ts) — not taken here (commit 28-3)
 }
 
 /**
- * Issue the move-in bill as a new bill (the paid booking bill is never touched): first month of rent in full plus the
- * rest of the deposit, from the room on the server, due on the contract start date. Checks the 3-month cap first.
+ * Step 6: issue the move-in bill as a new bill (the paid booking bill is never touched): first month of rent in full plus
+ * the rest of the deposit, from the room on the server, due on the contract start date. Only when steps 3–5 are done
+ * (contract data confirmed, inspection acknowledged, signed paper uploaded — lib/booking-steps missingForMoveIn), else
+ * refused with what is missing. Checks the 3-month cap first.
  */
 export function issueMoveInBill(contractId: number, input: IssueMoveInInput, now: Date) {
   return run(async (client) => {
@@ -110,6 +126,13 @@ export function issueMoveInBill(contractId: number, input: IssueMoveInInput, now
     if (c.move_in_bill_id) refuse('already_issued');
     if (isLegacy(c)) refuse('legacy');
     if (!BOOKING_PAID.includes(c.status)) refuse('not_paid_booking');
+    // commit 28-3: steps 3–5 first (the same list the pages show)
+    const missing = missingForMoveIn({
+      status: c.status, data_confirmed_at: c.data_confirmed_at, move_in_bill_id: c.move_in_bill_id,
+      inspection_status: await inspectionState(client, contractId),
+      paper_uploaded: signedPaperOf(c.contract_file_url) === 'uploaded' && Boolean(c.paper_signed_date),
+    });
+    if (missing.length > 0) refuse('steps_missing', `ออกบิลค่าแรกเข้าไม่ได้: ${missing.join(' · ')}`);
 
     const raw = input.startMeter;
     const meter = Number(raw);
@@ -119,20 +142,6 @@ export function issueMoveInBill(contractId: number, input: IssueMoveInInput, now
     const amounts = moveInAmounts({ room_number: c.room_number, price: c.room_price, deposit_amount: c.room_deposit });
     const cap = capCheck(amounts.rent, amounts.deposit);
     if (!cap.ok) refuse('over_cap', cap.message);
-
-    // Name / address on the contract (printed by /contract-print and the Word file from tenants.name / contracts.tenant_address)
-    const name = typeof input.tenantName === 'string' ? input.tenantName.trim() : '';
-    const address = typeof input.tenantAddress === 'string' ? input.tenantAddress.trim() : '';
-    if (name.length > NAME_MAX || address.length > ADDRESS_MAX) refuse('bad_identity');
-    // Occupants (commit 27): the booking's number unless changed here, before the bill — water is charged per person
-    const occ = parseOccupants(input.occupants, Number(c.occupants) || 1);
-    if (!occ.ok) refuse('bad_occupants');
-    if (occ.value !== Number(c.occupants)) await client.query('UPDATE contracts SET occupants = ? WHERE id = ?', [occ.value, contractId]);
-    if (name) await client.query('UPDATE tenants SET name = ? WHERE id = ?', [name, c.tenant_id]);
-    if (address) {
-      await client.query('UPDATE tenants SET address = ? WHERE id = ?', [address, c.tenant_id]);
-      await client.query('UPDATE contracts SET tenant_address = ? WHERE id = ?', [address, contractId]);
-    }
 
     const dueDate = bangkokDate(c.start_date);
     const billId = Number((await client.query(
@@ -225,13 +234,18 @@ export interface SignedPaperInput {
   /** YYYY-MM-DD written on the signed contract */
   signedDate: unknown;
   by: number | null;
+  /** the uploader confirmed this is the contract signed by both sides (commit 28-3) */
+  confirmed?: boolean;
 }
 
 /**
- * Record the signed paper contract and its signing date. Replaceable until the contract is Active with a signed
- * paper; an Active contract that never had one (owner-created) can get one once. Activates the contract when ready.
+ * Step 5: record the signed paper contract and its signing date. A booking needs step 3 (data confirmed) and step 4
+ * (inspection acknowledged) first, and the uploader's confirmation. Replaceable until the contract is Active with a
+ * signed paper; an Active contract that never had one (owner-created) can get one once. Activates the contract when
+ * ready (only possible for contracts whose move-in bill exists — old order, or a re-upload).
  */
 export async function recordSignedPaper(contractId: number, input: SignedPaperInput, now: Date): Promise<MoveInResult<{ activated: boolean; missing: Missing[]; tenantUserId: number | null }>> {
+  if (input.confirmed !== true) return { ok: false, reason: 'upload_not_confirmed', message: MESSAGES.upload_not_confirmed };
   const upload = parsePaperUpload(input.file);
   if (!upload.ok) return { ok: false, reason: 'bad_file', message: upload.message };
   const signedDate = String(input.signedDate || '');
@@ -246,6 +260,15 @@ export async function recordSignedPaper(contractId: number, input: SignedPaperIn
     if (isLegacy(c)) refuse('legacy');
     if (c.status === 'Active' && isPaper(c.contract_file_url)) refuse('paper_locked');
     if (c.status !== 'Active' && !WAITING.includes(c.status)) refuse('invalid_status');
+    // commit 28-3: a booking before its move-in bill needs steps 3 and 4 first (an older contract that already has its
+    // signed paper counts as confirmed)
+    if (BOOKING_PAID.includes(c.status) && !c.move_in_bill_id) {
+      const missing = missingForMoveIn({
+        status: c.status, data_confirmed_at: c.data_confirmed_at, inspection_status: await inspectionState(client, contractId),
+        paper_uploaded: isPaper(c.contract_file_url),
+      }).filter((m) => m !== STEP_MISSING.paper);
+      if (missing.length > 0) refuse('steps_missing', `อัปโหลดสัญญาที่ลงนามไม่ได้: ${missing.join(' · ')}`);
+    }
     previous = isPaper(c.contract_file_url) ? c.contract_file_url : null;
 
     await client.query(

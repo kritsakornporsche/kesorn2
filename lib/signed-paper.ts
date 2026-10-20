@@ -7,5 +7,9 @@ export const SIGNED_PAPER_TEXT: Record<Exclude<SignedPaper, 'uploaded'>, string>
   missing: 'ไม่พบไฟล์สัญญา',
 };
 
+/** Asked before a signed paper is saved (step 5, commit 28-3) — the server needs confirm: true. */
+export const PAPER_CONFIRM_TEXT =
+  'ยืนยันว่าไฟล์นี้คือสัญญาที่ผู้เช่าและผู้ให้เช่าลงนามแล้ว (รวมใบตรวจสภาพห้องที่ผู้เช่าลงชื่อ)?\nหลังบันทึก ข้อมูลสัญญาจะแก้ไม่ได้อีก';
+
 /** Text for a contract without a signed copy to show ('none' when the state is not given). */
 export const signedPaperText = (s: SignedPaper | null | undefined) => SIGNED_PAPER_TEXT[s === 'missing' ? 'missing' : 'none'];

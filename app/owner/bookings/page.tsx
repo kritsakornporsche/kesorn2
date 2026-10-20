@@ -8,9 +8,8 @@ import { checkPaperFile } from '@/lib/paper-file-check';
 import { InspectionButton, type InspectionStatus } from '@/components/InspectionModal';
 import { roomTypeLabel } from '@/lib/room-types';
 import TestRoomBadge from '@/components/TestRoomBadge';
-import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
-import { signedPaperText, type SignedPaper } from '@/lib/signed-paper';
+import { PAPER_CONFIRM_TEXT, signedPaperText, type SignedPaper } from '@/lib/signed-paper';
 import ContractDataModal from '@/components/ContractDataModal';
 import type { BookingSteps } from '@/lib/booking-steps';
 
@@ -89,9 +88,6 @@ export default function OwnerBookingsPage() {
   const [issueBooking, setIssueBooking] = useState<Booking | null>(null);
   const [initialMeterReading, setInitialMeterReading] = useState<string>('');
   // Tenant name / address for the contract: what the booker typed, checked against the ID card by hand
-  const [issueName, setIssueName] = useState('');
-  const [issueOccupants, setIssueOccupants] = useState(1);
-  const [issueAddress, setIssueAddress] = useState('');
   const [paperBooking, setPaperBooking] = useState<Booking | null>(null);
   // commit 28-2: step 3 — contract data (confirm / change with a reason)
   const [dataContractId, setDataContractId] = useState<number | null>(null);
@@ -154,7 +150,7 @@ export default function OwnerBookingsPage() {
       const res = await fetch('/api/owner/contracts', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contract_id: issueBooking.contract_id, initial_meter_reading: initialMeterReading, tenant_name: issueName, tenant_address: issueAddress, occupants: issueOccupants }),
+        body: JSON.stringify({ contract_id: issueBooking.contract_id, initial_meter_reading: initialMeterReading }),
       });
       const data = await res.json();
       if (data.success) {
@@ -179,13 +175,14 @@ export default function OwnerBookingsPage() {
       showToast('กรุณาเลือกไฟล์สัญญาที่เซ็นแล้วและระบุวันที่เซ็น', 'error');
       return;
     }
+    if (!confirm(PAPER_CONFIRM_TEXT)) return;
 
     setUploading(true);
     try {
       const res = await fetch('/api/owner/contracts', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contractId: paperBooking.contract_id, file: paperFile, signedDate: paperSignedDate }),
+        body: JSON.stringify({ contractId: paperBooking.contract_id, file: paperFile, signedDate: paperSignedDate, confirm: true }),
       });
       const data = await res.json();
       if (data.success) {
@@ -661,14 +658,21 @@ export default function OwnerBookingsPage() {
                       <InspectionButton contractId={item.contract_id} initialStatus={item.inspection_status} />
                     )}
 
-                    {is81 && item.can_issue_move_in && (
+                    {/* commit 28-3: step 6 opens only when steps 3–5 are done (the server checks the same list) */}
+                    {is81 && item.can_issue_move_in && item.steps?.canIssueMoveIn && (
                       <button
-                        onClick={() => { setIssueBooking(item); setInitialMeterReading(''); setIssueName(item.guest_name && item.guest_name !== 'ไม่ระบุชื่อ' ? item.guest_name : ''); setIssueAddress(item.tenant_address || ''); setIssueOccupants(Number(item.occupants) || 1); }}
+                        onClick={() => { setIssueBooking(item); setInitialMeterReading(''); }}
                         className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs rounded-xl shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
                       >
                         <span>🧾</span>
-                        <span>ออกบิลเข้าอยู่</span>
+                        <span>ออกบิลค่าแรกเข้า</span>
                       </button>
+                    )}
+                    {is81 && item.can_issue_move_in && item.steps && !item.steps.canIssueMoveIn && (
+                      <span className="flex items-center gap-2">
+                        <button disabled className="px-5 py-2.5 bg-amber-500/30 text-white/60 font-black text-xs rounded-xl cursor-not-allowed">🧾 ออกบิลค่าแรกเข้า</button>
+                        <span className="text-[11px] text-amber-300 font-bold">ออกบิลได้เมื่อ: {item.steps.missingForMoveIn.join(' · ')}</span>
+                      </span>
                     )}
 
                     {is82 && !item.legacy && !item.move_in_bill_paid && (
@@ -875,42 +879,12 @@ export default function OwnerBookingsPage() {
                   </div>
                 )}
 
-                {/* Tenant on the contract: typed / checked against the ID card by hand (no OCR, commit 24c) */}
-                <div className="p-4 bg-slate-950 rounded-2xl border border-white/10 space-y-3">
-                  <p className="text-xs font-black text-white">ข้อมูลผู้เช่าในสัญญา (ตรวจกับบัตรประชาชน)</p>
-                  <label className="block space-y-1">
-                    <span className="text-[11px] font-bold text-slate-300">ชื่อ-นามสกุล</span>
-                    <input
-                      type="text"
-                      maxLength={255}
-                      value={issueName}
-                      onChange={(e) => setIssueName(e.target.value)}
-                      placeholder="นาย/นางสาว..."
-                      className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-white focus:outline-none focus:border-primary"
-                    />
-                  </label>
-                  <label className="block space-y-1">
-                    <span className="text-[11px] font-bold text-slate-300">ที่อยู่ตามบัตรประชาชน</span>
-                    <textarea
-                      rows={2}
-                      maxLength={500}
-                      value={issueAddress}
-                      onChange={(e) => setIssueAddress(e.target.value)}
-                      placeholder="บ้านเลขที่ หมู่ ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
-                      className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-primary"
-                    />
-                  </label>
-                  <label className="block space-y-1">
-                    <span className="text-[11px] font-bold text-slate-300">จำนวนผู้พัก (1–{MAX_OCCUPANTS} คน) — จากการจอง แก้ได้ก่อนออกบิล</span>
-                    <select
-                      value={issueOccupants}
-                      onChange={(e) => setIssueOccupants(Number(e.target.value))}
-                      className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-primary"
-                    >
-                      {OCCUPANT_CHOICES.map((n) => <option key={n} value={n}>{n} คน</option>)}
-                    </select>
-                  </label>
-                  <p className="text-[10px] text-slate-400">ชื่อ ที่อยู่ และจำนวนผู้พักนี้จะขึ้นในสัญญา (PDF / Word) · ค่าน้ำคิดตามจำนวนผู้พัก · ระบบไม่เก็บเลขบัตรประชาชนและรูปบัตร</p>
+                {/* Tenant on the contract: confirmed in step 3 and printed on the signed paper (commit 28-3) — read only here */}
+                <div className="p-4 bg-slate-950 rounded-2xl border border-white/10 space-y-1.5">
+                  <p className="text-xs font-black text-white">ข้อมูลในสัญญา (ยืนยันแล้วในขั้น 3 · ตรงกับสัญญาที่ลงนาม)</p>
+                  <p className="text-[11px] text-slate-300">ผู้เช่า: <span className="font-bold text-white">{issueBooking.guest_name}</span></p>
+                  <p className="text-[11px] text-slate-300">ที่อยู่: <span className="font-bold text-white">{issueBooking.tenant_address || '-'}</span></p>
+                  <p className="text-[11px] text-slate-300">จำนวนผู้พัก: <span className="font-bold text-white">{Number(issueBooking.occupants) || 1} คน</span> (ค่าน้ำคิดตามจำนวนผู้พัก)</p>
                 </div>
 
                 {/* Initial Meter Reading Input */}

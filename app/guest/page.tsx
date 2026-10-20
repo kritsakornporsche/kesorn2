@@ -7,6 +7,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { roomTypeLabel } from '@/lib/room-types';
 import { signedPaperText, type SignedPaper } from '@/lib/signed-paper';
+import TenantInspectionCard from '@/components/TenantInspectionCard';
 
 interface BookingData {
   contract_id: number;
@@ -47,6 +48,8 @@ interface BookingData {
   contract_file_is_pdf?: boolean;
   /** commit 28a: uploaded / missing / none (server) */
   signed_paper?: SignedPaper;
+  /** commit 28-3: move-in inspection (step 4) */
+  inspection_status?: 'none' | 'pending_ack' | 'acknowledged';
   print_url?: string;
 }
 
@@ -380,6 +383,14 @@ export default function GuestDashboardPage() {
                 </div>
               </div>
             </div>
+
+            {/* commit 28-3: step 4 — the booker acknowledges the move-in inspection here (before the contract takes effect) */}
+            {(isPendingContract || isPendingFirstBill) && booking.inspection_status && booking.inspection_status !== 'none' && (
+              <div className="space-y-2">
+                <p className="text-xs font-black text-white">ขั้น 4 · ผลตรวจสภาพห้องก่อนเข้าพัก</p>
+                <TenantInspectionCard contractId={booking.contract_id} />
+              </div>
+            )}
 
             {/* Room Details Card */}
             <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">

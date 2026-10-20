@@ -79,6 +79,10 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
   const [editable, setEditable] = useState(false);
   const [maxItems, setMaxItems] = useState(30);
   const [ackAt, setAckAt] = useState<string | null>(null);
+  // commit 28-3: acknowledged on paper (recorded by staff — who) · why it cannot be edited yet
+  const [ackPaperBy, setAckPaperBy] = useState<string | null>(null);
+  const [blockedReason, setBlockedReason] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -86,6 +90,27 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
   const [preview, setPreview] = useState<string | null>(null);
   // Move-out: the move-in result by item name, to compare
   const [moveIn, setMoveIn] = useState<{ name: string; item: MoveInItem }[] | null>(null);
+
+  /** Staff record that the tenant signed the printed inspection record (who / when kept on the server). */
+  const recordPaperAck = async () => {
+    if (!confirm('ยืนยันว่าผู้เช่าลงชื่อรับทราบในใบตรวจสภาพห้องที่พิมพ์แล้ว? ระบบจะบันทึกว่าคุณเป็นผู้บันทึก และผลตรวจจะแก้ไม่ได้อีก')) return;
+    setRecording(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/owner/contracts/${contractId}/inspection`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'ack_paper' }),
+      });
+      const data = await res.json().catch(() => ({ success: false, message: `บันทึกไม่สำเร็จ (HTTP ${res.status})` }));
+      if (!data.success) return setError(data.message || 'บันทึกการรับทราบไม่สำเร็จ');
+      await load();
+    } catch (e: any) {
+      setError(`บันทึกไม่สำเร็จ: เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ (${e?.message || 'network'})`);
+    } finally {
+      setRecording(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -103,6 +128,8 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
       setEditable(data.editable);
       setMaxItems(data.max_items || 30);
       setAckAt(data.inspection?.tenant_ack_at || null);
+      setAckPaperBy(data.inspection?.ack_on_paper ? (data.inspection.ack_paper_by_name || 'เจ้าหน้าที่') : null);
+      setBlockedReason(data.blocked_reason || null);
       setNote(data.inspection?.note || '');
       setMoveIn(data.move_in ? data.move_in.items.map((it: any) => ({ name: it.item_name, item: it })) : null);
       if (data.inspection) {
@@ -228,12 +255,12 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
           <div className="flex-1 overflow-y-auto overscroll-contain space-y-3 pr-1">
             {status === 'acknowledged' && (
               <p className="text-xs text-emerald-400 font-bold">
-                ผู้เช่ารับทราบแล้ว{ackAt ? ` เมื่อ ${new Date(ackAt).toLocaleString('th-TH')}` : ''} — แก้ไขไม่ได้
+                ผู้เช่ารับทราบแล้ว{ackAt ? ` เมื่อ ${new Date(ackAt).toLocaleString('th-TH')}` : ''}{ackPaperBy ? ` (รับทราบบนกระดาษ · บันทึกโดย ${ackPaperBy})` : ''} — แก้ไขไม่ได้
               </p>
             )}
             {!editable && status !== 'acknowledged' && (
               <p className="text-xs text-rose-400 font-bold">
-                {kind === 'move_out' ? 'ตรวจห้องตอนย้ายออกได้ตั้งแต่แจ้งย้ายออกจนก่อนสรุปเงินประกันเท่านั้น' : 'สัญญานี้อยู่ในสถานะที่ตรวจห้องไม่ได้'}
+                {blockedReason || (kind === 'move_out' ? 'ตรวจห้องตอนย้ายออกได้ตั้งแต่แจ้งย้ายออกจนก่อนสรุปเงินประกันเท่านั้น' : 'สัญญานี้อยู่ในสถานะที่ตรวจห้องไม่ได้')}
               </p>
             )}
             {kind === 'move_out' && moveIn === null && (
@@ -371,6 +398,23 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
         )}
 
         {error && <p className="text-xs text-rose-400 font-bold">✕ {error}</p>}
+
+        {kind === 'move_in' && status === 'pending_ack' && !loading && !loadError && (
+          <div className="p-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 space-y-2">
+            <p className="text-[11px] text-amber-200">
+              รอผู้เช่ากดรับทราบในหน้าของผู้จอง · ถ้าผู้เช่าใช้แอปไม่ได้ ให้พิมพ์ใบตรวจสภาพห้อง ให้ผู้เช่าลงชื่อ แล้วบันทึกที่นี่
+              (ใบที่ลงชื่อจะอยู่ในสัญญาที่ลงนามซึ่งต้องอัปโหลดก่อนออกบิลค่าแรกเข้า)
+            </p>
+            <button
+              type="button"
+              disabled={recording}
+              onClick={recordPaperAck}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white rounded-xl text-xs font-black disabled:opacity-50"
+            >
+              {recording ? 'กำลังบันทึก...' : '✍️ ผู้เช่ารับทราบบนกระดาษ'}
+            </button>
+          </div>
+        )}
 
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold">ปิด</button>

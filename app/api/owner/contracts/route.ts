@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { createContract, temporaryPassword, contractMessage } from '@/lib/contracts';
-import { issueMoveInBill, missingMessage, recordSignedPaper } from '@/lib/moveIn';
+import { issueMoveInBill, missingMessage, moveInStatus, recordSignedPaper } from '@/lib/moveIn';
 import { formDeposit, withPaperLink } from '@/lib/contract-files';
 import { formatBaht, formatThaiDate } from '@/lib/format';
 import { parseOccupants } from '@/lib/occupants';
@@ -221,8 +221,9 @@ export async function POST(req: Request) {
   }
 }
 
-// PATCH { contractId, file, signedDate } — record the signed paper contract (stored outside public/) and the date it
-// was signed. The contract takes effect once its move-in bill is paid too (lib/moveIn.ts).
+// PATCH { contractId, file, signedDate, confirm: true } — step 5: record the signed paper contract (stored outside
+// public/) and the date it was signed, after steps 3 and 4. The contract takes effect when its move-in bill is paid
+// (lib/moveIn.ts).
 export async function PATCH(req: Request) {
   try {
     const guard = await requireRole(['owner', 'manager']);
@@ -233,9 +234,9 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ success: false, message: 'ข้อมูลไม่ครบถ้วน (ต้องการ contractId)' }, { status: 400 });
     }
 
-    const result = await recordSignedPaper(contractId, { file: body.file, signedDate: body.signedDate, by: guard.user.id }, new Date());
+    const result = await recordSignedPaper(contractId, { file: body.file, signedDate: body.signedDate, by: guard.user.id, confirmed: body.confirm === true }, new Date());
     if (!result.ok) {
-      return NextResponse.json({ success: false, message: result.message }, { status: result.reason === 'not_found' ? 404 : 400 });
+      return NextResponse.json({ success: false, message: result.message, reason: result.reason }, { status: moveInStatus(result.reason) });
     }
 
     if (result.tenantUserId) {
@@ -261,7 +262,7 @@ export async function PATCH(req: Request) {
       missing: result.missing,
       message: result.activated
         ? 'บันทึกสัญญาที่เซ็นแล้ว — สัญญามีผลแล้ว'
-        : result.missing.length > 0 ? `บันทึกสัญญาที่เซ็นแล้ว — ${missingMessage(result.missing)}` : 'บันทึกสัญญาที่เซ็นแล้ว',
+        : result.missing.includes('move_in_bill') && !result.missing.includes('paper') ? 'บันทึกสัญญาที่ลงนามแล้ว — ขั้นถัดไป: ออกบิลค่าแรกเข้า' : result.missing.length > 0 ? `บันทึกสัญญาที่เซ็นแล้ว — ${missingMessage(result.missing)}` : 'บันทึกสัญญาที่เซ็นแล้ว',
     });
   } catch (err: any) {
     console.error('[Contracts API PATCH] Error:', err);
@@ -269,8 +270,8 @@ export async function PATCH(req: Request) {
   }
 }
 
-// PUT { contract_id, initial_meter_reading } — issue the move-in bill (amounts from the room on the server, never from
-// the page) with the starting meter. Rules live in lib/moveIn.ts.
+// PUT { contract_id, initial_meter_reading } — step 6: issue the move-in bill (amounts from the room on the server, never
+// from the page) with the starting meter, only when steps 3–5 are done (409 with what is missing). Rules live in lib/moveIn.ts.
 export async function PUT(req: Request) {
   try {
     const guard = await requireRole(['owner', 'manager']);
@@ -282,16 +283,10 @@ export async function PUT(req: Request) {
       return NextResponse.json({ success: false, message: 'Missing contract_id' }, { status: 400 });
     }
 
-    // Only the name and address are taken (never an ID number or a card photo, whatever the page sends)
-    const result = await issueMoveInBill(contractId, {
-      startMeter: body.initial_meter_reading,
-      by: guard.user.id,
-      tenantName: body.tenant_name,
-      tenantAddress: body.tenant_address,
-      occupants: body.occupants,
-    }, new Date());
+    // Name, address and occupants are confirmed in step 3 (lib/contract-data.ts) — nothing else is taken here
+    const result = await issueMoveInBill(contractId, { startMeter: body.initial_meter_reading, by: guard.user.id }, new Date());
     if (!result.ok) {
-      return NextResponse.json({ success: false, message: result.message }, { status: result.reason === 'not_found' ? 404 : 400 });
+      return NextResponse.json({ success: false, message: result.message, reason: result.reason }, { status: moveInStatus(result.reason) });
     }
 
     if (result.tenantUserId) {

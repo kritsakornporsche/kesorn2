@@ -13,7 +13,7 @@ import { testRoomSuffix, testRoomsLast } from '@/lib/test-rooms';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
-import { signedPaperText, type SignedPaper } from '@/lib/signed-paper';
+import { PAPER_CONFIRM_TEXT, signedPaperText, type SignedPaper } from '@/lib/signed-paper';
 
 interface Contract {
   id: number;
@@ -357,6 +357,7 @@ export default function OwnerContractsPage() {
       alert('กรุณาเลือกหรือถ่ายภาพสัญญาเช่าที่ลงนามแล้ว และระบุวันที่เซ็นสัญญา');
       return;
     }
+    if (!confirm(PAPER_CONFIRM_TEXT)) return;
     setIsUploadingSigned(true);
     try {
       const res = await fetch('/api/owner/contracts', {
@@ -366,6 +367,7 @@ export default function OwnerContractsPage() {
           contractId: uploadingContract.id,
           file: signedContractFile,
           signedDate,
+          confirm: true,
         }),
       });
       const data = await res.json();

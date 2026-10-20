@@ -1,9 +1,11 @@
 // Room inspection before move-in: the owner/manager records the condition of each item in the room (with a photo),
 // the tenant acknowledges it. Items start from the dorm's room item list by room type (lib/room-items.ts, commit 26),
 // and more can be added; countable items (keys, remote) carry a quantity, compared at move-out. Each inspection keeps
-// its own copy of names and quantities. The inspection can be edited until the tenant acknowledges it, then it is locked. It does not hold up
-// the contract taking effect (lib/moveIn.ts is unchanged). Every function takes `now` from the app; MySQL NOW() is
-// never used for these times. The same inspection is done at move-out (kind 'move_out', commit 12): possible while
+// its own copy of names and quantities. The inspection can be edited until the tenant acknowledges it, then it is locked.
+// Since commit 28 the move-in inspection is step 4 of booking → tenant (lib/booking-steps.ts): it can be done once the
+// contract data is confirmed (step 3), and the signed paper (step 5) and the move-in bill (step 6) need it acknowledged —
+// by the tenant in the app (also from the booker's /guest page), or recorded by staff when the tenant signed the printed
+// record ("รับทราบบนกระดาษ": who / when kept). Every function takes `now` from the app; MySQL NOW() is never used for these times. The same inspection is done at move-out (kind 'move_out', commit 12): possible while
 // the move-out is open and before the deposit is settled, compared with the move-in result, acknowledged the same way.
 
 import { getDb } from '@/lib/db';
@@ -11,6 +13,8 @@ import { type Client } from '@/lib/bill-status';
 import { withRetry } from '@/lib/bookings';
 import { PHOTOS_TOTAL_MAX_BYTES, deletePhoto, isPhotoName, parsePhotoUpload, photoUrl, savePhoto } from '@/lib/inspection-files';
 import { QUANTITY_MAX, isCountableName, itemsForRoomType, quantityMin } from '@/lib/room-items';
+import { isPaper } from '@/lib/contract-files';
+import { BOOKING_PAID_STATUSES } from '@/lib/booking-steps';
 
 /** Booking fee paid up to the contract in effect */
 export const INSPECTABLE = ['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active'];
@@ -35,7 +39,7 @@ export const STATUS_TEXT: Record<InspectionStatus, string> = {
 };
 
 export type InspectionRefusal = 'not_found' | 'forbidden' | 'invalid_status' | 'locked' | 'bad_items' | 'bad_photo'
-  | 'too_large' | 'not_inspected' | 'already_acknowledged' | 'move_out_closed';
+  | 'too_large' | 'not_inspected' | 'already_acknowledged' | 'move_out_closed' | 'not_confirmed';
 
 export type InspectionResult<T> = ({ ok: true } & T) | { ok: false; reason: InspectionRefusal; message: string; item?: number };
 
@@ -50,6 +54,7 @@ const MESSAGES: Record<InspectionRefusal, string> = {
   not_inspected: 'ยังไม่มีผลตรวจห้องให้รับทราบ',
   already_acknowledged: 'รับทราบผลตรวจห้องไปแล้ว',
   move_out_closed: 'ตรวจห้องตอนย้ายออกได้ตั้งแต่แจ้งย้ายออกจนก่อนสรุปเงินประกันเท่านั้น',
+  not_confirmed: 'ตรวจห้องได้หลังหอพักยืนยันข้อมูลสัญญา (ขั้น 3)',
 };
 
 class InspectionRefused extends Error {
@@ -83,7 +88,7 @@ function isContractTenant(c: { tenant_user_id: number | null; tenant_email: stri
 
 async function lockContract(client: Client, contractId: number) {
   const c = (await client.query(
-    `SELECT c.id, c.status, c.room_id, t.user_id AS tenant_user_id, t.email AS tenant_email
+    `SELECT c.id, c.status, c.room_id, c.data_confirmed_at, c.contract_file_url, t.user_id AS tenant_user_id, t.email AS tenant_email
      FROM contracts c LEFT JOIN tenants t ON t.id = c.tenant_id
      WHERE c.id = ? FOR UPDATE`,
     [contractId]
@@ -92,10 +97,15 @@ async function lockContract(client: Client, contractId: number) {
   return c;
 }
 
-/** Whether the contract can be inspected now: move-in from booking paid to Active; move-out while the move-out is open. */
-async function canInspect(client: Client, c: { id: number; status: string }, kind: InspectionKind) {
+/**
+ * Whether the contract can be inspected now: move-in from booking paid to Active — a booking only after its contract
+ * data is confirmed (step 3; an older one that already has its signed paper counts as confirmed); move-out while the
+ * move-out is open.
+ */
+async function canInspect(client: Client, c: { id: number; status: string; data_confirmed_at?: unknown; contract_file_url?: unknown }, kind: InspectionKind) {
   if (kind === 'move_in') {
     if (!INSPECTABLE.includes(c.status)) refuse('invalid_status');
+    if (BOOKING_PAID_STATUSES.includes(c.status) && !c.data_confirmed_at && !isPaper(c.contract_file_url)) refuse('not_confirmed');
     return;
   }
   const open = (await client.query(
@@ -312,6 +322,32 @@ export async function acknowledgeInspection(contractId: number, user: Actor, now
   });
 }
 
+/**
+ * Staff record that the tenant acknowledged the move-in inspection on paper (signed the printed record) — for a tenant
+ * who cannot use the app on move-in day. Same lock as an acknowledgement in the app; who recorded it is kept
+ * (ack_paper_by, migration 021) with the time in tenant_ack_at. The signed paper uploaded in step 5 carries the record.
+ */
+export async function acknowledgeOnPaper(contractId: number, by: Actor, now: Date): Promise<InspectionResult<{ acknowledgedAt: Date }>> {
+  if (!by || !isStaff(by)) return { ok: false, reason: 'forbidden', message: MESSAGES.forbidden };
+  return run(async (client) => {
+    const c = await lockContract(client, contractId);
+    await canInspect(client, c, 'move_in');
+    const inspection = (await client.query(
+      "SELECT id, tenant_ack_at FROM contract_inspections WHERE contract_id = ? AND kind = 'move_in' FOR UPDATE",
+      [contractId]
+    )).rows[0];
+    if (!inspection) refuse('not_inspected');
+    if (inspection.tenant_ack_at) refuse('already_acknowledged');
+    const count = (await client.query('SELECT COUNT(*) AS n FROM contract_inspection_items WHERE inspection_id = ?', [inspection.id])).rows[0];
+    if (!Number(count?.n)) refuse('not_inspected');
+    await client.query(
+      'UPDATE contract_inspections SET tenant_ack_at = ?, tenant_ack_by = NULL, ack_paper_by = ? WHERE id = ?',
+      [now, by.id, inspection.id]
+    );
+    return { acknowledgedAt: now };
+  });
+}
+
 // ── Reading ────────────────────────────────────────────────────────────────────
 
 export interface InspectionView {
@@ -324,6 +360,9 @@ export interface InspectionView {
   inspected_by_name: string | null;
   note: string | null;
   tenant_ack_at: string | null;
+  /** acknowledged on paper, recorded by staff (commit 28-3) — who recorded it */
+  ack_on_paper: boolean;
+  ack_paper_by_name: string | null;
   items: { id: number; item_name: string; condition_status: Condition; quantity: number | null; note: string | null; photo_file: string | null; photo_url: string | null }[];
 }
 
@@ -371,7 +410,8 @@ export async function getInspection(contractId: number, kindInput: InspectionKin
   const kind = kindOf(kindInput);
   const sql = getDb();
   const rows = await sql`
-    SELECT i.id, i.contract_id, i.kind, i.inspected_at, i.note, i.tenant_ack_at,
+    SELECT i.id, i.contract_id, i.kind, i.inspected_at, i.note, i.tenant_ack_at, i.ack_paper_by,
+           (SELECT pu.name FROM users pu WHERE pu.id = i.ack_paper_by) AS ack_paper_by_name,
            u.name AS user_name, u.email AS user_email, u.role AS user_role,
            (SELECT landlord_name FROM dormitory_profile ORDER BY id LIMIT 1) AS landlord_name
     FROM contract_inspections i LEFT JOIN users u ON u.id = i.inspected_by
@@ -379,7 +419,8 @@ export async function getInspection(contractId: number, kindInput: InspectionKin
   `;
   const found = rows[0];
   if (!found) return null;
-  const { user_name, user_email, user_role, landlord_name, ...row } = found;
+  const { user_name, user_email, user_role, landlord_name, ack_paper_by, ...row } = found;
+  row.ack_on_paper = Boolean(ack_paper_by);
   row.inspected_by_name = inspectorName({ name: user_name, email: user_email, role: user_role }, landlord_name);
   const items = await sql`
     SELECT id, item_name, condition_status, quantity, note, photo_file FROM contract_inspection_items
@@ -443,7 +484,7 @@ export async function tenantContract(user: Actor, contractId?: number | null): P
 export function refusalStatus(reason: InspectionRefusal): number {
   if (reason === 'not_found') return 404;
   if (reason === 'forbidden') return 403;
-  if (reason === 'locked' || reason === 'already_acknowledged' || reason === 'move_out_closed') return 409;
+  if (reason === 'locked' || reason === 'already_acknowledged' || reason === 'move_out_closed' || reason === 'not_confirmed') return 409;
   if (reason === 'too_large') return 413;
   return 400;
 }
