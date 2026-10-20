@@ -199,9 +199,9 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
-      <div className="max-w-3xl w-full bg-slate-900 rounded-3xl p-6 border border-white/20 space-y-4 max-h-[92vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-start gap-3 pb-2 border-b border-white/10">
+    <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto overscroll-contain" onClick={onClose}>
+      <div className="max-w-3xl w-full bg-slate-900 rounded-3xl p-5 sm:p-6 border border-white/20 space-y-4 max-h-[85dvh] flex flex-col my-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="shrink-0 flex justify-between items-start gap-3 pb-2 border-b border-white/10">
           <div>
             <p className="font-black text-white text-base">🔍 {KIND_TITLE[kind]} {info?.room_number ? `· ห้อง ${info.room_number}` : ''}</p>
             {info?.tenant_name && <p className="text-xs text-slate-400">ผู้เช่า: {info.tenant_name}</p>}
@@ -217,7 +217,7 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
         ) : loadError ? (
           <p className="text-sm text-rose-400 font-bold py-8 text-center">✕ {loadError}</p>
         ) : (
-          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+          <div className="flex-1 overflow-y-auto overscroll-contain space-y-3 pr-1">
             {status === 'acknowledged' && (
               <p className="text-xs text-emerald-400 font-bold">
                 ผู้เช่ารับทราบแล้ว{ackAt ? ` เมื่อ ${new Date(ackAt).toLocaleString('th-TH')}` : ''} — แก้ไขไม่ได้

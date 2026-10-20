@@ -692,27 +692,30 @@ export default function OwnerBookingsPage() {
         </div>
       )}
 
-      {/* Guest Contract Details Modal */}
+      {/* Guest Contract Details Modal (Safe-Viewport Pattern: 85dvh, Sticky Header & Footer) */}
       {previewContractModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center pb-4 border-b border-white/10">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto overscroll-contain animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-2xl w-full max-h-[85dvh] flex flex-col overflow-hidden shadow-2xl my-auto">
+            {/* Header */}
+            <div className="shrink-0 flex justify-between items-center p-5 sm:p-6 border-b border-white/10 bg-slate-950/80">
               <div>
-                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
                   <span>📄</span>
                   <span>รายละเอียดสัญญาที่ผู้จองกรอก (ห้อง {previewContractModal.room_number})</span>
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">ผู้จอง: {previewContractModal.guest_name}</p>
               </div>
               <button
+                type="button"
                 onClick={() => setPreviewContractModal(null)}
-                className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold"
+                className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold cursor-pointer shrink-0"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-4">
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-4 custom-scrollbar">
               {/* Personal Info */}
               <div className="p-4 bg-slate-950/80 rounded-2xl border border-white/5 space-y-3">
                 <h4 className="text-xs font-black uppercase tracking-widest text-primary">ข้อมูลผู้เช่า</h4>
@@ -760,12 +763,13 @@ export default function OwnerBookingsPage() {
               </div>
             </div>
 
-            <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-white/10">
+            {/* Footer */}
+            <div className="shrink-0 p-4 sm:p-5 border-t border-white/10 bg-slate-950/80 flex flex-col sm:flex-row items-center justify-between gap-3">
               <a
                 href={`/api/contracts/export-docx?id=${previewContractModal.contract_id}`}
                 target="_blank"
                 rel="noreferrer"
-                className="w-full sm:w-auto px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
+                className="w-full sm:w-auto px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <span>🖨</span>
                 <span>พิมพ์แบบฟอร์มสัญญา (Word)</span>
@@ -774,7 +778,7 @@ export default function OwnerBookingsPage() {
               <button
                 type="button"
                 onClick={() => setPreviewContractModal(null)}
-                className="w-full sm:w-auto px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl transition-all"
+                className="w-full sm:w-auto px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
               >
                 ปิดหน้าต่าง
               </button>
@@ -783,220 +787,253 @@ export default function OwnerBookingsPage() {
         </div>
       )}
 
-      {/* Issue Move-in Bill Modal (amounts from the server; the starting meter is required) */}
+      {/* Issue Move-in Bill Modal (Safe-Viewport Pattern: 85dvh, Sticky Header & Footer) */}
       {issueBooking && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-xl w-full p-6 sm:p-8 space-y-6 shadow-2xl">
-            <div className="flex justify-between items-center pb-4 border-b border-white/10">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto overscroll-contain animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-xl w-full max-h-[85dvh] flex flex-col overflow-hidden shadow-2xl my-auto">
+            {/* Header */}
+            <div className="shrink-0 flex justify-between items-center p-5 sm:p-6 border-b border-white/10 bg-slate-950/80">
               <div>
-                <h3 className="text-lg font-black text-white">ออกบิลเข้าอยู่</h3>
+                <h3 className="text-base sm:text-lg font-black text-white">ออกบิลเข้าอยู่</h3>
                 <p className="text-xs text-slate-400 mt-0.5">ห้อง {issueBooking.room_number} • ผู้จอง: {issueBooking.guest_name}</p>
               </div>
               <button
+                type="button"
                 onClick={() => setIssueBooking(null)}
-                className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold"
+                className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold cursor-pointer shrink-0"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleIssueMoveIn} className="space-y-5">
-              {issueBooking.move_in && (
-                <div className="p-4 bg-slate-950 rounded-2xl border border-white/5 space-y-3">
-                  <p className="text-xs font-bold text-slate-300">บิลค่าแรกเข้าที่จะส่งไปยังผู้จอง (คำนวณจากราคาห้อง):</p>
-                  <div className="flex justify-between text-xs text-slate-400">
-                    <span>ค่าห้องเดือนแรก (เต็มเดือน):</span>
-                    <span className="text-white font-mono">฿{Number(issueBooking.move_in.rent).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+            {/* Scrollable Form Body */}
+            <form onSubmit={handleIssueMoveIn} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-5 custom-scrollbar">
+                {issueBooking.move_in && (
+                  <div className="p-4 bg-slate-950 rounded-2xl border border-white/5 space-y-3">
+                    <p className="text-xs font-bold text-slate-300">บิลค่าแรกเข้าที่จะส่งไปยังผู้จอง (คำนวณจากราคาห้อง):</p>
+                    <div className="flex justify-between text-xs text-slate-400">
+                      <span>ค่าห้องเดือนแรก (เต็มเดือน):</span>
+                      <span className="text-white font-mono">฿{Number(issueBooking.move_in.rent).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-slate-400">
+                      <span>เงินประกันส่วนที่เหลือ:</span>
+                      <span className="text-white font-mono">฿{Number(issueBooking.move_in.depositAtMoveIn).toLocaleString('th-TH', { minimumFractionDigits: 2 })} (รวมค่าจอง = ประกัน ฿{Number(issueBooking.move_in.deposit).toLocaleString('th-TH')})</span>
+                    </div>
+                    <div className="pt-2 border-t border-white/10 flex justify-between text-sm font-black text-emerald-400">
+                      <span>ยอดบิลแรกเข้ารวม:</span>
+                      <span className="font-mono">฿{Number(issueBooking.move_in.dueAtMoveIn).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400">ครบกำหนดชำระ: วันเริ่มสัญญา {issueBooking.start_date ? new Date(issueBooking.start_date).toLocaleDateString('th-TH') : '-'} — หากไม่ชำระ สัญญาจะถูกยกเลิกและค่าจองไม่คืน</p>
+                    {!issueBooking.move_in.cap_ok && (
+                      <p className="text-[11px] text-rose-300 font-bold">{issueBooking.move_in.cap_message}</p>
+                    )}
                   </div>
-                  <div className="flex justify-between text-xs text-slate-400">
-                    <span>เงินประกันส่วนที่เหลือ:</span>
-                    <span className="text-white font-mono">฿{Number(issueBooking.move_in.depositAtMoveIn).toLocaleString('th-TH', { minimumFractionDigits: 2 })} (รวมค่าจอง = ประกัน ฿{Number(issueBooking.move_in.deposit).toLocaleString('th-TH')})</span>
-                  </div>
-                  <div className="pt-2 border-t border-white/10 flex justify-between text-sm font-black text-emerald-400">
-                    <span>ยอดบิลแรกเข้ารวม:</span>
-                    <span className="font-mono">฿{Number(issueBooking.move_in.dueAtMoveIn).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                  <p className="text-[10px] text-slate-400">ครบกำหนดชำระ: วันเริ่มสัญญา {issueBooking.start_date ? new Date(issueBooking.start_date).toLocaleDateString('th-TH') : '-'} — หากไม่ชำระ สัญญาจะถูกยกเลิกและค่าจองไม่คืน</p>
-                  {!issueBooking.move_in.cap_ok && (
-                    <p className="text-[11px] text-rose-300 font-bold">{issueBooking.move_in.cap_message}</p>
-                  )}
-                </div>
-              )}
+                )}
 
-              {/* Tenant on the contract: typed / checked against the ID card by hand (no OCR, commit 24c) */}
-              <div className="p-4 bg-slate-950 rounded-2xl border border-white/10 space-y-3">
-                <p className="text-xs font-black text-white">ข้อมูลผู้เช่าในสัญญา (ตรวจกับบัตรประชาชน)</p>
-                <label className="block space-y-1">
-                  <span className="text-[11px] font-bold text-slate-300">ชื่อ-นามสกุล</span>
-                  <input
-                    type="text"
-                    maxLength={255}
-                    value={issueName}
-                    onChange={(e) => setIssueName(e.target.value)}
-                    placeholder="นาย/นางสาว..."
-                    className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-white focus:outline-none focus:border-primary"
-                  />
-                </label>
-                <label className="block space-y-1">
-                  <span className="text-[11px] font-bold text-slate-300">ที่อยู่ตามบัตรประชาชน</span>
-                  <textarea
-                    rows={2}
-                    maxLength={500}
-                    value={issueAddress}
-                    onChange={(e) => setIssueAddress(e.target.value)}
-                    placeholder="บ้านเลขที่ หมู่ ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
-                    className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-primary"
-                  />
-                </label>
-                <label className="block space-y-1">
-                  <span className="text-[11px] font-bold text-slate-300">จำนวนผู้พัก (1–{MAX_OCCUPANTS} คน) — จากการจอง แก้ได้ก่อนออกบิล</span>
-                  <select
-                    value={issueOccupants}
-                    onChange={(e) => setIssueOccupants(Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-primary"
-                  >
-                    {OCCUPANT_CHOICES.map((n) => <option key={n} value={n}>{n} คน</option>)}
-                  </select>
-                </label>
-                <p className="text-[10px] text-slate-400">ชื่อ ที่อยู่ และจำนวนผู้พักนี้จะขึ้นในสัญญา (PDF / Word) · ค่าน้ำคิดตามจำนวนผู้พัก · ระบบไม่เก็บเลขบัตรประชาชนและรูปบัตร</p>
-              </div>
-
-              {/* Initial Meter Reading Input */}
-              <div className="p-4 bg-slate-950 rounded-2xl border border-amber-500/20 space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-base">⚡</span>
-                  <label className="block text-xs font-black text-amber-300">
-                    เลขมิเตอร์ไฟฟ้าเริ่มต้นของห้อง {issueBooking.room_number} (บังคับ):
+                {/* Tenant on the contract: typed / checked against the ID card by hand (no OCR, commit 24c) */}
+                <div className="p-4 bg-slate-950 rounded-2xl border border-white/10 space-y-3">
+                  <p className="text-xs font-black text-white">ข้อมูลผู้เช่าในสัญญา (ตรวจกับบัตรประชาชน)</p>
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-bold text-slate-300">ชื่อ-นามสกุล</span>
+                    <input
+                      type="text"
+                      maxLength={255}
+                      value={issueName}
+                      onChange={(e) => setIssueName(e.target.value)}
+                      placeholder="นาย/นางสาว..."
+                      className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-white focus:outline-none focus:border-primary"
+                    />
                   </label>
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-bold text-slate-300">ที่อยู่ตามบัตรประชาชน</span>
+                    <textarea
+                      rows={2}
+                      maxLength={500}
+                      value={issueAddress}
+                      onChange={(e) => setIssueAddress(e.target.value)}
+                      placeholder="บ้านเลขที่ หมู่ ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
+                      className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-primary"
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-bold text-slate-300">จำนวนผู้พัก (1–{MAX_OCCUPANTS} คน) — จากการจอง แก้ได้ก่อนออกบิล</span>
+                    <select
+                      value={issueOccupants}
+                      onChange={(e) => setIssueOccupants(Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-primary"
+                    >
+                      {OCCUPANT_CHOICES.map((n) => <option key={n} value={n}>{n} คน</option>)}
+                    </select>
+                  </label>
+                  <p className="text-[10px] text-slate-400">ชื่อ ที่อยู่ และจำนวนผู้พักนี้จะขึ้นในสัญญา (PDF / Word) · ค่าน้ำคิดตามจำนวนผู้พัก · ระบบไม่เก็บเลขบัตรประชาชนและรูปบัตร</p>
                 </div>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  required
-                  placeholder="กรอกเลขมิเตอร์หน้าปัด ณ วันส่งมอบห้อง (เช่น 0, 100)"
-                  value={initialMeterReading}
-                  onChange={(e) => setInitialMeterReading(e.target.value)}
-                  className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 text-sm font-mono font-bold text-white focus:outline-none focus:border-amber-400"
-                />
-                <p className="text-[10px] text-slate-400">
-                  🔒 กำหนดค่ามิเตอร์เริ่มต้นเพื่อใช้เป็นฐานคำนวณหน่วยไฟในรอบบิลถัดไป และป้องกันการโกงหน่วยไฟ
-                </p>
+
+                {/* Initial Meter Reading Input */}
+                <div className="p-4 bg-slate-950 rounded-2xl border border-amber-500/20 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">⚡</span>
+                    <label className="block text-xs font-black text-amber-300">
+                      เลขมิเตอร์ไฟฟ้าเริ่มต้นของห้อง {issueBooking.room_number} (บังคับ):
+                    </label>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    placeholder="กรอกเลขมิเตอร์หน้าปัด ณ วันส่งมอบห้อง (เช่น 0, 100)"
+                    value={initialMeterReading}
+                    onChange={(e) => setInitialMeterReading(e.target.value)}
+                    className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 text-sm font-mono font-bold text-white focus:outline-none focus:border-amber-400"
+                  />
+                  <p className="text-[10px] text-slate-400">
+                    🔒 กำหนดค่ามิเตอร์เริ่มต้นเพื่อใช้เป็นฐานคำนวณหน่วยไฟในรอบบิลถัดไป และป้องกันการโกงหน่วยไฟ
+                  </p>
+                </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={uploading || initialMeterReading.trim() === '' || (issueBooking.move_in ? !issueBooking.move_in.cap_ok : false)}
-                className="w-full py-4 bg-amber-500 hover:bg-amber-400 text-white font-black text-sm rounded-xl shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
-              >
-                {uploading ? 'กำลังออกบิล...' : '🧾 ออกบิลเข้าอยู่ & ส่งให้ผู้จอง'}
-              </button>
+              {/* Sticky Footer */}
+              <div className="shrink-0 p-4 sm:p-5 border-t border-white/10 bg-slate-950/80 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIssueBooking(null)}
+                  className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={uploading || initialMeterReading.trim() === '' || (issueBooking.move_in ? !issueBooking.move_in.cap_ok : false)}
+                  className="flex-1 sm:flex-none px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-sm rounded-xl shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {uploading ? 'กำลังออกบิล...' : '🧾 ออกบิลเข้าอยู่ & ส่งให้ผู้จอง'}
+                </button>
+              </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Upload Signed Paper Contract Modal (file + signing date) */}
+      {/* Upload Signed Paper Contract Modal (Safe-Viewport Pattern: 85dvh, Sticky Header & Footer) */}
       {paperBooking && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-xl w-full p-6 sm:p-8 space-y-6 shadow-2xl">
-            <div className="flex justify-between items-center pb-4 border-b border-white/10">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto overscroll-contain animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-xl w-full max-h-[85dvh] flex flex-col overflow-hidden shadow-2xl my-auto">
+            {/* Header */}
+            <div className="shrink-0 flex justify-between items-center p-5 sm:p-6 border-b border-white/10 bg-slate-950/80">
               <div>
-                <h3 className="text-lg font-black text-white">อัปโหลดสัญญาที่เซ็นแล้ว</h3>
+                <h3 className="text-base sm:text-lg font-black text-white">อัปโหลดสัญญาที่เซ็นแล้ว</h3>
                 <p className="text-xs text-slate-400 mt-0.5">ห้อง {paperBooking.room_number} • ผู้จอง: {paperBooking.guest_name}</p>
               </div>
               <button
+                type="button"
                 onClick={() => setPaperBooking(null)}
-                className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold"
+                className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold cursor-pointer shrink-0"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleUploadPaper} className="space-y-5">
-              <p className="text-xs text-slate-400">
-                พิมพ์แบบฟอร์มสัญญา → ให้ผู้เช่าและผู้ให้เช่าเซ็นบนกระดาษ → ถ่ายรูปหรือสแกนแล้วอัปโหลดที่นี่ · สัญญามีผลเมื่อบิลเข้าอยู่ชำระครบและอัปโหลดสัญญานี้แล้ว
-              </p>
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-2">ไฟล์สัญญาที่เซ็นแล้ว (JPG, PNG หรือ PDF ไม่เกิน 10MB):</label>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,application/pdf"
-                  required
-                  onChange={async (e) => {
-                    const input = e.target;
-                    const file = input.files?.[0];
-                    setPaperFile(null);
-                    setPaperError(null);
-                    if (!file) return;
-                    // Type from the file content (a renamed text file is refused), size up to 10MB
-                    const problem = await checkPaperFile(file);
-                    if (problem) {
-                      setPaperError(problem);
-                      input.value = '';
-                      return;
-                    }
-                    const reader = new FileReader();
-                    reader.onload = () => setPaperFile((reader.result as string) || null);
-                    reader.readAsDataURL(file);
-                  }}
-                  className="w-full text-xs text-slate-400 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-primary/20 file:text-primary hover:file:bg-primary/30 cursor-pointer bg-slate-950 p-2 rounded-xl border border-white/10"
-                />
-                {paperError && (
-                  <p className="text-[11px] text-rose-400 font-bold mt-2">✕ {paperError}</p>
-                )}
-                {paperFile && (
-                  <p className="text-[11px] text-emerald-400 font-bold mt-2">✓ แนบไฟล์สัญญาเรียบร้อยแล้ว</p>
-                )}
+            {/* Scrollable Form Body */}
+            <form onSubmit={handleUploadPaper} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-5 custom-scrollbar">
+                <p className="text-xs text-slate-400">
+                  พิมพ์แบบฟอร์มสัญญา → ให้ผู้เช่าและผู้ให้เช่าเซ็นบนกระดาษ → ถ่ายรูปหรือสแกนแล้วอัปโหลดที่นี่ · สัญญามีผลเมื่อบิลเข้าอยู่ชำระครบและอัปโหลดสัญญานี้แล้ว
+                </p>
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-2">ไฟล์สัญญาที่เซ็นแล้ว (JPG, PNG หรือ PDF ไม่เกิน 10MB):</label>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,application/pdf"
+                    required
+                    onChange={async (e) => {
+                      const input = e.target;
+                      const file = input.files?.[0];
+                      setPaperFile(null);
+                      setPaperError(null);
+                      if (!file) return;
+                      // Type from the file content (a renamed text file is refused), size up to 10MB
+                      const problem = await checkPaperFile(file);
+                      if (problem) {
+                        setPaperError(problem);
+                        input.value = '';
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = () => setPaperFile((reader.result as string) || null);
+                      reader.readAsDataURL(file);
+                    }}
+                    className="w-full text-xs text-slate-400 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-primary/20 file:text-primary hover:file:bg-primary/30 cursor-pointer bg-slate-950 p-2 rounded-xl border border-white/10"
+                  />
+                  {paperError && (
+                    <p className="text-[11px] text-rose-400 font-bold mt-2">✕ {paperError}</p>
+                  )}
+                  {paperFile && (
+                    <p className="text-[11px] text-emerald-400 font-bold mt-2">✓ แนบไฟล์สัญญาเรียบร้อยแล้ว</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-2">วันที่เซ็นสัญญา:</label>
+                  <input
+                    type="date"
+                    required
+                    max={todayBangkok}
+                    value={paperSignedDate}
+                    onChange={(e) => setPaperSignedDate(e.target.value)}
+                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-white focus:outline-none focus:border-primary"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-2">วันที่เซ็นสัญญา:</label>
-                <input
-                  type="date"
-                  required
-                  max={todayBangkok}
-                  value={paperSignedDate}
-                  onChange={(e) => setPaperSignedDate(e.target.value)}
-                  className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-white focus:outline-none focus:border-primary"
-                />
+              {/* Sticky Footer */}
+              <div className="shrink-0 p-4 sm:p-5 border-t border-white/10 bg-slate-950/80 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPaperBooking(null)}
+                  className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={uploading || !paperFile || !paperSignedDate}
+                  className="flex-1 sm:flex-none px-6 py-2.5 bg-primary hover:brightness-110 text-white font-black text-sm rounded-xl shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {uploading ? 'กำลังบันทึก...' : '📤 บันทึกสัญญาที่เซ็นแล้ว'}
+                </button>
               </div>
-
-              <button
-                type="submit"
-                disabled={uploading || !paperFile || !paperSignedDate}
-                className="w-full py-4 bg-primary hover:brightness-110 text-white font-black text-sm rounded-xl shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
-              >
-                {uploading ? 'กำลังบันทึก...' : '📤 บันทึกสัญญาที่เซ็นแล้ว'}
-              </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* Preview First Bill Modal */}
+      {/* Preview First Bill Modal (Safe-Viewport Pattern: 85dvh, Sticky Header & Footer) */}
       {previewBillModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-6 shadow-2xl">
-            <div className="flex justify-between items-center pb-4 border-b border-white/10">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto overscroll-contain animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-lg w-full max-h-[85dvh] flex flex-col overflow-hidden shadow-2xl my-auto">
+            {/* Header */}
+            <div className="shrink-0 flex justify-between items-center p-5 sm:p-6 border-b border-white/10 bg-slate-950/80">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-xl">
                   🧾
                 </div>
                 <div>
-                  <h3 className="text-lg font-black text-white">รายละเอียดบิลแรกเข้า</h3>
+                  <h3 className="text-base sm:text-lg font-black text-white">รายละเอียดบิลแรกเข้า</h3>
                   <p className="text-xs text-slate-400 mt-0.5">ห้อง {previewBillModal.room_number} • ผู้เช่า: {previewBillModal.guest_name}</p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setPreviewBillModal(null)}
-                className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold"
+                className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center font-bold cursor-pointer shrink-0"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-4">
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-4 custom-scrollbar">
               <div className="p-4 bg-slate-950/80 rounded-2xl border border-white/5 space-y-3">
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-slate-400">สถานะบิล:</span>
@@ -1045,11 +1082,12 @@ export default function OwnerBookingsPage() {
               </div>
             </div>
 
-            <div className="pt-2 flex justify-end">
+            {/* Footer */}
+            <div className="shrink-0 p-4 sm:p-5 border-t border-white/10 bg-slate-950/80 flex justify-end">
               <button
                 type="button"
                 onClick={() => setPreviewBillModal(null)}
-                className="w-full sm:w-auto px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl transition-all"
+                className="w-full sm:w-auto px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
               >
                 ปิดหน้าต่าง
               </button>

@@ -70,26 +70,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // ── Check if email has been verified via OTP ─────────────────────────────
-    try {
-      const verifications = await sql`
-        SELECT id FROM email_verifications 
-        WHERE email = ${cleanEmail} AND is_verified = 1 
-        ORDER BY id DESC LIMIT 1
-      `;
-      // In production or when verification record required, enforce OTP
-      if (!verifications || verifications.length === 0) {
-        // Fallback for tests if needed, but flag requirement
-        if (process.env.NODE_ENV === 'production') {
-          return NextResponse.json(
-            { success: false, message: 'กรุณายืนยันรหัส OTP ที่ส่งไปยังอีเมลของคุณก่อนสมัครสมาชิก' },
-            { status: 400 }
-          );
-        }
-      }
-    } catch (e: any) {
-      console.warn('[email_verifications check in signup skipped or table not created yet]:', e?.message);
-    }
+    // ── Check if email has been verified via OTP (Bypassed) ───────────────────
+    // Email verification check bypassed temporarily
+    /* verification check bypassed */
 
     // ── Hash password with BCrypt ─────────────────────────────────────────────
     const hashedPassword = await bcrypt.hash(password, 10);

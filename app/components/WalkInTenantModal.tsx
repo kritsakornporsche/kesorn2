@@ -224,8 +224,8 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
   const depositAmount = qrData?.amount ?? null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-3xl max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto overscroll-contain animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-3xl max-h-[85dvh] flex flex-col overflow-hidden shadow-2xl my-auto">
 
         {/* Header */}
         <div className="shrink-0 bg-slate-950/80 px-6 py-4 border-b border-white/10 flex items-center justify-between">
