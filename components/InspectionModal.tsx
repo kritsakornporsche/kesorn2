@@ -4,8 +4,11 @@
 // by item with the move-in result). Items start from the dorm's item list for the room type (lib/room-items.ts) or the
 // move-in items; each item has a condition, a note and one photo, countable items a quantity (commit 26). Editable until
 // the tenant acknowledges it.
+// commit 28-10: a checklist — every item starts "ปกติ" and only what is not gets tapped. PC (md and up): one table
+// (รายการ | จำนวน | ปกติ / ชำรุด / สูญหาย | หมายเหตุ | รูป). Phone: a card per item with 3 large condition buttons; the
+// note and photo open only for an item that is not "ปกติ" (or with "+ หมายเหตุ / รูป").
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { PHOTOS_TOTAL_MAX_BYTES, preparePhoto } from '@/lib/inspection-photo-check';
 import { QUANTITY_MAX, isCountableName, quantityMin } from '@/lib/room-items';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
@@ -21,6 +24,13 @@ export const INSPECTION_STATUS_TEXT: Record<InspectionStatus, string> = {
 };
 
 export const CONDITION_TEXT: Record<Condition, string> = { Good: 'ปกติ', Damaged: 'ชำรุด', Missing: 'สูญหาย' };
+const CONDITIONS = Object.keys(CONDITION_TEXT) as Condition[];
+/** the chosen condition button */
+const CONDITION_ON: Record<Condition, string> = {
+  Good: 'bg-emerald-500/20 border-emerald-400/60 text-emerald-200',
+  Damaged: 'bg-amber-500/20 border-amber-400/60 text-amber-200',
+  Missing: 'bg-rose-500/20 border-rose-400/60 text-rose-200',
+};
 export const KIND_TITLE: Record<InspectionKind, string> = { move_in: 'ตรวจห้องก่อนเข้าอยู่', move_out: 'ตรวจห้องตอนย้ายออก' };
 
 type MoveInItem = { condition_status: Condition; quantity: number | null; note: string | null; photo_url: string | null };
@@ -41,6 +51,8 @@ interface Row {
   newPhoto: string | null;
   newBytes: number;
   error: string | null;
+  /** phone: note and photo opened on an item that is still "ปกติ" */
+  more?: boolean;
 }
 
 let nextKey = 1;
@@ -233,9 +245,126 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
     }
   };
 
+  // ── pieces of a row, the same in the PC table and the phone cards ──
+  const nameInput = (row: Row) => (
+    <input
+      value={row.name}
+      disabled={!editable}
+      onChange={(e) => update(row.key, { name: e.target.value, error: null })}
+      placeholder="ชื่อรายการ"
+      aria-label={`ชื่อรายการที่ ${rows.indexOf(row) + 1}`}
+      className="flex-1 w-full min-w-0 bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white disabled:opacity-70"
+    />
+  );
+  const removeButton = (row: Row) => editable && (
+    <button
+      type="button"
+      onClick={() => setRows((list) => list.filter((r) => r.key !== row.key))}
+      className="px-2 py-1 text-rose-300 hover:text-rose-200 text-xs font-bold shrink-0"
+      title="ลบรายการ"
+    >
+      ✕
+    </button>
+  );
+  /** ปกติ / ชำรุด / สูญหาย as 3 buttons (large on a phone) */
+  const conditionButtons = (row: Row, large: boolean) => (
+    <div role="radiogroup" aria-label={`สภาพ ${row.name || 'รายการ'}`} className="grid grid-cols-3 gap-1">
+      {CONDITIONS.map((c) => (
+        <button
+          key={c}
+          type="button"
+          role="radio"
+          aria-checked={row.condition === c}
+          data-condition={c}
+          disabled={!editable}
+          onClick={() => update(row.key, { condition: c, error: null })}
+          className={`${large ? 'py-3 text-sm' : 'py-1.5 text-[11px]'} rounded-xl font-black border transition-colors ${
+            row.condition === c ? CONDITION_ON[c] : 'border-white/10 text-slate-400 hover:bg-white/5'
+          } disabled:cursor-not-allowed`}
+        >
+          {CONDITION_TEXT[c]}
+        </button>
+      ))}
+    </div>
+  );
+  const quantityInput = (row: Row) => (
+    <input
+      type="number" {...NUMBER_INPUT_PROPS}
+      min={quantityMin(kind)}
+      max={QUANTITY_MAX}
+      step={1}
+      inputMode="numeric"
+      aria-label={`จำนวน ${row.name}`}
+      value={row.quantity}
+      disabled={!editable}
+      onChange={(e) => update(row.key, { quantity: e.target.value, error: null })}
+      className="w-16 bg-slate-950 border border-white/10 rounded-xl px-2 py-2 text-xs font-bold text-white text-center disabled:opacity-70"
+    />
+  );
+  const noteInput = (row: Row) => (
+    <input
+      value={row.note}
+      disabled={!editable}
+      onChange={(e) => update(row.key, { note: e.target.value })}
+      placeholder={row.condition === 'Good' ? 'หมายเหตุ (ถ้ามี)' : `${CONDITION_TEXT[row.condition]}อย่างไร (ถ้ามี)`}
+      className="flex-1 w-full min-w-[140px] bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white disabled:opacity-70"
+    />
+  );
+  const photoCell = (row: Row) => (
+    <div className="flex items-center gap-1.5">
+      {(row.newPhoto || row.photoUrl) && (
+        <button type="button" onClick={() => setPreview(row.newPhoto || row.photoUrl)} className="w-10 h-10 rounded-lg overflow-hidden border border-white/20 shrink-0">
+          <img src={row.newPhoto || row.photoUrl || ''} alt={row.name} className="w-full h-full object-cover" />
+        </button>
+      )}
+      {editable && (
+        <label className="px-2.5 py-2 bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold rounded-xl border border-white/10 cursor-pointer whitespace-nowrap">
+          📷 {row.newPhoto || row.photoUrl ? 'เปลี่ยน' : 'ถ่าย/เลือกรูป'}
+          <input
+            type="file"
+            accept="image/jpeg,image/png"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; pickPhoto(row, f); }}
+          />
+        </label>
+      )}
+      {editable && (row.newPhoto || row.photoFile) && (
+        <button
+          type="button"
+          onClick={() => update(row.key, { newPhoto: null, newBytes: 0, photoFile: null, photoUrl: null })}
+          className="text-[11px] text-slate-400 hover:text-white"
+        >
+          ลบรูป
+        </button>
+      )}
+      {!editable && !row.newPhoto && !row.photoUrl && <span className="text-slate-600">–</span>}
+    </div>
+  );
+  /** Move-out: the move-in result of the same item */
+  const compareLine = (row: Row) => {
+    if (kind !== 'move_out' || !moveIn) return null;
+    const before = moveInOf(row.name);
+    if (!before) return row.name.trim() ? <p className="text-[11px] text-slate-500">ตอนเข้าอยู่: ไม่มีรายการนี้</p> : null;
+    const changed = before.condition_status !== row.condition;
+    // commit 26: a counted item with fewer than at move-in is a missing item → damage charges at the deposit step
+    const short = before.quantity !== null && row.quantity.trim() !== '' && Number(row.quantity) < Number(before.quantity)
+      ? Number(before.quantity) - Number(row.quantity) : 0;
+    return (
+      <div className={`flex flex-wrap items-center gap-2 text-[11px] ${changed || short ? 'text-amber-300 font-bold' : 'text-slate-400'}`}>
+        <span>ตอนเข้าอยู่: {CONDITION_TEXT[before.condition_status]}{before.quantity !== null ? ` · จำนวน ${before.quantity}` : ''}{before.note ? ` · ${before.note}` : ''}{changed ? ' → เปลี่ยนไป' : ''}</span>
+        {short > 0 && <span>ขาด {short} — เลือก "สูญหาย" แล้วคิดค่าเสียหายที่ขั้นสรุปเงินประกัน</span>}
+        {before.photo_url && (
+          <button onClick={() => setPreview(before.photo_url)} className="w-8 h-8 rounded overflow-hidden border border-white/20 shrink-0">
+            <img src={before.photo_url} alt={`${row.name} ตอนเข้าอยู่`} className="w-full h-full object-cover" />
+          </button>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto overscroll-contain" onClick={onClose}>
-      <div className="max-w-3xl w-full bg-slate-900 rounded-3xl p-5 sm:p-6 border border-white/20 space-y-4 max-h-[85dvh] flex flex-col my-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="max-w-3xl md:max-w-4xl w-full bg-slate-900 rounded-3xl p-5 sm:p-6 border border-white/20 space-y-4 max-h-[85dvh] flex flex-col my-auto" onClick={(e) => e.stopPropagation()}>
         <div className="shrink-0 flex justify-between items-start gap-3 pb-2 border-b border-white/10">
           <div>
             <p className="font-black text-white text-base">🔍 {KIND_TITLE[kind]} {info?.room_number ? `· ห้อง ${info.room_number}` : ''}</p>
@@ -267,109 +396,84 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
               <p className="text-xs text-slate-400">ไม่มีผลตรวจห้องตอนเข้าอยู่ให้เทียบ</p>
             )}
 
-            {rows.map((row, index) => (
-              <div key={row.key} className={`p-3 rounded-2xl border space-y-2 ${row.error ? 'border-rose-500/60 bg-rose-500/5' : 'border-white/10 bg-slate-950/60'}`}>
-                {/* commit 26b: number, name and ✕ on one line (also on phones); condition / quantity on the next */}
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-slate-500 w-5 shrink-0">{index + 1}.</span>
-                  <input
-                    value={row.name}
-                    disabled={!editable}
-                    onChange={(e) => update(row.key, { name: e.target.value, error: null })}
-                    placeholder="ชื่อรายการ"
-                    className="flex-1 min-w-0 bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white disabled:opacity-70"
-                  />
-                  {editable && (
-                    <button
-                      onClick={() => setRows((list) => list.filter((r) => r.key !== row.key))}
-                      className="px-2 py-1 text-rose-300 hover:text-rose-200 text-xs font-bold shrink-0"
-                      title="ลบรายการ"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2 pl-7">
-                  <select
-                    value={row.condition}
-                    disabled={!editable}
-                    onChange={(e) => update(row.key, { condition: e.target.value as Condition })}
-                    className="bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white disabled:opacity-70"
-                  >
-                    {(Object.keys(CONDITION_TEXT) as Condition[]).map((c) => <option key={c} value={c}>{CONDITION_TEXT[c]}</option>)}
-                  </select>
-                  {counted(row) && (
-                    <label className="flex items-center gap-1 text-[11px] font-bold text-slate-300">
-                      จำนวน
-                      <input
-                        type="number" {...NUMBER_INPUT_PROPS}
-                        min={quantityMin(kind)}
-                        max={QUANTITY_MAX}
-                        step={1}
-                        inputMode="numeric"
-                        value={row.quantity}
-                        disabled={!editable}
-                        onChange={(e) => update(row.key, { quantity: e.target.value, error: null })}
-                        className="w-16 bg-slate-950 border border-white/10 rounded-xl px-2 py-2 text-xs font-bold text-white text-center disabled:opacity-70"
-                      />
-                    </label>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2 pl-7">
-                  <input
-                    value={row.note}
-                    disabled={!editable}
-                    onChange={(e) => update(row.key, { note: e.target.value })}
-                    placeholder="หมายเหตุ (ถ้ามี)"
-                    className="flex-1 min-w-[140px] bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white disabled:opacity-70"
-                  />
-                  {(row.newPhoto || row.photoUrl) && (
-                    <button onClick={() => setPreview(row.newPhoto || row.photoUrl)} className="w-12 h-12 rounded-lg overflow-hidden border border-white/20 shrink-0">
-                      <img src={row.newPhoto || row.photoUrl || ''} alt={row.name} className="w-full h-full object-cover" />
-                    </button>
-                  )}
-                  {editable && (
-                    <label className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold rounded-xl border border-white/10 cursor-pointer">
-                      📷 {row.newPhoto || row.photoUrl ? 'เปลี่ยนรูป' : 'ถ่าย/เลือกรูป'}
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png"
-                        className="hidden"
-                        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; pickPhoto(row, f); }}
-                      />
-                    </label>
-                  )}
-                  {editable && (row.newPhoto || row.photoFile) && (
-                    <button
-                      onClick={() => update(row.key, { newPhoto: null, newBytes: 0, photoFile: null, photoUrl: null })}
-                      className="text-[11px] text-slate-400 hover:text-white"
-                    >
-                      ลบรูป
-                    </button>
-                  )}
-                </div>
-                {kind === 'move_out' && moveIn && (() => {
-                  const before = moveInOf(row.name);
-                  if (!before) return row.name.trim() ? <p className="pl-7 text-[11px] text-slate-500">ตอนเข้าอยู่: ไม่มีรายการนี้</p> : null;
-                  const changed = before.condition_status !== row.condition;
-                  // commit 26: a counted item with fewer than at move-in is a missing item → damage charges at the deposit step
-                  const short = before.quantity !== null && row.quantity.trim() !== '' && Number(row.quantity) < Number(before.quantity)
-                    ? Number(before.quantity) - Number(row.quantity) : 0;
-                  return (
-                    <div className={`pl-7 flex flex-wrap items-center gap-2 text-[11px] ${changed || short ? 'text-amber-300 font-bold' : 'text-slate-400'}`}>
-                      <span>ตอนเข้าอยู่: {CONDITION_TEXT[before.condition_status]}{before.quantity !== null ? ` · จำนวน ${before.quantity}` : ''}{before.note ? ` · ${before.note}` : ''}{changed ? ' → เปลี่ยนไป' : ''}</span>
-                      {short > 0 && <span>ขาด {short} — เลือก "สูญหาย" แล้วคิดค่าเสียหายที่ขั้นสรุปเงินประกัน</span>}
-                      {before.photo_url && (
-                        <button onClick={() => setPreview(before.photo_url)} className="w-8 h-8 rounded overflow-hidden border border-white/20 shrink-0">
-                          <img src={before.photo_url} alt={`${row.name} ตอนเข้าอยู่`} className="w-full h-full object-cover" />
-                        </button>
-                      )}
+            {rows.length > 0 && (
+              <p className="text-[11px] text-slate-400" data-summary>
+                ทุกข้อเริ่มเป็น &quot;ปกติ&quot; — แตะเฉพาะข้อที่ผิดปกติ ·{' '}
+                {CONDITIONS.map((c) => `${CONDITION_TEXT[c]} ${rows.filter((r) => r.condition === c).length}`).join(' · ')}
+              </p>
+            )}
+
+            {/* PC: one table */}
+            <table className="hidden md:table w-full text-xs border-separate border-spacing-y-1" data-layout="pc">
+              <thead>
+                <tr className="text-[11px] text-slate-400 text-left">
+                  <th className="w-6 font-bold">#</th>
+                  <th className="font-bold">รายการ</th>
+                  <th className="w-[4.5rem] font-bold text-center">จำนวน</th>
+                  <th className="w-[13.5rem] font-bold text-center">สภาพ</th>
+                  <th className="font-bold">หมายเหตุ</th>
+                  <th className="w-[7.5rem] font-bold">รูป</th>
+                  <th className="w-7" />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, index) => (
+                  <Fragment key={row.key}>
+                    <tr className={row.error ? 'bg-rose-500/5' : ''}>
+                      <td className="text-[11px] text-slate-500 align-middle">{index + 1}.</td>
+                      <td className="pr-2">{nameInput(row)}</td>
+                      <td className="text-center">{counted(row) ? quantityInput(row) : <span className="text-slate-600">–</span>}</td>
+                      <td className="px-1">{conditionButtons(row, false)}</td>
+                      <td className="pr-2">{noteInput(row)}</td>
+                      <td>{photoCell(row)}</td>
+                      <td className="text-right">{removeButton(row)}</td>
+                    </tr>
+                    {(compareLine(row) || row.error) && (
+                      <tr>
+                        <td />
+                        <td colSpan={6} className="pb-1">
+                          {compareLine(row)}
+                          {row.error && <p className="text-xs text-rose-400 font-bold">✕ {row.error}</p>}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+
+            {/* phone: a card per item */}
+            <div className="md:hidden space-y-2" data-layout="mobile">
+              {rows.map((row, index) => {
+                const more = row.condition !== 'Good' || row.more || !!row.note.trim() || !!row.newPhoto || !!row.photoUrl;
+                return (
+                  <div key={row.key} className={`p-3 rounded-2xl border space-y-2 ${row.error ? 'border-rose-500/60 bg-rose-500/5' : 'border-white/10 bg-slate-950/60'}`}>
+                    {/* commit 26b: number, name and ✕ on one line */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-slate-500 w-5 shrink-0">{index + 1}.</span>
+                      {nameInput(row)}
+                      {removeButton(row)}
                     </div>
-                  );
-                })()}
-                {row.error && <p className="pl-7 text-xs text-rose-400 font-bold">✕ {row.error}</p>}
-              </div>
-            ))}
+                    <div className="pl-7">{conditionButtons(row, true)}</div>
+                    {counted(row) && (
+                      <label className="pl-7 flex items-center gap-2 text-[11px] font-bold text-slate-300">จำนวน {quantityInput(row)}</label>
+                    )}
+                    {more ? (
+                      <div className="flex flex-wrap items-center gap-2 pl-7">
+                        {noteInput(row)}
+                        {photoCell(row)}
+                      </div>
+                    ) : editable && (
+                      <button type="button" onClick={() => update(row.key, { more: true })} className="ml-7 text-[11px] font-bold text-slate-400 hover:text-white">
+                        + หมายเหตุ / รูป
+                      </button>
+                    )}
+                    {compareLine(row) && <div className="pl-7">{compareLine(row)}</div>}
+                    {row.error && <p className="pl-7 text-xs text-rose-400 font-bold">✕ {row.error}</p>}
+                  </div>
+                );
+              })}
+            </div>
 
             {editable && (
               <button
