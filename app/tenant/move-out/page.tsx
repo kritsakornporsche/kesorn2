@@ -1,361 +1,329 @@
-import { getDb } from '@/lib/db';
-import { auth } from '@/auth';
-import MoveOutForm from './components/MoveOutForm';
-import CancelRequestButton from './components/CancelRequestButton';
+'use client';
 
-async function getMoveOutData() {
-  const session = await auth();
-  if (!session?.user?.email) return null;
+// Tenant: give move-out notice and follow the settlement (lib/moveOut.ts through /api/tenant/move-out). Every amount
+// comes from the server. Rules: notice 30 days ahead; an early move-out keeps the deposit only under สคบ. ข้อ 13
+// (half of the contract, written notice >= 30 days, nothing overdue); refunds within 7 days of the return (14 when
+// something is deducted).
 
-  const sql = getDb();
-  
-  // Find tenant by email or user link
-  const tenantRes = await sql`
-    SELECT t.id, t.name, t.phone, t.room_id, r.room_number 
-    FROM tenants t 
-    LEFT JOIN users u ON t.user_id = u.id 
-    LEFT JOIN rooms r ON t.room_id = r.id
-    WHERE t.email = ${session.user.email} OR u.email = ${session.user.email} 
-    LIMIT 1
-  `;
-  if (tenantRes.length === 0) return null;
-  const tenant = tenantRes[0];
+import { useEffect, useState } from 'react';
+import TenantInspectionCard from '@/components/TenantInspectionCard';
+import ThaiDatePicker from '@/components/ThaiDatePicker';
 
-  // Find active contract
-  const contractRes = await sql`
-    SELECT id, start_date, end_date, deposit_amount, status 
-    FROM contracts 
-    WHERE tenant_id = ${tenant.id} AND status IN ('Active', 'Approved', 'MoveOutPending')
-    ORDER BY id DESC 
-    LIMIT 1
-  `;
-  const contract = contractRes.length > 0 ? contractRes[0] : null;
-
-  const requests = await sql`
-    SELECT 
-      mor.*, 
-      r.room_number,
-      c.deposit_amount as contract_deposit,
-      c.start_date as contract_start_date,
-      c.end_date as contract_end_date
-    FROM move_out_requests mor
-    LEFT JOIN rooms r ON mor.room_id = r.id
-    LEFT JOIN contracts c ON c.id = COALESCE(mor.contract_id, (SELECT id FROM contracts WHERE tenant_id = mor.tenant_id ORDER BY id DESC LIMIT 1))
-    WHERE mor.tenant_id = ${tenant.id} AND mor.status IN ('Pending', 'Approved', 'Completed')
-    ORDER BY mor.id DESC 
-    LIMIT 1
-  `;
-
-  return {
-    request: requests.length > 0 ? requests[0] : null,
-    contract
+interface Settlement {
+  id: number;
+  contract_id: number;
+  state: 'Notified' | 'Returned' | 'Settled' | 'Closed' | 'Cancelled';
+  room_number: string;
+  notice_date: string;
+  planned_return_date: string;
+  return_date: string | null;
+  notice_days: number;
+  contract_start: string;
+  contract_end: string;
+  damage_items: { amount: number; reason: string }[];
+  clause13: null | { early: boolean; half: boolean; notice: boolean; noArrears: boolean; refundable: boolean; stayedDays: number; contractDays: number; noticeDays: number };
+  outstanding: { id: number; title: string; outstanding: number; late_fee: number }[];
+  outstanding_total: number;
+  money: null | {
+    deposit: number | null;
+    deposit_needs_confirmation: boolean;
+    offset: number;
+    forfeit: number;
+    refund: number;
+    refund_due_date: string | null;
+    refunded_at: string | null;
+    has_refund_file: boolean;
+    projected: boolean;
   };
 }
 
-export default async function TenantMoveOut() {
-  const data = await getMoveOutData();
-  const request = data?.request;
-  const contract = data?.contract;
+interface Data {
+  contract: { id: number; start_date: string; end_date: string; status: string; room_number: string } | null;
+  settlement: Settlement | null;
+  legacyRequest: { id: number; status: string; desired_date: string } | null;
+}
+
+const NOTICE_DAYS = 30;
+const baht = (n: number | null | undefined) => `฿${Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const ymd = (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }) : '');
+const thaiDate = (v: string | null | undefined) => (v ? new Date(`${ymd(v)}T00:00:00+07:00`).toLocaleDateString('th-TH') : '-');
+const todayBangkok = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
+
+const STEPS: { state: Settlement['state']; label: string }[] = [
+  { state: 'Notified', label: 'แจ้งย้ายออก' },
+  { state: 'Returned', label: 'คืนห้องแล้ว' },
+  { state: 'Settled', label: 'สรุปเงินประกัน' },
+  { state: 'Closed', label: 'เสร็จสิ้น' },
+];
+
+export default function TenantMoveOutPage() {
+  const [data, setData] = useState<Data | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoadError(null);
+    try {
+      const res = await fetch('/api/tenant/move-out');
+      const d = await res.json();
+      if (!d.success) setLoadError(d.message || 'โหลดข้อมูลย้ายออกไม่สำเร็จ');
+      else setData(d);
+    } catch {
+      setLoadError('โหลดข้อมูลย้ายออกไม่สำเร็จ');
+    }
+  };
+  useEffect(() => { load(); }, []);
+
+  // A closed move-out of an earlier contract gives way to the notice form of the tenant's current Active contract
+  const s = data?.settlement;
+  const active = s && s.state !== 'Cancelled' && !(s.state === 'Closed' && data?.contract && data.contract.id !== s.contract_id) ? s : null;
 
   return (
-    <div className="p-6 lg:p-10 max-w-5xl mx-auto space-y-10 font-sans">
-      <div className="relative">
-        <div className="absolute -left-4 top-1/2 -translate-y-1/2 w-1.5 h-10 bg-primary rounded-full" />
-        <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-3">
-          <span className="p-2.5 bg-card rounded-2xl border border-border text-primary text-xl">
-            🚪
-          </span>
-          แจ้งย้ายออก & ขอคืนเงินประกัน (Move Out)
-        </h1>
-        <p className="text-muted-foreground mt-2 text-sm font-medium flex items-center gap-2">
-          ระบบตรวจสอบเงื่อนไขสัญญา 1 ปี หักค่าใช้จ่ายค้างชำระอัตโนมัติ และโอนคืนเงินประกันผ่านพร้อมเพย์
+    <div className="p-6 lg:p-10 max-w-5xl mx-auto space-y-8 font-sans pb-28 md:pb-12">
+      <div>
+        <h1 className="text-3xl font-black text-white tracking-tight">🚪 แจ้งย้ายออก & เงินประกัน</h1>
+        <p className="text-muted-foreground mt-2 text-sm">
+          แจ้งล่วงหน้าอย่างน้อย {NOTICE_DAYS} วัน · ไม่คิดค่าเช่ารายวัน · คืนเงินประกันภายใน 7 วันหลังคืนห้อง (ตามประกาศ สคบ. พ.ศ. 2568) · 14 วันเมื่อมีรายการหัก (ตามนโยบายหอพัก)
         </p>
       </div>
 
-      {request ? (
-        <div className="space-y-8">
-          {/* Card Container */}
-          <div className="bg-card rounded-3xl border border-border shadow-2xl overflow-hidden">
-            
-            {/* Status Header Badge */}
-            <div className={`p-4 text-center font-black tracking-widest uppercase text-xs border-b ${
-              request.status === 'Completed' 
-                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' 
-                : request.status === 'Approved'
-                ? 'bg-blue-500/15 text-blue-400 border-blue-500/30'
-                : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-            }`}>
-              {request.status === 'Completed' 
-                ? '✓ หักลบค่าใช้จ่ายปิดห้องและเสร็จสิ้นขั้นตอนการย้ายออกเรียบร้อยแล้ว (Completed)' 
-                : request.status === 'Approved'
-                ? (request.settlement_type === 'TenantPay' 
-                    ? '✓ ตรวจห้องเรียบร้อยแล้ว (กรุณาชำระบิลส่วนต่างที่หน้าบิล)' 
-                    : request.settlement_type === 'ZeroBalance'
-                    ? '✓ หักลบค่าใช้จ่ายพอดี 0 บาท (ดำเนินการเสร็จสมบูรณ์)'
-                    : '✓ ผู้ดูแลอนุมัติคำร้องแล้ว (รอการสแกนโอนเงินประกันคืน)')
-                : '⏳ อยู่ระหว่างการตรวจสอบโดยผู้ดูแลหอพัก (Pending Verification)'}
-            </div>
+      {loadError && <p className="text-sm text-rose-400 font-bold">✕ {loadError}</p>}
+      {!data && !loadError && <p className="text-sm text-muted-foreground">กำลังโหลด...</p>}
 
-            <div className="p-8 sm:p-12 space-y-8">
-              
-              {/* Room & Target Overview */}
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 pb-6 border-b border-border">
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-wider text-primary">คำร้องขอย้ายออก #{request.id}</span>
-                  <h2 className="text-2xl font-black text-white">ห้อง {request.room_number || '-'}</h2>
-                </div>
+      {data?.legacyRequest && (
+        <div className="bg-card rounded-3xl border border-border p-8 space-y-2">
+          <p className="text-lg font-black text-white">คำขอย้ายออก #{data.legacyRequest.id} (แบบเดิม)</p>
+          <p className="text-sm text-muted-foreground">
+            วันที่ต้องการย้ายออก {thaiDate(data.legacyRequest.desired_date)} · คำขอนี้ทำก่อนระบบใหม่ เจ้าของหอจะจัดการและแจ้งยอดเงินประกันให้ทราบโดยตรง
+          </p>
+        </div>
+      )}
 
-                <div className="flex items-center gap-3 bg-secondary/50 px-5 py-3 rounded-2xl border border-border">
-                  <span className="text-2xl">💳</span>
-                  <div>
-                    <span className="text-[10px] font-bold text-muted-foreground block">พร้อมเพย์รับเงินคืน</span>
-                    <span className="font-mono font-bold text-white text-sm">{request.promptpay_target || '-'}</span>
-                    <span className="text-xs text-emerald-400 ml-2">({request.promptpay_name || 'ผู้เช่า'})</span>
-                  </div>
-                </div>
-              </div>
+      {data && !data.legacyRequest && active && <SettlementCard s={active} onChanged={load} />}
 
-              {/* Dates Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                <div className="bg-secondary/30 p-5 rounded-2xl border border-border">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">วันที่ต้องการย้ายออก</p>
-                  <p className="text-lg font-bold text-amber-300">
-                    {new Date(request.desired_date || request.move_out_date).toLocaleDateString('th-TH', { 
-                      year: 'numeric', 
-                      month: 'long', 
-                      day: 'numeric' 
-                    })}
-                  </p>
-                </div>
+      {data && !data.legacyRequest && !active && (data.contract?.status === 'Active'
+        ? <NoticeForm contract={data.contract} onDone={load} />
+        : !data.settlement && <p className="text-sm text-muted-foreground">ไม่มีสัญญาเช่าที่ใช้งานอยู่</p>)}
+    </div>
+  );
+}
 
-                <div className="bg-secondary/30 p-5 rounded-2xl border border-border">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">วันที่ยื่นคำร้อง</p>
-                  <p className="text-lg font-bold text-white">
-                    {new Date(request.created_at).toLocaleDateString('th-TH', { 
-                      year: 'numeric', 
-                      month: 'long', 
-                      day: 'numeric' 
-                    })}
-                  </p>
-                </div>
+function NoticeForm({ contract, onDone }: { contract: NonNullable<Data['contract']>; onDone: () => void }) {
+  const [returnDate, setReturnDate] = useState('');
+  const [reason, setReason] = useState('');
+  const [promptpayTarget, setPromptpayTarget] = useState('');
+  const [promptpayName, setPromptpayName] = useState('');
+  const [bankName, setBankName] = useState('พร้อมเพย์');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
 
-                <div className="bg-secondary/30 p-5 rounded-2xl border border-border">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">การตรวจสอบสัญญา 1 ปี</p>
-                  <span className={`inline-block mt-1 px-3 py-1 rounded-full text-xs font-bold ${
-                    request.is_contract_completed 
-                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
-                      : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                  }`}>
-                    {request.is_contract_completed ? '✓ ครบกำหนดสัญญา 1 ปี' : '⚠️ ย้ายออกก่อนครบสัญญา'}
-                  </span>
-                </div>
-              </div>
+  const today = todayBangkok();
+  const end = ymd(contract.end_date);
+  const start = ymd(contract.start_date);
+  const noticeDays = returnDate ? daysBetween(today, returnDate) : null;
+  const early = returnDate ? daysBetween(returnDate, end) > 1 : false;
+  const half = returnDate ? daysBetween(start, returnDate) * 2 >= daysBetween(start, end) : false;
 
-              {/* Financial Calculation Breakdown */}
-              <div className="bg-secondary/20 p-6 rounded-3xl border border-border space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-primary flex items-center gap-1.5">
-                    <span>🧾</span>
-                    <span>{request.is_contract_completed ? 'รายละเอียดการคำนวณเงินประกัน & ค่าใช้จ่ายปิดห้อง' : 'รายละเอียดค่าใช้จ่าย & สถานะเงินประกัน (ออกก่อนกำหนด)'}</span>
-                  </h4>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                    request.settlement_type === 'OwnerRefund' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' :
-                    request.settlement_type === 'TenantPay' ? 'bg-rose-500/15 text-rose-300 border-rose-500/30' :
-                    'bg-slate-500/15 text-slate-300 border-slate-500/30'
-                  }`}>
-                    {request.settlement_type === 'OwnerRefund' ? 'หอพักคืนเงินประกัน' :
-                     request.settlement_type === 'TenantPay' ? 'ลูกหอต้องชำระส่วนต่าง' : 'หักล้างพอดี 0 บาท'}
-                  </span>
-                </div>
+  const submit = async () => {
+    setError(null);
+    if (!returnDate) return setError('กรุณาเลือกวันคืนห้อง');
+    if (!promptpayTarget.trim()) return setError('กรุณาระบุเบอร์พร้อมเพย์หรือเลขบัญชีสำหรับรับเงินประกันคืน');
+    if (!confirm(`แจ้งย้ายออก คืนห้องวันที่ ${thaiDate(returnDate)}?`)) return;
+    setSending(true);
+    try {
+      const res = await fetch('/api/tenant/move-out', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ returnDate, reason, promptpayTarget, promptpayName, bankName }),
+      });
+      const d = await res.json();
+      if (!d.success) return setError(d.message || 'ส่งเรื่องแจ้งย้ายออกไม่สำเร็จ');
+      setWarnings(d.warnings || []);
+      onDone();
+    } catch {
+      setError('ส่งเรื่องแจ้งย้ายออกไม่สำเร็จ');
+    } finally {
+      setSending(false);
+    }
+  };
 
-                {/* Itemized Expenses Breakdown */}
-                <div className="bg-card/60 p-4 rounded-2xl border border-border space-y-2.5 text-xs">
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
-                    รายการค่าใช้จ่ายรอบสุดท้าย (จดมิเตอร์ & ตรวจห้องแล้ว)
-                  </span>
+  const input = 'w-full bg-secondary/40 border border-border rounded-xl px-4 py-3 text-sm text-white';
+  return (
+    <div className="bg-card rounded-3xl border border-border p-8 space-y-5">
+      <div>
+        <p className="text-lg font-black text-white">แจ้งย้ายออก · ห้อง {contract.room_number}</p>
+        <p className="text-xs text-muted-foreground">สัญญา {thaiDate(contract.start_date)} – {thaiDate(contract.end_date)}</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-muted-foreground">
+        <label className="space-y-1">
+          <span className="font-bold">วันคืนห้อง</span>
+          <ThaiDatePicker aria-label="วันที่จะคืนห้อง" min={today} value={returnDate} onChange={setReturnDate} className={input} />
+        </label>
+        <label className="space-y-1">
+          <span className="font-bold">เหตุผล (ถ้ามี)</span>
+          <input value={reason} onChange={(e) => setReason(e.target.value)} className={input} />
+        </label>
+        <label className="space-y-1">
+          <span className="font-bold">พร้อมเพย์ / เลขบัญชีรับเงินคืน</span>
+          <input value={promptpayTarget} onChange={(e) => setPromptpayTarget(e.target.value)} className={input} />
+        </label>
+        <label className="space-y-1">
+          <span className="font-bold">ชื่อบัญชี</span>
+          <input value={promptpayName} onChange={(e) => setPromptpayName(e.target.value)} className={input} />
+        </label>
+        <label className="space-y-1">
+          <span className="font-bold">ธนาคาร</span>
+          <input value={bankName} onChange={(e) => setBankName(e.target.value)} className={input} />
+        </label>
+      </div>
 
-                  {Number(request.room_rent_amount || 0) > 0 && (
-                    <div className="flex justify-between text-foreground/90">
-                      <span>🏠 ค่าเช่าห้องพัก:</span>
-                      <span className="font-mono font-bold text-foreground">฿{Number(request.room_rent_amount).toLocaleString()}</span>
-                    </div>
-                  )}
+      {returnDate && (
+        <div className="space-y-1 text-sm">
+          <p className={noticeDays !== null && noticeDays < NOTICE_DAYS ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+            แจ้งล่วงหน้า {noticeDays} วัน{noticeDays !== null && noticeDays < NOTICE_DAYS ? ` — น้อยกว่า ${NOTICE_DAYS} วันตามกติกาของหอ` : ''}
+          </p>
+          {early && (
+            <p className="text-amber-300 font-bold">
+              ย้ายออกก่อนครบสัญญา: เงินประกันจะถูกยึดหลังหักยอดค้าง ยกเว้นเข้าเงื่อนไขตามประกาศ สคบ. พ.ศ. 2568 ครบทั้ง 3 ข้อ
+              — (ก) อยู่มาแล้วอย่างน้อยครึ่งหนึ่งของสัญญา {half ? '✓' : '✕'} · (ข) แจ้งล่วงหน้าอย่างน้อย 30 วัน {noticeDays !== null && noticeDays >= NOTICE_DAYS ? '✓' : '✕'} · (ค) ไม่ค้างชำระ
+            </p>
+          )}
+        </div>
+      )}
+      {warnings.map((w) => <p key={w} className="text-sm text-amber-300 font-bold">⚠️ {w}</p>)}
+      {error && <p className="text-sm text-rose-400 font-bold">✕ {error}</p>}
+      <button onClick={submit} disabled={sending} className="w-full sm:w-auto px-8 py-3 bg-primary text-white font-black rounded-xl disabled:opacity-50">
+        {sending ? 'กำลังส่ง...' : 'ส่งเรื่องแจ้งย้ายออก'}
+      </button>
+    </div>
+  );
+}
 
-                  <div className="flex justify-between text-foreground/90">
-                    <span>⚡ ค่าไฟฟ้า ({Number(request.electric_units_used || 0)} หน่วย @4.88 บ.):</span>
-                    <span className="font-mono font-bold text-foreground">฿{Number(request.electric_amount || 0).toLocaleString()}</span>
-                  </div>
+function SettlementCard({ s, onChanged }: { s: Settlement; onChanged: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const m = s.money;
+  const stepIndex = STEPS.findIndex((st) => st.state === s.state);
 
-                  <div className="flex justify-between text-foreground/90">
-                    <span>💧 ค่าน้ำประปา (เหมาจ่าย):</span>
-                    <span className="font-mono font-bold text-foreground">฿{Number(request.water_amount || 100).toLocaleString()}</span>
-                  </div>
+  const cancel = async () => {
+    if (!confirm('ยกเลิกการแจ้งย้ายออก?')) return;
+    setCancelling(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/tenant/move-out', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settlementId: s.id }),
+      });
+      const d = await res.json();
+      if (!d.success) return setError(d.message || 'ยกเลิกไม่สำเร็จ');
+      onChanged();
+    } catch {
+      setError('ยกเลิกไม่สำเร็จ');
+    } finally {
+      setCancelling(false);
+    }
+  };
 
-                  <div className="flex justify-between text-foreground/90">
-                    <span>🧹 ค่าส่วนกลาง / ค่าบริการ:</span>
-                    <span className="font-mono font-bold text-foreground">฿{Number(request.common_fee || 150).toLocaleString()}</span>
-                  </div>
-
-                  {Number(request.extra_damage_amount || 0) > 0 && (
-                    <div className="flex justify-between text-rose-400 font-semibold">
-                      <span>🔨 ค่าทำความสะอาด / ความเสียหาย {request.extra_damage_note ? `(${request.extra_damage_note})` : ''}:</span>
-                      <span className="font-mono font-bold">+฿{Number(request.extra_damage_amount).toLocaleString()}</span>
-                    </div>
-                  )}
-
-                  {Number(request.unpaid_bills_total || 0) > 0 && (
-                    <div className="flex justify-between text-rose-400 font-semibold">
-                      <span>⚠️ บิลค้างชำระก่อนหน้า:</span>
-                      <span className="font-mono font-bold">+฿{Number(request.unpaid_bills_total).toLocaleString()}</span>
-                    </div>
-                  )}
-
-                  <div className="pt-2 border-t border-border flex justify-between font-black text-amber-400 text-sm">
-                    <span>รวมค่าใช้จ่ายทั้งหมด:</span>
-                    <span className="font-mono">฿{Number(request.total_expenses || 0).toLocaleString()}</span>
-                  </div>
-                </div>
-
-                {/* Settlement Calculation */}
-                {request.is_contract_completed ? (
-                  <div className="space-y-2 pt-1">
-                    <div className="flex justify-between text-xs sm:text-sm text-foreground/80">
-                      <span>เงินประกันสัญญาเดิมที่วางไว้:</span>
-                      <span className="font-mono font-bold text-emerald-400">
-                        +฿{Number(request.deposit_amount || request.contract_deposit || 3000).toLocaleString()}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between text-xs sm:text-sm text-foreground/80">
-                      <span>หักยอดค่าใช้จ่ายทั้งหมดรอบสุดท้าย:</span>
-                      <span className="font-mono font-bold text-rose-400">
-                        -฿{Number(request.total_expenses || 0).toLocaleString()}
-                      </span>
-                    </div>
-
-                    <div className="pt-3 border-t border-border flex justify-between items-center">
-                      <span className="font-bold text-white text-sm sm:text-base">
-                        {request.settlement_type === 'TenantPay' 
-                          ? 'ยอดค่าใช้จ่ายส่วนต่างที่ลูกหอต้องชำระ:' 
-                          : request.status === 'Completed' 
-                          ? 'ยอดเงินประกันสุทธิที่โอนคืนแล้ว:' 
-                          : 'ยอดเงินประกันสุทธิที่คาดว่าจะได้รับคืน:'}
-                      </span>
-                      <span className={`text-2xl font-black font-mono ${
-                        request.settlement_type === 'TenantPay' ? 'text-rose-400' : 'text-emerald-400'
-                      }`}>
-                        ฿{request.settlement_type === 'TenantPay' 
-                          ? Math.max(0, Number(request.total_expenses || 0) - 3000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                          : Number(request.net_refund_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-
-                    {request.settlement_type === 'TenantPay' && (
-                      <div className="pt-2">
-                        <a 
-                          href="/tenant/billing" 
-                          className="inline-flex items-center justify-center w-full gap-2 px-4 py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-black rounded-xl text-xs transition-all shadow-md shadow-primary/20"
-                        >
-                          💳 ไปที่หน้าบิลเพื่อชำระส่วนต่าง ฿{Math.max(0, Number(request.total_expenses || 0) - 3000).toLocaleString()} →
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl space-y-3 text-sm">
-                    <div className="flex items-center gap-2 text-rose-300 font-bold">
-                      <span>⚠️</span>
-                      <span>เงื่อนไขการย้ายออกก่อนครบสัญญา 1 ปี:</span>
-                    </div>
-                    <ul className="list-disc pl-5 text-xs text-slate-300 space-y-1 leading-relaxed">
-                      <li><strong>ไม่ได้รับเงินประกันคืน</strong> (ยึดเงินประกันตามข้อตกลงในสัญญา)</li>
-                      <li>ยอดค่าใช้จ่ายทั้งหมดรอบสุดท้ายที่ต้องชำระ: <strong className="text-amber-400 font-mono">฿{Number(request.total_expenses || 0).toLocaleString()}</strong> บาท</li>
-                    </ul>
-                    <div className="pt-2">
-                      <a 
-                        href="/tenant/billing" 
-                        className="inline-flex items-center justify-center w-full gap-2 px-4 py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-black rounded-xl text-xs transition-all shadow-md shadow-primary/20"
-                      >
-                        💳 ไปยังหน้าบิลของฉัน เพื่อตรวจสอบ/ชำระบิล →
-                      </a>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Refund Completed Section */}
-              {request.status === 'Completed' && request.is_contract_completed === 1 && (
-                <div className="p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-3xl space-y-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-3xl">🎉</span>
-                    <div>
-                      <h4 className="text-base font-bold text-emerald-400">โอนเงินประกันคืนเข้าบัญชีพร้อมเพย์แล้ว</h4>
-                      <p className="text-xs text-white/70">
-                        ผู้ดูแลหอพักได้สแกน QR Code พร้อมเพย์ ล็อคยอดเงินโอนคืนเป๊ะ <strong>฿{Number(request.net_refund_amount || 0).toFixed(2)} บาท</strong> เรียบร้อยแล้ว
-                        {request.refunded_at && ` เมื่อวันที่ ${new Date(request.refunded_at).toLocaleDateString('th-TH')} เวลา ${new Date(request.refunded_at).toLocaleTimeString('th-TH')}`}
-                      </p>
-                    </div>
-                  </div>
-
-                  {request.refund_slip_url && (
-                    <div className="pt-2">
-                      <span className="text-xs font-bold text-muted-foreground block mb-2">หลักฐานการโอนเงินคืน:</span>
-                      <a href={request.refund_slip_url} target="_blank" rel="noreferrer" className="inline-block">
-                        <img 
-                          src={request.refund_slip_url} 
-                          alt="Refund Slip" 
-                          className="w-32 h-44 object-cover rounded-xl border border-white/20 hover:scale-105 transition-transform" 
-                        />
-                      </a>
-                    </div>
-                  )}
-
-                  {request.inspection_notes && (
-                    <p className="text-xs text-white/60 italic pt-1">
-                      บันทึกเพิ่มเติมจากผู้ดูแล: {request.inspection_notes}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Reason */}
-              {request.reason && (
-                <div>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2 font-mono">เหตุผลการย้ายออก</p>
-                  <div className="bg-secondary/40 border border-border rounded-2xl p-5 text-white/80 italic text-sm">
-                    &quot;{request.reason}&quot;
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-4 border-t border-border pt-6">
-                {request.status === 'Pending' && (
-                  <CancelRequestButton requestId={request.id} />
-                )}
-                {request.status === 'Completed' ? (
-                  <div className="w-full py-3.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold rounded-xl text-center text-sm">
-                    ✓ ดำเนินการเสร็จสมบูรณ์ ขอบคุณที่ร่วมพักอาศัยกับหอพักเกษร 2
-                  </div>
-                ) : request.settlement_type === 'TenantPay' ? (
-                  <div className="flex-1 bg-rose-500/10 text-rose-300 font-bold py-3.5 px-4 rounded-xl text-center text-sm border border-rose-500/20">
-                    เจ้าของหอพักได้จัดส่งบิลค่าใช้จ่ายส่วนต่างให้ท่านแล้ว กรุณาชำระที่หน้า &quot;บิลของฉัน&quot;
-                  </div>
-                ) : (
-                  <div className="flex-1 bg-white/5 text-white/70 font-bold py-3.5 px-4 rounded-xl text-center text-sm border border-border">
-                    {request.status === 'Approved'
-                      ? 'ผู้ดูแลอนุมัติคำร้องแล้ว อยู่ระหว่างเตรียมการโอนเงินประกันคืน'
-                      : 'ผู้ดูแลกำลังตรวจสอบมิเตอร์และคำนวณยอดปิดการย้ายออก'}
-                  </div>
-                )}
-              </div>
-
-            </div>
+  return (
+    <div className="space-y-6">
+      <div className="bg-card rounded-3xl border border-border p-8 space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-2xl font-black text-white">ห้อง {s.room_number}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {STEPS.map((st, i) => (
+              <span key={st.state} className={`px-3 py-1 rounded-full text-[11px] font-black border ${
+                i < stepIndex ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                  : i === stepIndex ? 'bg-primary/20 border-primary/40 text-white' : 'border-border text-muted-foreground'}`}>
+                {i < stepIndex ? '✓ ' : ''}{st.label}
+              </span>
+            ))}
           </div>
         </div>
-      ) : (
-        <MoveOutForm contractEndDate={contract?.end_date} />
-      )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+          <div className="bg-secondary/30 p-4 rounded-2xl border border-border">
+            <p className="text-[10px] font-black text-muted-foreground uppercase">วันที่แจ้ง</p>
+            <p className="text-white font-bold">{thaiDate(s.notice_date)}</p>
+          </div>
+          <div className="bg-secondary/30 p-4 rounded-2xl border border-border">
+            <p className="text-[10px] font-black text-muted-foreground uppercase">{s.return_date ? 'วันคืนห้อง' : 'วันคืนห้องที่แจ้ง'}</p>
+            <p className="text-white font-bold">{thaiDate(s.return_date || s.planned_return_date)}</p>
+          </div>
+          <div className="bg-secondary/30 p-4 rounded-2xl border border-border">
+            <p className="text-[10px] font-black text-muted-foreground uppercase">แจ้งล่วงหน้า</p>
+            <p className={`font-bold ${s.notice_days < NOTICE_DAYS ? 'text-rose-400' : 'text-emerald-400'}`}>{s.notice_days} วัน</p>
+          </div>
+        </div>
+
+        {s.clause13?.early && (
+          <div className="p-4 rounded-2xl border border-border bg-secondary/20 text-sm space-y-1">
+            <p className="font-black text-amber-300">ย้ายออกก่อนครบสัญญา — ตามประกาศ สคบ. พ.ศ. 2568</p>
+            <p className={s.clause13.half ? 'text-emerald-400' : 'text-rose-400'}>{s.clause13.half ? '✓' : '✕'} (ก) อยู่มาแล้ว {s.clause13.stayedDays} จาก {s.clause13.contractDays} วัน</p>
+            <p className={s.clause13.notice ? 'text-emerald-400' : 'text-rose-400'}>{s.clause13.notice ? '✓' : '✕'} (ข) แจ้งเป็นหนังสือล่วงหน้า {s.clause13.noticeDays} วัน</p>
+            <p className={s.clause13.noArrears ? 'text-emerald-400' : 'text-rose-400'}>{s.clause13.noArrears ? '✓' : '✕'} (ค) ไม่ค้างชำระ ณ วันแจ้งและวันคืนห้อง</p>
+            <p className={`font-black ${s.clause13.refundable ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {s.clause13.refundable ? 'เข้าเงื่อนไขครบ — ได้รับเงินประกันคืน' : 'ไม่ครบ — เงินประกันถูกยึดหลังหักยอดค้าง'}
+            </p>
+          </div>
+        )}
+
+        {s.outstanding.length > 0 && (
+          <div className="space-y-1 text-sm">
+            <p className="text-[10px] font-black text-muted-foreground uppercase">ยอดค้างชำระ{s.state === 'Returned' ? ' (หักจากเงินประกัน)' : ''}</p>
+            {s.outstanding.map((b) => (
+              <div key={b.id} className="flex justify-between gap-3">
+                <span className="text-muted-foreground">{b.title}{b.late_fee > 0 ? ` (รวมค่าปรับ ${baht(b.late_fee)})` : ''}</span>
+                <span className="font-mono text-white">{baht(b.outstanding)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {s.damage_items.length > 0 && (
+          <div className="space-y-1 text-sm">
+            <p className="text-[10px] font-black text-muted-foreground uppercase">ค่าเสียหายจากการตรวจห้อง</p>
+            {s.damage_items.map((d, i) => (
+              <div key={i} className="flex justify-between gap-3">
+                <span className="text-muted-foreground">{d.reason}</span>
+                <span className="font-mono text-white">{baht(d.amount)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {m && s.state !== 'Notified' && (
+          <div className="p-5 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+            <div><p className="text-muted-foreground text-xs">เงินประกัน</p><p className="font-mono font-black text-white">{m.deposit === null ? 'รอเจ้าของหอยืนยัน' : baht(m.deposit)}</p></div>
+            <div><p className="text-muted-foreground text-xs">หักชำระยอดค้าง</p><p className="font-mono font-black text-amber-300">{baht(m.offset)}</p></div>
+            <div><p className="text-muted-foreground text-xs">ยึดเงินประกัน</p><p className="font-mono font-black text-rose-300">{baht(m.forfeit)}</p></div>
+            <div>
+              <p className="text-muted-foreground text-xs">คืนให้คุณ{m.projected ? ' (ประมาณการ)' : ''}</p>
+              <p className="font-mono font-black text-emerald-400">{baht(m.refund)}</p>
+              {m.refund_due_date && !m.refunded_at && <p className="text-[11px] text-muted-foreground">ภายใน {thaiDate(m.refund_due_date)}</p>}
+            </div>
+          </div>
+        )}
+        {m && s.state === 'Settled' && s.outstanding_total > 0 && (
+          <p className="text-sm text-amber-300 font-bold">ยังมียอดค้างหลังหักเงินประกัน {baht(s.outstanding_total)} — ชำระได้ที่หน้าบิลของฉัน</p>
+        )}
+        {s.state === 'Closed' && m && (
+          <p className="text-sm text-emerald-400 font-bold">
+            ✓ เสร็จสิ้น{m.refunded_at ? ` · เจ้าของหอโอนคืนเมื่อ ${new Date(m.refunded_at).toLocaleString('th-TH')}` : ''}
+            {m.has_refund_file && <> · <a href={`/api/move-out/${s.id}/refund-file`} target="_blank" rel="noreferrer" className="underline">ดูสลิปคืนเงิน</a></>}
+          </p>
+        )}
+
+        {s.state === 'Notified' && (
+          <button onClick={cancel} disabled={cancelling} className="px-6 py-2.5 bg-rose-500/15 text-rose-300 border border-rose-500/40 font-black text-xs rounded-xl disabled:opacity-50">
+            {cancelling ? 'กำลังยกเลิก...' : 'ยกเลิกการแจ้งย้ายออก'}
+          </button>
+        )}
+        {error && <p className="text-sm text-rose-400 font-bold">✕ {error}</p>}
+      </div>
+
+      {/* Move-out inspection: shown once the owner has recorded it, compared with move-in */}
+      <TenantInspectionCard key={`mo-${s.contract_id}`} contractId={s.contract_id} kind="move_out" />
     </div>
   );
 }

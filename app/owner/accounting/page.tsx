@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
+import TestRoomBadge from '@/components/TestRoomBadge';
+import ThaiDatePicker from '@/components/ThaiDatePicker';
+import { todayTh } from '@/lib/thai-date';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 interface Transaction {
   id: number;
@@ -10,6 +14,10 @@ interface Transaction {
   amount: number;
   description: string;
   transaction_date: string;
+  legacy?: boolean;
+  category_label?: string;
+  /** commit 26c: row of a test room (T01) — shown, badge "ทดสอบ", not in the totals */
+  is_test_room?: boolean;
 }
 
 interface MonthlySummary {
@@ -25,10 +33,10 @@ export default function OwnerAccounting() {
   const { data: session } = useSession();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [monthly, setMonthly] = useState<MonthlySummary[]>([]);
-  const [totals, setTotals] = useState({ income: 0, expense: 0, profit: 0 });
+  const [totals, setTotals] = useState({ income: 0, expense: 0, profit: 0, depositsHeld: 0, depositReclass: 0 });
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ type: 'Income', category: 'Rent', amount: 0, description: '', transaction_date: new Date().toISOString().split('T')[0] });
+  const [form, setForm] = useState({ type: 'Income', category: 'Rent', amount: 0, description: '', transaction_date: todayTh() });
 
   const [dormId, setDormId] = useState<number>(1);
 
@@ -69,7 +77,7 @@ export default function OwnerAccounting() {
       body: JSON.stringify({ ...form, dorm_id: dormId }),
     });
     setShowForm(false);
-    setForm({ type: 'Income', category: 'Rent', amount: 0, description: '', transaction_date: new Date().toISOString().split('T')[0] });
+    setForm({ type: 'Income', category: 'Rent', amount: 0, description: '', transaction_date: todayTh() });
     load(dormId);
   };
 
@@ -99,11 +107,19 @@ export default function OwnerAccounting() {
       <div className="flex-1 overflow-y-auto p-10">
         <div className="max-w-6xl mx-auto space-y-8">
 
+          {transactions.some((t) => t.is_test_room) && (
+            <p className="text-xs text-amber-500 font-bold">ยอดสรุปด้านล่างไม่รวมรายการของห้องทดสอบ (ป้าย &quot;ทดสอบ&quot;)</p>
+          )}
           {/* KPI Row */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
             <div className="bg-card border border-white/20/10 shadow-sm rounded-2xl p-6">
               <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider mb-1">รายรับรวม</p>
               <p className="text-3xl font-black text-[#10B981]">฿{fmt(totals.income)}</p>
+              {totals.depositReclass !== 0 && (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  รวมปรับปรุงเงินประกันแบบเดิม {totals.depositReclass < 0 ? '-' : '+'}฿{fmt(Math.abs(totals.depositReclass))}
+                </p>
+              )}
             </div>
             <div className="bg-card border border-white/20/10 shadow-sm rounded-2xl p-6">
               <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider mb-1">รายจ่ายรวม</p>
@@ -114,6 +130,11 @@ export default function OwnerAccounting() {
               <p className={`text-3xl font-black ${totals.profit >= 0 ? 'text-white' : 'text-[#EF4444]'}`}>
                 ฿{fmt(totals.profit)}
               </p>
+            </div>
+            <div className="bg-card border border-white/20/10 shadow-sm rounded-2xl p-6">
+              <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider mb-1">เงินประกันที่ถืออยู่ (หนี้สิน)</p>
+              <p className="text-3xl font-black text-sky-400">฿{fmt(totals.depositsHeld)}</p>
+              <p className="text-[10px] text-muted-foreground mt-1">ต้องคืนผู้เช่า · ไม่นับเป็นรายได้</p>
             </div>
           </div>
 
@@ -141,19 +162,36 @@ export default function OwnerAccounting() {
                       <td className="px-6 py-4 text-white/80">{t.transaction_date ? new Date(t.transaction_date).toLocaleDateString('th-TH') : '-'}</td>
                       <td className="px-6 py-4">
                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
-                          t.type === 'Income' ? 'bg-[#10B981]/10 text-[#10B981]' : 'bg-[#EF4444]/10 text-[#EF4444]'
-                        }`}>{t.type === 'Income' ? 'รายรับ' : 'รายจ่าย'}</span>
+                          t.type === 'Income' ? 'bg-[#10B981]/10 text-[#10B981]'
+                            : t.type === 'Liability' ? 'bg-sky-500/10 text-sky-400'
+                            : 'bg-[#EF4444]/10 text-[#EF4444]'
+                        }`}>{t.type === 'Income' ? 'รายรับ' : t.type === 'Liability' ? 'หนี้สิน' : 'รายจ่าย'}</span>
+                        {t.legacy && (
+                          <span className="ml-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-white/60" title="บันทึกก่อนแยกเงินประกันเป็นหนี้สิน">ข้อมูลแบบเดิม</span>
+                        )}
                       </td>
-                      <td className="px-6 py-4 text-white/80">{t.category}</td>
-                      <td className="px-6 py-4 text-white">{t.description || '-'}</td>
-                      <td className={`px-6 py-4 text-right font-bold ${t.type === 'Income' ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-                        {t.type === 'Income' ? '+' : '-'}฿{fmt(Number(t.amount))}
-                      </td>
+                      <td className="px-6 py-4 text-white/80">{t.category_label || t.category}</td>
+                      <td className="px-6 py-4 text-white">{t.description || '-'}{t.is_test_room && <TestRoomBadge force />}</td>
+                      {(() => {
+                        // Income adds, expense subtracts; a reversal has a negative amount.
+                        // Liability rows change the deposit held (received +, refunded/forfeited −), not profit.
+                        const signed = t.type === 'Expense' ? -Number(t.amount) : Number(t.amount);
+                        const color = t.type === 'Liability' ? 'text-sky-400' : signed >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]';
+                        return (
+                          <td className={`px-6 py-4 text-right font-bold ${color}`}>
+                            {signed >= 0 ? '+' : '-'}฿{fmt(Math.abs(signed))}
+                          </td>
+                        );
+                      })()}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            <p className="px-6 py-3 border-t border-white/20/10 text-[11px] text-muted-foreground">
+              แสดง 100 รายการล่าสุด · ยอดรวมด้านบนคิดจากทุกรายการ · เงินประกันบันทึกเป็น "หนี้สิน" (ไม่รวมในรายรับ/กำไร) ·
+              แถวที่ติดป้าย "ข้อมูลแบบเดิม" บันทึกก่อนแยกเงินประกัน (ค่าจองเป็นรายรับ, คืนประกันเป็นรายจ่าย)
+            </p>
           </div>
         </div>
       </div>
@@ -188,7 +226,7 @@ export default function OwnerAccounting() {
                 <div>
                   <label className="text-muted-foreground text-xs font-bold uppercase tracking-wider block mb-1.5">จำนวน (บาท)</label>
                   <input
-                    type="number"
+                    type="number" {...NUMBER_INPUT_PROPS}
                     value={form.amount}
                     onChange={e => setForm(f => ({ ...f, amount: Number(e.target.value) }))}
                     className="w-full bg-card border border-white/20/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-primary"
@@ -196,10 +234,10 @@ export default function OwnerAccounting() {
                 </div>
                 <div>
                   <label className="text-muted-foreground text-xs font-bold uppercase tracking-wider block mb-1.5">วันที่</label>
-                  <input
-                    type="date"
+                  <ThaiDatePicker
+                    aria-label="วันที่รายการ"
                     value={form.transaction_date}
-                    onChange={e => setForm(f => ({ ...f, transaction_date: e.target.value }))}
+                    onChange={(v) => setForm(f => ({ ...f, transaction_date: v }))}
                     className="w-full bg-card border border-white/20/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-primary"
                   />
                 </div>

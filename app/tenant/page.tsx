@@ -1,9 +1,14 @@
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { daysPastDue, getRates, lateFeeRateOf } from '@/lib/billing';
+import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
+import { formatBaht, formatThaiDate } from '@/lib/format';
+import { contractDepositLabel } from '@/lib/status-text';
 import Link from 'next/link';
 import AnnouncementsSection from '../components/AnnouncementsSection';
 import DormRulesCard from './components/DormRulesCard';
 import CancelBookingButton from './components/CancelBookingButton';
+import { roomTypeLabel } from '@/lib/room-types';
 
 async function getDashboardData() {
   const session = await auth();
@@ -63,9 +68,21 @@ async function getDashboardData() {
          OR user_id = ${userId}
          OR user_id IN (SELECT id FROM users WHERE email = ${userEmail})
     ) 
-    AND status NOT IN ('Paid', 'paid') 
+    AND LOWER(status) IN ('unpaid', 'overdue', 'pending', 'partial', 'pendingcorrection')
     ORDER BY due_date ASC
   `;
+
+  // What is owed is computed on the server (late fee to today, partial payments deducted), never in the page
+  const rates = await getRates(sql);
+  const now = new Date();
+  const summaries = await getPaymentSummaries(sql, unpaidBills.map((b: any) => b.id));
+  const unpaidSummary = {
+    total: unpaidBills.reduce((sum: number, b: any) => sum + outstandingFor(b, summaries.get(b.id)?.paid_total || 0, now, rates).outstanding, 0),
+    overdue: unpaidBills.some((b: any) => b.due_date && daysPastDue(b.due_date, now) > 0),
+    // The rate saved on the overdue bill when it was sent (a later rate change does not apply to it)
+    lateFeePerDay: lateFeeRateOf(unpaidBills.find((b: any) => b.due_date && daysPastDue(b.due_date, now) > 0) || {}, rates),
+    nextDue: unpaidBills[0]?.due_date || null,
+  };
 
   // Find recent maintenance requests
   const recentMaintenance = await sql`
@@ -82,6 +99,7 @@ async function getDashboardData() {
 
   return { 
     unpaidBills, 
+    unpaidSummary,
     recentMaintenance, 
     roomInfo: (isActive || hasRoom) ? latestRecord : null,
     pendingContract: isPending ? latestRecord : null
@@ -89,7 +107,7 @@ async function getDashboardData() {
 }
 
 export default async function TenantDashboard() {
-  const { unpaidBills, recentMaintenance, roomInfo, pendingContract } = await getDashboardData();
+  const { unpaidBills, unpaidSummary, recentMaintenance, roomInfo, pendingContract } = await getDashboardData();
 
   return (
     <div className="p-6 sm:p-8 lg:p-10 hidden-scrollbar">
@@ -169,7 +187,7 @@ export default async function TenantDashboard() {
               <div className="space-y-1">
                 <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">ห้องพักที่จอง</span>
                 <p className="text-2xl font-black text-amber-300">
-                  ห้อง {pendingContract.room_number} <span className="text-xs font-normal text-white/60">({pendingContract.room_type})</span>
+                  ห้อง {pendingContract.room_number} <span className="text-xs font-normal text-white/60">({roomTypeLabel(pendingContract.room_type)})</span>
                 </p>
                 <p className="text-[11px] text-white/40">ชั้น {pendingContract.floor || 1}</p>
               </div>
@@ -177,7 +195,7 @@ export default async function TenantDashboard() {
               <div className="space-y-1">
                 <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">ค่าเช่า / ประกันสัญญา</span>
                 <p className="text-lg font-bold text-white">฿{Number(pendingContract.price || 0).toLocaleString()} <span className="text-xs font-normal text-white/50">/เดือน</span></p>
-                <p className="text-[11px] text-emerald-400 font-semibold">เงินประกัน: ฿{Number(pendingContract.deposit_amount || 0).toLocaleString()}</p>
+                <p className="text-[11px] text-emerald-400 font-semibold">{contractDepositLabel(pendingContract.contract_status)}: ฿{Number(pendingContract.deposit_amount || 0).toLocaleString()}</p>
               </div>
 
               <div className="space-y-1">
@@ -201,15 +219,6 @@ export default async function TenantDashboard() {
                   contractId={pendingContract.contract_id} 
                   roomId={pendingContract.room_id} 
                 />
-                {pendingContract.deposit_amount > 0 && (
-                  <Link
-                    href="/tenant/refund-request"
-                    className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl text-xs transition-all border border-rose-500/40 hover:border-rose-400/60 hover:scale-105 active:scale-95 flex items-center gap-2"
-                  >
-                    <span>💰</span>
-                    <span>ขอคืนเงินมัดจำ</span>
-                  </Link>
-                )}
                 <Link
                   href="/tenant/chat"
                   className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-2xl text-xs transition-all shadow-lg hover:scale-105 active:scale-95 flex items-center gap-2"
@@ -255,7 +264,7 @@ export default async function TenantDashboard() {
                       </div>
                       <div className="bg-card px-8 py-5 rounded-3xl border border-border text-center min-w-[130px] transform hover:scale-105 transition-transform">
                           <span className="block text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-1">Type</span>
-                          <span className="text-lg font-black text-foreground truncate max-w-[120px]">{roomInfo.room_type}</span>
+                          <span className="text-lg font-black text-foreground truncate max-w-[120px]">{roomTypeLabel(roomInfo.room_type)}</span>
                       </div>
                   </div>
               </div>
@@ -303,10 +312,10 @@ export default async function TenantDashboard() {
               <div>
                 <h2 className="text-xl font-black text-primary mb-1.5">คุณมียอดค้างชำระ ({unpaidBills.length} รายการ)</h2>
                 <p className="text-primary/80 font-medium max-w-xl">
-                    กรุณาชำระยอดรวม ฿{unpaidBills.reduce((acc: number, curr: any) => acc + Number(curr.amount), 0).toLocaleString()} 
-                    {new Date(unpaidBills[0].due_date) < new Date() 
-                      ? ' (เกินกำหนดชำระแล้ว - คิดค่าปรับวันละ 100 บาท)' 
-                      : ` (ภายในวันที่ ${new Date(unpaidBills[0].due_date).toLocaleDateString('th-TH')})`}
+                    กรุณาชำระยอดรวม ฿{formatBaht(unpaidSummary?.total)}
+                    {unpaidSummary?.overdue
+                      ? ` (เกินกำหนดชำระแล้ว - ค่าเช่ารายเดือนคิดค่าปรับวันละ ${formatBaht(unpaidSummary.lateFeePerDay)} บาท)`
+                      : ` (ภายในวันที่ ${formatThaiDate(unpaidSummary?.nextDue)})`}
                 </p>
               </div>
             </div>
@@ -340,8 +349,10 @@ export default async function TenantDashboard() {
                       <Link href="/tenant/maintenance" className="mt-3 inline-block text-primary font-bold text-xs">แจ้งซ่อม / ทำความสะอาด →</Link>
                     </div>
                 ) : recentMaintenance.map((maint: any) => {
-                    const isPending = maint.status === 'Pending' || maint.status === 'pending';
-                    const isInProgress = maint.status === 'InProgress' || maint.status === 'in_progress' || maint.status === 'In Progress';
+                    // Jobs from commit 13 have state (lib/maintenance.ts); older ones only status
+                    const closedText = maint.state === 'Cancelled' ? 'ยกเลิก' : maint.state === 'Rejected' ? 'ปฏิเสธ' : maint.state === 'Done' ? 'รอตรวจสอบค่าใช้จ่าย' : 'เสร็จสิ้น';
+                    const isPending = maint.state ? ['Requested', 'Assigned'].includes(maint.state) : (maint.status === 'Pending' || maint.status === 'pending');
+                    const isInProgress = maint.state ? maint.state === 'InProgress' : (maint.status === 'InProgress' || maint.status === 'in_progress' || maint.status === 'In Progress');
                     return (
                     <div key={maint.id} className="bg-card rounded-[2rem] border border-border p-6 sm:p-8 shadow-sm hover:shadow-lg transition-all group">
                       <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-4">
@@ -368,7 +379,7 @@ export default async function TenantDashboard() {
                             isInProgress ? 'bg-[#E3F2FD] text-[#2196F3] border-[#BBDEFB]' :
                             'bg-[#E8F5E9] text-[#4CAF50] border-[#C8E6C9]'
                         }`}>
-                            {isPending ? 'รอดำเนินการ' : isInProgress ? 'กำลังดำเนินการ' : 'เสร็จสิ้น'}
+                            {isPending ? (maint.state === 'Assigned' ? 'มอบงานแล้ว' : 'รอดำเนินการ') : isInProgress ? 'กำลังดำเนินการ' : closedText}
                         </span>
                       </div>
                       <p className="text-white/80 leading-relaxed text-sm italic border-l-4 border-white/20 pl-4">"{maint.description}"</p>
@@ -388,18 +399,6 @@ export default async function TenantDashboard() {
               </div>
               
               <div className="grid gap-6 md:grid-cols-2">
-                <Link href="/tenant/contract/simulate" className="group bg-card rounded-[2.5rem] border border-border p-8 shadow-sm hover:border-primary/30 hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden relative">
-                  <div className="flex items-start gap-5 relative z-10">
-                    <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all shadow-inner shrink-0">
-                      <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M11 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-black text-foreground mb-1.5">จำลองสัญญาเช่า</h3>
-                      <p className="text-xs text-muted-foreground leading-relaxed font-medium">คำนวณเงินประกันและค่างวดล่วงหน้า เพื่อวางแผนการย้ายเข้าหรืออาศัยอยู่ต่อ</p>
-                    </div>
-                  </div>
-                </Link>
-                
                 <Link href="/tenant/maintenance" className="group bg-card rounded-[2.5rem] border border-border p-8 shadow-sm hover:border-accent/30 hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
                   <div className="flex items-start gap-5 relative z-10">
                     <div className="w-14 h-14 bg-accent/10 rounded-2xl flex items-center justify-center text-accent group-hover:bg-accent group-hover:text-white transition-all shrink-0">

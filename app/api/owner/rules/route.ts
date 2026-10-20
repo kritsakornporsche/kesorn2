@@ -1,4 +1,5 @@
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
@@ -18,9 +19,15 @@ async function verifyDormOwner(sql: any, user: any, dormId: number) {
 }
 
 // GET: Fetch rules for a dormitory
+// commit 24b: the fine may be left out (0 / unchanged) but never negative or not a number
+const FINE_MESSAGE = 'ค่าปรับต้องเป็นตัวเลขและห้ามติดลบ';
+const badFine = (v: unknown) => v !== undefined && v !== null && v !== '' && !(Number.isFinite(Number(v)) && Number(v) >= 0);
+
 export async function GET(req: Request) {
   try {
     const session = await auth();
+    const guard = await requireRole(['owner']);
+    if ('response' in guard) return guard.response;
     const { searchParams } = new URL(req.url);
     const dormIdParam = searchParams.get('dormId');
     const dormId = dormIdParam ? parseInt(dormIdParam, 10) : ((session?.user as any)?.dormId ? parseInt((session?.user as any).dormId, 10) : 1);
@@ -68,12 +75,17 @@ export async function POST(req: Request) {
     if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    const guard = await requireRole(['owner']);
+    if ('response' in guard) return guard.response;
 
     const body = await req.json();
     const { dormId, title, description, category, fineAmount, isActive, sortOrder } = body;
 
     if (!dormId || !title || !description) {
       return NextResponse.json({ success: false, message: 'กรุณากรอกหัวข้อและรายละเอียดกฎระเบียบ' }, { status: 400 });
+    }
+    if (badFine(fineAmount)) {
+      return NextResponse.json({ success: false, message: FINE_MESSAGE }, { status: 400 });
     }
 
     const sql = getDb();
@@ -120,12 +132,17 @@ export async function PUT(req: Request) {
     if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    const guard = await requireRole(['owner']);
+    if ('response' in guard) return guard.response;
 
     const body = await req.json();
     const { id, title, description, category, fineAmount, isActive, sortOrder } = body;
 
     if (!id) {
       return NextResponse.json({ success: false, message: 'Missing rule ID' }, { status: 400 });
+    }
+    if (badFine(fineAmount)) {
+      return NextResponse.json({ success: false, message: FINE_MESSAGE }, { status: 400 });
     }
 
     const sql = getDb();
@@ -168,6 +185,8 @@ export async function DELETE(req: Request) {
     if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    const guard = await requireRole(['owner']);
+    if ('response' in guard) return guard.response;
 
     const { searchParams } = new URL(req.url);
     const ruleId = searchParams.get('id');

@@ -6,9 +6,18 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 
-import PrintableContractModal from '@/components/PrintableContractModal';
+import { checkPaperFile } from '@/lib/paper-file-check';
+import { contractDepositLabel, statusText } from '@/lib/status-text';
+import { InspectionButton } from '@/components/InspectionModal';
+import { ContractDataButton } from '@/components/ContractDataModal';
+import ThaiDatePicker from '@/components/ThaiDatePicker';
+import OccupantsEditor from '@/components/OccupantsEditor';
+import TestRoomBadge from '@/components/TestRoomBadge';
+import { PAPER_CONFIRM_TEXT, signedPaperText, type SignedPaper } from '@/lib/signed-paper';
 
 interface ContractDetail {
+  /** commit 27 */
+  occupants?: number | null;
   id: number;
   tenant_name: string;
   tenant_email: string;
@@ -26,6 +35,10 @@ interface ContractDetail {
   status: string;
   slip_url: string | null;
   contract_file_url?: string | null;
+  contract_file_is_pdf?: boolean;
+  /** commit 28a: uploaded / missing / none (server) */
+  signed_paper?: SignedPaper;
+  paper_signed_date?: string | null;
   signature_data: string | null;
   owner_signature_data: string | null;
   created_at: string;
@@ -41,45 +54,26 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
   const [error, setError] = useState('');
   const [approving, setApproving] = useState(false);
   const [previewSlip, setPreviewSlip] = useState(false);
-  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-  const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [isUploadingSigned, setIsUploadingSigned] = useState(false);
   const [previewSignedDoc, setPreviewSignedDoc] = useState(false);
-
-  const handleDownloadDocx = async () => {
-    if (!contract) return;
-    setDownloadingDocx(true);
-    try {
-      const res = await fetch('/api/contracts/export-docx', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contract }),
-      });
-      if (!res.ok) throw new Error('Export DOCX failed');
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `สัญญาเช่า_หอพักเกษร_ห้อง${contract.room_number}_${(contract.tenant_name || '').replace(/\s+/g, '_')}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (e: any) {
-      console.error(e);
-      alert('เกิดข้อผิดพลาดในการดาวน์โหลดไฟล์ Word');
-    } finally {
-      setDownloadingDocx(false);
-    }
-  };
+  // Date written on the signed paper contract (required with the upload; at most today in Thai time)
+  const [signedDate, setSignedDate] = useState('');
+  const [signedFileError, setSignedFileError] = useState<string | null>(null);
+  const todayBangkok = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
 
   const handleUploadSignedContract = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      alert('ขนาดไฟล์ต้องไม่เกิน 10MB');
+    // Type from the file content (a renamed text file is refused), size up to 10MB
+    const problem = await checkPaperFile(file);
+    setSignedFileError(problem);
+    if (problem) return;
+    if (!signedDate) {
+      alert('กรุณาระบุวันที่เซ็นสัญญาก่อนอัปโหลด');
       return;
     }
+    if (!confirm(PAPER_CONFIRM_TEXT)) return;
     const reader = new FileReader();
     reader.onloadend = async () => {
       const base64Data = reader.result as string;
@@ -90,13 +84,15 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contractId: contract?.id,
-            contract_file_url: base64Data,
+            file: base64Data,
+            signedDate,
+            confirm: true,
           }),
         });
         const data = await res.json();
         if (data.success) {
-          alert('✓ บันทึกรูปภาพสัญญาเช่าฉบับลงนามจริงเรียบร้อยแล้ว!');
-          setContract(prev => prev ? ({ ...prev, contract_file_url: base64Data }) : null);
+          alert(`✓ ${data.message}`);
+          window.location.reload();
         } else {
           alert(data.message || 'เกิดข้อผิดพลาดในการบันทึก');
         }
@@ -184,23 +180,17 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={handleDownloadDocx}
-            disabled={downloadingDocx}
-            className="px-5 py-2.5 bg-blue-700 hover:bg-blue-600 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95 disabled:opacity-50"
-            title="ดาวน์โหลดสัญญาเช่ารูปแบบ Microsoft Word (.docx)"
+          <a
+            href={`/contract-print/${contract.id}?print=1`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95"
+            title="เปิดหน้าพิมพ์สัญญา แล้วเลือก บันทึกเป็น PDF"
           >
-            <span>📄</span>
-            <span>{downloadingDocx ? 'กำลังสร้างไฟล์...' : 'โหลดไฟล์ Word (.docx)'}</span>
-          </button>
+            <span>📥</span>
+            <span>ดาวน์โหลดสัญญา (PDF)</span>
+          </a>
 
-          <button
-            onClick={() => setIsPrintModalOpen(true)}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95"
-          >
-            <span>🖨️</span>
-            <span>พิมพ์สัญญาเช่า (PDF)</span>
-          </button>
 
           <span className={cn(
             "px-4 py-1.5 rounded-full text-xs font-bold border flex items-center gap-1.5",
@@ -214,9 +204,7 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
               contract.status === 'PendingOwnerSignature' ? "bg-amber-400 animate-pulse" :
               "bg-slate-400"
             )} />
-            {contract.status === 'Active' ? 'สัญญาใช้งานอยู่ (Active)' :
-             contract.status === 'PendingOwnerSignature' ? 'รอเจ้าของหอตรวจ & อนุมัติ' : 
-             contract.status}
+            {contract.status === 'PendingOwnerSignature' ? 'รอเจ้าของหอตรวจ & อนุมัติ' : statusText('contract', contract.status)}
           </span>
 
           {contract.status === 'PendingOwnerSignature' && (
@@ -249,7 +237,7 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider block">ห้องพัก</span>
-                <span className="text-2xl font-black text-amber-300">ห้อง {contract.room_number}</span>
+                <span className="text-2xl font-black text-amber-300">ห้อง {contract.room_number}<TestRoomBadge roomNumber={contract.room_number} /></span>
               </div>
               <div>
                 <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider block">ระยะเวลา</span>
@@ -268,10 +256,13 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             <span className="text-2xl font-black text-white">฿{Number(contract.monthly_rent || contract.room_price || 0).toLocaleString()}</span>
           </div>
           <div>
-            <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider block mb-1">ค่ามัดจำสัญญา (ชำระแล้ว)</span>
+            <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider block mb-1">{contractDepositLabel(contract.status) === 'เงินประกัน' ? 'เงินประกันตามสัญญา' : contractDepositLabel(contract.status)}</span>
             <span className="text-2xl font-black text-emerald-400">฿{Number(contract.deposit_amount).toLocaleString()}</span>
           </div>
         </div>
+
+        {/* commit 27: occupants during the lease — owner / manager can change it (history kept, tenant notified) */}
+        <OccupantsEditor contractId={contract.id} />
 
         {/* Payment Slip Proof Section */}
         <div className="space-y-4 pt-2">
@@ -323,6 +314,22 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             <span className="text-[11px] text-white/50">ลงชื่อกระดาษตอนเข้าพักแล้วถ่ายรูปบันทึกเข้าระบบ</span>
           </div>
 
+          {/* The signing date is recorded with every upload */}
+          <label className="flex items-center gap-3 text-xs text-white/70">
+            <span className="font-bold">วันที่เซ็นสัญญา:</span>
+            <ThaiDatePicker
+              aria-label="วันที่เซ็นสัญญา"
+              max={todayBangkok}
+              value={signedDate}
+              onChange={setSignedDate}
+              className="bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white min-w-[11rem]"
+            />
+            {contract.paper_signed_date && (
+              <span className="text-emerald-400">บันทึกไว้: {new Date(contract.paper_signed_date).toLocaleDateString('th-TH')}</span>
+            )}
+          </label>
+          {signedFileError && <p className="text-xs text-rose-400 font-bold">✕ {signedFileError}</p>}
+
           {contract.contract_file_url ? (
             <div className="p-6 bg-slate-950/60 border border-emerald-500/30 rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-6">
               <div className="flex items-center gap-5">
@@ -330,7 +337,11 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
                   onClick={() => setPreviewSignedDoc(true)}
                   className="w-20 h-28 rounded-2xl overflow-hidden border border-emerald-500/40 bg-slate-900 relative cursor-pointer group shadow-lg shrink-0"
                 >
-                  <img src={contract.contract_file_url} alt="Signed Contract" className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
+                  {contract.contract_file_is_pdf ? (
+                    <div className="w-full h-full flex items-center justify-center text-3xl">📄</div>
+                  ) : (
+                    <img src={contract.contract_file_url} alt="Signed Contract" className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
+                  )}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold transition-opacity">
                     🔍 ขยาย
                   </div>
@@ -361,7 +372,7 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
                 📷
               </div>
               <div className="space-y-1">
-                <p className="text-sm font-bold text-white">ยังไม่มีรูปภาพสัญญาเช่าฉบับลงนามจริง</p>
+                <p className="text-sm font-bold text-white">{signedPaperText(contract.signed_paper)}</p>
                 <p className="text-xs text-white/50 max-w-lg mx-auto">
                   เมื่อผู้เช่าและเจ้าของหอพักลงลายมือชื่อในสัญญาเช่าฉบับกระดาษ (A4) ร่วมกันในวันเข้าหอพักแล้ว ถ่ายรูปหน้าที่ลงนามแล้วบันทึกเก็บเป็นหลักฐานในระบบ
                 </p>
@@ -375,6 +386,43 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             </div>
           )}
         </div>
+
+        {/* commit 28-2: step 3 — contract data (confirm, change with a reason, history) */}
+        {['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active'].includes(contract.status) && (
+          <div className="space-y-3 pt-2">
+            <h3 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+              <span>📝</span>
+              <span>ข้อมูลสัญญา (ขั้น 3)</span>
+            </h3>
+            <div className="p-5 bg-slate-950/60 border border-white/10 rounded-3xl flex flex-wrap items-center gap-3">
+              <ContractDataButton contractId={contract.id} />
+              <span className="text-[11px] text-white/40">ชื่อ ที่อยู่ จำนวนผู้พัก และวันที่ในสัญญา · หลังยืนยันแล้ว แก้ได้โดยระบุเหตุผล (มีประวัติ) · แก้ไม่ได้หลังอัปโหลดสัญญาที่ลงนาม</span>
+            </div>
+          </div>
+        )}
+
+        {/* Move-in room inspection (does not hold up the contract taking effect) */}
+        {['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active'].includes(contract.status) && (
+          <div className="space-y-3 pt-2">
+            <h3 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+              <span>🔍</span>
+              <span>ตรวจสภาพห้องและทรัพย์สินก่อนเข้าอยู่</span>
+            </h3>
+            <div className="p-5 bg-slate-950/60 border border-white/10 rounded-3xl flex flex-wrap items-center gap-3">
+              <InspectionButton contractId={contract.id} />
+              <a
+                href={`/inspection-sheet/${contract.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-xs font-bold flex items-center gap-1.5"
+              >
+                <span>📋</span>
+                <span>พิมพ์ใบตรวจสภาพห้อง (แนบท้ายสัญญา)</span>
+              </a>
+              <span className="text-[11px] text-white/40">บันทึกสภาพและรูปถ่ายแต่ละรายการ ผู้เช่ากดรับทราบผ่านหน้าสัญญาของตน (แก้ไขได้จนผู้เช่ารับทราบ)</span>
+            </div>
+          </div>
+        )}
 
         {/* Confirmation and Approval Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
@@ -458,7 +506,11 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
               </div>
             </div>
             <div className="rounded-2xl overflow-hidden flex-1 flex items-center justify-center bg-black/60 p-2">
-              <img src={contract.contract_file_url} alt="Signed Contract Full" className="max-h-[70vh] w-auto object-contain rounded-xl" />
+              {contract.contract_file_is_pdf ? (
+                <iframe src={contract.contract_file_url} title="Signed Contract PDF" className="w-full h-[70vh] rounded-xl bg-white" />
+              ) : (
+                <img src={contract.contract_file_url} alt="Signed Contract Full" className="max-h-[70vh] w-auto object-contain rounded-xl" />
+              )}
             </div>
             <button 
               onClick={() => setPreviewSignedDoc(false)} 
@@ -470,12 +522,6 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
         </div>
       )}
 
-      {/* Printable Contract Modal */}
-      <PrintableContractModal
-        isOpen={isPrintModalOpen}
-        onClose={() => setIsPrintModalOpen(false)}
-        contract={contract}
-      />
     </div>
   );
 }

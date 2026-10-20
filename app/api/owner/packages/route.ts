@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getPlatformDb } from '@/lib/db';
+import { requireRole } from '@/lib/authz';
 
 function safeJsonParse(val: any) {
   if (typeof val !== 'string') return val || [];
@@ -18,6 +19,8 @@ function safeJsonParse(val: any) {
 }
 
 export async function GET() {
+  const guard = await requireRole(['owner']);
+  if ('response' in guard) return guard.response;
   const sql = getPlatformDb();
   
   try {

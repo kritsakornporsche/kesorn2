@@ -99,28 +99,6 @@ export default function KeeperBottomNav({ dorms = [], selectedDormId = 'all', on
               {activeSheet === 'dorm' ? (
                 /* Dorm Switcher Cards */
                 <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => handleDormPick('all')}
-                    className={`w-full p-3.5 rounded-2xl border text-left flex items-center justify-between transition-all active:scale-[0.98] ${
-                      selectedDormId === 'all'
-                        ? 'bg-orange-500/10 border-orange-500/40 shadow-sm'
-                        : 'bg-card hover:bg-secondary/60 border-border/80'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center text-xl">
-                        🌐
-                      </div>
-                      <div>
-                        <h4 className={`text-sm tracking-tight ${selectedDormId === 'all' ? 'font-black text-orange-600 dark:text-orange-400' : 'font-bold text-foreground'}`}>
-                          ทุกหอพักที่ดูแล
-                        </h4>
-                        <p className="text-[11px] text-muted-foreground">แสดงงานจากทั้งหมด {dorms.length} หอพัก</p>
-                      </div>
-                    </div>
-                    {selectedDormId === 'all' && <span className="text-orange-500 font-black text-sm">✓</span>}
-                  </button>
 
                   {dorms.map(d => {
                     const isSelected = String(d.id) === selectedDormId;
@@ -223,7 +201,8 @@ export default function KeeperBottomNav({ dorms = [], selectedDormId = 'all', on
         className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-card/95 text-foreground backdrop-blur-xl border-t border-border/80 shadow-[0_-8px_30px_rgba(0,0,0,0.12)] px-1.5 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-1.5"
       >
         <div className="flex items-center justify-around max-w-lg mx-auto">
-          {/* 1. งานแม่บ้าน */}
+          {/* 1. งานแม่บ้าน (เฉพาะแม่บ้าน) */}
+          {userSubRole !== 'technician' && (
           <Link
             href="/keeper/maid"
             className={`relative flex flex-col items-center justify-center py-1 px-2 rounded-2xl transition-all select-none active:scale-90 cursor-pointer min-w-[62px] ${
@@ -242,6 +221,7 @@ export default function KeeperBottomNav({ dorms = [], selectedDormId = 'all', on
               งานแม่บ้าน
             </span>
           </Link>
+          )}
 
           {/* 2. งานซ่อมบำรุง (ซ่อนสำหรับแม่บ้าน) */}
           {userSubRole !== 'maid' && (

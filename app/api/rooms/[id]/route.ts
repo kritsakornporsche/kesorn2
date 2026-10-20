@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getDb, getPlatformDb, getDormDb, getDormDbFromSession } from '@/lib/db';
 import { auth } from '@/auth';
+import { expireDueBookings } from '@/lib/bookings';
+import { expireDueMoveIns } from '@/lib/moveIn';
+import { capCheck, depositFor, ratesForRoom, type Rates } from '@/lib/billing';
+import { isTestRoom } from '@/lib/test-rooms';
+import { mapEmbedUrl, resolveMapUrl } from '@/lib/maps';
+import { badRoomNumber, roomStatusFor } from '@/lib/room-fields';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -8,6 +14,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const id = resolvedParams.id;
     
     const sql = getDb();
+    // No scheduler: bookings past their deadline are expired whenever rooms are read
+    await expireDueBookings().catch((e) => console.warn('[expire bookings]', e));
+    await expireDueMoveIns().catch((e) => console.warn('[expire move-ins]', e));
     
     // Fetch room with dorm info from dormitory_profile and owner from users
     const result = await sql`
@@ -22,22 +31,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         ku.email as keeper_email,
         mor.move_out_date,
         mor.status as move_out_status,
-        CASE 
-          WHEN UPPER(r.room_number) = 'T01' THEN 5.00 
-          WHEN r.water_rate IS NOT NULL THEN r.water_rate
-          ELSE dp.water_rate 
-        END as water_rate,
-        CASE WHEN UPPER(r.room_number) = 'T01' THEN 1.00 ELSE dp.electricity_rate END as electricity_rate,
-        CASE 
-          WHEN UPPER(r.room_number) = 'T01' THEN 5.00 
-          WHEN r.common_fee IS NOT NULL THEN r.common_fee
-          ELSE dp.common_fee 
-        END as common_fee,
-        CASE 
-          WHEN UPPER(r.room_number) = 'T01' THEN 20.00 
-          WHEN r.deposit_amount IS NOT NULL THEN r.deposit_amount
-          ELSE 3000.00 
-        END as deposit_amount,
+        dp.water_rate,
+        dp.electricity_rate,
+        dp.common_fee,
+        COALESCE(r.deposit_amount, 3000.00) as deposit_amount,
         dp.pet_friendly,
         dp.has_parking,
         dp.has_air_con,
@@ -69,8 +66,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (result.length === 0) {
       return NextResponse.json({ success: false, message: 'Room not found' }, { status: 404 });
     }
-    
-    return NextResponse.json({ success: true, data: result[0] }, { status: 200 });
+
+    const room = result[0];
+    // A test room (T01) opens from a direct link (commit 26c); is_test_room drives the "ห้องทดสอบระบบ" badge.
+    // Its demo prices come from lib/billing (the one place) instead of being written in this query.
+    room.is_test_room = isTestRoom(room.room_number);
+    // commit 27b: embed URL from the server (a short map link is resolved to its coordinates — lib/maps)
+    room.dorm_map_embed_url = mapEmbedUrl(await resolveMapUrl(room.dorm_map_url), room.dorm_address, room.dorm_name);
+    const rates = ratesForRoom({ electricityPerUnit: Number(room.electricity_rate), waterPerPerson: Number(room.water_rate), commonFee: Number(room.common_fee) } as Rates, room.room_number);
+    room.electricity_rate = rates.electricityPerUnit;
+    room.water_rate = rates.waterPerPerson;
+    room.common_fee = rates.commonFee;
+    room.deposit_amount = depositFor(room);
+
+    return NextResponse.json({ success: true, data: room }, { status: 200 });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: 'Failed to fetch room', error: error.message }, { status: 500 });
   }
@@ -86,14 +95,27 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const resolvedParams = await params;
     const id = resolvedParams.id;
     const body = await request.json();
-    const { room_number, room_type, price, status, floor, image_url, deposit_amount, water_rate, common_fee } = body;
+    const { room_number, room_type, price, status, floor, image_url, deposit_amount } = body;
 
     if (!id || !room_number || !room_type || price === undefined) {
       return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
     }
+    // commit 24: no negative rent / deposit / floor (same rule as the rooms page)
+    const bad = badRoomNumber(body);
+    if (bad) {
+      return NextResponse.json({ success: false, message: bad.message, field: bad.field }, { status: 400 });
+    }
 
     const sql = getDormDbFromSession(session);
-    
+
+    // commit 28a: status — a free room "ว่าง" / "ปิดปรับปรุง" only; a status from a contract cannot be changed by hand
+    const currentRow = await sql`SELECT status FROM rooms WHERE id = ${id} LIMIT 1`;
+    if (currentRow.length === 0) {
+      return NextResponse.json({ success: false, message: 'Room not found' }, { status: 404 });
+    }
+    const st = roomStatusFor(status, currentRow[0].status);
+    if (!st.ok) return NextResponse.json({ success: false, message: st.message, field: 'status' }, { status: 400 });
+
     // Check if room number already exists for a DIFFERENT room IN THE SAME DORMITORY
     const existing = await sql`SELECT id FROM rooms WHERE room_number = ${room_number} AND id != ${id}`;
     if (existing.length > 0) {
@@ -101,20 +123,22 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const deposit = deposit_amount !== undefined && deposit_amount !== null && deposit_amount !== '' ? parseFloat(deposit_amount) : 3000;
-    const water = water_rate !== undefined && water_rate !== null && water_rate !== '' ? parseFloat(water_rate) : 100;
-    const common = common_fee !== undefined && common_fee !== null && common_fee !== '' ? parseFloat(common_fee) : 150;
+
+    // Deposit + first month's rent paid in advance may be at most 3 months of rent
+    const cap = capCheck(Number(price), depositFor({ room_number, deposit_amount: deposit }));
+    if (!cap.ok) {
+      return NextResponse.json({ success: false, message: cap.message }, { status: 400 });
+    }
 
     await sql`
       UPDATE rooms 
       SET room_number = ${room_number}, 
           room_type = ${room_type}, 
           price = ${price}, 
-          status = ${status}, 
+          status = ${st.status}, 
           floor = ${floor}, 
           image_url = ${image_url || null},
-          deposit_amount = ${deposit},
-          water_rate = ${water},
-          common_fee = ${common}
+          deposit_amount = ${deposit}
       WHERE id = ${id}
     `;
 

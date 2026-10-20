@@ -4,6 +4,14 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
+import { formatBaht } from '@/lib/format';
+import { statusText } from '@/lib/status-text';
+import { badRoomNumber, isManualRoomStatus, isNegative } from '@/lib/room-fields';
+import { ROOM_TYPES, roomTypeLabel } from '@/lib/room-types';
+import { itemsForRoomType } from '@/lib/room-items';
+import { isTestRoom } from '@/lib/test-rooms';
+import TestRoomBadge from '@/components/TestRoomBadge';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 interface Room {
   id: number;
@@ -14,8 +22,6 @@ interface Room {
   floor: number;
   image_url?: string | null;
   deposit_amount?: number;
-  water_rate?: number;
-  common_fee?: number;
 }
 
 export default function RoomsManagement() {
@@ -40,8 +46,6 @@ export default function RoomsManagement() {
     room_type: 'Standard',
     price: 4500,
     deposit_amount: 3000,
-    water_rate: 100,
-    common_fee: 150,
     status: 'Available',
   });
 
@@ -51,14 +55,21 @@ export default function RoomsManagement() {
     room_type: 'Standard',
     price: 4500,
     deposit_amount: 3000,
-    water_rate: 100,
-    common_fee: 150,
     floor: 1,
     status: 'Available',
     images: [] as string[] // array of base64 strings
   });
 
   const [ownerDormId, setOwnerDormId] = useState<number | null>(1);
+  // The rates monthly bills actually use (dormitory_profile via /api/rates), not per-room columns
+  // commit 24b: managers see the rooms read-only (the rooms API saves for the owner only)
+  const canEdit = (session?.user as any)?.role === 'owner';
+  const [formError, setFormError] = useState<string | null>(null);
+  const NO_RIGHT = 'ไม่มีสิทธิ์แก้ไข หรือหมดเวลาเข้าระบบ กรุณาเข้าสู่ระบบใหม่';
+  const [billingRates, setBillingRates] = useState<{ waterPerPerson: number; commonFee: number } | null>(null);
+  useEffect(() => {
+    fetch('/api/rates').then((res) => res.json()).then((json) => { if (json.success) setBillingRates(json.data); }).catch(() => {});
+  }, []);
 
   const fetchRooms = async (dormId: number = 1) => {
     setLoading(true);
@@ -132,8 +143,13 @@ export default function RoomsManagement() {
     return list;
   };
 
+  // commit 24 / 28a: number fields cannot go negative — "-" "e" "+" cannot be typed (lib/number-input); save stays disabled as a guard
+  const formNegative = !!badRoomNumber(formData);
+  const batchNegative = [batchForm.floor, batchForm.startRoom, batchForm.endRoom, batchForm.price, batchForm.deposit_amount].some(isNegative);
+
   const handleBatchSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (batchNegative) return;
     const roomNumbers = getGeneratedRoomNumbers();
     if (roomNumbers.length === 0) {
       alert('กรุณาระบุช่วงเลขห้องให้ถูกต้อง');
@@ -147,8 +163,6 @@ export default function RoomsManagement() {
         room_type: batchForm.room_type,
         price: batchForm.price,
         deposit_amount: batchForm.deposit_amount,
-        water_rate: batchForm.water_rate,
-        common_fee: batchForm.common_fee,
         floor: batchForm.floor,
         status: batchForm.status,
         dorm_id: ownerDormId
@@ -177,6 +191,8 @@ export default function RoomsManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (formNegative) return;
+    setFormError(null);
     const url = editingRoom ? `/api/rooms/${editingRoom.id}` : '/api/rooms';
     const method = editingRoom ? 'PUT' : 'POST';
 
@@ -195,6 +211,7 @@ export default function RoomsManagement() {
       });
       const data = await res.json();
       if (data.success) {
+        setFormError(null);
         setIsModalOpen(false);
         setEditingRoom(null);
         setFormData({ 
@@ -202,15 +219,13 @@ export default function RoomsManagement() {
           room_type: 'Standard', 
           price: 4500, 
           deposit_amount: 3000,
-          water_rate: 100,
-          common_fee: 150,
           floor: 1, 
           status: 'Available', 
           images: [] 
         });
         if (ownerDormId) fetchRooms(ownerDormId);
       } else {
-        alert(`${data.message}${data.error ? `: ${data.error}` : ''}`);
+        setFormError(res.status === 401 || res.status === 403 ? NO_RIGHT : `${data.message}${data.error ? `: ${data.error}` : ''}`);
       }
     } catch (err) {
       console.error(err);
@@ -239,12 +254,11 @@ export default function RoomsManagement() {
       room_type: room.room_type,
       price: room.price,
       deposit_amount: room.deposit_amount !== undefined ? Number(room.deposit_amount) : 3000,
-      water_rate: room.water_rate !== undefined ? Number(room.water_rate) : 100,
-      common_fee: room.common_fee !== undefined ? Number(room.common_fee) : 150,
       floor: room.floor,
       status: room.status,
       images: parsedImages
     });
+    setFormError(null);
     setIsModalOpen(true);
   };
 
@@ -309,7 +323,8 @@ export default function RoomsManagement() {
   const filteredRooms = rooms
     .filter(room => {
       const matchesSearch = room.room_number.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            room.room_type.toLowerCase().includes(searchQuery.toLowerCase());
+                            room.room_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            roomTypeLabel(room.room_type).includes(searchQuery.trim());
       const matchesFilter = filterStatus === 'All' || room.status === filterStatus;
       return matchesSearch && matchesFilter;
     })
@@ -318,11 +333,13 @@ export default function RoomsManagement() {
       return a.room_number.localeCompare(b.room_number, undefined, { numeric: true });
     });
 
+  // commit 26c: the counts leave test rooms (T01) out — the card still shows it, with a "ทดสอบ" badge
+  const realRooms = rooms.filter((r) => !isTestRoom(r.room_number));
   const stats = {
-    total: rooms.length,
-    available: rooms.filter(r => r.status === 'Available').length,
-    occupied: rooms.filter(r => r.status === 'Occupied' || r.status === 'มีผู้เช่า').length,
-    maintenance: rooms.filter(r => r.status === 'Maintenance' || r.status === 'ปิดปรับปรุง').length,
+    total: realRooms.length,
+    available: realRooms.filter(r => r.status === 'Available').length,
+    occupied: realRooms.filter(r => r.status === 'Occupied' || r.status === 'มีผู้เช่า').length,
+    maintenance: realRooms.filter(r => r.status === 'Maintenance' || r.status === 'ปิดปรับปรุง').length,
   };
 
   return (
@@ -353,6 +370,7 @@ export default function RoomsManagement() {
             </svg>
           </div>
 
+          {canEdit ? (<>
           <button 
             onClick={() => setIsBatchModalOpen(true)}
             className="px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center gap-2 transition-all duration-300 group bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg hover:brightness-110 active:scale-95 cursor-pointer whitespace-nowrap"
@@ -374,13 +392,12 @@ export default function RoomsManagement() {
                 room_type: 'Standard', 
                 price: 4500, 
                 deposit_amount: 3000,
-                water_rate: 100,
-                common_fee: 150,
                 floor: 1, 
                 status: 'Available', 
                 images: [] 
               }); 
-              setIsModalOpen(true); 
+              setFormError(null);
+              setIsModalOpen(true);
             }}
             className="px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center gap-2 transition-all duration-300 group bg-primary text-white shadow-lg hover:brightness-110 active:scale-95 cursor-pointer whitespace-nowrap"
           >
@@ -389,6 +406,9 @@ export default function RoomsManagement() {
             </div>
             <span>เพิ่มห้องพัก</span>
           </button>
+          </>) : (
+          <span className="px-3 py-2 rounded-2xl bg-secondary text-muted-foreground text-xs font-bold whitespace-nowrap">ผู้จัดการดูข้อมูลห้องได้อย่างเดียว</span>
+          )}
         </div>
       </header>
 
@@ -485,19 +505,19 @@ export default function RoomsManagement() {
                      </div>
                    )}
                    <div className="absolute top-4 left-4 bg-card/90 border border-border backdrop-blur-md text-foreground px-4 py-2 rounded-2xl text-sm font-black shadow-lg z-10">
-                      ห้อง {room.room_number}
+                      ห้อง {room.room_number}<TestRoomBadge roomNumber={room.room_number} />
                    </div>
                    <div className={`absolute top-4 right-4 px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest border backdrop-blur-md shadow-xl z-10 ${
                      room.status === 'Available' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 
                      room.status === 'Occupied' || room.status === 'มีผู้เช่า' ? 'bg-blue-500/10 text-blue-600 border-blue-500/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
                    }`}>
-                      {room.status === 'Available' ? 'ว่าง' : room.status === 'Occupied' || room.status === 'มีผู้เช่า' ? 'มีผู้เช่าแล้ว' : 'ปิดปรับปรุง'}
+                      {room.status === 'มีผู้เช่า' ? 'มีผู้เช่า' : statusText('room', room.status)}
                    </div>
                 </div>
 
                 <div className="p-8 flex flex-col flex-1">
                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">{room.room_type} (Type)</span>
+                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">{roomTypeLabel(room.room_type)}</span>
                       <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">ชั้น {room.floor} (Floor)</span>
                    </div>
                    <div className="flex items-end gap-1 mb-4">
@@ -508,17 +528,37 @@ export default function RoomsManagement() {
                    {/* Fee Breakdown Badges */}
                    <div className="flex flex-wrap gap-1.5 mb-6">
                       <span className="px-2.5 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded-lg border border-primary/20">
-                        🛡️ ประกัน ฿{Number(room.deposit_amount || 3000).toLocaleString()}
+                        🛡️ ประกัน {room.deposit_amount ? `฿${formatBaht(room.deposit_amount)}` : '-'}
                       </span>
                       <span className="px-2.5 py-1 bg-cyan-500/10 text-cyan-400 text-[10px] font-bold rounded-lg border border-cyan-500/20">
-                        💧 น้ำ ฿{Number(room.water_rate || 100).toLocaleString()}
+                        💧 น้ำ {billingRates ? `฿${formatBaht(billingRates.waterPerPerson)}/คน` : '-'}
                       </span>
                       <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 text-[10px] font-bold rounded-lg border border-amber-500/20">
-                        🧹 ส่วนกลาง ฿{Number(room.common_fee || 150).toLocaleString()}
+                        🧹 ส่วนกลาง {billingRates ? `฿${formatBaht(billingRates.commonFee)}` : '-'}
                       </span>
                    </div>
 
-                   <div className="mt-auto flex items-center gap-3 pt-6 border-t border-[#F3EFE9]">
+                   {/* Room items (commit 26): lib/room-items.ts by room type — the starting list of the room inspections */}
+                   <details className="mb-6 text-xs">
+                      <summary className="cursor-pointer font-bold text-muted-foreground">ของในห้อง ({itemsForRoomType(room.room_type).length} รายการ)</summary>
+                      <ul className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-foreground">
+                        {itemsForRoomType(room.room_type).map((it) => (
+                          <li key={it.name}>• {it.name}{it.countable ? ' (นับจำนวน)' : ''}</li>
+                        ))}
+                      </ul>
+                   </details>
+
+                   {/* commit 28-12: the room as a tenant sees it (new tab) */}
+                   <a
+                      href={`/explore/room/${room.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mb-4 inline-flex items-center justify-center gap-1.5 w-full py-2.5 rounded-2xl text-xs font-bold border border-border text-muted-foreground hover:text-primary hover:border-primary transition-colors"
+                   >
+                      👁 ดูหน้าที่ผู้เช่าเห็น ↗
+                   </a>
+
+                   {canEdit && (<div className="mt-auto flex items-center gap-3 pt-6 border-t border-[#F3EFE9]">
                       <button 
                         onClick={() => handleEdit(room)}
                         className="flex-1 bg-card text-muted-foreground py-3.5 rounded-2xl text-xs font-bold border border-border hover:bg-primary/90 hover:text-white hover:border-primary hover:shadow-lg hover:shadow-primary/20 transition-all active:scale-95"
@@ -531,7 +571,7 @@ export default function RoomsManagement() {
                       >
                          <svg className="w-5 h-5 group-hover/del:scale-125 duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                       </button>
-                   </div>
+                   </div>)}
                 </div>
               </div>
             )})}
@@ -571,35 +611,51 @@ export default function RoomsManagement() {
                             onChange={(e) => setFormData({...formData, room_type: e.target.value})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground transition-all focus:bg-card cursor-pointer"
                         >
-                            <option>Standard</option>
-                            <option>Deluxe</option>
-                            <option>Premium</option>
-                            <option>Suite</option>
+                            {ROOM_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                            {formData.room_type && !ROOM_TYPES.some((t) => t.value === formData.room_type) && <option value={formData.room_type}>{formData.room_type}</option>}
                         </select>
                     </div>
+                  </div>
+
+                  {/* commit 28-12: the items of the chosen type, read-only (lib/room-items) */}
+                  <div className="p-4 rounded-[24px] bg-secondary/50 border border-border space-y-2" data-room-items>
+                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">ของในห้อง ({itemsForRoomType(formData.room_type).length} รายการ)</p>
+                    <ul className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1 text-xs text-foreground">
+                      {itemsForRoomType(formData.room_type).map((it) => (
+                        <li key={it.name}>• {it.name}{it.countable ? ' (นับจำนวน)' : ''}</li>
+                      ))}
+                    </ul>
+                    <p className="text-[11px] text-muted-foreground">รายการกำหนดตามประเภทห้อง ห้องไหนต่างจากนี้ เพิ่ม/ลบได้ในใบตรวจสภาพห้อง</p>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">ชั้น (Floor)</label>
                         <input 
-                            type="number" 
+                            type="number" {...NUMBER_INPUT_PROPS} 
                             value={formData.floor}
                             onChange={(e) => setFormData({...formData, floor: parseInt(e.target.value) || 1})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground focus:bg-card transition-all"
                         />
                     </div>
                     <div className="space-y-2">
-                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">สถานะ (Status)</label>
+                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">สถานะ</label>
+                        {/* commit 28a: "ว่าง" / "ปิดปรับปรุง" only; a status from a contract is shown read-only */}
+                        {editingRoom && !isManualRoomStatus(editingRoom.status) ? (
+                          <div className="w-full px-6 py-4 bg-secondary border border-border rounded-[24px] font-black text-muted-foreground">
+                            {statusText('room', editingRoom.status)}
+                            <span className="block text-[10px] font-bold mt-1">ระบบตั้งจากสัญญา แก้เองไม่ได้</span>
+                          </div>
+                        ) : (
                         <select 
                             value={formData.status}
                             onChange={(e) => setFormData({...formData, status: e.target.value})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground focus:bg-card cursor-pointer"
                         >
-                            <option value="Available">ว่าง (Available)</option>
-                            <option value="Occupied">มีผู้เช่า (Occupied)</option>
-                            <option value="Maintenance">ปิดปรับปรุง (Maintenance)</option>
+                            <option value="Available">ว่าง</option>
+                            <option value="Maintenance">ปิดปรับปรุง</option>
                         </select>
+                        )}
                     </div>
                   </div>
 
@@ -614,7 +670,7 @@ export default function RoomsManagement() {
                       <div className="relative group max-w-xs mx-auto">
                           <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-muted-foreground group-focus-within:scale-110 transition-transform">฿</span>
                           <input 
-                            type="number" 
+                            type="number" {...NUMBER_INPUT_PROPS} 
                             required
                             value={formData.price}
                             onChange={(e) => setFormData({...formData, price: parseFloat(e.target.value) || 0})}
@@ -632,7 +688,7 @@ export default function RoomsManagement() {
                         <div className="relative">
                           <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
                           <input 
-                            type="number" 
+                            type="number" {...NUMBER_INPUT_PROPS} 
                             value={formData.deposit_amount}
                             onChange={(e) => setFormData({...formData, deposit_amount: parseFloat(e.target.value) || 0})}
                             className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all"
@@ -641,35 +697,13 @@ export default function RoomsManagement() {
                         </div>
                       </div>
 
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 sm:col-span-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
-                          💧 ค่าน้ำเหมาจ่าย (Water)
+                          💧 ค่าน้ำ / 🧹 ค่าส่วนกลาง
                         </label>
-                        <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
-                          <input 
-                            type="number" 
-                            value={formData.water_rate}
-                            onChange={(e) => setFormData({...formData, water_rate: parseFloat(e.target.value) || 0})}
-                            className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all"
-                            placeholder="100"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
-                          🧹 ค่าส่วนกลาง (Common Fee)
-                        </label>
-                        <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
-                          <input 
-                            type="number" 
-                            value={formData.common_fee}
-                            onChange={(e) => setFormData({...formData, common_fee: parseFloat(e.target.value) || 0})}
-                            className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all"
-                            placeholder="150"
-                          />
+                        <div className="px-4 py-3 bg-background border border-border rounded-2xl text-xs font-bold text-muted-foreground">
+                          อัตราเดียวทั้งหอ: น้ำ {billingRates ? `฿${formatBaht(billingRates.waterPerPerson)}/คน` : '-'} · ส่วนกลาง {billingRates ? `฿${formatBaht(billingRates.commonFee)}` : '-'}
+                          {' '}<a href="/owner/settings" className="text-primary underline">แก้ที่หน้าตั้งค่าหอพัก</a>
                         </div>
                       </div>
                     </div>
@@ -710,6 +744,7 @@ export default function RoomsManagement() {
                     </div>
                   </div>
 
+                  {formError && <p role="alert" className="px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-500 text-sm font-bold text-center">{formError}</p>}
                   <div className="flex gap-4 sm:gap-6 pt-4 sm:pt-6 sr-only-btn-container shrink-0">
                     <button 
                       type="button" 
@@ -720,7 +755,8 @@ export default function RoomsManagement() {
                     </button>
                     <button 
                       type="submit" 
-                      className="flex-[2] py-4 sm:py-5 bg-primary text-white font-black rounded-[24px] sm:rounded-[28px] shadow-xl hover:brightness-110 active:scale-95 transition-all text-sm"
+                      disabled={formNegative}
+                      className="flex-[2] py-4 sm:py-5 bg-primary text-white font-black rounded-[24px] sm:rounded-[28px] shadow-xl hover:brightness-110 active:scale-95 transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {editingRoom ? 'อัปเดตข้อมูล' : 'บันทึกลงฐานข้อมูล'}
                     </button>
@@ -758,7 +794,7 @@ export default function RoomsManagement() {
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">ชั้น (Floor)</label>
                         <input 
-                          type="number" 
+                          type="number" {...NUMBER_INPUT_PROPS} 
                           required
                           min={1}
                           value={batchForm.floor}
@@ -772,7 +808,7 @@ export default function RoomsManagement() {
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">เลขห้องเริ่มต้น (Start)</label>
                         <input 
-                          type="number" 
+                          type="number" {...NUMBER_INPUT_PROPS} 
                           required
                           min={1}
                           value={batchForm.startRoom}
@@ -784,7 +820,7 @@ export default function RoomsManagement() {
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">เลขห้องสิ้นสุด (End)</label>
                         <input 
-                          type="number" 
+                          type="number" {...NUMBER_INPUT_PROPS} 
                           required
                           min={1}
                           value={batchForm.endRoom}
@@ -828,22 +864,19 @@ export default function RoomsManagement() {
                             onChange={(e) => setBatchForm({...batchForm, room_type: e.target.value})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground transition-all focus:bg-card cursor-pointer"
                         >
-                            <option>Standard</option>
-                            <option>Deluxe</option>
-                            <option>Premium</option>
-                            <option>Suite</option>
+                            {ROOM_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                            {batchForm.room_type && !ROOM_TYPES.some((t) => t.value === batchForm.room_type) && <option value={batchForm.room_type}>{batchForm.room_type}</option>}
                         </select>
                     </div>
                     <div className="space-y-2">
-                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">สถานะเริ่มต้น (Status)</label>
+                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">สถานะเริ่มต้น</label>
                         <select 
                             value={batchForm.status}
                             onChange={(e) => setBatchForm({...batchForm, status: e.target.value})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground focus:bg-card cursor-pointer"
                         >
-                            <option value="Available">ว่าง (Available)</option>
-                            <option value="Occupied">มีผู้เช่า (Occupied)</option>
-                            <option value="Maintenance">ปิดปรับปรุง (Maintenance)</option>
+                            <option value="Available">ว่าง</option>
+                            <option value="Maintenance">ปิดปรับปรุง</option>
                         </select>
                     </div>
                   </div>
@@ -859,7 +892,7 @@ export default function RoomsManagement() {
                       <div className="relative group max-w-xs mx-auto">
                           <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-muted-foreground group-focus-within:scale-110 transition-transform">฿</span>
                           <input 
-                            type="number" 
+                            type="number" {...NUMBER_INPUT_PROPS} 
                             required
                             value={batchForm.price}
                             onChange={(e) => setBatchForm({...batchForm, price: parseFloat(e.target.value) || 0})}
@@ -876,7 +909,7 @@ export default function RoomsManagement() {
                         <div className="relative">
                           <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
                           <input 
-                            type="number" 
+                            type="number" {...NUMBER_INPUT_PROPS} 
                             value={batchForm.deposit_amount}
                             onChange={(e) => setBatchForm({...batchForm, deposit_amount: parseFloat(e.target.value) || 0})}
                             className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all"
@@ -885,35 +918,13 @@ export default function RoomsManagement() {
                         </div>
                       </div>
 
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 sm:col-span-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
-                          💧 ค่าน้ำ (Water Rate)
+                          💧 ค่าน้ำ / 🧹 ค่าส่วนกลาง
                         </label>
-                        <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
-                          <input 
-                            type="number" 
-                            value={batchForm.water_rate}
-                            onChange={(e) => setBatchForm({...batchForm, water_rate: parseFloat(e.target.value) || 0})}
-                            className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all"
-                            placeholder="100"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
-                          🧹 ค่าส่วนกลาง (Common)
-                        </label>
-                        <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
-                          <input 
-                            type="number" 
-                            value={batchForm.common_fee}
-                            onChange={(e) => setBatchForm({...batchForm, common_fee: parseFloat(e.target.value) || 0})}
-                            className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all"
-                            placeholder="150"
-                          />
+                        <div className="px-4 py-3 bg-background border border-border rounded-2xl text-xs font-bold text-muted-foreground">
+                          อัตราเดียวทั้งหอ: น้ำ {billingRates ? `฿${formatBaht(billingRates.waterPerPerson)}/คน` : '-'} · ส่วนกลาง {billingRates ? `฿${formatBaht(billingRates.commonFee)}` : '-'}
+                          {' '}<a href="/owner/settings" className="text-emerald-400 underline">แก้ที่หน้าตั้งค่าหอพัก</a>
                         </div>
                       </div>
                     </div>
@@ -948,7 +959,7 @@ export default function RoomsManagement() {
                     </button>
                     <button 
                       type="submit" 
-                      disabled={batchLoading || getGeneratedRoomNumbers().length === 0}
+                      disabled={batchLoading || batchNegative || getGeneratedRoomNumbers().length === 0}
                       className="flex-[2] py-4 bg-emerald-600 text-white font-black rounded-[24px] shadow-xl hover:bg-emerald-500 active:scale-95 transition-all disabled:opacity-50 text-sm flex items-center justify-center gap-2"
                     >
                       {batchLoading ? (

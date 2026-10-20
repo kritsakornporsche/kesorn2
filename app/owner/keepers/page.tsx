@@ -2,15 +2,22 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
 
 interface Keeper {
   id: number;
   name: string;
   email: string | null;
   phone: string | null;
-  position: string;
-  dorm_id: number;
+  position: 'Maid' | 'Technician' | 'Manager';
+  is_active: number;
 }
+
+const POSITION_LABEL: Record<Keeper['position'], string> = {
+  Manager: 'ผู้จัดการ',
+  Maid: 'แม่บ้าน',
+  Technician: 'ช่างซ่อม',
+};
 
 export default function KeepersManagement() {
   const router = useRouter();
@@ -28,14 +35,9 @@ export default function KeepersManagement() {
     position: 'Maid',
     password: '',
   });
+  const [formError, setFormError] = useState('');
 
   // Cleaning Job Assignment states
-  const [isCleaningModalOpen, setIsCleaningModalOpen] = useState(false);
-  const [cleaningRoomNumber, setCleaningRoomNumber] = useState('5');
-  const [cleaningJobType, setCleaningJobType] = useState('ทำความสะอาดทั่วไป');
-  const [cleaningNotes, setCleaningNotes] = useState('');
-  const [cleaningSubmitting, setCleaningSubmitting] = useState(false);
-  const [cleaningMsg, setCleaningMsg] = useState('');
 
 
   useEffect(() => {
@@ -46,25 +48,30 @@ export default function KeepersManagement() {
         const data = await res.json();
         if (data.success && data.hasDorm) {
           setDormId(data.dorm.id);
-          fetchKeepers(data.dorm.id);
         } else {
           setDormId(1);
-          fetchKeepers(1);
         }
       } catch (err) {
         setDormId(1);
-        fetchKeepers(1);
       }
+      fetchKeepers();
     };
     fetchDormData();
   }, [router]);
 
-  const fetchKeepers = async (id: number) => {
+  const fetchKeepers = async () => {
     try {
-      const res = await fetch(`/api/keepers?dormId=${id}`);
+      const res = await fetch('/api/owner/staff');
       const data = await res.json();
       if (data.success) {
-        setKeepers(data.data);
+        setKeepers(data.data.map((u: any) => ({
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          phone: u.phone,
+          position: u.role === 'manager' ? 'Manager' : u.sub_role === 'maid' ? 'Maid' : 'Technician',
+          is_active: u.is_active,
+        })));
       }
     } catch (err) {
       console.error('Error fetching keepers:', err);
@@ -93,44 +100,57 @@ export default function KeepersManagement() {
         password: '',
       });
     }
+    setFormError('');
     setIsModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dormId) return;
+    setFormError('');
 
-    const url = '/api/keepers';
-    const method = editingKeeper ? 'PUT' : 'POST';
-    const body = editingKeeper 
-      ? { ...formData, id: editingKeeper.id } 
-      : { ...formData, dorm_id: dormId };
+    // Email and position are fixed after creation; edits only change name/phone/password
+    const body = editingKeeper
+      ? { id: editingKeeper.id, name: formData.name, phone: formData.phone, password: formData.password }
+      : {
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          password: formData.password,
+          role: formData.position === 'Manager' ? 'manager' : 'keeper',
+          sub_role: formData.position === 'Maid' ? 'maid' : formData.position === 'Technician' ? 'technician' : null,
+        };
 
     try {
-      const res = await fetch(url, {
-        method,
+      const res = await fetch('/api/owner/staff', {
+        method: editingKeeper ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       const data = await res.json();
       if (data.success) {
         setIsModalOpen(false);
-        fetchKeepers(dormId);
+        fetchKeepers();
+      } else {
+        setFormError(data.message || 'บันทึกไม่สำเร็จ');
       }
     } catch (err) {
       console.error('Error saving keeper:', err);
+      setFormError('บันทึกไม่สำเร็จ');
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('ยืนยันการลบรายชื่อเจ้าหน้าที่?')) return;
+  const handleToggleActive = async (keeper: Keeper) => {
+    const closing = !!keeper.is_active;
+    if (closing && !confirm(`ปิดบัญชีของ ${keeper.name}? คนนี้จะเข้าสู่ระบบไม่ได้ทันที`)) return;
     try {
-      const res = await fetch(`/api/keepers?id=${id}`, { method: 'DELETE' });
-      if (res.ok && dormId) {
-        fetchKeepers(dormId);
-      }
+      const res = await fetch('/api/owner/staff', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: keeper.id, is_active: !closing }),
+      });
+      if (res.ok) fetchKeepers();
     } catch (err) {
-      console.error('Error deleting keeper:', err);
+      console.error('Error updating keeper status:', err);
     }
   };
 
@@ -139,12 +159,13 @@ export default function KeepersManagement() {
       <div className="max-w-6xl mx-auto">
         <header className="flex justify-between items-center mb-10">
           <div>
-            <h1 className="text-3xl font-black mb-2">จัดการเจ้าหน้าที่</h1>
-            <p className="text-muted-foreground font-medium">เพิ่ม แก้ไข และลบข้อมูลแม่บ้านหรือช่างประจำหอพัก</p>
+            <h1 className="text-3xl font-black mb-2">พนักงาน</h1>
+            <p className="text-muted-foreground font-medium">สร้างบัญชีผู้จัดการ แม่บ้าน และช่างซ่อม · เปิด/ปิดบัญชีได้</p>
           </div>
           <div className="flex items-center gap-3">
             <button 
-              onClick={() => setIsCleaningModalOpen(true)}
+              // Jobs are opened and assigned on the board (/owner/maintenance, lib/maintenance.ts)
+              onClick={() => { window.location.href = '/owner/maintenance?new=cleaning'; }}
               className="px-5 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-2xl font-black flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all cursor-pointer text-sm"
             >
               <span>🧹</span>
@@ -157,7 +178,7 @@ export default function KeepersManagement() {
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              เพิ่มเจ้าหน้าที่
+              เพิ่มพนักงาน
             </button>
           </div>
         </header>
@@ -168,14 +189,14 @@ export default function KeepersManagement() {
           </div>
         ) : keepers.length === 0 ? (
           <div className="text-center py-20 bg-card rounded-[40px] border-2 border-dashed border-white/20/10">
-            <p className="text-muted-foreground font-bold">ยังไม่มีข้อมูลเจ้าหน้าที่ในระบบ</p>
+            <p className="text-muted-foreground font-bold">ยังไม่มีบัญชีพนักงาน</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {keepers.map((keeper) => (
-              <div key={keeper.id} className="bg-card rounded-[32px] p-6 shadow-sm border border-white/20/10 hover:shadow-xl hover:shadow-[#DCD3C6]/30 transition-all group">
+              <div key={keeper.id} className={`bg-card rounded-[32px] p-6 shadow-sm border border-white/20/10 hover:shadow-xl hover:shadow-[#DCD3C6]/30 transition-all group ${keeper.is_active ? '' : 'opacity-60'}`}>
                 <div className="flex justify-between items-start mb-6">
-                  <div className={`p-3 rounded-2xl ${keeper.position === 'Maid' ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'}`}>
+                  <div className={`p-3 rounded-2xl ${keeper.position === 'Maid' ? 'bg-rose-50 text-rose-600' : keeper.position === 'Manager' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
                     {keeper.position === 'Maid' ? (
                       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
@@ -193,10 +214,11 @@ export default function KeepersManagement() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
                     </button>
-                    <button onClick={() => handleDelete(keeper.id)} className="p-2 hover:bg-rose-50 text-rose-600 rounded-lg transition-colors">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
+                    <button
+                      onClick={() => handleToggleActive(keeper)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${keeper.is_active ? 'hover:bg-rose-50 text-rose-600' : 'hover:bg-emerald-50 text-emerald-600'}`}
+                    >
+                      {keeper.is_active ? 'ปิดบัญชี' : 'เปิดบัญชี'}
                     </button>
                   </div>
                 </div>
@@ -204,7 +226,10 @@ export default function KeepersManagement() {
                 <div className="space-y-4">
                   <div>
                     <h3 className="text-lg font-black">{keeper.name}</h3>
-                    <p className="text-xs font-bold text-foreground/50 uppercase tracking-wider">{keeper.position === 'Maid' ? 'แม่บ้าน' : 'ช่างประจำหอ'}</p>
+                    <p className="text-xs font-bold text-foreground/50 uppercase tracking-wider">
+                      {POSITION_LABEL[keeper.position]}
+                      {!keeper.is_active && <span className="ml-2 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 normal-case">ปิดใช้งาน</span>}
+                    </p>
                   </div>
                   
                   <div className="space-y-2">
@@ -233,7 +258,7 @@ export default function KeepersManagement() {
         <div className="fixed inset-0 bg-[#3E342B]/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-card rounded-[40px] w-full max-w-lg shadow-2xl border border-white/20/10 overflow-hidden animate-in zoom-in duration-300">
             <div className="p-10">
-              <h2 className="text-2xl font-black mb-6">{editingKeeper ? 'แก้ไขข้อมูลเจ้าหน้าที่' : 'เพิ่มเจ้าหน้าที่ใหม่'}</h2>
+              <h2 className="text-2xl font-black mb-6">{editingKeeper ? 'แก้ไขข้อมูลพนักงาน' : 'เพิ่มพนักงานใหม่'}</h2>
               
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="space-y-2">
@@ -252,20 +277,23 @@ export default function KeepersManagement() {
                     <label className="text-[10px] font-black uppercase text-muted-foreground">เบอร์โทรศัพท์</label>
                     <input 
                       value={formData.phone}
-                      onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                      {...PHONE_INPUT_PROPS}
+                      onChange={(e) => setFormData({...formData, phone: phoneDigits(e.target.value)})}
                       className="w-full px-6 py-4 bg-card border border-border rounded-2xl focus:bg-card focus:border-primary outline-none"
                       placeholder="081-XXX-XXXX"
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase text-muted-foreground">ตำแหน่ง</label>
-                    <select 
+                    <select
                       value={formData.position}
+                      disabled={!!editingKeeper}
                       onChange={(e) => setFormData({...formData, position: e.target.value})}
-                      className="w-full px-6 py-4 bg-card border border-border rounded-2xl focus:bg-card focus:border-primary outline-none"
+                      className="w-full px-6 py-4 bg-card border border-border rounded-2xl focus:bg-card focus:border-primary outline-none disabled:opacity-60"
                     >
+                      <option value="Manager">ผู้จัดการ (Manager)</option>
                       <option value="Maid">แม่บ้าน (Maid)</option>
-                      <option value="Technician">ช่างเทคนิค (Technician)</option>
+                      <option value="Technician">ช่างซ่อม (Technician)</option>
                     </select>
                   </div>
                 </div>
@@ -275,27 +303,31 @@ export default function KeepersManagement() {
                     <input 
                       type="email"
                       required
+                      disabled={!!editingKeeper}
                       value={formData.email}
                       onChange={(e) => setFormData({...formData, email: e.target.value})}
-                      className="w-full px-6 py-4 bg-card border border-border rounded-2xl focus:bg-card focus:border-primary outline-none"
+                      className="w-full px-6 py-4 bg-card border border-border rounded-2xl focus:bg-card focus:border-primary outline-none disabled:opacity-60"
                       placeholder="email@example.com"
                     />
                   </div>
 
-                  {!editingKeeper && (
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-muted-foreground">รหัสผ่านสำหรับเจ้าหน้าที่</label>
-                      <input 
+                      <label className="text-[10px] font-black uppercase text-muted-foreground">
+                        {editingKeeper ? 'ตั้งรหัสผ่านใหม่ (เว้นว่างถ้าไม่เปลี่ยน)' : 'รหัสผ่านสำหรับพนักงาน'}
+                      </label>
+                      <input
                         type="password"
-                        required
+                        required={!editingKeeper}
+                        minLength={6}
                         value={formData.password}
                         onChange={(e) => setFormData({...formData, password: e.target.value})}
                         className="w-full px-6 py-4 bg-card border border-border rounded-2xl focus:bg-card focus:border-primary outline-none"
                         placeholder="••••••••"
                       />
-                      <p className="text-[9px] text-muted-foreground ml-1">* เจ้าหน้าที่สามารถใช้ Email และรหัสผ่านนี้ล็อกอินเข้าสู่ระบบได้</p>
+                      <p className="text-[9px] text-muted-foreground ml-1">* พนักงานใช้อีเมลและรหัสผ่านนี้เข้าสู่ระบบ (อย่างน้อย 6 ตัวอักษร)</p>
                     </div>
-                  )}
+
+                {formError && <p className="text-sm font-bold text-rose-400">{formError}</p>}
 
 
                 <div className="flex gap-4 pt-4">
@@ -310,7 +342,7 @@ export default function KeepersManagement() {
                     type="submit"
                     className="flex-[2] py-4 bg-[#3E342B] text-white rounded-2xl font-bold shadow-lg hover:-translate-y-1 transition-all"
                   >
-                    {editingKeeper ? 'บันทึกการแก้ไข' : 'เพิ่มเจ้าหน้าที่'}
+                    {editingKeeper ? 'บันทึกการแก้ไข' : 'สร้างบัญชี'}
                   </button>
                 </div>
               </form>
@@ -319,130 +351,6 @@ export default function KeepersManagement() {
         </div>
       )}
 
-      {/* 🧹 Cleaning Job Assignment Modal */}
-      {isCleaningModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-card rounded-[2.5rem] w-full max-w-lg shadow-2xl border border-border overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-8">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-xl">
-                    🧹
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-black text-foreground">มอบหมายงานให้แม่บ้าน</h2>
-                    <p className="text-xs text-amber-400 font-bold">Assign Cleaning Task</p>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setIsCleaningModalOpen(false)}
-                  className="text-muted-foreground hover:text-foreground text-sm font-bold"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {cleaningMsg && (
-                <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-bold">
-                  {cleaningMsg}
-                </div>
-              )}
-
-              <form 
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  setCleaningSubmitting(true);
-                  try {
-                    const res = await fetch('/api/keeper/maid/jobs', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        room_number: cleaningRoomNumber,
-                        job_type: cleaningJobType,
-                        notes: cleaningNotes,
-                        dorm_id: dormId || 1,
-                      }),
-                    });
-                    const d = await res.json();
-                    if (d.success) {
-                      setCleaningMsg('✓ มอบหมายงานทำความสะอาดสำเร็จ');
-                      setTimeout(() => {
-                        setCleaningMsg('');
-                        setIsCleaningModalOpen(false);
-                        setCleaningNotes('');
-                      }, 1200);
-                    } else {
-                      alert(d.message || 'เกิดข้อผิดพลาด');
-                    }
-                  } catch (err: any) {
-                    alert(err.message);
-                  } finally {
-                    setCleaningSubmitting(false);
-                  }
-                }}
-                className="space-y-4 text-xs font-bold"
-              >
-                <div>
-                  <label className="text-[10px] uppercase text-muted-foreground block mb-1">เลือกห้องพัก</label>
-                  <select
-                    value={cleaningRoomNumber}
-                    onChange={(e) => setCleaningRoomNumber(e.target.value)}
-                    className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-xl text-foreground font-bold outline-none"
-                  >
-                    {Array.from({ length: 20 }, (_, i) => String(i + 1)).map(num => (
-                      <option key={num} value={num} className="bg-card text-foreground">
-                        ห้อง {num} (หอพักเกษร 2)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10px] uppercase text-muted-foreground block mb-1">ประเภทงานทำความสะอาด</label>
-                  <select
-                    value={cleaningJobType}
-                    onChange={(e) => setCleaningJobType(e.target.value)}
-                    className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-xl text-foreground font-bold outline-none"
-                  >
-                    <option value="ทำความสะอาดทั่วไป">ทำความสะอาดทั่วไป (Routine Cleaning)</option>
-                    <option value="move_out">ทำความสะอาดเตรียมห้องย้ายออก / ย้ายเข้า</option>
-                    <option value="weekly">ทำความสะอาดประจำสัปดาห์</option>
-                    <option value="requested">คำขอพิเศษจากผู้เช่า</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10px] uppercase text-muted-foreground block mb-1">รายละเอียด / หมายเหตุ</label>
-                  <textarea
-                    rows={3}
-                    value={cleaningNotes}
-                    onChange={(e) => setCleaningNotes(e.target.value)}
-                    placeholder="เช่น กวาดถูพื้น ล้างระเบียง เปลี่ยนผ้าปูที่นอน..."
-                    className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-xl text-foreground font-medium outline-none resize-none"
-                  />
-                </div>
-
-                <div className="flex gap-3 pt-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsCleaningModalOpen(false)}
-                    className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-muted-foreground rounded-xl transition-all"
-                  >
-                    ยกเลิก
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={cleaningSubmitting}
-                    className="flex-[2] py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-black shadow-lg shadow-amber-500/20 transition-all disabled:opacity-50 cursor-pointer"
-                  >
-                    {cleaningSubmitting ? 'กำลังส่งข้อมูล...' : 'ยืนยันมอบหมายงาน'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

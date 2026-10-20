@@ -8,17 +8,18 @@
  */
 import { Pool } from '@/lib/mysql-adapter';
 
-const MYSQL_BASE = process.env.DATABASE_URL 
-  ? process.env.DATABASE_URL.replace(/\/[^\/]+$/, '')
-  : 'mysql://smartdom:smartdom@localhost:3306';
-
 // Use a singleton pool to prevent MySQL max_connections exhaustion
 let globalDbPool: any = null;
 
-// ── Unified Single Dormitory Database (kesorn_db) ───────────────────────────
+// ── Unified Single Dormitory Database ─────────────────────────────────────────
+// The database is the one named in DATABASE_URL — the same one the transaction pools use (lib/bill-status.ts,
+// lib/payments.ts) — so switching DATABASE_URL to another database (e.g. kesorn_new at deploy) moves every query.
 export function getDb() {
   if (!globalDbPool) {
-    const pool = new Pool({ connectionString: `${MYSQL_BASE}/kesorn_db` });
+    if (!process.env.DATABASE_URL) {
+      throw new Error('DATABASE_URL is not set');
+    }
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     globalDbPool = async function(strings: any, ...values: any[]) {
       if (Array.isArray(strings) && (strings as any).raw) {
         let queryText = '';

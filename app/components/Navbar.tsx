@@ -106,10 +106,11 @@ export default function Navbar() {
                 <div className="flex items-center gap-2">
                   <Link 
                     href={
-                      (session.user as any)?.role === 'platform_admin' ? '/platform' :
+                      (session.user as any)?.role === 'platform_admin' ? '/explore' :
                       (session.user as any)?.role === 'owner' ? '/owner' :
+                      (session.user as any)?.role === 'manager' ? '/owner' :
                       (session.user as any)?.role === 'keeper' ? '/keeper' :
-                      (session.user as any)?.role === 'researcher' ? '/researcher' :
+                      (session.user as any)?.role === 'researcher' ? '/explore' :
                       (session.user as any)?.role === 'guest' ? '/guest' :
                       '/tenant'
                     }
@@ -164,7 +165,7 @@ export default function Navbar() {
           {/* Theme Toggler Button */}
           <button
             onClick={toggleTheme}
-            className="h-9 w-9 rounded-xl flex items-center justify-center bg-secondary/50 text-foreground hover:bg-secondary transition-all active:scale-95 cursor-pointer text-sm shadow-sm"
+            className="h-9 w-9 rounded-xl hidden md:flex items-center justify-center bg-secondary/50 text-foreground hover:bg-secondary transition-all active:scale-95 cursor-pointer text-sm shadow-sm"
             title={theme === 'dark' ? 'เปลี่ยนเป็นโหมดสว่าง' : 'เปลี่ยนเป็นโหมดมืด'}
           >
             {theme === 'dark' ? '☀️' : '🌙'}
@@ -253,10 +254,11 @@ export default function Navbar() {
                 
                 <Link 
                   href={
-                    (session.user as any)?.role === 'platform_admin' ? '/platform' :
+                    (session.user as any)?.role === 'platform_admin' ? '/explore' :
                     (session.user as any)?.role === 'owner' ? '/owner' :
+                    (session.user as any)?.role === 'manager' ? '/owner' :
                     (session.user as any)?.role === 'keeper' ? '/keeper' :
-                    (session.user as any)?.role === 'researcher' ? '/researcher' :
+                    (session.user as any)?.role === 'researcher' ? '/explore' :
                     (session.user as any)?.role === 'guest' ? '/guest' :
                     '/tenant'
                   }

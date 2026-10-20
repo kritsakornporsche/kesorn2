@@ -1,22 +1,33 @@
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { approveBooking, bookingDeadlines, cancelNoShow, expireDueBookings, rejectBooking } from '@/lib/bookings';
+import { bangkokDate, bookingFeeFor, capCheck, moveInAmounts } from '@/lib/billing';
+import { expireDueMoveIns } from '@/lib/moveIn';
+import { signedPaperOf, withPaperLink } from '@/lib/contract-files';
+import { formatBaht } from '@/lib/format';
+import { INSPECTABLE, inspectionStatuses, type InspectionStatus } from '@/lib/inspections';
+import { stepOf } from '@/lib/booking-steps';
+import { serverErrorMessage } from '@/lib/db-errors';
 
 export async function GET(req: Request) {
   try {
     const session = await auth();
-    const role = (session?.user as any)?.role;
     if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
-      return NextResponse.json({ success: false, message: 'Forbidden: เฉพาะเจ้าของหอพักและผู้ดูแลระบบ' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
     const { searchParams } = new URL(req.url);
     const dormIdParam = searchParams.get('dormId') || searchParams.get('dormDbName');
     const userEmail = session.user.email;
 
     const sql = getDb();
+    const now = new Date();
+    // No scheduler: bookings past their deadline, and move-in bills not paid by the start date, are expired when read
+    await expireDueBookings(now);
+    await expireDueMoveIns(now);
 
     // Single Dormitory (Kesorn 2) bookings query
     const dorms = [
@@ -38,9 +49,21 @@ export async function GET(req: Request) {
         c.contract_file_url,
         c.id_card_number,
         c.tenant_address,
+        c.occupants,
         c.id_card_image,
         c.parent_phone,
         c.created_at as booking_created_at,
+        c.approved_at,
+        c.expires_at,
+        c.cancelled_at,
+        c.cancel_reason,
+        c.booking_bill_id,
+        c.move_in_bill_id,
+        c.start_meter_reading,
+        c.paper_signed_date,
+        c.paper_uploaded_at,
+        c.data_confirmed_at,
+        (SELECT cu.name FROM users cu WHERE cu.id = c.data_confirmed_by) AS data_confirmed_by_name,
         COALESCE(t.name, u.name, 'ไม่ระบุชื่อ') as guest_name,
         COALESCE(t.email, u.email, '') as guest_email,
         COALESCE(t.phone, u.phone, '') as guest_phone,
@@ -48,6 +71,7 @@ export async function GET(req: Request) {
         r.room_type,
         r.floor,
         r.price as monthly_rent,
+        r.deposit_amount as room_deposit_amount,
         r.status as room_status,
         b.id as first_bill_id,
         b.title as first_bill_title,
@@ -55,15 +79,18 @@ export async function GET(req: Request) {
         b.status as first_bill_status,
         b.due_date as first_bill_due_date,
         b.created_at as first_bill_created_at,
+        (SELECT COUNT(*) FROM bill_payments p WHERE p.bill_id = b.id AND p.voided_at IS NULL) as first_bill_payments,
         1 as dorm_id,
         'หอพักเกษร 2' as dorm_name
       FROM contracts c
       LEFT JOIN tenants t ON c.tenant_id = t.id
       LEFT JOIN users u ON t.user_id = u.id OR t.email = u.email
       JOIN rooms r ON c.room_id = r.id
-      LEFT JOIN bills b ON (b.tenant_id = c.tenant_id AND (b.is_first_bill = 1 OR b.bill_type = 'booking') AND b.status != 'Cancelled')
+      LEFT JOIN bills b ON b.id = c.move_in_bill_id
       ORDER BY 
         CASE 
+          WHEN c.status = 'BookingRequested' THEN 0
+          WHEN c.status = 'BookingApproved' THEN 0
           WHEN c.status = 'PendingOwnerSignature' THEN 1
           WHEN c.status = 'PendingFirstBill' THEN 2
           WHEN c.status = 'Active' THEN 3
@@ -79,499 +106,118 @@ export async function GET(req: Request) {
       ORDER BY room_number ASC
     `;
 
+    // Move-in inspection status (lib/inspections.ts); left out when migration 011 has not been run
+    let inspections: Record<number, InspectionStatus> | null = null;
+    try {
+      inspections = await inspectionStatuses(bookings.filter((b: any) => INSPECTABLE.includes(b.booking_status)).map((b: any) => Number(b.contract_id)));
+    } catch (e) {
+      console.warn('[Owner bookings inspection status]', e);
+    }
+
+    // Time left, computed with the server clock (the page counts down from these, not from the browser clock)
+    const withTimers = bookings.map((b: any) => {
+      const deadlines = b.approved_at ? bookingDeadlines(new Date(b.approved_at)) : null;
+      const secondsTo = (d: Date | null) => (d ? Math.max(0, Math.floor((d.getTime() - now.getTime()) / 1000)) : null);
+      const moveIn = moveInAmounts({ room_number: b.room_number, price: b.monthly_rent, deposit_amount: b.room_deposit_amount });
+      const cap = capCheck(moveIn.rent, moveIn.deposit);
+      const pastStart = Boolean(b.start_date) && bangkokDate(now) > bangkokDate(b.start_date);
+      const firstBillPaid = String(b.first_bill_status || '').toLowerCase() === 'paid';
+      const paperUploaded = signedPaperOf(b.contract_file_url) === 'uploaded' && Boolean(b.paper_signed_date);
+      const inspectionStatus = inspections?.[Number(b.contract_id)] ?? null;
+      // commit 28: steps 1–7 (lib/booking-steps.ts) — the page shows these; the server checks the same rules
+      const steps = stepOf({
+        status: b.booking_status, data_confirmed_at: b.data_confirmed_at, move_in_bill_id: b.move_in_bill_id,
+        move_in_bill_status: b.first_bill_status, inspection_status: inspectionStatus, paper_uploaded: paperUploaded,
+      });
+      return {
+        ...withPaperLink(b, 'contract_id'),
+        booking_fee: bookingFeeFor(b.room_number),
+        inspection_status: inspectionStatus,
+        steps,
+        // Move-in (lib/moveIn.ts): amounts from the room on the server; contracts without move_in_bill_id are older ones
+        move_in: { ...moveIn, cap_ok: cap.ok, cap_message: cap.ok ? null : cap.message },
+        legacy: b.booking_status === 'PendingFirstBill' && !b.move_in_bill_id,
+        move_in_bill_paid: firstBillPaid,
+        paper_uploaded: paperUploaded,
+        move_in_overdue_partial: b.booking_status === 'PendingFirstBill' && pastStart && !firstBillPaid && Number(b.first_bill_payments || 0) > 0,
+        can_issue_move_in: ['PendingOwnerSignature', 'PendingContract'].includes(b.booking_status) && !b.move_in_bill_id && !pastStart,
+        seconds_to_expire: b.expires_at ? secondsTo(new Date(b.expires_at)) : null,
+        seconds_to_pay: b.booking_status === 'BookingApproved' ? secondsTo(deadlines?.payBy || null) : null,
+        // No-show cancel is possible from the day after the move-in date (Thai date); never for older contracts
+        // (their move-in payment cannot be checked — lib/bookings cancelNoShow refuses them too)
+        no_show_allowed: ['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill'].includes(b.booking_status)
+          && !(b.booking_status === 'PendingFirstBill' && !b.move_in_bill_id)
+          && Boolean(b.start_date) && bangkokDate(now) > bangkokDate(b.start_date),
+      };
+    });
+
     return NextResponse.json({ 
       success: true, 
-      data: bookings,
+      data: withTimers,
       availableRooms: availableRooms,
       dorms: dorms,
       selectedDormId: 1
     });
   } catch (error: any) {
     console.error('[API Owner Bookings GET Error]', error);
-    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, message: serverErrorMessage(error, 'โหลดรายการจองไม่สำเร็จ') }, { status: 500 });
   }
 }
 
+// POST { action, contractId, reason? } — approve / reject a booking request, or cancel a paid booking whose
+// guest did not come (forfeits the booking fee). All booking rules live in lib/bookings.ts.
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    const role = (session?.user as any)?.role;
     if (!session || !session.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
-      return NextResponse.json({ success: false, message: 'Forbidden: เฉพาะเจ้าของหอพักและผู้ดูแลระบบ' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
 
     const body = await req.json();
-    const { action, contractId } = body;
-
+    const { action } = body;
+    const contractId = Number(body.contractId);
+    if (!contractId) {
+      return NextResponse.json({ success: false, message: 'Missing contractId' }, { status: 400 });
+    }
     const sql = getDb();
+    const now = new Date();
+    const notify = async (userId: number | null, title: string, message: string, type: string) => {
+      if (!userId) return;
+      await sql`
+        INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+        VALUES (${userId}, ${title}, ${message}, ${type}, 0, '/explore/booking-status', NOW())
+      `.catch((e: any) => console.warn('[Owner bookings notify]', e));
+    };
 
-    // ==========================================
-    // ACTION 1: APPROVE BOOKING (อนุมัติการจอง)
-    // ==========================================
     if (action === 'approve') {
-      if (!contractId) {
-        return NextResponse.json({ success: false, message: 'Missing contractId' }, { status: 400 });
-      }
+      const result = await approveBooking(contractId, guard.user.id, now);
+      if (!result.ok) return NextResponse.json({ success: false, message: result.message }, { status: 400 });
+      await notify(result.tenantUserId, '✅ หอพักอนุมัติการจองแล้ว',
+        `ห้อง ${result.roomNumber}: กรุณาโอนค่าจอง ฿${formatBaht(result.fee)} และอัปโหลดสลิปภายใน 10 นาที`, 'booking_approved');
+      return NextResponse.json({ success: true, message: 'อนุมัติการจองแล้ว ผู้จองมีเวลาชำระค่าจอง 10 นาที', data: result });
+    }
 
-      const { createInitialBill, initialBillAmount, customStartDate, customRoomId, contractFileUrl } = body;
+    if (action === 'reject') {
+      const result = await rejectBooking(contractId, guard.user.id, String(body.reason || ''), now);
+      if (!result.ok) return NextResponse.json({ success: false, message: result.message }, { status: 400 });
+      await notify(result.tenantUserId, 'คำขอจองไม่ได้รับการอนุมัติ',
+        `คำขอจองห้อง ${result.roomNumber} ไม่ได้รับการอนุมัติ${body.reason ? `: ${String(body.reason).slice(0, 200)}` : ''}`, 'booking_rejected');
+      return NextResponse.json({ success: true, message: 'ปฏิเสธคำขอจองแล้ว ห้องกลับเป็นว่าง' });
+    }
 
-      const contractRes = await sql`
-        SELECT c.*, t.user_id, t.email as tenant_email, r.price as room_price, r.dorm_id, r.room_number
-        FROM contracts c
-        LEFT JOIN tenants t ON c.tenant_id = t.id
-        LEFT JOIN rooms r ON c.room_id = r.id
-        WHERE c.id = ${contractId}
-      `;
-
-      if (contractRes.length === 0) {
-        return NextResponse.json({ success: false, message: 'Booking contract not found' }, { status: 404 });
-      }
-
-      const contract = contractRes[0];
-      const targetRoomId = customRoomId || contract.room_id;
-      const tenantId = contract.tenant_id;
-      const tenantEmail = contract.tenant_email;
-      const startDate = customStartDate || contract.start_date;
-
-      // 1. Update contract to Active with optional contractFileUrl
-      if (contractFileUrl) {
-        await sql`
-          UPDATE contracts 
-          SET status = 'Active', 
-              room_id = ${targetRoomId},
-              start_date = ${startDate},
-              contract_file_url = ${contractFileUrl},
-              owner_signature_data = 'APPROVED_DIGITALLY', 
-              signed_at = NOW() 
-          WHERE id = ${contractId}
-        `;
-      } else {
-        await sql`
-          UPDATE contracts 
-          SET status = 'Active', 
-              room_id = ${targetRoomId},
-              start_date = ${startDate},
-              owner_signature_data = 'APPROVED_DIGITALLY', 
-              signed_at = NOW() 
-          WHERE id = ${contractId}
-        `;
-      }
-
-      // 2. Update room to Occupied (and if changed room, free the old one)
-      if (customRoomId && customRoomId !== contract.room_id) {
-        await sql`UPDATE rooms SET status = 'Available' WHERE id = ${contract.room_id}`;
-      }
-      await sql`UPDATE rooms SET status = 'Occupied' WHERE id = ${targetRoomId}`;
-
-      // 3. Link tenant room_id
-      if (tenantId) {
-        await sql`UPDATE tenants SET room_id = ${targetRoomId}, status = 'Active' WHERE id = ${tenantId}`;
-      }
-
-      // 4. Update user role to tenant
-      if (tenantEmail) {
-        await sql`
-          UPDATE users 
-          SET role = 'tenant', primary_role = 'tenant' 
-          WHERE LOWER(email) = LOWER(${tenantEmail})
-        `;
-
-        // Ensure user_dorm_roles entry exists
-        try {
-          const uRes = await sql`SELECT id FROM users WHERE LOWER(email) = LOWER(${tenantEmail}) LIMIT 1`;
-          if (uRes.length > 0) {
-            const uId = uRes[0].id;
-            const existingRole = await sql`SELECT id FROM user_dorm_roles WHERE user_id = ${uId} AND dorm_id = ${contract.dorm_id || 1} LIMIT 1`;
-            if (existingRole.length === 0) {
-              await sql`INSERT INTO user_dorm_roles (user_id, dorm_id, role) VALUES (${uId}, ${contract.dorm_id || 1}, 'tenant')`;
-            }
-          }
-        } catch (re) {
-          console.warn('user_dorm_roles sync warn:', re);
-        }
-      }
-
-      // 4.1 Mark booking fee bill as Paid
-      if (tenantId) {
-        await sql`
-          UPDATE bills 
-          SET status = 'Paid', slip_verified = 1, slip_verified_at = NOW() 
-          WHERE tenant_id = ${tenantId} 
-            AND bill_type = 'booking' 
-            AND status IN ('Pending', 'Unpaid')
-        `;
-      }
-
-      // 5. Optionally create first month rent invoice (ใบแจ้งหนี้ค่าเช่าเดือนแรก)
-      if (createInitialBill) {
-        const billAmount = initialBillAmount || contract.room_price || 0;
-        const cycle = new Date(startDate).toLocaleString('th-TH', { month: 'long', year: 'numeric' });
-        await sql`
-          INSERT INTO bills (
-            tenant_id, 
-            dorm_id, 
-            room_number, 
-            title, 
-            amount, 
-            room_amount, 
-            billing_cycle, 
-            due_date, 
-            status
-          ) VALUES (
-            ${tenantId}, 
-            ${contract.dorm_id}, 
-            ${contract.room_number}, 
-            ${'ค่าเช่าห้องพักเดือนแรก (รอบ ' + cycle + ')'}, 
-            ${billAmount}, 
-            ${billAmount}, 
-            ${cycle}, 
-            ${startDate}, 
-            'Unpaid'
-          )
-        `;
-      }
-
-      // 6. Notify tenant about approval
-      try {
-        const uRes = await sql`SELECT id FROM users WHERE LOWER(email) = LOWER(${tenantEmail}) LIMIT 1`;
-        if (uRes.length > 0) {
-          await sql`
-            INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-            VALUES (
-              ${uRes[0].id},
-              'การจองห้องพักได้รับการอนุมัติแล้ว',
-              ${'การจองห้อง ' + (contract.room_number || '-') + ' ได้รับการอนุมัติแล้ว คุณสามารถเข้าสู่ระบบผู้เช่าเพื่อดูสัญญาและข้อมูลห้องพักได้ทันที'},
-              'booking_approved',
-              0,
-              '/tenant',
-              NOW()
-            )
-          `;
-        }
-      } catch (ne) {
-        console.warn('Booking approve notify warn:', ne);
-      }
-
-      return NextResponse.json({ 
-        success: true, 
-        message: 'อนุมัติการจองห้องพักและเปิดสัญญาเช่าเรียบร้อยแล้ว' 
+    if (action === 'cancel') {
+      const result = await cancelNoShow(contractId, guard.user.id, now);
+      if (!result.ok) return NextResponse.json({ success: false, message: result.message }, { status: 400 });
+      return NextResponse.json({
+        success: true,
+        message: `ยกเลิกการจอง (ไม่มาตามนัด) แล้ว ริบค่าจอง ฿${formatBaht(result.forfeited)} เป็นรายได้`,
+        data: result,
       });
-
-    // ==========================================
-    // ACTION: UPLOAD / UPDATE CONTRACT FILE (อัพโหลดไฟล์สัญญา)
-    // ==========================================
-    } else if (action === 'upload_contract') {
-      if (!contractId) {
-        return NextResponse.json({ success: false, message: 'Missing contractId' }, { status: 400 });
-      }
-      const { contractFileUrl } = body;
-      if (!contractFileUrl) {
-        return NextResponse.json({ success: false, message: 'Missing contractFileUrl' }, { status: 400 });
-      }
-
-      await sql`
-        UPDATE contracts 
-        SET contract_file_url = ${contractFileUrl},
-            updated_at = NOW()
-        WHERE id = ${contractId}
-      `;
-
-      return NextResponse.json({ 
-        success: true, 
-        message: 'บันทึกเอกสารสัญญาเข้าสู่ระบบเรียบร้อยแล้ว' 
-      });
-
-    // ==========================================
-    // ACTION 2: REJECT / CANCEL BOOKING (ปฏิเสธ)
-    // ==========================================
-    } else if (action === 'reject') {
-      if (!contractId) {
-        return NextResponse.json({ success: false, message: 'Missing contractId' }, { status: 400 });
-      }
-
-      const { reason } = body;
-
-      const contractRes = await sql`
-        SELECT c.*, t.email as tenant_email 
-        FROM contracts c
-        LEFT JOIN tenants t ON c.tenant_id = t.id
-        WHERE c.id = ${contractId}
-      `;
-
-      if (contractRes.length === 0) {
-        return NextResponse.json({ success: false, message: 'Booking contract not found' }, { status: 404 });
-      }
-
-      const contract = contractRes[0];
-      const roomId = contract.room_id;
-      const tenantEmail = contract.tenant_email;
-
-      // 1. Update contract to Cancelled and save reason
-      const noteText = reason ? `ปฏิเสธการจอง: ${reason}` : 'ปฏิเสธการจองโดยเจ้าของหอพัก';
-      await sql`
-        UPDATE contracts 
-        SET status = 'Cancelled', 
-            renewal_note = ${noteText} 
-        WHERE id = ${contractId}
-      `;
-
-      // 2. Set room back to Available
-      await sql`UPDATE rooms SET status = 'Available' WHERE id = ${roomId}`;
-
-      // 2.1 Update booking fee bill to Cancelled
-      if (contract.tenant_id) {
-        await sql`
-          UPDATE bills 
-          SET status = 'Cancelled' 
-          WHERE tenant_id = ${contract.tenant_id} 
-            AND bill_type = 'booking' 
-            AND status IN ('Pending', 'Unpaid')
-        `;
-      }
-
-      // 3. Remove booking progress
-      if (tenantEmail) {
-        await sql`DELETE FROM booking_progress WHERE user_email = ${tenantEmail} AND room_id = ${roomId}`;
-
-        // 4. Notify guest/tenant about rejection
-        try {
-          const uRes = await sql`SELECT id FROM users WHERE LOWER(email) = LOWER(${tenantEmail}) LIMIT 1`;
-          if (uRes.length > 0) {
-            await sql`
-              INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-              VALUES (
-                ${uRes[0].id},
-                'คำขอจองห้องพักไม่ผ่านการอนุมัติ',
-                ${'คำขอจองห้องพักไม่ผ่านการอนุมัติ: ' + (reason || 'กรุณาติดต่อเจ้าหน้าที่หอพักเพื่อสอบถามรายละเอียดเพิ่มเติม')},
-                'booking_rejected',
-                0,
-                '/explore',
-                NOW()
-              )
-            `;
-          }
-        } catch (ne) {
-          console.warn('Booking reject notify warn:', ne);
-        }
-      }
-
-      return NextResponse.json({ 
-        success: true, 
-        message: 'ปฏิเสธและยกเลิกคำขอจองห้องพักแล้ว ห้องพักกลับสู่สถานะว่าง' 
-      });
-
-    // ==========================================
-    // ACTION 3: UPDATE BOOKING (แก้ไขข้อมูลการจอง)
-    // ==========================================
-    } else if (action === 'update') {
-      const { 
-        roomId: newRoomId, 
-        startDate, 
-        endDate, 
-        depositAmount, 
-        monthlyRent, 
-        guestName, 
-        guestPhone, 
-        note 
-      } = body;
-
-      const contractRes = await sql`SELECT * FROM contracts WHERE id = ${contractId}`;
-      if (contractRes.length === 0) {
-        return NextResponse.json({ success: false, message: 'Booking not found' }, { status: 404 });
-      }
-
-      const currentContract = contractRes[0];
-
-      // Handle room change if applicable
-      if (newRoomId && newRoomId !== currentContract.room_id) {
-        await sql`UPDATE rooms SET status = 'Available' WHERE id = ${currentContract.room_id}`;
-        await sql`UPDATE rooms SET status = 'Reserved' WHERE id = ${newRoomId}`;
-      }
-
-      // Update contract
-      await sql`
-        UPDATE contracts 
-        SET room_id = ${newRoomId || currentContract.room_id},
-            start_date = ${startDate || currentContract.start_date},
-            end_date = ${endDate || currentContract.end_date},
-            deposit_amount = ${depositAmount || currentContract.deposit_amount},
-            renewal_note = ${note || currentContract.renewal_note}
-        WHERE id = ${contractId}
-      `;
-
-      // Update tenant info
-      if (currentContract.tenant_id) {
-        if (guestName || guestPhone) {
-          await sql`
-            UPDATE tenants 
-            SET name = COALESCE(${guestName}, name),
-                phone = COALESCE(${guestPhone}, phone)
-            WHERE id = ${currentContract.tenant_id}
-          `;
-        }
-      }
-
-      return NextResponse.json({ 
-        success: true, 
-        message: 'บันทึกการแก้ไขข้อมูลการจองห้องพักเรียบร้อยแล้ว' 
-      });
-
-    // ==========================================
-    // ACTION 4: CREATE MANUAL / WALK-IN BOOKING (สร้างการจองด้วยตนเอง)
-    // ==========================================
-    } else if (action === 'create') {
-      const { 
-        dormId, 
-        roomId, 
-        guestName, 
-        guestEmail, 
-        guestPhone, 
-        startDate, 
-        endDate, 
-        depositAmount, 
-        slipUrl, 
-        notes, 
-        autoApprove 
-      } = body;
-
-      if (!roomId || !guestName || !startDate) {
-        return NextResponse.json({ success: false, message: 'กรุณากรอกข้อมูลห้องพัก ชื่อผู้จอง และวันที่เริ่มสัญญาให้ครบถ้วน' }, { status: 400 });
-      }
-
-      // 1. Create or find tenant
-      let tenantId: number;
-      const existingTenant = await sql`
-        SELECT id FROM tenants WHERE email = ${guestEmail || `walkin-${Date.now()}@smartdom.local`} LIMIT 1
-      `;
-
-      if (existingTenant.length > 0) {
-        tenantId = existingTenant[0].id;
-        await sql`
-          UPDATE tenants 
-          SET name = ${guestName}, phone = ${guestPhone || ''} 
-          WHERE id = ${tenantId}
-        `;
-      } else {
-        const dummyEmail = guestEmail || `guest-${Date.now()}@smartdom.local`;
-        await sql`
-          INSERT INTO tenants (name, email, phone, dorm_id, room_id, status)
-          VALUES (${guestName}, ${dummyEmail}, ${guestPhone || ''}, ${dormId || null}, ${roomId}, 'Active')
-        `;
-        const created = await sql`SELECT id FROM tenants WHERE email = ${dummyEmail} ORDER BY id DESC LIMIT 1`;
-        tenantId = created[0].id;
-      }
-
-      // 2. Create contract record
-      const contractStatus = autoApprove ? 'Active' : 'PendingOwnerSignature';
-      const contractEndDate = endDate || new Date(new Date(startDate).setFullYear(new Date(startDate).getFullYear() + 1)).toISOString().split('T')[0];
-
-      await sql`
-        INSERT INTO contracts (
-          tenant_id,
-          room_id,
-          start_date,
-          end_date,
-          deposit_amount,
-          signature_data,
-          owner_signature_data,
-          slip_url,
-          renewal_note,
-          status
-        ) VALUES (
-          ${tenantId},
-          ${roomId},
-          ${startDate},
-          ${contractEndDate},
-          ${depositAmount || 0},
-          'WALK_IN_CONFIRMED',
-          ${autoApprove ? 'APPROVED_BY_OWNER' : null},
-          ${slipUrl || null},
-          ${notes || 'การจองโดยตรงผ่านผู้ดูแลหอพัก (Walk-in)'},
-          ${contractStatus}
-        )
-      `;
-
-      // 3. Update room status
-      await sql`
-        UPDATE rooms 
-        SET status = ${autoApprove ? 'Occupied' : 'Reserved'} 
-        WHERE id = ${roomId}
-      `;
-
-      // 3.1 Create booking fee bill in bills table
-      const roomRes = await sql`SELECT room_number, COALESCE(dorm_id, 1) as dorm_id FROM rooms WHERE id = ${roomId} LIMIT 1`;
-      const roomNumber = roomRes[0]?.room_number || String(roomId);
-      const targetDormId = dormId || roomRes[0]?.dorm_id || 1;
-      const dueDate = startDate ? new Date(startDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
-      const billStatus = autoApprove ? 'Paid' : 'Unpaid'; // SlipOK handles auto-approval; no 'Pending' status needed
-
-      await sql`
-        INSERT INTO bills (
-          tenant_id,
-          dorm_id,
-          room_number,
-          title,
-          amount,
-          room_amount,
-          water_amount,
-          electric_amount,
-          water_units,
-          electric_units,
-          billing_cycle,
-          due_date,
-          status,
-          slip_url,
-          bill_type,
-          slip_verified
-        ) VALUES (
-          ${tenantId},
-          ${targetDormId},
-          ${roomNumber},
-          ${'ค่าจองห้องพัก (ห้อง ' + roomNumber + ')'},
-          ${depositAmount || 1000},
-          ${depositAmount || 1000},
-          0,
-          0,
-          0,
-          0,
-          'ค่าจองห้องพักเพื่อยืนยันสิทธิ์',
-          ${dueDate},
-          ${billStatus},
-          ${slipUrl || null},
-          'booking',
-          ${autoApprove ? 1 : 0}
-        )
-      `;
-
-      return NextResponse.json({ 
-        success: true, 
-        message: autoApprove 
-          ? 'บันทึกการจองและอนุมัติสัญญาเช่าเข้าพักเรียบร้อยแล้ว' 
-          : 'บันทึกการจองห้องพักเรียบร้อยแล้ว (สถานะรอดำเนินการ)' 
-      });
-
-    // ==========================================
-    // ACTION 5: DELETE BOOKING HISTORY (ลบประวัติ)
-    // ==========================================
-    } else if (action === 'delete') {
-      if (!contractId) {
-        return NextResponse.json({ success: false, message: 'Missing contractId' }, { status: 400 });
-      }
-
-      const contractRes = await sql`SELECT * FROM contracts WHERE id = ${contractId}`;
-      if (contractRes.length > 0 && contractRes[0].status === 'Cancelled') {
-        await sql`DELETE FROM contracts WHERE id = ${contractId}`;
-        return NextResponse.json({ success: true, message: 'ลบประวัติการจองเรียบร้อยแล้ว' });
-      } else {
-        return NextResponse.json({ success: false, message: 'สามารถลบได้เฉพาะรายการที่ยกเลิกแล้วเท่านั้น' }, { status: 400 });
-      }
     }
 
     return NextResponse.json({ success: false, message: 'Invalid action specified' }, { status: 400 });
-
   } catch (error: any) {
     console.error('[API Owner Bookings POST Error]', error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

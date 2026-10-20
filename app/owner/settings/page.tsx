@@ -2,22 +2,49 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import { FIELD_LABELS, LANDLORD_LABELS, RATE_FIELDS, RATE_NOTES } from '@/lib/settings-fields';
+import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
+
+// The one place for rates and payment details (lib/settings.ts). Owner edits; manager sees it read-only.
+// Bills already sent or paid keep their amounts and late fee; draft monthly bills are re-priced on save.
+type HistoryRow = { id: number; field: keyof typeof FIELD_LABELS; old_value: string | null; new_value: string | null; changed_at: string; changed_by_name: string | null };
+
+const RATE_HINTS: Record<(typeof RATE_FIELDS)[number], string> = {
+  electricity_rate: 'คิดตามหน่วยมิเตอร์ของรอบบิล',
+  water_rate: 'เหมาจ่ายต่อผู้พักอาศัย 1 คน / เดือน',
+  common_fee: 'เหมาจ่ายต่อห้อง / เดือน',
+  late_fee_per_day: 'เฉพาะบิลค่าเช่ารายเดือน นับจากวันครบกำหนด',
+  cleaning_fee: 'ค่าเริ่มต้นที่แม่บ้านเสนอเมื่อปิดงานทำความสะอาด (เจ้าของหอตัดสิน)',
+};
 
 export default function OwnerSettings() {
   const { data: session } = useSession();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
-  
+  const [canEdit, setCanEdit] = useState(false);
+  const [notConfigured, setNotConfigured] = useState(false);
+  const [history, setHistory] = useState<HistoryRow[]>([]);
+
+  // Rates are kept as typed text; the server checks them (no made-up defaults)
   const [formData, setFormData] = useState({
     name: '',
     address: '',
     phone: '',
+    landlord_name: '',
+    landlord_phone: '',
     tax_id: '',
-    water_rate: 100,
-    electricity_rate: 7,
+    electricity_rate: '',
+    water_rate: '',
+    common_fee: '',
+    late_fee_per_day: '',
+    cleaning_fee: '',
     promptpay_number: '',
     promptpay_name: '',
+    bank_name: '',
+    bank_account: '',
+    bank_account_name: '',
     has_wifi: false,
     has_parking: false,
     pet_friendly: true,
@@ -40,17 +67,28 @@ export default function OwnerSettings() {
     try {
       const res = await fetch('/api/owner/settings');
       const data = await res.json();
+      setCanEdit(Boolean(data.canEdit));
+      setNotConfigured(Boolean(data.success && !data.data));
       if (data.success && data.data) {
         const d = data.data;
+        const rate = (v: unknown) => (v === null || v === undefined || v === '' ? '' : String(Number(v)));
         setFormData({
           name: d.name || '',
           address: d.address || '',
           phone: d.phone || '',
+          landlord_name: d.landlord_name || '',
+          landlord_phone: d.landlord_phone || '',
           tax_id: d.tax_id || '',
-          water_rate: Number(d.water_rate) || 0,
-          electricity_rate: Number(d.electricity_rate) || 6,
+          electricity_rate: rate(d.electricity_rate),
+          water_rate: rate(d.water_rate),
+          common_fee: rate(d.common_fee),
+          late_fee_per_day: rate(d.late_fee_per_day),
+          cleaning_fee: rate(d.cleaning_fee),
           promptpay_number: d.promptpay_number || '',
           promptpay_name: d.promptpay_name || '',
+          bank_name: d.bank_name || '',
+          bank_account: d.bank_account || '',
+          bank_account_name: d.bank_account_name || '',
           has_wifi: Boolean(d.has_wifi),
           has_parking: Boolean(d.has_parking),
           pet_friendly: Boolean(d.pet_friendly),
@@ -68,6 +106,17 @@ export default function OwnerSettings() {
       console.error('Error fetching settings:', e);
     } finally {
       setLoading(false);
+    }
+    loadHistory();
+  };
+
+  const loadHistory = async () => {
+    try {
+      const res = await fetch('/api/owner/settings/history');
+      const data = await res.json();
+      if (data.success) setHistory(data.data || []);
+    } catch (e) {
+      console.error('Error fetching rate history:', e);
     }
   };
 
@@ -104,28 +153,23 @@ export default function OwnerSettings() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session?.user?.email) return;
+    if (!session?.user?.email || !canEdit) return;
     
     setSaving(true);
     setMessage({ type: '', text: '' });
     
     try {
-      const email = session.user.email;
-      const savedDb = localStorage.getItem('selectedDormDbName');
-      
       const res = await fetch('/api/owner/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          dormDbName: savedDb,
-          ...formData
-        })
+        body: JSON.stringify(formData)
       });
       
       const data = await res.json();
       if (data.success) {
-        setMessage({ type: 'success', text: 'บันทึกข้อมูลหอพักเรียบร้อยแล้ว' });
+        setMessage({ type: 'success', text: data.message || 'บันทึกข้อมูลหอพักเรียบร้อยแล้ว' });
+        setNotConfigured(false);
+        loadHistory();
       } else {
         setMessage({ type: 'error', text: data.message });
       }
@@ -149,6 +193,9 @@ export default function OwnerSettings() {
           <h1 className="text-xl font-black tracking-tight text-white">ตั้งค่าหอพัก</h1>
           <p className="text-[10px] font-bold text-foreground/50 uppercase tracking-widest mt-0.5">Dormitory Profile & Search Settings</p>
         </div>
+        {!canEdit && (
+          <span className="text-[11px] font-black px-3 py-1 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">👁 ดูอย่างเดียว (แก้ได้เฉพาะเจ้าของหอ)</span>
+        )}
       </header>
 
       <div className="flex-1 overflow-y-auto p-10">
@@ -161,7 +208,14 @@ export default function OwnerSettings() {
             </div>
           )}
 
+          {notConfigured && (
+            <div className="p-4 mb-6 rounded-2xl font-bold text-sm bg-amber-500/10 text-amber-300 border border-amber-500/30">
+              ⚠️ ยังไม่ตั้งค่าหอพัก — {canEdit ? 'กรอกข้อมูลและอัตราค่าบริการด้านล่างแล้วกดบันทึก' : 'รอเจ้าของหอตั้งค่า'} (ระหว่างนี้ระบบใช้อัตราเริ่มต้นและสร้าง QR ชำระเงินไม่ได้)
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-8">
+            <fieldset disabled={!canEdit} className="space-y-8 min-w-0">
             {/* General Info */}
             <div className="bg-card border border-white/20 rounded-3xl p-8 space-y-6">
               <h2 className="text-lg font-black text-foreground border-b border-border pb-4">ข้อมูลทั่วไป (แสดงในหน้าค้นหา)</h2>
@@ -182,13 +236,37 @@ export default function OwnerSettings() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">เบอร์โทรศัพท์ติดต่อ</label>
                   <input
-                    type="text"
                     required
                     value={formData.phone}
-                    onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                    {...PHONE_INPUT_PROPS}
+                    onChange={e => setFormData({ ...formData, phone: phoneDigits(e.target.value) })}
                     className="w-full bg-card border border-white/20 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-primary"
                     placeholder="เช่น 02-XXX-XXXX"
                   />
+                </div>
+
+                {/* Landlord on the contract (Word / print); empty = dotted line. Address = dorm address above. */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">{LANDLORD_LABELS.landlord_name} (ใช้ในสัญญา)</label>
+                  <input
+                    type="text"
+                    value={formData.landlord_name}
+                    onChange={e => setFormData({ ...formData, landlord_name: e.target.value })}
+                    className="w-full bg-card border border-white/20 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-primary"
+                    placeholder="ชื่อ-นามสกุล (ว่างได้ — สัญญาจะเว้นเส้นประให้เขียนเอง)"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">{LANDLORD_LABELS.landlord_phone} (ใช้ในสัญญา)</label>
+                  <input
+                    value={formData.landlord_phone}
+                    {...PHONE_INPUT_PROPS}
+                    onChange={e => setFormData({ ...formData, landlord_phone: phoneDigits(e.target.value) })}
+                    className="w-full bg-card border border-white/20 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-primary"
+                    placeholder="เช่น 08X-XXX-XXXX (ว่างได้)"
+                  />
+                  <p className="text-[11px] text-muted-foreground pl-1">ที่อยู่ผู้ให้เช่าในสัญญาใช้ที่อยู่หอพัก</p>
                 </div>
 
                 <div className="space-y-2 md:col-span-2">
@@ -255,37 +333,42 @@ export default function OwnerSettings() {
               </div>
             </div>
 
-            {/* Rates & Rules */}
+            {/* Rates: the only place they are set (every bill reads them from here) */}
             <div className="bg-card border border-white/20 rounded-3xl p-8 space-y-6">
-              <h2 className="text-lg font-black text-foreground border-b border-border pb-4">ค่าน้ำ/ค่าไฟ และข้อมูลกฎหมาย</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="border-b border-border pb-4">
+                <h2 className="text-lg font-black text-foreground">อัตราค่าบริการ</h2>
+                <p className="text-xs text-muted-foreground mt-1">
+                  ทุกบิลคิดจากอัตราในหน้านี้ · บิลที่ส่งหรือชำระแล้วไม่เปลี่ยน (ค่าปรับใช้อัตรา ณ วันที่ส่งบิล) · ร่างบิลรายเดือนคิดใหม่อัตโนมัติเมื่อแก้ค่าไฟ / ค่าน้ำ / ค่าส่วนกลาง
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {RATE_FIELDS.map((f) => (
+                  <div key={f} className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">{FIELD_LABELS[f]}</label>
+                    <input
+                      type="number" {...NUMBER_INPUT_PROPS}
+                      step="0.01"
+                      min="0"
+                      required
+                      value={formData[f]}
+                      onChange={e => setFormData({ ...formData, [f]: e.target.value })}
+                      className="w-full bg-card border border-white/20 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-primary disabled:opacity-60"
+                    />
+                    <p className="text-[11px] text-muted-foreground pl-1">{RATE_HINTS[f]}</p>
+                    {RATE_NOTES[f] && <p className="text-[11px] text-amber-400 pl-1">⚖️ {RATE_NOTES[f]}</p>}
+                  </div>
+                ))}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">ค่าน้ำ (บาท / เดือน เหมาจ่าย)</label>
-                  <input
-                    type="number"
-                    value={formData.water_rate}
-                    onChange={e => setFormData({ ...formData, water_rate: Number(e.target.value) })}
-                    className="w-full bg-card border border-white/20 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-primary"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">ค่าไฟ (บาท / ยูนิต)</label>
-                  <input
-                    type="number"
-                    value={formData.electricity_rate}
-                    onChange={e => setFormData({ ...formData, electricity_rate: Number(e.target.value) })}
-                    className="w-full bg-card border border-white/20 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-primary"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">เลขประจำตัวผู้เสียภาษี</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">{FIELD_LABELS.tax_id}</label>
                   <input
                     type="text"
+                    inputMode="numeric"
                     value={formData.tax_id}
                     onChange={e => setFormData({ ...formData, tax_id: e.target.value })}
-                    className="w-full bg-card border border-white/20 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-primary"
-                    placeholder="เลข 13 หลัก"
+                    className="w-full bg-card border border-white/20 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-primary disabled:opacity-60"
+                    placeholder="เลข 13 หลัก (ว่างได้)"
                   />
+                  <p className="text-[11px] text-muted-foreground pl-1">แสดงในใบเสร็จเฉพาะเมื่อกรอกไว้</p>
                 </div>
               </div>
             </div>
@@ -362,6 +445,29 @@ export default function OwnerSettings() {
                 </div>
               </div>
 
+              {!formData.promptpay_number.trim() && (
+                <p className="text-sm font-bold text-red-400 bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+                  ⛔ ยังไม่ได้ตั้งหมายเลขพร้อมเพย์ — ผู้เช่าและผู้จองจะสร้าง QR ชำระเงินและตรวจสลิปไม่ได้
+                </p>
+              )}
+
+              {/* Bank account for transfers (printed on the contract form with PromptPay) */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {(['bank_name', 'bank_account', 'bank_account_name'] as const).map((f) => (
+                  <div key={f} className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">{FIELD_LABELS[f]}</label>
+                    <input
+                      type="text"
+                      value={formData[f]}
+                      onChange={e => setFormData({ ...formData, [f]: e.target.value })}
+                      className="w-full bg-secondary/40 border border-white/20 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-indigo-400 disabled:opacity-60"
+                      placeholder={f === 'bank_name' ? 'เช่น ธนาคารกสิกรไทย สาขา… ออมทรัพย์' : f === 'bank_account' ? 'เช่น 123-4-56789-0' : 'ชื่อเจ้าของบัญชี'}
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground pl-1">* พร้อมเพย์และบัญชีธนาคารพิมพ์ลงในแบบฟอร์มสัญญาเช่า (ว่าง = ไม่พิมพ์บรรทัดนั้น)</p>
+
               <div className="flex items-start gap-2.5 bg-secondary/40/60 p-3.5 rounded-xl border border-border text-xs text-muted-foreground">
                 <span className="text-indigo-400 text-sm">💡</span>
                 <span>
@@ -383,10 +489,12 @@ export default function OwnerSettings() {
                 ].map(item => (
                   <label
                     key={item.key}
-                    className={`flex items-center gap-3 p-4 rounded-2xl border cursor-pointer select-none transition-all ${
+                    className={`flex items-center gap-3 p-4 rounded-2xl border select-none transition-all ${
+                      canEdit ? 'cursor-pointer' : 'cursor-default opacity-60'
+                    } ${
                       (formData as any)[item.key]
                         ? 'border-primary bg-primary/10 text-white'
-                        : 'border-border bg-secondary/40/50 text-muted-foreground hover:border-white/20'
+                        : `border-border bg-secondary/40/50 text-muted-foreground ${canEdit ? 'hover:border-white/20' : ''}`
                     }`}
                   >
                     <input
@@ -412,7 +520,8 @@ export default function OwnerSettings() {
               </div>
             </div>
 
-            {/* AI Meter OCR Configuration */}
+            {/* AI Meter OCR Configuration (owner only: managers do not get the key) */}
+            {canEdit && (
             <div className="bg-gradient-to-br from-card via-card to-cyan-950/20 border border-cyan-500/30 rounded-3xl p-8 space-y-6 shadow-xl relative overflow-hidden">
               <div className="flex items-center justify-between border-b border-white/20 pb-4 flex-wrap gap-3">
                 <div className="flex items-center gap-3">
@@ -425,6 +534,10 @@ export default function OwnerSettings() {
                     </h2>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       เจ้าของหอพักสามารถระบุ Google Gemini API Key ส่วนตัว เพื่อใช้อ่านมิเตอร์ด้วย AI ความแม่นยำสูง
+                    </p>
+                    {/* commit 24c: ID card OCR removed — the key is for meter photos only */}
+                    <p className="text-xs font-bold text-cyan-300 mt-1">
+                      ใช้สำหรับอ่านค่ามิเตอร์เท่านั้น (ภาพหน้าปัดมิเตอร์ไม่มีข้อมูลส่วนบุคคล)
                     </p>
                   </div>
                 </div>
@@ -542,15 +655,59 @@ export default function OwnerSettings() {
                 </div>
               </div>
             </div>
+            )}
+            </fieldset>
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full py-4 bg-primary text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20"
-            >
-              {saving ? 'กำลังบันทึกข้อมูล...' : 'บันทึกการตั้งค่าหอพัก'}
-            </button>
+            {canEdit && message.text && (
+              <div role="alert" className={`p-4 rounded-2xl font-bold text-sm text-center ${
+                message.type === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400 border border-red-500/30'
+              }`}>
+                {message.type === 'error' ? '⛔ บันทึกไม่สำเร็จ: ' : '✓ '}{message.text}
+              </div>
+            )}
+            {canEdit && (
+              <button
+                type="submit"
+                disabled={saving}
+                className="w-full py-4 bg-primary text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20"
+              >
+                {saving ? 'กำลังบันทึกข้อมูล...' : 'บันทึกการตั้งค่าหอพัก'}
+              </button>
+            )}
           </form>
+
+          {/* Who changed which rate / payment detail, and when */}
+          <div className="bg-card border border-white/20 rounded-3xl p-8 space-y-4 mt-8">
+            <h2 className="text-lg font-black text-foreground border-b border-border pb-4">ประวัติการแก้อัตราและข้อมูลรับเงิน</h2>
+            {history.length === 0 ? (
+              <p className="text-sm text-muted-foreground">ยังไม่มีการแก้ไข</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs min-w-[560px]">
+                  <thead>
+                    <tr className="text-muted-foreground border-b border-border">
+                      <th className="py-2 pr-3">เมื่อ</th>
+                      <th className="py-2 pr-3">รายการ</th>
+                      <th className="py-2 pr-3">จาก</th>
+                      <th className="py-2 pr-3">เป็น</th>
+                      <th className="py-2">โดย</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {history.map((h) => (
+                      <tr key={h.id} className="text-foreground/90">
+                        <td className="py-2 pr-3 whitespace-nowrap">{new Date(h.changed_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'medium', timeStyle: 'short' })}</td>
+                        <td className="py-2 pr-3">{FIELD_LABELS[h.field] || h.field}</td>
+                        <td className="py-2 pr-3 font-mono text-muted-foreground">{h.old_value ?? '—'}</td>
+                        <td className="py-2 pr-3 font-mono font-bold">{h.new_value ?? '—'}</td>
+                        <td className="py-2">{h.changed_by_name || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

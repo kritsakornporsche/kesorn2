@@ -16,8 +16,13 @@ interface ChatWidgetProps {
   initialConversationId?: number;
 }
 
-export default function ChatWidget({ dormId, ownerName, initialConversationId }: ChatWidgetProps) {
-  const { data: session } = useSession();
+export default function ChatWidget({ dormId: dormIdProp, ownerName, initialConversationId }: ChatWidgetProps) {
+  // commit 28a: one dorm in this system — the home page widget had no dormId, so the chat opened without a conversation
+  // and a typed message was never sent. Opening the chat now always makes sure there is a conversation, sending starts
+  // one if needed, and a failure is shown in the window (never dropped silently).
+  const dormId = dormIdProp || 1;
+  const { data: session, status: sessionStatus } = useSession();
+  const [chatError, setChatError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [conversationId, setConversationId] = useState<number | null>(initialConversationId || null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -52,81 +57,80 @@ export default function ChatWidget({ dormId, ownerName, initialConversationId }:
     }
   };
 
-  const startConversation = async () => {
-    if (!dormId) return;
+  /** The conversation with the dorm (created once); null with the reason shown when it cannot be started. */
+  const startConversation = async (): Promise<number | null> => {
     setLoading(true);
+    setChatError(null);
     try {
       const res = await fetch('/api/chat/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dormId })
       });
-      const data = await res.json();
-      if (data.success) {
+      const data = await res.json().catch(() => ({}));
+      if (data.success && data.data?.id) {
         setConversationId(data.data.id);
         setIsOpen(true);
+        return Number(data.data.id);
       }
+      setChatError(res.status === 401 ? 'กรุณาเข้าสู่ระบบเพื่อแชต' : data.message || 'เริ่มการสนทนาไม่สำเร็จ กรุณาลองใหม่');
+      setIsOpen(true);
     } catch (e) {
       console.error('Start conversation error:', e);
+      setChatError('เชื่อมต่อแชตไม่สำเร็จ กรุณาตรวจการเชื่อมต่อแล้วลองใหม่');
+      setIsOpen(true);
     } finally {
       setLoading(false);
     }
+    return null;
   };
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !conversationId) return;
+    if (!newMessage.trim()) return;
+    setChatError(null);
+    const id = conversationId || (await startConversation());
+    if (!id) return;
 
     try {
       const res = await fetch('/api/chat/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId, message: newMessage })
+        body: JSON.stringify({ conversationId: id, message: newMessage })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (data.success) {
-        setMessages([...messages, data.data]);
+        setMessages((list) => [...list, data.data]);
         setNewMessage('');
+      } else {
+        setChatError(res.status === 401 ? 'กรุณาเข้าสู่ระบบเพื่อแชต' : data.message || 'ส่งข้อความไม่สำเร็จ กรุณาลองใหม่');
       }
     } catch (e) {
       console.error('Send message error:', e);
+      setChatError('ส่งข้อความไม่สำเร็จ กรุณาตรวจการเชื่อมต่อแล้วลองใหม่');
     }
   };
 
+  /** Open the window: not signed in → the window says "เข้าสู่ระบบเพื่อแชต"; signed in → with the conversation. */
+  const openChat = () => {
+    if (sessionStatus === 'loading') return;
+    setIsOpen(true);
+    if (session && !conversationId) startConversation();
+  };
+
   useEffect(() => {
-    const handleOpenChat = (e: any) => {
-      if (!session) {
-        window.location.href = `/signin?callbackUrl=${encodeURIComponent(window.location.pathname)}`;
-        return;
-      }
-      const targetDormId = e.detail?.dormId;
-      if (!targetDormId || Number(targetDormId) === Number(dormId)) {
-        if (!conversationId) {
-          startConversation();
-        } else {
-          setIsOpen(true);
-        }
-      } else {
-        setIsOpen(true);
-      }
-    };
+    // every "open chat" (any page) opens the window with the dorm's conversation
+    const handleOpenChat = () => openChat();
     window.addEventListener('open-chat', handleOpenChat);
     return () => window.removeEventListener('open-chat', handleOpenChat);
-  }, [session, dormId, conversationId]);
+  }, [session, sessionStatus, dormId, conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-30 font-sans">
       {!isOpen ? (
         <button
           id="open-chat-widget-btn"
-          onClick={() => {
-            if (!session) {
-              window.location.href = `/signin?callbackUrl=${encodeURIComponent(window.location.pathname)}`;
-              return;
-            }
-            if (conversationId) setIsOpen(true);
-            else startConversation();
-          }}
+          onClick={openChat}
           disabled={loading}
           aria-label="ติดต่อหอพัก"
           className="w-16 h-16 rounded-[2rem] bg-gradient-to-br from-purple-700 to-indigo-700 text-white shadow-2xl shadow-purple-700/30 flex items-center justify-center hover:scale-110 active:scale-95 transition-all group"
@@ -189,7 +193,21 @@ export default function ChatWidget({ dormId, ownerName, initialConversationId }:
             })}
           </div>
 
-          {/* Input */}
+          {chatError && (
+            <p role="alert" className="px-4 py-2 text-[11px] font-bold text-rose-500 bg-rose-500/10 border-t border-rose-500/20 shrink-0">✕ {chatError}</p>
+          )}
+
+          {/* Input — signed-in users only; a visitor gets a link to sign in instead of a box that cannot send */}
+          {!session ? (
+            <div className="p-4 bg-card border-t border-border shrink-0 text-center">
+              <a
+                href={`/signin?callbackUrl=${encodeURIComponent(typeof window !== 'undefined' ? window.location.pathname : '/')}`}
+                className="inline-block px-5 py-2.5 rounded-full bg-gradient-to-br from-purple-700 to-indigo-700 text-white text-xs font-bold"
+              >
+                เข้าสู่ระบบเพื่อแชต
+              </a>
+            </div>
+          ) : (
           <form onSubmit={sendMessage} className="p-3.5 bg-card border-t border-border shrink-0">
             <div className="relative flex items-center gap-2">
               <input
@@ -208,6 +226,7 @@ export default function ChatWidget({ dormId, ownerName, initialConversationId }:
               </button>
             </div>
           </form>
+          )}
         </div>
       )}
     </div>

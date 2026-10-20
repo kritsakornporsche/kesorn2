@@ -8,7 +8,7 @@ export default function CancelBookingButton({ contractId, roomId }: { contractId
   const router = useRouter();
 
   const handleCancel = async () => {
-    if (!confirm('คุณต้องการยกเลิกคำขอจองห้องพักนี้ใช่หรือไม่? เมื่อยกเลิกแล้วห้องพักจะกลับสู่สถานะว่าง')) {
+    if (!confirm('ยืนยันยกเลิกการจอง? ค่าจองที่ชำระแล้วจะไม่คืน (เป็นไปตามเงื่อนไขการจอง) และห้องจะเปิดให้ผู้อื่นจองทันที')) {
       return;
     }
 

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
+import { formatBaht } from '@/lib/format';
 
 interface DashboardStats {
   totalRooms: number;
@@ -17,8 +18,9 @@ interface DashboardStats {
   unpaidBillsCount: number;
   unpaidBillsAmount: number;
   paidBillsCount: number;
-  paidBillsAmount: number;
+  paidBillsAmount: number | null;
   expiringContracts: number;
+  overdueBills?: { id: number; title: string; room_number: string; tenant_name: string; days_overdue: number; outstanding: number }[];
   occupancyRate: number;
   collectionRate: number;
   recentActivities: {
@@ -53,6 +55,14 @@ export default function OwnerDashboardPage() {
   });
 
   const [loading, setLoading] = useState(true);
+  // Standard booking fee from the server (lib/billing bookingFeeFor via /api/rates)
+  const [bookingFee, setBookingFee] = useState<number | null>(null);
+  useEffect(() => {
+    fetch('/api/rates')
+      .then((res) => res.json())
+      .then((data) => { if (data.success && typeof data.bookingFee === 'number') setBookingFee(data.bookingFee); })
+      .catch(() => {});
+  }, []);
   const [activeTab, setActiveTab] = useState<'bookings' | 'slips' | 'unpaid' | 'maintenance'>('bookings');
   const [mobileChip, setMobileChip] = useState<'all' | 'bookings' | 'slips' | 'maintenance'>('all');
 
@@ -100,6 +110,27 @@ export default function OwnerDashboardPage() {
           </div>
         </div>
 
+        {/* Bills unpaid more than 15 days after the due date */}
+        {(stats.overdueBills?.length ?? 0) > 0 && (
+          <div className="p-4 bg-rose-500/10 border border-rose-500/40 rounded-2xl space-y-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-black text-rose-400">🚨 บิลค้างชำระเกิน 15 วัน ({stats.overdueBills!.length})</p>
+              <Link href="/owner/billing" className="px-3 py-1.5 bg-rose-500 hover:bg-rose-400 text-white text-xs font-black rounded-lg shrink-0">
+                ไปหน้าบิล ➔
+              </Link>
+            </div>
+            <div className="space-y-1.5">
+              {stats.overdueBills!.map((b) => (
+                <div key={b.id} className="flex flex-wrap items-center justify-between gap-2 text-xs bg-slate-950/40 rounded-xl px-3 py-2 border border-white/5">
+                  <span className="text-white font-bold">ห้อง {b.room_number || '-'} · {b.tenant_name}</span>
+                  <span className="text-slate-400 truncate">{b.title}</span>
+                  <span className="text-rose-300 font-black">ค้าง {b.days_overdue} วัน · ฿{formatBaht(b.outstanding)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* 🔔 ส่วนที่ 1: แถบงานเร่งด่วนประจำวัน (Action Required / To-Do Bar) */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           <Link
@@ -110,7 +141,7 @@ export default function OwnerDashboardPage() {
               <span className="text-xl">🔔</span>
               <div>
                 <p className="text-[11px] font-black text-amber-400">จองใหม่รอทำสัญญา</p>
-                <p className="text-[10px] text-slate-400">มัดจำ 1,000 บาท</p>
+                <p className="text-[10px] text-slate-400">ค่าจอง{bookingFee !== null ? ` ${formatBaht(bookingFee)} บาท` : ''}</p>
               </div>
             </div>
             <span className="w-7 h-7 rounded-full bg-amber-500 text-white font-black text-xs flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
@@ -259,12 +290,14 @@ export default function OwnerDashboardPage() {
             </div>
 
             <div className="space-y-2">
+              {stats.paidBillsAmount !== null && (
               <div className="flex justify-between items-center text-xs">
                 <span className="text-slate-400">ชำระแล้ว:</span>
                 <span className="font-bold text-emerald-400 font-mono">฿{stats.paidBillsAmount.toLocaleString()}</span>
               </div>
+              )}
               <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-400">ค้างชำระ:</span>
+                <span className="text-slate-400">ค้างชำระ <span className="text-[10px]">(รวมค่าปรับถึงวันนี้)</span>:</span>
                 <span className="font-bold text-rose-400 font-mono">฿{stats.unpaidBillsAmount.toLocaleString()} ({stats.unpaidBillsCount} ห้อง)</span>
               </div>
             </div>
@@ -320,7 +353,7 @@ export default function OwnerDashboardPage() {
                       <span className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-lg">🚪</span>
                       <div>
                         <p className="text-xs font-black text-white">มีรายการจองใหม่รอทำสัญญา ({stats.pendingBookings} รายการ)</p>
-                        <p className="text-[10px] text-slate-400">ตรวจสอบสลิปมัดจำ 1,000 บาท และอัปโหลดสัญญา</p>
+                        <p className="text-[10px] text-slate-400">ตรวจสอบสลิปค่าจอง{bookingFee !== null ? ` ${formatBaht(bookingFee)} บาท` : ''} และอัปโหลดสัญญา</p>
                       </div>
                     </div>
                     <Link
