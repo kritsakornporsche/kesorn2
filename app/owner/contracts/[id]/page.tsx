@@ -9,6 +9,7 @@ import Image from 'next/image';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { contractDepositLabel, statusText } from '@/lib/status-text';
 import { InspectionButton } from '@/components/InspectionModal';
+import { ContractDataButton } from '@/components/ContractDataModal';
 import OccupantsEditor from '@/components/OccupantsEditor';
 import TestRoomBadge from '@/components/TestRoomBadge';
 import { signedPaperText, type SignedPaper } from '@/lib/signed-paper';
@@ -419,6 +420,20 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             </div>
           )}
         </div>
+
+        {/* commit 28-2: step 3 — contract data (confirm, change with a reason, history) */}
+        {['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active'].includes(contract.status) && (
+          <div className="space-y-3 pt-2">
+            <h3 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+              <span>📝</span>
+              <span>ข้อมูลสัญญา (ขั้น 3)</span>
+            </h3>
+            <div className="p-5 bg-slate-950/60 border border-white/10 rounded-3xl flex flex-wrap items-center gap-3">
+              <ContractDataButton contractId={contract.id} />
+              <span className="text-[11px] text-white/40">ชื่อ ที่อยู่ จำนวนผู้พัก และวันที่ในสัญญา · หลังยืนยันแล้ว แก้ได้โดยระบุเหตุผล (มีประวัติ) · แก้ไม่ได้หลังอัปโหลดสัญญาที่ลงนาม</span>
+            </div>
+          </div>
+        )}
 
         {/* Move-in room inspection (does not hold up the contract taking effect) */}
         {['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active'].includes(contract.status) && (

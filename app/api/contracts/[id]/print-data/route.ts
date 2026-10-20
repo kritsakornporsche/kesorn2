@@ -18,6 +18,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       success: true,
       contractId: data.id,
       input: i,
+      // commit 28-2: not confirmed yet (step 3) — the page marks it ร่าง and does not print it
+      draft: data.draft,
       inspectionSheet: {
         kind: 'move_in',
         contract: { id: data.id, start_date: i.startDate ?? null, end_date: i.endDate ?? null, room_number: i.roomNumber ?? null, floor: i.floor ?? null, tenant_name: i.tenantName ?? null },

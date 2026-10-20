@@ -11,6 +11,8 @@ import TestRoomBadge from '@/components/TestRoomBadge';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 import { signedPaperText, type SignedPaper } from '@/lib/signed-paper';
+import ContractDataModal from '@/components/ContractDataModal';
+import type { BookingSteps } from '@/lib/booking-steps';
 
 interface Booking {
   contract_id: number;
@@ -63,6 +65,8 @@ interface Booking {
   signed_paper?: SignedPaper;
   // Move-in inspection (lib/inspections.ts); null when it cannot be inspected or migration 011 is not run
   inspection_status?: InspectionStatus | null;
+  /** commit 28: steps 1–7 (lib/booking-steps.ts) */
+  steps?: BookingSteps;
 }
 
 export default function OwnerBookingsPage() {
@@ -89,6 +93,8 @@ export default function OwnerBookingsPage() {
   const [issueOccupants, setIssueOccupants] = useState(1);
   const [issueAddress, setIssueAddress] = useState('');
   const [paperBooking, setPaperBooking] = useState<Booking | null>(null);
+  // commit 28-2: step 3 — contract data (confirm / change with a reason)
+  const [dataContractId, setDataContractId] = useState<number | null>(null);
   const [paperFile, setPaperFile] = useState<string | null>(null);
   const [paperError, setPaperError] = useState<string | null>(null);
   const [paperSignedDate, setPaperSignedDate] = useState<string>('');
@@ -619,6 +625,15 @@ export default function OwnerBookingsPage() {
                       </span>
                     )}
 
+                    {is81 && !item.legacy && (
+                      <button
+                        onClick={() => setDataContractId(item.contract_id)}
+                        className={`px-4 py-2.5 font-black text-xs rounded-xl border ${item.steps?.items?.[2]?.state === 'done' ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' : 'bg-violet-500 hover:bg-violet-400 text-white border-violet-400'}`}
+                      >
+                        📝 ข้อมูลสัญญา (ขั้น 3){item.steps?.items?.[2]?.state === 'done' ? ' ✓ ยืนยันแล้ว' : ' — ยังไม่ยืนยัน'}
+                      </button>
+                    )}
+
                     {(is81 || is82) && !item.legacy && (
                       <>
                         {/* Checklist: the contract takes effect when both are done */}
@@ -1035,6 +1050,10 @@ export default function OwnerBookingsPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {dataContractId !== null && (
+        <ContractDataModal contractId={dataContractId} onClose={() => setDataContractId(null)} onSaved={() => fetchBookings({ silent: true })} />
       )}
 
       {/* Preview First Bill Modal (Safe-Viewport Pattern: 85dvh, Sticky Header & Footer) */}

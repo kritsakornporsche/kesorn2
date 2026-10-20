@@ -2,15 +2,19 @@
 // details and landlord from the settings page. Callers check access first (lib/contract-files canViewContract).
 
 import { getDb } from '@/lib/db';
-import { formDeposit } from '@/lib/contract-files';
+import { formDeposit, isPaper } from '@/lib/contract-files';
 import { getContractParty, getPaymentInfo, getRates, ratesForRoom } from '@/lib/billing';
 import { getInspection, type InspectionView } from '@/lib/inspections';
 import { contractAddress, type ContractTextInput } from '@/lib/settings-fields';
 
-export async function contractPrintData(contractId: number): Promise<{ id: number; input: ContractTextInput; inspection: InspectionView | null } | null> {
+/** Booking states before the contract data is confirmed (step 3, commit 28): the print page is a draft. */
+const BEFORE_CONFIRM = ['BookingRequested', 'BookingApproved', 'PendingOwnerSignature', 'PendingContract'];
+
+export async function contractPrintData(contractId: number): Promise<{ id: number; input: ContractTextInput; inspection: InspectionView | null; draft: boolean } | null> {
   const sql = getDb();
   const rows = await sql`
     SELECT c.id, c.status, c.deposit_amount, c.start_date, c.end_date, c.created_at, c.parent_phone, c.occupants,
+           c.data_confirmed_at, c.contract_file_url,
            COALESCE(NULLIF(c.tenant_address, ''), t.address) AS address,
            r.room_number, r.floor, r.price, r.deposit_amount AS room_deposit_amount,
            t.name AS tenant_name, t.phone AS tenant_phone
@@ -40,5 +44,7 @@ export async function contractPrintData(contractId: number): Promise<{ id: numbe
     payment: await getPaymentInfo(sql),
     party: await getContractParty(sql),
   };
-  return { id: Number(c.id), input, inspection: await getInspection(Number(c.id), 'move_in') };
+  // Draft: not confirmed yet (an older contract that already has its signed paper is not a draft)
+  const draft = BEFORE_CONFIRM.includes(String(c.status)) && !c.data_confirmed_at && !isPaper(c.contract_file_url);
+  return { id: Number(c.id), input, inspection: await getInspection(Number(c.id), 'move_in'), draft };
 }
