@@ -13,6 +13,7 @@ import TestRoomBadge from '@/components/TestRoomBadge';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 import { PAPER_CONFIRM_TEXT, signedPaperText, type SignedPaper } from '@/lib/signed-paper';
 import ContractDataModal from '@/components/ContractDataModal';
+import ThaiDatePicker from '@/components/ThaiDatePicker';
 import type { BookingSteps } from '@/lib/booking-steps';
 
 interface Booking {
@@ -889,12 +890,11 @@ export default function OwnerBookingsPage() {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-2">วันที่เซ็นสัญญา:</label>
-                  <input
-                    type="date"
-                    required
+                  <ThaiDatePicker
+                    aria-label="วันที่เซ็นสัญญา"
                     max={todayBangkok}
                     value={paperSignedDate}
-                    onChange={(e) => setPaperSignedDate(e.target.value)}
+                    onChange={setPaperSignedDate}
                     className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-white focus:outline-none focus:border-primary"
                   />
                 </div>

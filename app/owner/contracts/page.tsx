@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import PremiumDatePicker from '@/app/components/PremiumDatePicker';
+import ThaiDatePicker, { LeaseShortcuts } from '@/components/ThaiDatePicker';
+import { addDays, addMonths, leaseEnd, todayTh, ymdTh } from '@/lib/thai-date';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import { contractDepositLabel, statusText } from '@/lib/status-text';
 import TestRoomBadge from '@/components/TestRoomBadge';
@@ -88,8 +89,8 @@ export default function OwnerContractsPage() {
     tenant_phone: '',
     tenant_address: '',
     room_id: '',
-    start_date: new Date().toISOString().split('T')[0],
-    end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+    start_date: todayTh(),
+    end_date: leaseEnd(todayTh(), 12),
     deposit_amount: 0,
     occupants: 1,
     deposit_outside_system: false,
@@ -208,8 +209,8 @@ export default function OwnerContractsPage() {
           tenant_phone: '',
           tenant_address: '',
           room_id: '',
-          start_date: new Date().toISOString().split('T')[0],
-          end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+          start_date: todayTh(),
+          end_date: leaseEnd(todayTh(), 12),
           deposit_amount: 0,
           occupants: 1,
           deposit_outside_system: false,
@@ -247,8 +248,8 @@ export default function OwnerContractsPage() {
   const handleOpenRenewModal = (c: Contract) => {
     setRenewingContract(c);
     const defaultNewEnd = c.end_date 
-      ? new Date(new Date(c.end_date).setFullYear(new Date(c.end_date).getFullYear() + 1)).toISOString().split('T')[0]
-      : new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0];
+      ? addMonths(ymdTh(c.end_date), 12)
+      : leaseEnd(todayTh(), 12);
 
     setRenewData({
       new_end_date: defaultNewEnd,
@@ -928,16 +929,17 @@ export default function OwnerContractsPage() {
 
                   {/* Dates & Deposit */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <PremiumDatePicker
-                      label="วันเริ่มสัญญา"
-                      date={formData.start_date}
-                      onChange={(d) => setFormData({ ...formData, start_date: d })}
-                    />
-                    <PremiumDatePicker
-                      label="วันสิ้นสุดสัญญา (1 ปี)"
-                      date={formData.end_date}
-                      onChange={(d) => setFormData({ ...formData, end_date: d })}
-                    />
+                    {/* commit 28-9: a pre-system tenant's contract may have started already (no earliest day) */}
+                    <label className="block space-y-1.5">
+                      <span className="text-xs font-bold text-muted-foreground">วันเริ่มสัญญา</span>
+                      <ThaiDatePicker aria-label="วันเริ่มสัญญา" value={formData.start_date} onChange={(d) => setFormData({ ...formData, start_date: d })}
+                        className="w-full bg-secondary border border-border rounded-2xl px-4 py-3 text-sm font-bold text-foreground" />
+                    </label>
+                    <label className="block space-y-1.5">
+                      <span className="text-xs font-bold text-muted-foreground flex items-center justify-between gap-2">วันสิ้นสุดสัญญา <LeaseShortcuts start={formData.start_date} onEnd={(d) => setFormData({ ...formData, end_date: d })} /></span>
+                      <ThaiDatePicker aria-label="วันสิ้นสุดสัญญา" min={formData.start_date ? addDays(formData.start_date, 1) : undefined} value={formData.end_date} onChange={(d) => setFormData({ ...formData, end_date: d })}
+                        className="w-full bg-secondary border border-border rounded-2xl px-4 py-3 text-sm font-bold text-foreground" />
+                    </label>
                     <div className="space-y-2">
                       <label className="block text-[10px] font-black text-foreground/50 uppercase tracking-widest">
                         เงินประกัน (ตามกติกาของห้อง)
@@ -1028,11 +1030,16 @@ export default function OwnerContractsPage() {
                   )}
                 </div>
 
-                <PremiumDatePicker
-                  label="กำหนดวันสิ้นสุดสัญญาฉบับต่ออายุใหม่"
-                  date={renewData.new_end_date}
-                  onChange={(d) => setRenewData({ ...renewData, new_end_date: d })}
-                />
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-bold text-muted-foreground">กำหนดวันสิ้นสุดสัญญาฉบับต่ออายุใหม่</span>
+                  <ThaiDatePicker
+                    aria-label="วันสิ้นสุดสัญญาฉบับต่ออายุ"
+                    min={renewingContract?.end_date ? addDays(ymdTh(renewingContract.end_date), 1) : undefined}
+                    value={renewData.new_end_date}
+                    onChange={(d) => setRenewData({ ...renewData, new_end_date: d })}
+                    className="w-full bg-secondary border border-border rounded-2xl px-4 py-3 text-sm font-bold text-foreground"
+                  />
+                </label>
 
                 <div className="space-y-1 p-4 bg-secondary/60 rounded-2xl border border-border">
                   <p className="text-[10px] font-black text-foreground/50 uppercase tracking-widest">เงินประกัน</p>
@@ -1195,11 +1202,11 @@ export default function OwnerContractsPage() {
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
                     วันที่เซ็นสัญญา <span className="text-rose-500">*</span>
                   </label>
-                  <input
-                    type="date"
-                    max={new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })}
+                  <ThaiDatePicker
+                    aria-label="วันที่เซ็นสัญญา"
+                    max={todayTh()}
                     value={signedDate}
-                    onChange={(e) => setSignedDate(e.target.value)}
+                    onChange={setSignedDate}
                     className="w-full bg-secondary border border-border rounded-2xl px-4 py-3 text-sm font-bold text-foreground"
                   />
                 </div>

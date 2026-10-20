@@ -1,5 +1,7 @@
 'use client';
 
+import ThaiDatePicker, { LeaseShortcuts } from '@/components/ThaiDatePicker';
+import { addDays, leaseEnd, todayTh } from '@/lib/thai-date';
 import { useState, useEffect, use } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -33,8 +35,9 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     phone: '',
     parent_phone: '',
     email: '',
-    start_date: new Date().toISOString().split('T')[0],
-    end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+    // commit 28-9: today in Thai time (not the UTC date), a 12-month lease ending the day before
+    start_date: todayTh(),
+    end_date: leaseEnd(todayTh(), 12),
     id_card_address: '',
     id_card_image: '',
     occupants: 1,
@@ -759,51 +762,29 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                       <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
                         <span>📅</span> ระยะเวลาตามสัญญาเช่า
                       </label>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const start = new Date(bookingData.start_date || new Date());
-                            const end = new Date(start);
-                            end.setFullYear(end.getFullYear() + 1);
-                            setBookingData(prev => ({ ...prev, end_date: end.toISOString().split('T')[0] }));
-                          }}
-                          className="px-2.5 py-1 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
-                        >
-                          สัญญา 1 ปี (12 เดือน)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const start = new Date(bookingData.start_date || new Date());
-                            const end = new Date(start);
-                            end.setMonth(end.getMonth() + 6);
-                            setBookingData(prev => ({ ...prev, end_date: end.toISOString().split('T')[0] }));
-                          }}
-                          className="px-2.5 py-1 bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
-                        >
-                          6 เดือน
-                        </button>
-                      </div>
+                      {/* commit 28-9: 6 / 12 months end the day before the same date */}
+                      <LeaseShortcuts start={bookingData.start_date ?? ''} onEnd={(end) => setBookingData((prev) => ({ ...prev, end_date: end }))} />
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <span className="text-[11px] font-semibold text-muted-foreground block">วัน/เดือน ที่เริ่มเข้าอยู่</span>
-                        <input
-                          type="date"
+                        <ThaiDatePicker
+                          aria-label="วันเริ่มเข้าอยู่"
+                          min={todayTh()}
                           className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border focus:border-primary outline-none font-bold text-xs"
                           value={bookingData.start_date ?? ''}
-                          onChange={(e) => setBookingData({ ...bookingData, start_date: e.target.value })}
+                          onChange={(v) => setBookingData({ ...bookingData, start_date: v })}
                         />
                       </div>
                       <div className="space-y-1">
                         <span className="text-[11px] font-semibold text-muted-foreground block">วัน/เดือน สิ้นสุดสัญญา</span>
-                        <input
-                          type="date"
+                        <ThaiDatePicker
+                          aria-label="วันสิ้นสุดสัญญา"
+                          min={bookingData.start_date ? addDays(bookingData.start_date, 1) : todayTh()}
                           className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border focus:border-primary outline-none font-bold text-xs"
                           value={bookingData.end_date ?? ''}
-                          onChange={(e) => setBookingData({ ...bookingData, end_date: e.target.value })}
+                          onChange={(v) => setBookingData({ ...bookingData, end_date: v })}
                         />
                       </div>
                     </div>

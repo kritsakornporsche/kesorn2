@@ -12,6 +12,7 @@ import { checkPaperFile } from '@/lib/paper-file-check';
 import { kindAndTopic } from '@/components/maintenance/shared';
 import { statusText } from '@/lib/status-text';
 import TestRoomBadge from '@/components/TestRoomBadge';
+import ThaiDatePicker from '@/components/ThaiDatePicker';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 type State = 'Notified' | 'Returned' | 'Settled' | 'Closed' | 'Cancelled';
@@ -324,7 +325,7 @@ function ReturnForm({ s, act, url }: { s: Settlement; act: ReturnType<typeof use
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs text-slate-300">
         <label className="space-y-1">
           <span className="block font-bold">วันคืนห้อง</span>
-          <input type="date" max={todayBangkok()} value={returnDate} onChange={(e) => setReturnDate(e.target.value)} className={`${inputClass} w-full`} />
+          <ThaiDatePicker aria-label="วันที่คืนห้อง" max={todayBangkok()} value={returnDate} onChange={setReturnDate} className={`${inputClass} w-full`} />
         </label>
         <label className="space-y-1">
           <span className="block font-bold">เลขมิเตอร์ไฟวันคืนห้อง (บังคับ)</span>
@@ -336,7 +337,7 @@ function ReturnForm({ s, act, url }: { s: Settlement; act: ReturnType<typeof use
         </label>
         <label className="space-y-1">
           <span className="block font-bold">วันที่ได้รับหนังสือแจ้ง (กระดาษ)</span>
-          <input type="date" max={returnDate} value={paperNoticeDate} onChange={(e) => setPaperNoticeDate(e.target.value)} className={`${inputClass} w-full`} />
+          <ThaiDatePicker aria-label="วันที่แจ้งย้ายออกเป็นหนังสือ" max={returnDate || undefined} value={paperNoticeDate} onChange={setPaperNoticeDate} className={`${inputClass} w-full`} />
         </label>
       </div>
       <p className="text-[11px] text-slate-400">
@@ -583,7 +584,7 @@ function LegacyCard({ row, isOwner, onDone }: { row: Row; isOwner: boolean; onDo
       </p>
       {row.legacy_open && isOwner && (
         <div className="flex flex-wrap items-center gap-2">
-          <input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} className={inputClass} />
+          <ThaiDatePicker aria-label="วันที่คืนห้อง" value={returnDate} onChange={setReturnDate} className={inputClass} />
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="บันทึกการจัดการ (บังคับ)" className={`${inputClass} flex-1 min-w-[240px]`} />
           <button onClick={close} disabled={act.busy} className="px-4 py-2 bg-slate-200 text-slate-900 font-black text-xs rounded-xl disabled:opacity-50">ปิดคำขอแบบเดิม</button>
         </div>

@@ -1,5 +1,7 @@
 'use client';
 
+import ThaiDatePicker, { LeaseShortcuts } from '@/components/ThaiDatePicker';
+import { addDays, leaseEnd, todayTh } from '@/lib/thai-date';
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
@@ -38,10 +40,9 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
   const [parentPhone, setParentPhone] = useState('');
   // commit 27: occupants of the room (water per person); only the tenant's details are kept
   const [occupants, setOccupants] = useState(1);
-  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
-  const [endDate, setEndDate] = useState(
-    new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10)
-  );
+  // commit 28-9: today in Thai time (not the UTC date), a 12-month lease ending the day before
+  const [startDate, setStartDate] = useState(todayTh());
+  const [endDate, setEndDate] = useState(() => leaseEnd(todayTh(), 12));
 
   // Payment / QR & Slip State
   const [qrData, setQrData] = useState<{ qrImage: string; amount: number; promptpayNumber: string; promptpayName: string } | null>(null);
@@ -406,20 +407,22 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-300">วันเริ่มสัญญา / เข้าพัก</label>
-                  <input
-                    type="date"
+                  <ThaiDatePicker
+                    aria-label="วันเริ่มสัญญา"
+                    min={todayTh()}
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    onChange={setStartDate}
                     className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-primary"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300">วันสิ้นสุดสัญญา</label>
-                  <input
-                    type="date"
+                  <label className="text-xs font-bold text-slate-300 flex items-center justify-between gap-2">วันสิ้นสุดสัญญา <LeaseShortcuts start={startDate} onEnd={setEndDate} /></label>
+                  <ThaiDatePicker
+                    aria-label="วันสิ้นสุดสัญญา"
+                    min={startDate ? addDays(startDate, 1) : todayTh()}
                     value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
+                    onChange={setEndDate}
                     className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-primary"
                   />
                 </div>

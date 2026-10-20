@@ -10,6 +10,7 @@ import { checkPaperFile } from '@/lib/paper-file-check';
 import { contractDepositLabel, statusText } from '@/lib/status-text';
 import { InspectionButton } from '@/components/InspectionModal';
 import { ContractDataButton } from '@/components/ContractDataModal';
+import ThaiDatePicker from '@/components/ThaiDatePicker';
 import OccupantsEditor from '@/components/OccupantsEditor';
 import TestRoomBadge from '@/components/TestRoomBadge';
 import { PAPER_CONFIRM_TEXT, signedPaperText, type SignedPaper } from '@/lib/signed-paper';
@@ -316,12 +317,12 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
           {/* The signing date is recorded with every upload */}
           <label className="flex items-center gap-3 text-xs text-white/70">
             <span className="font-bold">วันที่เซ็นสัญญา:</span>
-            <input
-              type="date"
+            <ThaiDatePicker
+              aria-label="วันที่เซ็นสัญญา"
               max={todayBangkok}
               value={signedDate}
-              onChange={(e) => setSignedDate(e.target.value)}
-              className="bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white"
+              onChange={setSignedDate}
+              className="bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white min-w-[11rem]"
             />
             {contract.paper_signed_date && (
               <span className="text-emerald-400">บันทึกไว้: {new Date(contract.paper_signed_date).toLocaleDateString('th-TH')}</span>

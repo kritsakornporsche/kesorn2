@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import TestRoomBadge from '@/components/TestRoomBadge';
+import ThaiDatePicker from '@/components/ThaiDatePicker';
+import { todayTh } from '@/lib/thai-date';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 interface Transaction {
@@ -34,7 +36,7 @@ export default function OwnerAccounting() {
   const [totals, setTotals] = useState({ income: 0, expense: 0, profit: 0, depositsHeld: 0, depositReclass: 0 });
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ type: 'Income', category: 'Rent', amount: 0, description: '', transaction_date: new Date().toISOString().split('T')[0] });
+  const [form, setForm] = useState({ type: 'Income', category: 'Rent', amount: 0, description: '', transaction_date: todayTh() });
 
   const [dormId, setDormId] = useState<number>(1);
 
@@ -75,7 +77,7 @@ export default function OwnerAccounting() {
       body: JSON.stringify({ ...form, dorm_id: dormId }),
     });
     setShowForm(false);
-    setForm({ type: 'Income', category: 'Rent', amount: 0, description: '', transaction_date: new Date().toISOString().split('T')[0] });
+    setForm({ type: 'Income', category: 'Rent', amount: 0, description: '', transaction_date: todayTh() });
     load(dormId);
   };
 
@@ -232,10 +234,10 @@ export default function OwnerAccounting() {
                 </div>
                 <div>
                   <label className="text-muted-foreground text-xs font-bold uppercase tracking-wider block mb-1.5">วันที่</label>
-                  <input
-                    type="date"
+                  <ThaiDatePicker
+                    aria-label="วันที่รายการ"
                     value={form.transaction_date}
-                    onChange={e => setForm(f => ({ ...f, transaction_date: e.target.value }))}
+                    onChange={(v) => setForm(f => ({ ...f, transaction_date: v }))}
                     className="w-full bg-card border border-white/20/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-primary"
                   />
                 </div>

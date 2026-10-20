@@ -9,6 +9,8 @@
 import { useEffect, useState } from 'react';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 import { ADDRESS_FIELDS, NAME_PART_MAX, TITLES, type AddressParts } from '@/lib/contract-party';
+import ThaiDatePicker, { LeaseShortcuts } from '@/components/ThaiDatePicker';
+import { addDays, todayTh } from '@/lib/thai-date';
 
 interface DataChange { field: string; label: string; from: string | number; to: string | number }
 interface View {
@@ -174,11 +176,11 @@ export default function ContractDataModal({ contractId, onClose, onSaved }: { co
                 </label>
                 <label className="block space-y-1">
                   <span className="text-[11px] font-bold text-slate-300">วันเริ่มสัญญา</span>
-                  <input type="date" className={input} value={form.startDate} disabled={locked} onChange={(e) => set('startDate', e.target.value)} />
+                  <ThaiDatePicker aria-label="วันเริ่มสัญญา" className={input} min={todayTh()} value={form.startDate} disabled={locked} onChange={(v) => set('startDate', v)} />
                 </label>
                 <label className="block space-y-1">
-                  <span className="text-[11px] font-bold text-slate-300">วันสิ้นสุดสัญญา</span>
-                  <input type="date" className={input} value={form.endDate} disabled={locked} onChange={(e) => set('endDate', e.target.value)} />
+                  <span className="text-[11px] font-bold text-slate-300 flex items-center justify-between gap-1">วันสิ้นสุดสัญญา {!locked && <LeaseShortcuts start={form.startDate} onEnd={(v) => set('endDate', v)} />}</span>
+                  <ThaiDatePicker aria-label="วันสิ้นสุดสัญญา" className={input} min={form.startDate ? addDays(form.startDate, 1) : todayTh()} value={form.endDate} disabled={locked} onChange={(v) => set('endDate', v)} />
                 </label>
               </div>
               <p className="text-[11px] text-slate-400">ระบบไม่เก็บเลขบัตรประชาชนและรูปบัตร</p>

@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import TenantInspectionCard from '@/components/TenantInspectionCard';
+import ThaiDatePicker from '@/components/ThaiDatePicker';
 
 interface Settlement {
   id: number;
@@ -157,7 +158,7 @@ function NoticeForm({ contract, onDone }: { contract: NonNullable<Data['contract
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-muted-foreground">
         <label className="space-y-1">
           <span className="font-bold">วันคืนห้อง</span>
-          <input type="date" min={today} value={returnDate} onChange={(e) => setReturnDate(e.target.value)} className={input} />
+          <ThaiDatePicker aria-label="วันที่จะคืนห้อง" min={today} value={returnDate} onChange={setReturnDate} className={input} />
         </label>
         <label className="space-y-1">
           <span className="font-bold">เหตุผล (ถ้ามี)</span>
