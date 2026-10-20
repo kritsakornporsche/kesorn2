@@ -7,6 +7,8 @@ import Link from 'next/link';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
 import { formatBaht } from '@/lib/format';
 import { BOOKING_REQUEST_NOTE } from '@/lib/booking-text';
+import { BECOME_TENANT_TEXT, NextStepLine, StepChecklist } from '@/components/BookingSteps';
+import type { BookingSteps } from '@/lib/booking-steps';
 
 interface Booking {
   contract_id: number;
@@ -30,6 +32,13 @@ interface Booking {
   seconds_to_expire: number | null;
   seconds_to_pay: number | null;
   seconds_to_upload: number | null;
+  /** commit 28-5: steps 1–7 (lib/booking-steps.ts) and the move-in bill (step 7) */
+  steps?: BookingSteps;
+  inspection_status?: 'none' | 'pending_ack' | 'acknowledged';
+  first_bill_amount?: number | null;
+  first_bill_due_date?: string | null;
+  move_in_bill_paid?: boolean;
+  legacy?: boolean;
 }
 
 type ToastType = 'success' | 'error' | null;
@@ -211,7 +220,7 @@ export default function BookingStatusPage() {
       <div className="max-w-3xl mx-auto px-6 pt-10 space-y-8">
         <div className="space-y-1">
           <h1 className="text-3xl font-black tracking-tight">📋 สถานะการจองของคุณ</h1>
-          <p className="text-sm text-muted-foreground">ขอจอง → หอพักอนุมัติ → ชำระค่าจองภายใน 10 นาที → ทำสัญญาในวันเข้าพัก</p>
+          <p className="text-sm text-muted-foreground">1 ขอจอง → 2 ชำระค่าจอง (10 นาที) → 3 หอพักยืนยันข้อมูลสัญญา → 4 ตรวจห้องและรับทราบ → 5 ลงนามสัญญา → 6 บิลค่าแรกเข้า → 7 ชำระ = เป็นลูกหอ</p>
         </div>
 
         {bookings.length === 0 && (
@@ -312,9 +321,40 @@ export default function BookingStatusPage() {
                 </div>
               )}
 
-              {PAID.includes(booking.status) && (
-                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-xs text-emerald-300 leading-relaxed">
-                  ชำระค่าจอง ฿{formatBaht(booking.booking_fee)} แล้ว · ในวันเข้าพักเจ้าของหอพักจะทำสัญญาและออกบิลแรกเข้า (ค่าเช่าเดือนแรก + เงินประกันส่วนที่เหลือ)
+              {/* Steps 1–7 (commit 28-5): where the booking is, what is next and who does it */}
+              {booking.steps && (
+                <div className="space-y-2">
+                  <StepChecklist steps={booking.steps} viewer="booker" tone="theme" />
+                  <NextStepLine steps={booking.steps} viewer="booker" tone="theme" />
+                  <p className="text-xs text-muted-foreground">{BECOME_TENANT_TEXT}</p>
+                </div>
+              )}
+
+              {/* Step 4: acknowledge the inspection on the guest page */}
+              {booking.steps?.current === 4 && booking.inspection_status === 'pending_ack' && (
+                <Link href="/guest" className="block w-full py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-xs text-center">
+                  🔍 ดูผลตรวจห้องและกดรับทราบ
+                </Link>
+              )}
+
+              {/* Step 7: the move-in bill, paid on the guest page */}
+              {booking.status === 'PendingFirstBill' && !booking.legacy && (
+                booking.move_in_bill_paid ? (
+                  <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-xs text-emerald-700 dark:text-emerald-300 font-bold">✓ ชำระบิลค่าแรกเข้าแล้ว</div>
+                ) : (
+                  <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl space-y-3">
+                    <p className="text-xs font-bold text-foreground">
+                      บิลค่าแรกเข้า ฿{formatBaht(Number(booking.first_bill_amount || 0))}
+                      {booking.first_bill_due_date ? ` · ชำระภายใน ${new Date(booking.first_bill_due_date).toLocaleDateString('th-TH')} (ถ้าไม่ชำระ สัญญาถูกยกเลิกและค่าจองไม่คืน)` : ''}
+                    </p>
+                    <Link href="/guest?pay=1" className="block w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs text-center">💳 ชำระบิลค่าแรกเข้า</Link>
+                  </div>
+                )
+              )}
+
+              {PAID.includes(booking.status) && booking.status !== 'PendingFirstBill' && (
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-xs text-emerald-700 dark:text-emerald-300 leading-relaxed">
+                  ชำระค่าจอง ฿{formatBaht(booking.booking_fee)} แล้ว
                 </div>
               )}
 

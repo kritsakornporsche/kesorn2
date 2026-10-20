@@ -8,6 +8,8 @@ import Image from 'next/image';
 import { roomTypeLabel } from '@/lib/room-types';
 import { signedPaperText, type SignedPaper } from '@/lib/signed-paper';
 import TenantInspectionCard from '@/components/TenantInspectionCard';
+import { BECOME_TENANT_TEXT, NextStepLine, StepBadge, StepChecklist } from '@/components/BookingSteps';
+import type { BookingSteps } from '@/lib/booking-steps';
 
 interface BookingData {
   contract_id: number;
@@ -50,6 +52,8 @@ interface BookingData {
   signed_paper?: SignedPaper;
   /** commit 28-3: move-in inspection (step 4) */
   inspection_status?: 'none' | 'pending_ack' | 'acknowledged';
+  /** commit 28-5: steps 1–7 (lib/booking-steps.ts), the same as on the owner's page */
+  steps?: BookingSteps;
   print_url?: string;
 }
 
@@ -195,6 +199,14 @@ export default function GuestDashboardPage() {
     ? Number(booking.first_bill_amount)
     : Number(booking?.move_in?.dueAtMoveIn ?? 0);
   const firstBillPaid = Boolean(booking?.move_in_bill_paid);
+  // commit 28-5: a contract whose move-in bill was issued in the old order still needs the signed paper after paying
+  const oldOrder = booking?.steps?.order === 'old';
+
+  // /guest?pay=1 (from the booking status page): open the pay window once the move-in bill is shown
+  useEffect(() => {
+    if (!booking || booking.status !== 'PendingFirstBill' || booking.legacy || firstBillPaid) return;
+    if (new URLSearchParams(window.location.search).get('pay') === '1') setShowSlipModal(true);
+  }, [booking?.contract_id, booking?.status, firstBillPaid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // QR PromptPay states
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
@@ -336,52 +348,29 @@ export default function GuestDashboardPage() {
           </div>
         ) : (
           <div className="space-y-8">
-            {/* Step Progress Indicator (3 Steps) */}
-            <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-6 sm:p-8 shadow-xl">
-              <h3 className="text-xs font-black uppercase tracking-widest text-primary mb-6">ความคืบหน้าการจอง (Booking Pipeline)</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative">
-                {/* Step 1 */}
-                <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
-                  isPendingContract ? 'bg-amber-500/10 border-amber-500/40 text-white shadow-lg' : 'bg-slate-950/60 border-white/5 text-slate-400'
-                }`}>
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center font-black text-sm">1</span>
-                    <span className="font-black text-sm">จองสำเร็จ</span>
-                  </div>
-                  <p className="text-xs text-slate-400">ชำระค่าจอง ฿{Number(booking?.booking_fee || 0).toLocaleString('th-TH')} แล้ว · วันเข้าพักหอพักจะออกบิลเข้าอยู่และพิมพ์สัญญาให้เซ็น</p>
-                  {booking?.booking_payment_id && (
-                    <a href={`/receipt/${booking.booking_payment_id}`} target="_blank" rel="noopener noreferrer" className="inline-block mt-2 text-xs font-bold text-amber-300 hover:underline">
-                      🧾 ใบเสร็จค่าจอง
-                    </a>
-                  )}
-                </div>
-
-                {/* Step 2 */}
-                <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
-                  isPendingFirstBill ? 'bg-blue-500/10 border-blue-500/40 text-white shadow-lg' : 'bg-slate-950/60 border-white/5 text-slate-400'
-                }`}>
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-black text-sm">2</span>
-                    <span className="font-black text-sm">บิลเข้าอยู่ + สัญญา</span>
-                  </div>
-                  <p className="text-xs text-slate-400">ต้องครบทั้ง 2 ข้อ (ลำดับใดก็ได้)</p>
-                  <p className="text-xs mt-1.5 space-y-0.5">
-                    <span className={`block ${isActive || (isPendingFirstBill && firstBillPaid) ? 'text-emerald-400 font-bold' : 'text-slate-400'}`}>{isActive || (isPendingFirstBill && firstBillPaid) ? '✓' : '○'} ชำระบิลเข้าอยู่</span>
-                    <span className={`block ${isActive || (isPendingFirstBill && booking?.paper_uploaded) ? 'text-emerald-400 font-bold' : 'text-slate-400'}`}>{isActive || (isPendingFirstBill && booking?.paper_uploaded) ? '✓' : '○'} หอพักอัปสัญญาที่เซ็นแล้ว</span>
-                  </p>
-                </div>
-
-                {/* Step 3 */}
-                <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
-                  isActive ? 'bg-emerald-500/10 border-emerald-500/40 text-white shadow-lg' : 'bg-slate-950/60 border-white/5 text-slate-400'
-                }`}>
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black text-sm">3</span>
-                    <span className="font-black text-sm">สัญญามีผล · เข้าพัก</span>
-                  </div>
-                  <p className="text-xs text-slate-400">ครบทั้ง 2 ข้อแล้ว สัญญามีผลทันทีและเป็นลูกหอ</p>
-                </div>
+            {/* Steps 1–7 — where the booking is, what is next, who does it (commit 28-5, same as the owner's page) */}
+            <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-6 sm:p-8 shadow-xl space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h3 className="text-xs font-black uppercase tracking-widest text-primary">ความคืบหน้า: จองจนเป็นลูกหอ (7 ขั้น)</h3>
+                {booking.steps && <StepBadge steps={booking.steps} />}
               </div>
+              {isActive ? (
+                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-sm font-bold text-emerald-300 flex flex-wrap items-center justify-between gap-3">
+                  <span>🎉 สัญญามีผลแล้ว — คุณเป็นลูกหอแล้ว</span>
+                  <Link href="/tenant" className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-black">ไปหน้าผู้เช่า</Link>
+                </div>
+              ) : booking.steps && (
+                <>
+                  <StepChecklist steps={booking.steps} viewer="booker" />
+                  <NextStepLine steps={booking.steps} viewer="booker" />
+                  <p className="text-xs text-slate-400">{BECOME_TENANT_TEXT}</p>
+                </>
+              )}
+              {booking?.booking_payment_id && (
+                <a href={`/receipt/${booking.booking_payment_id}`} target="_blank" rel="noopener noreferrer" className="inline-block text-xs font-bold text-amber-300 hover:underline">
+                  🧾 ใบเสร็จค่าจอง
+                </a>
+              )}
             </div>
 
             {/* commit 28-3: step 4 — the booker acknowledges the move-in inspection here (before the contract takes effect) */}
@@ -454,7 +443,7 @@ export default function GuestDashboardPage() {
                         </span>
                       </h4>
                       <p className="text-xs text-slate-400 mt-1">
-                        สัญญามีผลเมื่อชำระบิลค่าแรกเข้าครบ และหอพักอัปโหลดสัญญาที่เซ็นบนกระดาษแล้ว
+                        {oldOrder ? 'สัญญามีผลเมื่อชำระบิลค่าแรกเข้าครบ และหอพักอัปโหลดสัญญาที่เซ็นบนกระดาษแล้ว' : 'สัญญาที่ลงนามอยู่ในระบบแล้ว · สัญญามีผลทันทีที่ชำระบิลนี้ครบ'}
                       </p>
                       <p className="text-xs mt-2 space-x-3">
                         <span className={firstBillPaid ? 'text-emerald-400 font-bold' : 'text-slate-400'}>{firstBillPaid ? '✓' : '○'} ชำระบิลค่าแรกเข้า</span>
@@ -521,7 +510,7 @@ export default function GuestDashboardPage() {
 
                   {firstBillPaid ? (
                     <p className="text-xs text-emerald-300 font-bold">
-                      ✓ ชำระค่าแรกเข้าแล้ว {booking.paper_uploaded ? '— ครบแล้ว สัญญามีผล (รีเฟรชหน้านี้)' : '— รอหอพักอัปโหลดสัญญาที่เซ็นแล้ว'}
+                      ✓ ชำระค่าแรกเข้าแล้ว {booking.paper_uploaded ? '— สัญญามีผลแล้ว (รีเฟรชหน้านี้เพื่อเข้าหน้าผู้เช่า)' : '— รอหอพักอัปโหลดสัญญาที่เซ็นแล้ว'}
                     </p>
                   ) : (
                     <button
@@ -538,7 +527,7 @@ export default function GuestDashboardPage() {
               <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row justify-between items-center gap-4">
                 <div className="text-xs text-slate-400">
                   {isPendingContract && '📌 ในขั้นตอนนี้ คุณสามารถยกเลิกการจองได้ (ค่าจองที่ชำระแล้วไม่คืนตามเงื่อนไขการจอง)'}
-                  {isPendingFirstBill && !booking.legacy && 'ℹ️ เมื่อชำระค่าแรกเข้าครบและหอพักอัปโหลดสัญญาที่เซ็นแล้ว ระบบจะปรับสถานะเป็นลูกหออัตโนมัติ'}
+                  {isPendingFirstBill && !booking.legacy && (oldOrder ? 'ℹ️ เมื่อชำระค่าแรกเข้าครบและหอพักอัปโหลดสัญญาที่เซ็นแล้ว ระบบจะปรับสถานะเป็นลูกหออัตโนมัติ' : 'ℹ️ เมื่อชำระค่าแรกเข้าครบ ระบบจะปรับสถานะเป็นลูกหอทันที')}
                 </div>
 
                 {isPendingContract && (
