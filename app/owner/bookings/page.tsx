@@ -10,6 +10,7 @@ import { roomTypeLabel } from '@/lib/room-types';
 import TestRoomBadge from '@/components/TestRoomBadge';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
+import { signedPaperText, type SignedPaper } from '@/lib/signed-paper';
 
 interface Booking {
   contract_id: number;
@@ -58,6 +59,8 @@ interface Booking {
   move_in_overdue_partial?: boolean;
   can_issue_move_in?: boolean;
   contract_file_is_pdf?: boolean;
+  /** commit 28a: uploaded / missing / none (server) */
+  signed_paper?: SignedPaper;
   // Move-in inspection (lib/inspections.ts); null when it cannot be inspected or migration 011 is not run
   inspection_status?: InspectionStatus | null;
 }

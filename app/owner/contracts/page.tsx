@@ -13,6 +13,7 @@ import { testRoomSuffix, testRoomsLast } from '@/lib/test-rooms';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
+import { signedPaperText, type SignedPaper } from '@/lib/signed-paper';
 
 interface Contract {
   id: number;
@@ -28,6 +29,8 @@ interface Contract {
   status: string;
   contract_file_url?: string | null;
   contract_file_is_pdf?: boolean;
+  /** commit 28a: uploaded / missing / none (server) */
+  signed_paper?: SignedPaper;
   renewal_requested?: number;
   renewal_note?: string | null;
   parent_contract_id?: number | null;
@@ -776,6 +779,8 @@ export default function OwnerContractsPage() {
                                 </button>
                               </div>
                             ) : (
+                              <div className="flex items-center gap-2">
+                              <span className="text-[11px] font-bold text-amber-400">{signedPaperText(c.signed_paper)}</span>
                               <button
                                 onClick={() => handleOpenUploadSignedModal(c)}
                                 className="px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
@@ -784,6 +789,7 @@ export default function OwnerContractsPage() {
                                 <span>📷</span>
                                 <span>แนบรูปสัญญาที่เซ็น</span>
                               </button>
+                              </div>
                             )}
                           </div>
                         </td>

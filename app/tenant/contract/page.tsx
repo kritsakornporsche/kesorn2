@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import TenantInspectionCard from '@/components/TenantInspectionCard';
 import { statusText } from '@/lib/status-text';
+import { signedPaperText, type SignedPaper } from '@/lib/signed-paper';
 
 interface Contract {
   /** commit 27 */
@@ -20,6 +21,8 @@ interface Contract {
   status: string;
   contract_file_url?: string | null;
   contract_file_is_pdf?: boolean;
+  /** commit 28a: uploaded / missing / none (server) */
+  signed_paper?: SignedPaper;
   paper_signed_date?: string | null;
   renewal_requested?: number;
   renewal_note?: string | null;
@@ -249,7 +252,7 @@ export default function TenantContractPage() {
                   </div>
                 ) : (
                   <div className="p-12 text-center text-muted-foreground italic bg-black/20 rounded-2xl border border-white/5">
-                    ยังไม่มีการแนบไฟล์ภาพสัญญาเช่าฉบับจริงในระบบ
+                    {signedPaperText(activeContract.signed_paper)}
                   </div>
                 )}
               </div>

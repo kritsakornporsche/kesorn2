@@ -11,6 +11,7 @@ import { contractDepositLabel, statusText } from '@/lib/status-text';
 import { InspectionButton } from '@/components/InspectionModal';
 import OccupantsEditor from '@/components/OccupantsEditor';
 import TestRoomBadge from '@/components/TestRoomBadge';
+import { signedPaperText, type SignedPaper } from '@/lib/signed-paper';
 
 interface ContractDetail {
   /** commit 27 */
@@ -33,6 +34,8 @@ interface ContractDetail {
   slip_url: string | null;
   contract_file_url?: string | null;
   contract_file_is_pdf?: boolean;
+  /** commit 28a: uploaded / missing / none (server) */
+  signed_paper?: SignedPaper;
   paper_signed_date?: string | null;
   signature_data: string | null;
   owner_signature_data: string | null;
@@ -402,7 +405,7 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
                 📷
               </div>
               <div className="space-y-1">
-                <p className="text-sm font-bold text-white">ยังไม่มีรูปภาพสัญญาเช่าฉบับลงนามจริง</p>
+                <p className="text-sm font-bold text-white">{signedPaperText(contract.signed_paper)}</p>
                 <p className="text-xs text-white/50 max-w-lg mx-auto">
                   เมื่อผู้เช่าและเจ้าของหอพักลงลายมือชื่อในสัญญาเช่าฉบับกระดาษ (A4) ร่วมกันในวันเข้าหอพักแล้ว ถ่ายรูปหน้าที่ลงนามแล้วบันทึกเก็บเป็นหลักฐานในระบบ
                 </p>

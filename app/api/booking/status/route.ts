@@ -4,7 +4,7 @@ import { auth } from '@/auth';
 import { bookingDeadlines, expireDueBookings } from '@/lib/bookings';
 import { bookingFeeFor, moveInAmounts } from '@/lib/billing';
 import { expireDueMoveIns } from '@/lib/moveIn';
-import { isPaper, withPaperLink } from '@/lib/contract-files';
+import { signedPaperOf, withPaperLink } from '@/lib/contract-files';
 
 export async function GET() {
   const session = await auth();
@@ -82,7 +82,7 @@ export async function GET() {
         move_in: moveInAmounts({ room_number: b.room_number, price: b.price, deposit_amount: b.room_deposit_amount }),
         legacy: b.status === 'PendingFirstBill' && !b.move_in_bill_id,
         move_in_bill_paid: String(b.first_bill_status || '').toLowerCase() === 'paid',
-        paper_uploaded: isPaper(b.contract_file_url) && Boolean(b.paper_signed_date),
+        paper_uploaded: signedPaperOf(b.contract_file_url) === 'uploaded' && Boolean(b.paper_signed_date),
         print_url: `/contract-print/${b.contract_id}?print=1`, // print page → Save as PDF (same text as the Word file)
         seconds_to_expire: b.expires_at ? secondsTo(new Date(b.expires_at)) : null,
         seconds_to_pay: b.status === 'BookingApproved' && deadlines ? secondsTo(deadlines.payBy) : null,

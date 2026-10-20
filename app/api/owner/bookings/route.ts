@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 import { approveBooking, bookingDeadlines, cancelNoShow, expireDueBookings, rejectBooking } from '@/lib/bookings';
 import { bangkokDate, bookingFeeFor, capCheck, moveInAmounts } from '@/lib/billing';
 import { expireDueMoveIns } from '@/lib/moveIn';
-import { isPaper, withPaperLink } from '@/lib/contract-files';
+import { signedPaperOf, withPaperLink } from '@/lib/contract-files';
 import { formatBaht } from '@/lib/format';
 import { INSPECTABLE, inspectionStatuses, type InspectionStatus } from '@/lib/inspections';
 
@@ -126,7 +126,7 @@ export async function GET(req: Request) {
         move_in: { ...moveIn, cap_ok: cap.ok, cap_message: cap.ok ? null : cap.message },
         legacy: b.booking_status === 'PendingFirstBill' && !b.move_in_bill_id,
         move_in_bill_paid: firstBillPaid,
-        paper_uploaded: isPaper(b.contract_file_url) && Boolean(b.paper_signed_date),
+        paper_uploaded: signedPaperOf(b.contract_file_url) === 'uploaded' && Boolean(b.paper_signed_date),
         move_in_overdue_partial: b.booking_status === 'PendingFirstBill' && pastStart && !firstBillPaid && Number(b.first_bill_payments || 0) > 0,
         can_issue_move_in: ['PendingOwnerSignature', 'PendingContract'].includes(b.booking_status) && !b.move_in_bill_id && !pastStart,
         seconds_to_expire: b.expires_at ? secondsTo(new Date(b.expires_at)) : null,

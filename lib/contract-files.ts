@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import { getCurrentUser, type CurrentUser } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { depositFor } from '@/lib/billing';
+import type { SignedPaper } from '@/lib/signed-paper';
 
 export const PAPER_MAX_BYTES = 10 * 1024 * 1024;
 const PAPER_PREFIX = 'paper:';
@@ -91,14 +92,37 @@ export function readPaper(value: unknown): { bytes: Buffer; contentType: string;
  * For API responses: a stored paper file becomes a link to the paper route; anything else is returned as before.
  * contract_file_is_pdf tells the pages whether to show it in a PDF viewer or as an image.
  */
-export function withPaperLink<T extends Record<string, any>>(row: T, idField = 'id'): T & { contract_file_is_pdf: boolean } {
+/**
+ * The signed paper contract of a row (commit 28a): 'uploaded' — a file from the signed-contract upload that is there;
+ * 'missing' — something is recorded but no contract file can be found (a stored file that is gone, or a value that is
+ * not a contract file, e.g. a site photo from old demo data); 'none' — nothing uploaded yet (empty, or the
+ * CONTRACT_DOCUMENT placeholder of a contract made on the owner page). Only 'uploaded' is ever shown as the signed copy.
+ */
+export function signedPaperOf(value: unknown): SignedPaper {
+  if (typeof value !== 'string' || !value.trim() || value === 'CONTRACT_DOCUMENT') return 'none';
+  const name = paperName(value);
+  if (name) return fs.existsSync(path.join(storageDir(), name)) ? 'uploaded' : 'missing';
+  // older uploads kept in public/uploads/contracts, or saved inline as a data URL
+  if (/^\/uploads\/contracts\/[\w.-]+$/.test(value)) return fs.existsSync(path.join(process.cwd(), 'public', value)) ? 'uploaded' : 'missing';
+  if (/^data:(image\/(png|jpe?g)|application\/pdf);base64,/.test(value)) return 'uploaded';
+  return 'missing';
+}
+
+
+/**
+ * A contract row for the pages: contract_file_url is a link to the signed copy only when it is 'uploaded' (else null, so
+ * no page can show something else in its place) and signed_paper says which case it is.
+ */
+export function withPaperLink<T extends Record<string, any>>(row: T, idField = 'id'): T & { contract_file_is_pdf: boolean; signed_paper: SignedPaper } {
   const value = row.contract_file_url;
+  const signed = signedPaperOf(value);
+  if (signed !== 'uploaded') return { ...row, contract_file_url: null, contract_file_is_pdf: false, signed_paper: signed };
   const name = paperName(value);
   if (name) {
-    return { ...row, contract_file_url: `/api/contracts/${row[idField]}/paper`, contract_file_is_pdf: name.endsWith('.pdf') };
+    return { ...row, contract_file_url: `/api/contracts/${row[idField]}/paper`, contract_file_is_pdf: name.endsWith('.pdf'), signed_paper: signed };
   }
-  const text = typeof value === 'string' ? value.toLowerCase() : '';
-  return { ...row, contract_file_is_pdf: text.endsWith('.pdf') || text.startsWith('data:application/pdf') };
+  const text = String(value).toLowerCase();
+  return { ...row, contract_file_is_pdf: text.endsWith('.pdf') || text.startsWith('data:application/pdf'), signed_paper: signed };
 }
 
 /**

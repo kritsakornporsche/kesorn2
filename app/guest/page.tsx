@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { roomTypeLabel } from '@/lib/room-types';
+import { signedPaperText, type SignedPaper } from '@/lib/signed-paper';
 
 interface BookingData {
   contract_id: number;
@@ -44,6 +45,8 @@ interface BookingData {
   paper_uploaded?: boolean;
   paper_signed_date?: string | null;
   contract_file_is_pdf?: boolean;
+  /** commit 28a: uploaded / missing / none (server) */
+  signed_paper?: SignedPaper;
   print_url?: string;
 }
 
