@@ -89,6 +89,9 @@ export interface ContractTextInput {
   party?: ContractParty | null;
 }
 
+/** A piece of a form line: plain text (runs of dots are blanks), or a value printed on a fixed field of `dots` length */
+export type FormSegment = string | { value: string; dots: number };
+
 export interface ContractText {
   title: string;
   header: string;
@@ -97,6 +100,8 @@ export interface ContractText {
   parties: string[];
   /** room details line, printed between parties[1] and parties[2] (commit 27) */
   roomLine: string;
+  /** commit 28-11: the same lines (parties[0], parties[1], roomLine, parties[2]) as pieces — a known value on a fixed field */
+  partyForm: FormSegment[][];
   /** clause number → paragraphs (the first one starts with "ข้อ n.") */
   clauses: { no: number; paragraphs: string[] }[];
   closing: string;
@@ -154,6 +159,19 @@ export function buildContractText(c: ContractTextInput): ContractText {
   const months = leaseMonths(c.startDate, c.endDate);
   const a = c.address || {};
   const v = (value: unknown, dots: number) => text(value) || blank(dots);
+  // commit 28-11: the parties' details as fixed fields (the line keeps the form's layout when filled in)
+  const fld = (value: unknown, dots: number): FormSegment => (text(value) ? { value: text(value), dots } : blank(dots));
+  const tenant: FormSegment[] = text(c.tenantTitle) && text(c.tenantName)
+    ? [fld(`${text(c.tenantTitle)}${text(c.tenantName)}`, 59)]
+    : [`${text(c.tenantTitle) || 'นาย/นางสาว'} `, fld(c.tenantName, 59)];
+  const partyForm: FormSegment[][] = [
+    [`สัญญาเช่าฉบับนี้ทำขึ้นระหว่าง ${landlordName || blank(40)} ดังที่อยู่ข้างต้น ซึ่งต่อไปในสัญญานี้จะเรียกว่า "ผู้ให้เช่า" ฝ่ายหนึ่งกับ `, ...tenant, ' อยู่บ้านเลขที่ ', fld(a.houseNo, 30)],
+    ['หมู่บ้าน ', fld(a.village, 20), ' ถนน ', fld(a.road, 20), ' ตำบล/แขวง ', fld(a.subdistrict, 20), ' อำเภอ/เขต ', fld(a.district, 20), ' จังหวัด ', fld(a.province, 20),
+      ' เบอร์โทรผู้พัก ', fld(c.tenantPhone, 25), ' เบอร์โทรผู้ปกครอง ', fld(c.parentPhone, 25)],
+    ['ข้อมูลห้องพัก: ห้องเลขที่ ', fld(c.roomNumber, 12), ' จำนวนผู้พักอาศัย ', fld(c.occupants ? String(Number(c.occupants)) : '', 6), ' คน'],
+    ['ซึ่งต่อไปในสัญญานี้จะเรียกว่า "ผู้เช่า" อีกฝ่ายหนึ่ง คู่สัญญาได้ตกลงกันดังนี้'],
+  ];
+  const line = (segs: FormSegment[]) => segs.map((s) => (typeof s === 'string' ? s : s.value)).join('');
   const r = c.rates || {};
   const pay = contractPaymentLines(c.payment);
   const payLine = [pay.bank, pay.promptpay].filter(Boolean).join(' ');
@@ -164,12 +182,9 @@ export function buildContractText(c: ContractTextInput): ContractText {
     dateLine: created
       ? `วันที่ ${created.toLocaleDateString('th-TH', { day: 'numeric', timeZone: BKK })} เดือน ${created.toLocaleDateString('th-TH', { month: 'long', timeZone: BKK })} พ.ศ. ${created.toLocaleDateString('th-TH', { year: 'numeric', timeZone: BKK }).replace(/\D/g, '')}`
       : `วันที่${blank(20)}เดือน${blank(40)}พ.ศ.${blank(17)}`,
-    parties: [
-      `สัญญาเช่าฉบับนี้ทำขึ้นระหว่าง ${landlordName || blank(40)} ดังที่อยู่ข้างต้น ซึ่งต่อไปในสัญญานี้จะเรียกว่า "ผู้ให้เช่า" ฝ่ายหนึ่งกับ ${text(c.tenantTitle) && text(c.tenantName) ? `${text(c.tenantTitle)}${text(c.tenantName)}` : `${text(c.tenantTitle) || 'นาย/นางสาว'} ${v(c.tenantName, 59)}`} อยู่บ้านเลขที่ ${v(a.houseNo, 30)}`,
-      `หมู่บ้าน ${v(a.village, 20)} ถนน ${v(a.road, 20)} ตำบล/แขวง ${v(a.subdistrict, 20)} อำเภอ/เขต ${v(a.district, 20)} จังหวัด ${v(a.province, 20)} เบอร์โทรผู้พัก ${v(c.tenantPhone, 25)} เบอร์โทรผู้ปกครอง ${v(c.parentPhone, 25)}`,
-      'ซึ่งต่อไปในสัญญานี้จะเรียกว่า "ผู้เช่า" อีกฝ่ายหนึ่ง คู่สัญญาได้ตกลงกันดังนี้',
-    ],
-    roomLine: `ข้อมูลห้องพัก: ห้องเลขที่ ${v(c.roomNumber, 12)} จำนวนผู้พักอาศัย ${c.occupants ? Number(c.occupants) : blank(6)} คน`,
+    parties: [line(partyForm[0]), line(partyForm[1]), line(partyForm[3])],
+    roomLine: line(partyForm[2]),
+    partyForm,
     clauses: [
       { no: 1, paragraphs: [`ข้อ 1. ผู้ให้เช่าตกลงให้เช่าและผู้เช่าตกลงเช่าห้องพักเลขที่ ${v(c.roomNumber, 12)} ชั้นที่ ${v(c.floor, 12)} ในอาคารของผู้ให้เช่าเพื่อเป็นที่อยู่อาศัยภายใต้ระเบียบที่ผู้ให้เช่ากำหนด โดยเฉพาะไม่ก่อกวน ต้องสงบในยามวิกาล ไม่ทะเลาะวิวาท ไม่ทำผิดศีลธรรมและกฎหมาย สัญญาเช่านี้มีกำหนด ${months ?? blank(10)} เดือน เริ่มวันที่ ${start ? thaiDate(start) : blank(20)} สิ้นสุดวันที่ ${end ? thaiDate(end) : blank(20)}`] },
       { no: 2, paragraphs: [

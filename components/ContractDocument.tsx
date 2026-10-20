@@ -1,6 +1,7 @@
 'use client';
 
-import type { ContractText } from '@/lib/settings-fields';
+import { Fragment } from 'react';
+import type { ContractText, FormSegment } from '@/lib/settings-fields';
 
 // The contract as a printable A4 document, from lib/settings-fields buildContractText. Printed from the browser (the
 // /contract-print page → Save as PDF) — the only contract file since commit 28-6 (no Word, no PDF made on the server).
@@ -8,6 +9,9 @@ import type { ContractText } from '@/lib/settings-fields';
 // once by the page that prints. Layout as the dorm's form (docs/review/contract-final.docx): left aligned (no justify —
 // it spreads Thai words apart), every blank a dotted line of fixed length that never breaks across lines, no page break
 // inside a clause, and the last clause stays on the page of the signatures.
+// commit 28-11, closer to the form: the parties' details on fixed fields (a value sits on a dotted line of the blank's
+// length, so a filled-in contract has the same lines as the blank form), title underlined with space below, the dorm's
+// address on the right, the party lines not indented, only the first paragraph of a clause indented, notes in 16pt.
 
 export const CONTRACT_PRINT_CSS = `
 @font-face { font-family: 'THSarabunNew'; src: url('/fonts/THSarabunNew.ttf') format('truetype'); font-weight: 400; }
@@ -17,6 +21,10 @@ export const CONTRACT_PRINT_CSS = `
 .contract-sign p { white-space: nowrap; }
 .contract-body { text-align: left; }
 .contract-body p { text-indent: 2.5em; }
+.contract-body .contract-clause p + p, .contract-body.contract-parties p { text-indent: 0; }
+/* a value printed on a fixed field: at least the blank's length, on the same dotted line */
+.contract-field { display: inline-block; text-indent: 0; text-align: center; border-bottom: 1.5px dotted #0f172a; padding: 0 0.3em; line-height: 1.1; }
+.contract-label-field { white-space: nowrap; }
 .contract-blank { display: inline-block; border-bottom: 1.5px dotted #0f172a; height: 0.95em; vertical-align: baseline; }
 .contract-clause { break-inside: avoid; page-break-inside: avoid; }
 /* the inspection record attached to the contract, in the contract's font */
@@ -43,11 +51,37 @@ export const CONTRACT_PRINT_CSS = `
 @media screen and (max-width: 640px) {
   .contract-sheet { padding: 8mm 6mm; }
   .contract-doc { font-size: 15pt; }
+  /* a phone screen is narrower than a field: let it wrap and shrink (the A4 print is not affected) */
+  .contract-label-field { white-space: normal; }
+  .contract-blank { max-width: 100%; }
 }
 `;
 
 /** Length of a blank on paper: about a third of an em per dot written in the contract text (the field's intended size), at most 30em */
 const blankWidth = (dots: number) => `${Math.min(Math.max(dots * 0.3, 2), 30)}em`;
+
+/** A form line from pieces: text (dots → blanks) and known values on fixed fields (commit 28-11) */
+export function FormLine({ segs }: { segs: FormSegment[] }) {
+  // never wider than the line (a phone screen); on A4 every field fits, so it is the blank's length there
+  const field = (f: Exclude<FormSegment, string>) => <span className="contract-field" style={{ minWidth: `min(${blankWidth(f.dots)}, 100%)` }}>{f.value}</span>;
+  return (
+    <>
+      {segs.map((s, i) => {
+        const next = segs[i + 1];
+        if (typeof s !== 'string') return typeof segs[i - 1] === 'string' ? null : <Fragment key={i}>{field(s)}</Fragment>;
+        if (next === undefined || typeof next === 'string') return <Blanks key={i} text={s} />;
+        // the field's label (the last word before it) stays on the field's line
+        const cut = s.trimEnd().lastIndexOf(' ') + 1;
+        return (
+          <Fragment key={i}>
+            <Blanks text={s.slice(0, cut)} />
+            <span className="contract-label-field"><Blanks text={s.slice(cut)} />{field(next)}</span>
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
 
 /** A line of the contract with every run of 3+ dots (a blank to fill in by hand) as a fixed-length dotted line. */
 export function Blanks({ text }: { text: string }) {
@@ -74,15 +108,13 @@ export default function ContractDocument({ text }: { text: ContractText }) {
   const last = text.clauses[text.clauses.length - 1];
   return (
     <div className="contract-doc">
-      <h1 className="text-center font-bold" style={{ fontSize: '18pt' }}>{text.title}</h1>
-      <p className="text-center"><Blanks text={text.header} /></p>
+      <h1 className="text-center font-bold underline" style={{ fontSize: '18pt', marginBottom: '12pt' }}>{text.title}</h1>
+      <p className="text-right"><Blanks text={text.header} /></p>
       <p className="text-right mt-3"><Blanks text={text.dateLine} /></p>
 
-      <div className="mt-3 contract-body contract-clause">
-        <p><Blanks text={text.parties[0]} /></p>
-        <p><Blanks text={text.parties[1]} /></p>
-        <p><Blanks text={text.roomLine} /></p>
-        <p><Blanks text={text.parties[2]} /></p>
+      {/* parties[0], parties[1], the room line (commit 27), parties[2] — values on fixed fields (commit 28-11) */}
+      <div className="mt-3 contract-body contract-parties contract-clause">
+        {text.partyForm.map((segs, i) => <p key={i}><FormLine segs={segs} /></p>)}
       </div>
 
       <div className="mt-2 contract-body">
@@ -108,7 +140,7 @@ export default function ContractDocument({ text }: { text: ContractText }) {
         </div>
       </div>
 
-      <div className="mt-6 contract-clause" style={{ fontSize: '15pt' }}>
+      <div className="mt-6 contract-clause">
         <p className="font-bold">{text.notesTitle}</p>
         {text.notes.map((n, i) => <p key={i}>• <Blanks text={n} /></p>)}
       </div>
