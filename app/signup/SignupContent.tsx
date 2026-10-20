@@ -219,7 +219,10 @@ export default function SignupContent() {
       return;
     }
 
-    // Email OTP verification bypassed
+    if (!isEmailVerified) {
+      setMessage('กรุณายืนยันรหัส OTP ทางอีเมลให้เรียบร้อยก่อนสมัครสมาชิก');
+      return;
+    }
 
     if (fields.password !== fields.confirm_password) {
       setMessage('รหัสผ่านไม่ตรงกัน กรุณากรอกใหม่อีกครั้ง');
@@ -364,32 +367,110 @@ export default function SignupContent() {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">อีเมล</label>
-                  
+                  {isEmailVerified && (
+                    <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> ยืนยันแล้ว
+                    </span>
+                  )}
                 </div>
                 <div className="relative">
                   <input
                     name="email"
                     type="email"
                     required
-                    
+                    disabled={isEmailVerified}
                     value={fields.email}
                     onChange={handleChange}
                     className={cn(
                       "w-full rounded-2xl border bg-[#0F172A] px-5 py-3 text-sm font-bold text-white focus:bg-[#0F172A] outline-none transition-all placeholder:text-white/30 pr-12",
-                      
+                      isEmailVerified ? 'border-emerald-500 bg-emerald-950/20' :
                       emailAvailable === false ? 'border-destructive' : emailAvailable === true ? 'border-emerald-400 font-black' : 'border-white/10 focus:border-primary'
                     )}
                     placeholder="you@example.com"
                   />
                   <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
                     {checkingEmail && <div className="w-4 h-4 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />}
-                    
-                    {!checkingEmail && emailAvailable === true && <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/></svg>}
+                    {!checkingEmail && isEmailVerified && <span className="text-emerald-400 font-bold">✓</span>}
+                    {!checkingEmail && !isEmailVerified && emailAvailable === true && <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/></svg>}
                     {!checkingEmail && emailAvailable === false && <svg className="w-4 h-4 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12"/></svg>}
                   </div>
                 </div>
 
-                              </div>
+                {/* Cloudflare Turnstile & OTP Section */}
+                {!isEmailVerified && fields.email.includes('@') && emailAvailable !== false && (
+                  <div className="mt-3 p-3.5 rounded-2xl bg-secondary/30 border border-border/80 space-y-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-foreground flex items-center gap-1.5">
+                        🛡️ ยืนยันอีเมลด้วย Cloudflare OTP
+                      </span>
+                      {turnstileToken && (
+                        <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                          ผ่าน CAPTCHA แล้ว
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Turnstile Widget */}
+                    {!turnstileToken && (
+                      <CloudflareTurnstile
+                        onVerify={(token) => setTurnstileToken(token)}
+                        onError={() => setOtpMessage('Cloudflare Turnstile ตรวจสอบไม่ผ่าน')}
+                        onExpire={() => setTurnstileToken('')}
+                      />
+                    )}
+
+                    {/* Request OTP Button */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSendOtp}
+                        disabled={sendingOtp || otpCooldown > 0 || !turnstileToken}
+                        className="flex-1 py-2.5 px-4 rounded-xl text-xs font-bold bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+                      >
+                        {sendingOtp ? 'กำลังส่งรหัส OTP...' :
+                         otpCooldown > 0 ? `ส่งรหัสใหม่ได้ใน (${otpCooldown}s)` :
+                         isOtpSent ? 'ส่งรหัส OTP ใหม่อีกครั้ง' : 'ขอรับรหัส OTP เพื่อยืนยันอีเมล'}
+                      </button>
+                    </div>
+
+                    {/* OTP 6-Digit Input */}
+                    {isOtpSent && (
+                      <div className="space-y-2 pt-1 border-t border-border/40">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                          กรอกรหัส OTP 6 หลักที่ได้รับในอีเมล
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            maxLength={6}
+                            value={otpCode}
+                            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                            placeholder="123456"
+                            className="flex-1 rounded-xl border border-white/10 bg-[#0F172A] px-4 py-2 text-center text-base tracking-[0.3em] font-mono font-black text-white focus:border-emerald-400 outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleVerifyOtp}
+                            disabled={verifyingOtp || otpCode.length !== 6}
+                            className="py-2 px-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs transition-all active:scale-95 disabled:opacity-40 cursor-pointer shadow-sm"
+                          >
+                            {verifyingOtp ? 'ตรวจสอบ...' : 'ยืนยันรหัส'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {otpMessage && (
+                      <p className={cn(
+                        "text-[11px] font-bold text-center",
+                        otpMessage.startsWith('✓') ? 'text-emerald-400' : 'text-amber-400'
+                      )}>
+                        {otpMessage}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div className="space-y-1.5">
@@ -438,10 +519,10 @@ export default function SignupContent() {
 
               <button
                 type="submit"
-                disabled={formState === 'loading' || emailAvailable === false || usernameAvailable === false}
+                disabled={formState === 'loading' || emailAvailable === false || usernameAvailable === false || !isEmailVerified}
                 className="w-full rounded-full bg-primary py-4 text-[10px] font-black uppercase tracking-[0.2em] text-primary-foreground shadow-2xl shadow-primary/20 hover:-translate-y-0.5 transition-all active:scale-95 disabled:opacity-50 cursor-pointer mt-2"
               >
-                {formState === 'loading' ? 'กำลังดำเนินการ...' : 'สมัครสมาชิก →'}
+                {formState === 'loading' ? 'กำลังดำเนินการ...' : !isEmailVerified ? 'กรุณายืนยันอีเมลด้วย OTP ก่อนสมัคร' : 'สมัครสมาชิก →'}
               </button>
             </form>
           </div>

@@ -288,19 +288,11 @@ export function daysPastDue(dueDate: Date | string, asOf: Date | string | number
 
 /** Booking fee (it becomes part of the deposit). Set by the server, never taken from the client. */
 export function bookingFeeFor(roomNumber?: string | null): number {
-  const clean = String(roomNumber ?? '').trim().toUpperCase();
-  if (clean === '1' || clean === '01' || clean === '101' || demoPricing(roomNumber)) {
-    return DEMO_BOOKING_FEE;
-  }
-  return BOOKING_FEE;
+  return demoPricing(roomNumber) ? DEMO_BOOKING_FEE : BOOKING_FEE;
 }
 
 /** Total deposit held for a room (the booking fee is part of it). */
 export function depositFor(room: { room_number?: string | null; deposit_amount?: number | string | null }): number {
-  const clean = String(room?.room_number ?? '').trim().toUpperCase();
-  if (clean === '1' || clean === '01' || clean === '101') {
-    return toNumber(room?.deposit_amount, 1);
-  }
   if (demoPricing(room.room_number)) return DEMO_DEPOSIT;
   return toNumber(room.deposit_amount, DEFAULT_DEPOSIT) || DEFAULT_DEPOSIT;
 }
