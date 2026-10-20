@@ -3,6 +3,7 @@ import { getDb } from '@/lib/db';
 import { canViewContract } from '@/lib/contract-files';
 import { getContractParty } from '@/lib/billing';
 import { getInspection } from '@/lib/inspections';
+import { serverErrorMessage } from '@/lib/db-errors';
 
 // GET ?kind=move_in — data of the printable room inspection sheet (attachment to the contract).
 // Same access as the contract file: owner/manager, or the contract's own tenant (others 404).
@@ -26,6 +27,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ success: true, kind, contract: rows[0], party: await getContractParty(sql), inspection });
   } catch (error) {
     console.error('[Inspection sheet GET Error]', error);
-    return NextResponse.json({ success: false, message: 'โหลดใบตรวจสภาพห้องไม่สำเร็จ' }, { status: 500 });
+    return NextResponse.json({ success: false, message: serverErrorMessage(error, 'โหลดใบตรวจสภาพห้องไม่สำเร็จ') }, { status: 500 });
   }
 }

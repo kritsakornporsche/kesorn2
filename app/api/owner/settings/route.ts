@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/authz';
 import { getSettings, updateSettings } from '@/lib/settings';
+import { serverErrorMessage } from '@/lib/db-errors';
 
 // GET /api/owner/settings — owner and manager (managers read only, without the OCR key).
 // No settings row yet → data: null (the page shows "ยังไม่ตั้งค่า"), never made-up values.
@@ -11,7 +12,7 @@ export async function GET() {
     return NextResponse.json({ success: true, data: await getSettings(guard.user.role), canEdit: guard.user.role === 'owner' });
   } catch (err: any) {
     console.error('[GET /api/owner/settings]', err);
-    return NextResponse.json({ success: false, message: 'โหลดการตั้งค่าไม่สำเร็จ' }, { status: 500 });
+    return NextResponse.json({ success: false, message: serverErrorMessage(err, 'โหลดการตั้งค่าไม่สำเร็จ') }, { status: 500 });
   }
 }
 
@@ -30,6 +31,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, message: `บันทึกข้อมูลสำเร็จ${drafts}`, ...r });
   } catch (err: any) {
     console.error('[POST /api/owner/settings]', err);
-    return NextResponse.json({ success: false, message: 'บันทึกการตั้งค่าไม่สำเร็จ' }, { status: 500 });
+    return NextResponse.json({ success: false, message: serverErrorMessage(err, 'บันทึกการตั้งค่าไม่สำเร็จ') }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/authz';
 import { changeOccupants, occupantInfo, occupantRefusalStatus } from '@/lib/occupant-changes';
+import { serverErrorMessage } from '@/lib/db-errors';
 
 // Occupants of a contract during the lease (commit 27, lib/occupant-changes). Owner / manager only — tenants get 403.
 
@@ -15,7 +16,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ success: true, data: info });
   } catch (error: any) {
     console.error('[occupants GET]', error?.message || error);
-    return NextResponse.json({ success: false, message: 'โหลดข้อมูลจำนวนผู้พักไม่สำเร็จ' }, { status: 500 });
+    return NextResponse.json({ success: false, message: serverErrorMessage(error, 'โหลดข้อมูลจำนวนผู้พักไม่สำเร็จ') }, { status: 500 });
   }
 }
 
@@ -31,6 +32,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ success: true, data: result });
   } catch (error: any) {
     console.error('[occupants PATCH]', error?.message || error);
-    return NextResponse.json({ success: false, message: 'บันทึกจำนวนผู้พักไม่สำเร็จ' }, { status: 500 });
+    return NextResponse.json({ success: false, message: serverErrorMessage(error, 'บันทึกจำนวนผู้พักไม่สำเร็จ') }, { status: 500 });
   }
 }

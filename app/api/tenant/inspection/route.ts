@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/authz';
 import { getInspection, tenantContract } from '@/lib/inspections';
+import { serverErrorMessage } from '@/lib/db-errors';
 
 // GET ?contractId=&kind=move_in|move_out — an inspection of the tenant's own contract (latest open one when not given).
 // For move_out the move-in result comes too, to compare.
@@ -25,6 +26,6 @@ export async function GET(req: Request) {
     });
   } catch (error: any) {
     console.error('[Tenant inspection GET Error]', error);
-    return NextResponse.json({ success: false, message: 'โหลดผลตรวจห้องไม่สำเร็จ' }, { status: 500 });
+    return NextResponse.json({ success: false, message: serverErrorMessage(error, 'โหลดผลตรวจห้องไม่สำเร็จ') }, { status: 500 });
   }
 }

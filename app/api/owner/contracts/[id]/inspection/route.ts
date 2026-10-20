@@ -5,6 +5,7 @@ import { INSPECTABLE, MAX_ITEMS, STATUS_TEXT, defaultItemsFor, getInspection, re
 
 const kindParam = (v: unknown): InspectionKind => (v === 'move_out' ? 'move_out' : 'move_in');
 import { PHOTOS_TOTAL_MAX_BYTES } from '@/lib/inspection-files';
+import { serverErrorMessage } from '@/lib/db-errors';
 
 // Base64 text of 20MB of photos plus the rest of the form; larger requests are refused before parsing
 const BODY_MAX_CHARS = Math.ceil(PHOTOS_TOTAL_MAX_BYTES / 3) * 4 + 1024 * 1024;
@@ -48,7 +49,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     });
   } catch (error: any) {
     console.error('[Inspection GET Error]', error);
-    return NextResponse.json({ success: false, message: 'โหลดผลตรวจห้องไม่สำเร็จ' }, { status: 500 });
+    return NextResponse.json({ success: false, message: serverErrorMessage(error, 'โหลดผลตรวจห้องไม่สำเร็จ') }, { status: 500 });
   }
 }
 
@@ -76,6 +77,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ success: true, message: 'บันทึกผลตรวจห้องแล้ว รอผู้เช่ารับทราบ', inspection: await getInspection(Number(id), kindParam(body?.kind)) });
   } catch (error: any) {
     console.error('[Inspection POST Error]', error);
-    return NextResponse.json({ success: false, message: 'บันทึกผลตรวจห้องไม่สำเร็จ' }, { status: 500 });
+    return NextResponse.json({ success: false, message: serverErrorMessage(error, 'บันทึกผลตรวจห้องไม่สำเร็จ', 'storage/inspections') }, { status: 500 });
   }
 }

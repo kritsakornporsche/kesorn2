@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/authz';
 import { acknowledgeInspection, getInspection, refusalStatus } from '@/lib/inspections';
+import { serverErrorMessage } from '@/lib/db-errors';
 
 // POST { contractId, kind? } — the contract's own tenant acknowledges an inspection (locked from then on).
 export async function POST(req: Request) {
@@ -18,6 +19,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, message: 'รับทราบผลตรวจห้องแล้ว', inspection: await getInspection(contractId, kind) });
   } catch (error: any) {
     console.error('[Tenant inspection acknowledge Error]', error);
-    return NextResponse.json({ success: false, message: 'บันทึกการรับทราบไม่สำเร็จ' }, { status: 500 });
+    return NextResponse.json({ success: false, message: serverErrorMessage(error, 'บันทึกการรับทราบไม่สำเร็จ') }, { status: 500 });
   }
 }

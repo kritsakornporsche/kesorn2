@@ -92,7 +92,7 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
     setLoadError(null);
     try {
       const res = await fetch(`/api/owner/contracts/${contractId}/inspection?kind=${kind}`);
-      const data = await res.json();
+      const data = await res.json().catch(() => ({ success: false, message: `โหลดผลตรวจห้องไม่สำเร็จ: เซิร์ฟเวอร์ตอบกลับผิดรูปแบบ (HTTP ${res.status})` }));
       if (!data.success) {
         setLoadError(data.message || 'โหลดผลตรวจห้องไม่สำเร็จ');
         return;
@@ -185,15 +185,22 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
           })),
         }),
       });
-      const data = await res.json().catch(() => ({ success: false, message: res.status === 413 ? 'ไฟล์รวมกันใหญ่เกินไป' : 'บันทึกไม่สำเร็จ' }));
+      // commit 28a: the server message says the real reason (e.g. "ฐานข้อมูลยังไม่ได้อัปเดต (migration 019)");
+      // a reply that is not JSON (an error page in front of the app) is named by its HTTP status
+      const data = await res.json().catch(() => ({
+        success: false,
+        message: res.status === 413
+          ? 'บันทึกผลตรวจห้องไม่สำเร็จ: ไฟล์รวมกันใหญ่เกินกว่าที่เซิร์ฟเวอร์รับได้ (HTTP 413)'
+          : `บันทึกผลตรวจห้องไม่สำเร็จ: เซิร์ฟเวอร์ตอบกลับผิดรูปแบบ (HTTP ${res.status})`,
+      }));
       if (!data.success) {
-        setError(data.message || 'บันทึกผลตรวจห้องไม่สำเร็จ');
+        setError(data.message || `บันทึกผลตรวจห้องไม่สำเร็จ (HTTP ${res.status})`);
         if (typeof data.item === 'number' && toSave[data.item]) update(toSave[data.item].key, { error: data.message });
         return;
       }
       await load();
     } catch (e: any) {
-      setError(`บันทึกผลตรวจห้องไม่สำเร็จ: ${e?.message || ''}`);
+      setError(`บันทึกผลตรวจห้องไม่สำเร็จ: เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ (${e?.message || 'network'})`);
     } finally {
       setSaving(false);
     }
