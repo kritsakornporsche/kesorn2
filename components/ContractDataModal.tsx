@@ -3,15 +3,19 @@
 // Step 3 of booking → tenant (commit 28): the owner / manager fills in / checks the contract data, previews the PDF and
 // confirms it (locked). After that a change needs a reason and is kept in the history; once the signed paper is
 // uploaded nothing can change. Rules on the server: lib/contract-data.ts.
+// Commit 28-8: title (from the list) + first name + last name, and the address in the fields of the dorm's contract
+// form (lib/contract-party). An older contract's single-field name / address is shown split, to check and confirm.
 
 import { useEffect, useState } from 'react';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
+import { ADDRESS_FIELDS, NAME_PART_MAX, TITLES, type AddressParts } from '@/lib/contract-party';
 
 interface DataChange { field: string; label: string; from: string | number; to: string | number }
 interface View {
   contractId: number;
   roomNumber: string;
-  data: { tenantName: string; tenantAddress: string; occupants: number; startDate: string; endDate: string };
+  data: { title: string; firstName: string; lastName: string; address: AddressParts; tenantName: string; tenantAddress: string; occupants: number; startDate: string; endDate: string };
+  fieldsSaved: boolean;
   confirmedAt: string | null;
   confirmedByName: string | null;
   canConfirm: boolean;
@@ -63,6 +67,7 @@ export default function ContractDataModal({ contractId, onClose, onSaved }: { co
   useEffect(() => { load(); }, [contractId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (k: keyof View['data'], v: string | number) => setForm((f) => (f ? { ...f, [k]: v } : f));
+  const setAddr = (k: keyof AddressParts, v: string) => setForm((f) => (f ? { ...f, address: { ...f.address, [k]: v } } : f));
   const locked = !!view && !view.canConfirm && !(view.canChange && editing);
 
   const save = async (action: 'confirm' | 'change') => {
@@ -75,7 +80,11 @@ export default function ContractDataModal({ contractId, onClose, onSaved }: { co
       const res = await fetch(`/api/owner/contracts/${contractId}/contract-data`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, ...form, reason }),
+        // separate fields only (the one-field tenantName / tenantAddress are for display)
+        body: JSON.stringify({
+          action, reason, title: form.title, firstName: form.firstName, lastName: form.lastName, ...form.address,
+          occupants: form.occupants, startDate: form.startDate, endDate: form.endDate,
+        }),
       });
       const data = await res.json().catch(() => ({ success: false, message: `บันทึกไม่สำเร็จ (HTTP ${res.status})` }));
       if (!data.success) return setError(data.message || 'บันทึกข้อมูลสัญญาไม่สำเร็จ');
@@ -118,14 +127,44 @@ export default function ContractDataModal({ contractId, onClose, onSaved }: { co
               )}
               {view.lockedReason && <p className="text-xs font-bold text-rose-400">🔒 {view.lockedReason}</p>}
 
-              <label className="block space-y-1">
-                <span className="text-[11px] font-bold text-slate-300">ชื่อ-นามสกุล (ตามบัตรประชาชน)</span>
-                <input className={input} maxLength={255} value={form.tenantName} disabled={locked} onChange={(e) => set('tenantName', e.target.value)} placeholder="นาย/นางสาว..." />
-              </label>
-              <label className="block space-y-1">
-                <span className="text-[11px] font-bold text-slate-300">ที่อยู่ตามบัตรประชาชน</span>
-                <textarea className={input} rows={2} maxLength={500} value={form.tenantAddress} disabled={locked} onChange={(e) => set('tenantAddress', e.target.value)} placeholder="บ้านเลขที่ หมู่ ตำบล อำเภอ จังหวัด รหัสไปรษณีย์" />
-              </label>
+              {!view.fieldsSaved && (
+                <p className="text-[11px] font-bold text-amber-300">ข้อมูลเดิมเก็บเป็นช่องเดียว — ระบบแยกให้แล้ว กรุณาตรวจทุกช่องกับบัตรประชาชนก่อนยืนยัน</p>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-[8rem_1fr_1fr] gap-3">
+                <label className="block space-y-1">
+                  <span className="text-[11px] font-bold text-slate-300">คำนำหน้า</span>
+                  <select className={input} value={form.title} disabled={locked} onChange={(e) => set('title', e.target.value)}>
+                    <option value="">เลือก</option>
+                    {TITLES.map((x) => <option key={x} value={x}>{x}</option>)}
+                  </select>
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-[11px] font-bold text-slate-300">ชื่อ (ตามบัตรประชาชน)</span>
+                  <input className={input} maxLength={NAME_PART_MAX} value={form.firstName} disabled={locked} onChange={(e) => set('firstName', e.target.value)} />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-[11px] font-bold text-slate-300">นามสกุล</span>
+                  <input className={input} maxLength={NAME_PART_MAX} value={form.lastName} disabled={locked} onChange={(e) => set('lastName', e.target.value)} />
+                </label>
+              </div>
+              <fieldset className="space-y-2">
+                <legend className="text-[11px] font-bold text-slate-300 mb-1">ที่อยู่ตามบัตรประชาชน (ช่องที่มี * ต้องกรอก)</legend>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {ADDRESS_FIELDS.map((fld) => (
+                    <label key={fld.key} className="block space-y-1">
+                      <span className="text-[11px] text-slate-400">{fld.label}{fld.required ? ' *' : ''}</span>
+                      <input
+                        className={input}
+                        maxLength={fld.key === 'postcode' ? 5 : 100}
+                        inputMode={fld.key === 'postcode' ? 'numeric' : undefined}
+                        value={form.address[fld.key]}
+                        disabled={locked}
+                        onChange={(e) => setAddr(fld.key, fld.key === 'postcode' ? e.target.value.replace(/\D/g, '').slice(0, 5) : e.target.value)}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <label className="block space-y-1">
                   <span className="text-[11px] font-bold text-slate-300">จำนวนผู้พัก (1–{MAX_OCCUPANTS} คน)</span>

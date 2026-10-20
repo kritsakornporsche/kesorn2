@@ -3,9 +3,9 @@
 สำหรับเพื่อนที่ดูแลเว็บ (เป็นคน merge) · ไฟล์นี้ไม่มีรหัสผ่าน/secret — ค่าจริงส่งแยกช่องทางส่วนตัว
 อ้างอิง: [`docs/CHANGES-completeness.md`](CHANGES-completeness.md) (สิ่งที่เปลี่ยน) · [`docs/schema-changes.md`](schema-changes.md) (ฐานข้อมูล)
 
-**หลักการ:** import ไฟล์ฐานที่ส่งให้ลง **ฐานใหม่ชื่อ `kesorn_new`** (ฐานเดิม `kesorn_db` บนเว็บไม่ถูกแตะ = เป็น backup ในตัว) → query ตรวจ → **รัน migration 018 → 019 → 020 → 021 บน `kesorn_new`** → แก้ `.env` ให้ `DATABASE_URL` ชี้ `kesorn_new` → merge PR #1 → #2 → #3 (= deploy อัตโนมัติ) → ตั้ง cron · ฐานที่ส่งให้รัน migration 001–017 ครบแล้ว และล้างข้อมูลทดสอบ/เลขบัตรแล้ว → บนเว็บรันเพิ่มแค่ **018 (PR #2), 019, 020 และ 021 (PR #3)** ในข้อ 4.5 · ใช้เวลาประมาณ 35 นาที แนะนำทำช่วงคนใช้น้อย
+**หลักการ:** import ไฟล์ฐานที่ส่งให้ลง **ฐานใหม่ชื่อ `kesorn_new`** (ฐานเดิม `kesorn_db` บนเว็บไม่ถูกแตะ = เป็น backup ในตัว) → query ตรวจ → **รัน migration 018 → 019 → 020 → 021 → 022 บน `kesorn_new`** → แก้ `.env` ให้ `DATABASE_URL` ชี้ `kesorn_new` → merge PR #1 → #2 → #3 (= deploy อัตโนมัติ) → ตั้ง cron · ฐานที่ส่งให้รัน migration 001–017 ครบแล้ว และล้างข้อมูลทดสอบ/เลขบัตรแล้ว → บนเว็บรันเพิ่มแค่ **018 (PR #2), 019, 020, 021 และ 022 (PR #3)** ในข้อ 4.5 · ใช้เวลาประมาณ 35 นาที แนะนำทำช่วงคนใช้น้อย
 
-**ลำดับทั้งหมด:** import (ข้อ 3) → ตรวจ (ข้อ 4) → 018 → 019 → 020 → 021 (ข้อ 4.5) → `.env` (ข้อ 5.3) → merge PR #1 → #2 → #3 (ข้อ 5.4) → cron (ข้อ 6)
+**ลำดับทั้งหมด:** import (ข้อ 3) → ตรวจ (ข้อ 4) → 018 → 019 → 020 → 021 → 022 (ข้อ 4.5) → `.env` (ข้อ 5.3) → merge PR #1 → #2 → #3 (ข้อ 5.4) → cron (ข้อ 6)
 
 ---
 
@@ -76,16 +76,17 @@ SELECT name FROM job_runs;                                             -- remind
 ```
 ค่าไม่ตรง → หยุด (ไม่ต้องย้อนอะไร — เว็บยังใช้ `kesorn_db` เดิม) · แจ้งกลับพร้อมผล query
 
-## 4.5 รัน migration 018 → 019 → 020 → 021 บน `kesorn_new` (ตามลำดับ · ก่อนแก้ `.env`)
-ไฟล์อยู่ใน branch ของ PR (`db/migrations/`) · รันกับ **`kesorn_new` เท่านั้น** (ห้ามรันกับ `kesorn_db` เดิม) · 018/019 แค่เพิ่มคอลัมน์ว่าง (NULL) · 020 เพิ่มตารางใหม่ว่าง ๆ · 021 เพิ่มคอลัมน์ว่าง (NULL) 3 คอลัมน์ + ตารางใหม่ว่าง 1 ตาราง · ไม่แก้ข้อมูลเดิม (สัญญาเดิมยังมีผู้พัก 1 คนตามที่บันทึกไว้)
+## 4.5 รัน migration 018 → 019 → 020 → 021 → 022 บน `kesorn_new` (ตามลำดับ · ก่อนแก้ `.env`)
+ไฟล์อยู่ใน branch ของ PR (`db/migrations/`) · รันกับ **`kesorn_new` เท่านั้น** (ห้ามรันกับ `kesorn_db` เดิม) · 018/019 แค่เพิ่มคอลัมน์ว่าง (NULL) · 020 เพิ่มตารางใหม่ว่าง ๆ · 021 เพิ่มคอลัมน์ว่าง (NULL) 3 คอลัมน์ + ตารางใหม่ว่าง 1 ตาราง · 022 เพิ่มคอลัมน์ว่าง (NULL) 11 คอลัมน์ใน `contracts` · ไม่แก้ข้อมูลเดิม (สัญญาเดิมยังมีผู้พัก 1 คนตามที่บันทึกไว้)
 ```
 cd C:\xampp\mysql\bin
 mysql.exe -u root -p --default-character-set=utf8mb4 kesorn_new < C:\path\app\db\migrations\018_landlord_contact.up.sql
 mysql.exe -u root -p --default-character-set=utf8mb4 kesorn_new < C:\path\app\db\migrations\019_inspection_item_quantity.up.sql
 mysql.exe -u root -p --default-character-set=utf8mb4 kesorn_new < C:\path\app\db\migrations\020_contract_occupant_changes.up.sql
 mysql.exe -u root -p --default-character-set=utf8mb4 kesorn_new < C:\path\app\db\migrations\021_booking_steps.up.sql
+mysql.exe -u root -p --default-character-set=utf8mb4 kesorn_new < C:\path\app\db\migrations\022_contract_party_fields.up.sql
 ```
-(phpMyAdmin: เลือก `kesorn_new` → แท็บ *Import* → ไฟล์ 018 ก่อน แล้ว 019 แล้ว 020 แล้ว 021)
+(phpMyAdmin: เลือก `kesorn_new` → แท็บ *Import* → ไฟล์ 018 ก่อน แล้ว 019 แล้ว 020 แล้ว 021 แล้ว 022)
 
 | migration | PR | ทำอะไร | ตรวจ (แท็บ SQL ของ `kesorn_new`) |
 |---|---|---|---|
@@ -93,13 +94,14 @@ mysql.exe -u root -p --default-character-set=utf8mb4 kesorn_new < C:\path\app\db
 | 019 | #3 | `contract_inspection_items.quantity` INT NULL (จำนวนของที่นับได้ เช่น กุญแจห้อง / รีโมทแอร์ ในผลตรวจห้อง) | `SHOW COLUMNS FROM contract_inspection_items LIKE 'quantity';` → 1 แถว `int(11)` `YES` |
 | 020 | #3 | ตารางใหม่ `contract_occupant_changes` (ประวัติการแก้จำนวนผู้พักระหว่างสัญญา: เดิม → ใหม่, ใครแก้, เมื่อไร, เหตุผล) | `SELECT COUNT(*) FROM contract_occupant_changes;` → 0 · `SELECT occupants, COUNT(*) FROM contracts GROUP BY occupants;` → 1 คน ทุกสัญญา (ไม่เปลี่ยน) |
 | 021 | #3 | ขั้นตอนจอง → เป็นลูกหอ 7 ขั้น: `contracts.data_confirmed_at`, `data_confirmed_by` (ยืนยันข้อมูลสัญญา ขั้น 3) · `contract_inspections.ack_paper_by` (ใครบันทึกว่าผู้เช่ารับทราบผลตรวจบนกระดาษ) · ตารางใหม่ `contract_data_changes` (ประวัติการแก้ข้อมูลสัญญาหลังยืนยัน: เดิม → ใหม่, เหตุผล, ใคร, เมื่อไร) | `SHOW COLUMNS FROM contracts LIKE 'data_confirmed%';` → 2 แถว · `SHOW COLUMNS FROM contract_inspections LIKE 'ack_paper_by';` → 1 แถว · `SELECT COUNT(*) FROM contract_data_changes;` → 0 |
+| 022 | #3 | ชื่อและที่อยู่ผู้เช่าในสัญญาแยกช่อง: `contracts.tenant_title`, `tenant_first_name`, `tenant_last_name`, `addr_house_no`, `addr_moo`, `addr_soi`, `addr_road`, `addr_subdistrict`, `addr_district`, `addr_province`, `addr_postcode` (กรอกในขั้นยืนยันข้อมูลสัญญา · สัญญาเดิมยังพิมพ์จากช่องเดียวเหมือนเดิม) | `SHOW COLUMNS FROM contracts LIKE 'addr%';` → 8 แถว · `SHOW COLUMNS FROM contracts LIKE 'tenant_%name';` → 2 แถว · `SELECT COUNT(*) FROM contracts WHERE tenant_first_name IS NOT NULL;` → 0 |
 
 **ห้องทดสอบ T01 (id 21 — มีอยู่ในไฟล์ฐานที่ import):** T01 (id 21) = ห้องทดสอบ ซ่อนจากหน้าสาธารณะ ไม่นับในรายงาน เข้าได้ด้วยลิงก์ตรง `/explore/room/21`
 - หน้าห้องมีป้าย "ห้องทดสอบระบบ" · จองได้ตามปกติ (เจ้าของหออนุมัติ) · ใช้ราคาเดโม (ค่าจอง 1 บาท ฯลฯ) ไว้ทดสอบรับเงินจริง
 - ตัวเลขของเจ้าของหอ (รายงาน / dashboard / ยอดสรุปบัญชี) ไม่นับ T01 · รายการของ T01 ในบัญชี / บิล / สัญญา / หน้าห้อง ยังแสดง พร้อมป้าย "ทดสอบ"
 - **ไม่ต้องตั้ง Maintenance · ห้ามลบ · ห้ามแก้ฐานข้อมูล**
 
-ย้อนกลับ (ถ้าต้อง): รัน `021_…down.sql` → `020_…down.sql` → `019_…down.sql` → `018_…down.sql` (ลำดับกลับกัน) · ไม่มีคอลัมน์/ตาราง 018–021 แล้ว merge → หน้าตั้งค่า/สัญญา หน้าตรวจห้อง การแก้จำนวนผู้พัก และหน้ารายการจอง error
+ย้อนกลับ (ถ้าต้อง): รัน `022_…down.sql` → `021_…down.sql` → `020_…down.sql` → `019_…down.sql` → `018_…down.sql` (ลำดับกลับกัน) · ไม่มีคอลัมน์/ตาราง 018–022 แล้ว merge → หน้าตั้งค่า/สัญญา หน้าตรวจห้อง การแก้จำนวนผู้พัก และหน้ารายการจอง error
 
 ## 5. ตั้งค่า → เปลี่ยน DATABASE_URL → merge
 ทำต่อเนื่องกัน ตามลำดับ:
@@ -113,7 +115,7 @@ mysql.exe -u root -p --default-character-set=utf8mb4 kesorn_new < C:\path\app\db
    - `SLIPOK_API_KEY` และ `SLIPOK_ENDPOINT` = **คีย์ใหม่ที่สร้างเองที่ SlipOK** (บังคับ — โค้ดไม่มีค่าสำรองแล้ว · ไม่ตั้ง = ระบบตรวจสลิปตอบ "ยังไม่ได้ตั้งค่า SlipOK" และไม่รับสลิป) · คีย์เก่ายังอยู่ในประวัติ git → ห้ามใช้ต่อ ให้ยกเลิก (revoke) ที่ SlipOK
    - `CLOUDFLARE_TURNSTILE_SECRET_KEY` และ `NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY` = คีย์จริงของเว็บจาก Cloudflare Turnstile (บังคับ — โค้ดไม่มีค่าสำรองแล้ว · ไม่ตั้ง = หน้าสมัครสมาชิกขึ้น "ยังไม่ได้ตั้งค่า" และส่ง OTP ไม่ได้ · คีย์ทดสอบ `1x000…` และโทเคน mock ใช้ได้เฉพาะเครื่อง dev) · `NEXT_PUBLIC_…` ถูกฝังตอน build → ต้องตั้ง**ก่อน** build/merge
    - **อย่ารีสตาร์ทแอปตรงนี้** — แอปที่รันอยู่ยังเป็นโค้ดเดิมกับ env เดิมจนกว่าจะ deploy
-4. **merge PR #1 → #2 → #3 ตามลำดับ** (`completeness` → `completeness-2` → `completeness-3` เข้า `main`) แบบ merge commit ธรรมดา (ไม่ squash/rebase — เก็บประวัติไว้ใช้ revert) → ระบบ deploy อัตโนมัติ build + รีสตาร์ทด้วยโค้ดใหม่ + env ใหม่ · ต้องรัน 018 → 021 (ข้อ 4.5) ก่อน merge #2 / #3
+4. **merge PR #1 → #2 → #3 ตามลำดับ** (`completeness` → `completeness-2` → `completeness-3` เข้า `main`) แบบ merge commit ธรรมดา (ไม่ squash/rebase — เก็บประวัติไว้ใช้ revert) → ระบบ deploy อัตโนมัติ build + รีสตาร์ทด้วยโค้ดใหม่ + env ใหม่ · ต้องรัน 018 → 022 (ข้อ 4.5) ก่อน merge #2 / #3
 5. รอ deploy เสร็จ · ดู log ตอนเริ่ม (เช่น `pm2 logs`) ต้องไม่มี `AUTH_SECRET is not set` / `DATABASE_URL is not set`
 6. ถ้าระบบ deploy อัตโนมัติไม่ได้รีสตาร์ทแอป → รีสตาร์ทเอง (เช่น `pm2 restart <app>`)
 
@@ -165,5 +167,6 @@ curl -fsS -X POST -H "Authorization: Bearer <CRON_SECRET>" http://localhost:<por
   - `docs\review\kesorn_db_before_019_20261019_1743.sql` (backup ก่อนรัน 019 บนฐาน dev)
   - `docs\review\kesorn_db_before_020_20261020_0057.sql` (backup ก่อนรัน 020 บนฐาน dev)
   - `docs\review\kesorn_db_before_021_20261020_1524.sql` (backup ก่อนรัน 021 บนฐาน dev)
+  - `docs\review\kesorn_db_before_022_20261020_1742.sql` (backup ก่อนรัน 022 บนฐาน dev)
   - (ไฟล์ export ที่ส่งให้ `kesorn_db_20261015_1723.sql` — ลบทั้งฝั่งผู้ส่งและบน server หลัง import เสร็จ)
 - แจ้งเตือนจะเริ่มทำงานจริง: บิลห้อง 9 และ 11 (ครบกำหนด 5 ต.ค.) แจ้ง owner/manager "ค้างชำระเกิน 15 วัน" ตั้งแต่ 21 ต.ค. · เตือนจดมิเตอร์ตั้งแต่วันที่ 28

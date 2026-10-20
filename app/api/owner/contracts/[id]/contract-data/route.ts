@@ -6,7 +6,8 @@ import { serverErrorMessage } from '@/lib/db-errors';
 
 // Step 3 of booking → tenant (commit 28, lib/contract-data.ts). Owner / manager only.
 // GET — the contract data, whether it can be confirmed / changed, and the change history.
-// POST { action: 'confirm' | 'change', tenantName, tenantAddress, occupants, startDate, endDate, reason? }
+// POST { action: 'confirm' | 'change', title, firstName, lastName, houseNo, moo, soi, road, subdistrict, district, province,
+//   postcode, occupants, startDate, endDate, reason? } — or one-field tenantName / tenantAddress (split, commit 28-8)
 
 const idOf = async (params: Promise<{ id: string }>) => Number((await params).id);
 
@@ -32,7 +33,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!Number.isInteger(contractId) || contractId <= 0) return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลสัญญาเช่า' }, { status: 404 });
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== 'object') return NextResponse.json({ success: false, message: 'ข้อมูลไม่ถูกต้อง' }, { status: 400 });
-    const input = { tenantName: body.tenantName, tenantAddress: body.tenantAddress, occupants: body.occupants, startDate: body.startDate, endDate: body.endDate };
+    const KEYS = ['title', 'firstName', 'lastName', 'tenantName', 'tenantAddress', 'houseNo', 'moo', 'soi', 'road', 'subdistrict', 'district', 'province', 'postcode', 'occupants', 'startDate', 'endDate'] as const;
+    const input = Object.fromEntries(KEYS.filter((k) => body[k] !== undefined).map((k) => [k, body[k]]));
     const now = new Date();
     if (body.action === 'confirm') {
       const result = await confirmContractData(contractId, input, guard.user.id, now);

@@ -11,6 +11,17 @@ const MIGRATION_COLUMNS: Record<string, string> = {
   data_confirmed_at: '021',
   data_confirmed_by: '021',
   ack_paper_by: '021',
+  tenant_title: '022',
+  tenant_first_name: '022',
+  tenant_last_name: '022',
+  addr_house_no: '022',
+  addr_moo: '022',
+  addr_soi: '022',
+  addr_road: '022',
+  addr_subdistrict: '022',
+  addr_district: '022',
+  addr_province: '022',
+  addr_postcode: '022',
 };
 const MIGRATION_TABLES: Record<string, string> = {
   contract_occupant_changes: '020',

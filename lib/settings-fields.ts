@@ -71,6 +71,8 @@ export interface ContractTextInput {
   /** rooms.floor — null prints a dotted line (never guessed from the room number) */
   floor?: number | string | null;
   tenantName?: string | null;
+  /** นาย / นาง / นางสาว (commit 28-8); empty → "นาย/นางสาว" is printed for the person to circle */
+  tenantTitle?: string | null;
   tenantPhone?: string | null;
   parentPhone?: string | null;
   /** occupants of the room (commit 27, lib/occupants) — printed on the room line; null prints a dotted line */
@@ -163,7 +165,7 @@ export function buildContractText(c: ContractTextInput): ContractText {
       ? `วันที่ ${created.toLocaleDateString('th-TH', { day: 'numeric', timeZone: BKK })} เดือน ${created.toLocaleDateString('th-TH', { month: 'long', timeZone: BKK })} พ.ศ. ${created.toLocaleDateString('th-TH', { year: 'numeric', timeZone: BKK }).replace(/\D/g, '')}`
       : `วันที่${blank(20)}เดือน${blank(40)}พ.ศ.${blank(17)}`,
     parties: [
-      `สัญญาเช่าฉบับนี้ทำขึ้นระหว่าง ${landlordName || blank(40)} ดังที่อยู่ข้างต้น ซึ่งต่อไปในสัญญานี้จะเรียกว่า "ผู้ให้เช่า" ฝ่ายหนึ่งกับ นาย/นางสาว ${v(c.tenantName, 59)} อยู่บ้านเลขที่ ${v(a.houseNo, 30)}`,
+      `สัญญาเช่าฉบับนี้ทำขึ้นระหว่าง ${landlordName || blank(40)} ดังที่อยู่ข้างต้น ซึ่งต่อไปในสัญญานี้จะเรียกว่า "ผู้ให้เช่า" ฝ่ายหนึ่งกับ ${text(c.tenantTitle) && text(c.tenantName) ? `${text(c.tenantTitle)}${text(c.tenantName)}` : `${text(c.tenantTitle) || 'นาย/นางสาว'} ${v(c.tenantName, 59)}`} อยู่บ้านเลขที่ ${v(a.houseNo, 30)}`,
       `หมู่บ้าน ${v(a.village, 20)} ถนน ${v(a.road, 20)} ตำบล/แขวง ${v(a.subdistrict, 20)} อำเภอ/เขต ${v(a.district, 20)} จังหวัด ${v(a.province, 20)} เบอร์โทรผู้พัก ${v(c.tenantPhone, 25)} เบอร์โทรผู้ปกครอง ${v(c.parentPhone, 25)}`,
       'ซึ่งต่อไปในสัญญานี้จะเรียกว่า "ผู้เช่า" อีกฝ่ายหนึ่ง คู่สัญญาได้ตกลงกันดังนี้',
     ],
@@ -189,7 +191,7 @@ export function buildContractText(c: ContractTextInput): ContractText {
     ],
     closing: 'คู่สัญญาทั้งสองฝ่ายได้อ่านและทำความเข้าใจดีแล้ว จึงลงลายมือชื่อไว้เป็นหลักฐาน',
     signatures: [
-      [{ role: 'ผู้เช่า', name: text(c.tenantName) || blank(55) }, { role: 'ผู้ให้เช่า', name: landlordName || blank(55) }],
+      [{ role: 'ผู้เช่า', name: text(c.tenantName) ? `${text(c.tenantTitle)}${text(c.tenantName)}` : blank(55) }, { role: 'ผู้ให้เช่า', name: landlordName || blank(55) }],
       // Witnesses are always written by hand
       [{ role: 'พยาน', name: blank(55) }, { role: 'พยาน', name: blank(55) }],
     ],

@@ -22,7 +22,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       draft: data.draft,
       inspectionSheet: {
         kind: 'move_in',
-        contract: { id: data.id, start_date: i.startDate ?? null, end_date: i.endDate ?? null, room_number: i.roomNumber ?? null, floor: i.floor ?? null, tenant_name: i.tenantName ?? null },
+        contract: { id: data.id, start_date: i.startDate ?? null, end_date: i.endDate ?? null, room_number: i.roomNumber ?? null, floor: i.floor ?? null, tenant_name: i.tenantName ? `${i.tenantTitle || ''}${i.tenantName}` : null },
         party: i.party ?? null,
         inspection: data.inspection,
       },
