@@ -53,40 +53,12 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
   const [error, setError] = useState('');
   const [approving, setApproving] = useState(false);
   const [previewSlip, setPreviewSlip] = useState(false);
-  const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [isUploadingSigned, setIsUploadingSigned] = useState(false);
   const [previewSignedDoc, setPreviewSignedDoc] = useState(false);
   // Date written on the signed paper contract (required with the upload; at most today in Thai time)
   const [signedDate, setSignedDate] = useState('');
   const [signedFileError, setSignedFileError] = useState<string | null>(null);
   const todayBangkok = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
-
-  const handleDownloadDocx = async () => {
-    if (!contract) return;
-    setDownloadingDocx(true);
-    try {
-      const res = await fetch('/api/contracts/export-docx', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contract }),
-      });
-      if (!res.ok) throw new Error('Export DOCX failed');
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `สัญญาเช่า_หอพักเกษร_ห้อง${contract.room_number}_${(contract.tenant_name || '').replace(/\s+/g, '_')}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (e: any) {
-      console.error(e);
-      alert('เกิดข้อผิดพลาดในการดาวน์โหลดไฟล์ Word');
-    } finally {
-      setDownloadingDocx(false);
-    }
-  };
 
   const handleUploadSignedContract = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -218,15 +190,6 @@ export default function OwnerContractDetailPage({ params }: { params: Promise<{ 
             <span>ดาวน์โหลดสัญญา (PDF)</span>
           </a>
 
-          <button
-            onClick={handleDownloadDocx}
-            disabled={downloadingDocx}
-            className="px-4 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95 disabled:opacity-50"
-            title="ดาวน์โหลดสัญญาเช่ารูปแบบ Microsoft Word (.docx)"
-          >
-            <span>📄</span>
-            <span>{downloadingDocx ? 'กำลังสร้างไฟล์...' : 'Word (.docx)'}</span>
-          </button>
 
           <span className={cn(
             "px-4 py-1.5 rounded-full text-xs font-bold border flex items-center gap-1.5",

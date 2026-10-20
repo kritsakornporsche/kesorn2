@@ -1,14 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
 import ContractDocument, { CONTRACT_PRINT_CSS } from '@/components/ContractDocument';
 import { ratesForRoom, type PaymentInfo, type Rates } from '@/lib/billing';
 import { buildContractText, contractAddress, type ContractParty, type ContractTextInput } from '@/lib/settings-fields';
 
-// Preview of the contract in a modal (same text as the print page and the Word file: lib/settings-fields).
+// Preview of the contract in a modal (same text as the print page: lib/settings-fields).
 // A saved contract: "ดาวน์โหลดสัญญา (PDF)" opens /contract-print/[id] (print dialog, Save as PDF).
-// A draft (booking page, not saved yet): the button prints this preview. Word is a secondary button for staff only.
+// A draft (booking page, not saved yet): the button prints this preview (commit 28-6: the PDF is the only contract file).
 
 interface PrintableContractModalProps {
   isOpen: boolean;
@@ -39,12 +38,8 @@ interface PrintableContractModalProps {
 const savedId = (id: unknown) => (Number(id) > 0 ? Number(id) : null);
 
 export default function PrintableContractModal({ isOpen, onClose, contract, rates: ratesProp }: PrintableContractModalProps) {
-  const { data: session } = useSession();
-  const role = (session?.user as { role?: string } | undefined)?.role;
-  const isStaff = role === 'owner' || role === 'manager';
   const [savedInput, setSavedInput] = useState<ContractTextInput | null>(null);
   const [dorm, setDorm] = useState<{ rates: Rates | null; payment: PaymentInfo | null; party: ContractParty | null }>({ rates: null, payment: null, party: null });
-  const [downloadingDocx, setDownloadingDocx] = useState(false);
   const id = savedId(contract?.id);
 
   useEffect(() => {
@@ -92,26 +87,6 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
     else window.print();
   };
 
-  const handleDownloadDocx = async () => {
-    setDownloadingDocx(true);
-    try {
-      const res = id
-        ? await fetch(`/api/contracts/export-docx?id=${id}`)
-        : await fetch('/api/contracts/export-docx', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contract }) });
-      if (!res.ok) throw new Error('docx');
-      const url = URL.createObjectURL(await res.blob());
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `สัญญาเช่า_ห้อง${contract.room_number}_${(contract.tenant_name || '').replace(/\s+/g, '_')}.docx`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      alert('สร้างไฟล์ Word ไม่สำเร็จ');
-    } finally {
-      setDownloadingDocx(false);
-    }
-  };
-
   return (
     <div className="contract-modal fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-2 sm:p-6">
       <style>{CONTRACT_PRINT_CSS + `
@@ -130,11 +105,6 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
             <button onClick={handlePdf} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black">
               📥 ดาวน์โหลดสัญญา (PDF)
             </button>
-            {isStaff && (
-              <button onClick={handleDownloadDocx} disabled={downloadingDocx} className="px-3 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white rounded-xl text-xs font-bold border border-white/20">
-                📄 {downloadingDocx ? 'กำลังสร้าง...' : 'Word'}
-              </button>
-            )}
             <button onClick={onClose} className="px-3 py-2 text-white/70 hover:text-white rounded-xl bg-white/5 hover:bg-white/10 text-xs" title="ปิด">✕</button>
           </div>
         </div>

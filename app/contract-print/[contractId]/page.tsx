@@ -6,7 +6,9 @@ import InspectionSheetView, { type InspectionSheetData } from '@/components/Insp
 import { buildContractText, type ContractTextInput } from '@/lib/settings-fields';
 
 // Printed contract: the contract, then (new page) the move-in inspection record attached to it.
-// "ดาวน์โหลดสัญญา (PDF)" opens this page with ?print=1 → the browser's print dialog (Save as PDF).
+// The contract file of every role is a PDF saved from this page (commit 28-6: no Word, no PDF made on the server).
+// "ดาวน์โหลดสัญญา (PDF)" opens it with ?print=1: the page shows the one-line print hint by the print button (the browser's
+// print dialog would cover it, so it is never opened by itself).
 // Owner/manager, or the contract's own tenant (/api/contracts/[id]/print-data checks).
 export default function ContractPrintPage({ params, searchParams }: { params: Promise<{ contractId: string }>; searchParams: Promise<{ print?: string }> }) {
   const { contractId } = use(params);
@@ -24,18 +26,18 @@ export default function ContractPrintPage({ params, searchParams }: { params: Pr
       .catch(() => setError('โหลดสัญญาไม่สำเร็จ'));
   }, [contractId]);
 
-  // Open the print dialog once the document (fonts and photos) is ready
+  // ?print=1 (from "ดาวน์โหลดสัญญา (PDF)"): bring the hint and the print button into view
   useEffect(() => {
-    if (!data || print !== '1' || data.draft) return;
-    let cancelled = false;
-    const run = async () => {
-      await document.fonts?.ready;
-      await Promise.all([...document.images].map((img) => (img.complete ? null : new Promise((r) => { img.onload = img.onerror = r; }))));
-      if (!cancelled) window.print();
-    };
-    const t = setTimeout(run, 300);
-    return () => { cancelled = true; clearTimeout(t); };
+    if (!data || print !== '1') return;
+    document.getElementById('contract-print-hint')?.scrollIntoView({ block: 'start' });
   }, [data, print]);
+
+  /** Print once the fonts and photos are loaded, so the PDF never falls back to another font */
+  const printNow = async () => {
+    await document.fonts?.ready;
+    await Promise.all([...document.images].map((img) => (img.complete ? null : new Promise((r) => { img.onload = img.onerror = r; }))));
+    window.print();
+  };
 
   if (error) return <div className="min-h-screen flex items-center justify-center bg-white text-slate-700 p-6">{error}</div>;
   if (!data) return <div className="min-h-screen flex items-center justify-center bg-white text-slate-500 p-6">กำลังโหลด...</div>;
@@ -55,16 +57,22 @@ export default function ContractPrintPage({ params, searchParams }: { params: Pr
           </div>
         </>
       )}
-      <div className="no-print max-w-[210mm] mx-auto mb-4 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-slate-700">สัญญาเช่า เลขที่ {contractId} · กด “บันทึกเป็น PDF” ในหน้าต่างพิมพ์</p>
-        <button onClick={() => window.print()} disabled={data.draft} title={data.draft ? 'พิมพ์ได้หลังหอพักยืนยันข้อมูลสัญญา' : undefined} className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed">
-          🖨️ พิมพ์ / บันทึกเป็น PDF
-        </button>
+      <div id="contract-print-hint" className="no-print max-w-[210mm] mx-auto mb-4 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-slate-700">สัญญาเช่า เลขที่ {contractId}</p>
+          <button onClick={printNow} disabled={data.draft} title={data.draft ? 'พิมพ์ได้หลังหอพักยืนยันข้อมูลสัญญา' : undefined} className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed">
+            🖨️ พิมพ์ / บันทึกเป็น PDF
+          </button>
+        </div>
+        {/* commit 28-6: the settings that keep the PDF the same on every computer */}
+        <p className="px-3 py-2 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-sm font-bold">
+          ปลายทาง: บันทึกเป็น PDF · ขนาด A4 · ปิดหัวกระดาษและท้ายกระดาษ · สเกล 100%
+        </p>
       </div>
       <div className="contract-sheet">
         <ContractDocument text={buildContractText(data.input)} />
       </div>
-      <div className="contract-sheet contract-page-break mt-6 print:mt-0">
+      <div className="contract-sheet contract-page-break contract-insp mt-6 print:mt-0">
         <InspectionSheetView data={data.inspectionSheet} />
       </div>
     </div>

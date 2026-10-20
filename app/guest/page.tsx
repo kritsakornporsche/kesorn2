@@ -588,7 +588,7 @@ export default function GuestDashboardPage() {
               </div>
             </div>
             <div className="flex-1 bg-slate-950 p-2 overflow-hidden">
-              {previewContractUrl.toLowerCase().endsWith('.pdf') || previewContractUrl.includes('/api/contracts/export-pdf')
+              {previewContractUrl.toLowerCase().endsWith('.pdf')
                 || (previewContractUrl === booking?.contract_file_url && booking?.contract_file_is_pdf) ? (
                 <iframe
                   src={`${previewContractUrl}#toolbar=1&navpanes=0&scrollbar=1`}

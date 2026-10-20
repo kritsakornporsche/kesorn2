@@ -522,13 +522,13 @@ export default function OwnerBookingsPage() {
                     )}
                     <div className="pt-1 flex items-center gap-2">
                       <a
-                        href={`/api/contracts/export-docx?id=${item.contract_id}`}
+                        href={`/contract-print/${item.contract_id}`}
                         target="_blank"
                         rel="noreferrer"
                         className="w-full py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white text-[11px] font-bold rounded-lg border border-rose-500/30 transition-all flex items-center justify-center gap-1.5"
                       >
                         <span>🖨</span>
-                        <span>พิมพ์แบบฟอร์มสัญญา (Word)</span>
+                        <span>พิมพ์สัญญา (PDF)</span>
                       </a>
                     </div>
                   </div>
@@ -814,13 +814,13 @@ export default function OwnerBookingsPage() {
             {/* Footer */}
             <div className="shrink-0 p-4 sm:p-5 border-t border-white/10 bg-slate-950/80 flex flex-col sm:flex-row items-center justify-between gap-3">
               <a
-                href={`/api/contracts/export-docx?id=${previewContractModal.contract_id}`}
+                href={`/contract-print/${previewContractModal.contract_id}`}
                 target="_blank"
                 rel="noreferrer"
                 className="w-full sm:w-auto px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <span>🖨</span>
-                <span>พิมพ์แบบฟอร์มสัญญา (Word)</span>
+                <span>พิมพ์สัญญา (PDF)</span>
               </a>
 
               <button

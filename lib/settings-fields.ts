@@ -60,7 +60,7 @@ const PARTY_DOTS = '..............................................';
 // ── Contract text (commit 18c) ───────────────────────────────────────────────────────────────────────────────
 // The wording follows the dorm's signed-off contract (docs/review/contract-final.docx, not in git). Every value comes
 // from the contract or the settings page; a value that is not known is a dotted line to fill in by hand.
-// The print page (components/ContractDocument) and the Word file (app/api/contracts/export-docx) both render this.
+// The print page (components/ContractDocument) renders this; the PDF saved from it is the contract file (commit 28-6).
 
 /** Monthly rent is due on this day of the month after the billing cycle (lib/billing calcDueDate). */
 export const RENT_DUE_DAY = 5;
@@ -141,7 +141,7 @@ export function leaseMonths(start: string | Date | null | undefined, end: string
   return Math.max(1, Math.round((e.getTime() - s.getTime() + 86_400_000) / (86_400_000 * 30.4375)));
 }
 
-/** The whole contract as text lines (same words in the print page and the Word file). */
+/** The whole contract as text lines (the print page → PDF). */
 export function buildContractText(c: ContractTextInput): ContractText {
   const party = contractPartyText(c.party);
   const landlordName = text(c.party?.landlordName);
@@ -222,7 +222,7 @@ export function contractPartyText(p: ContractParty | null | undefined) {
 }
 
 /**
- * Transfer details printed on the contract form (print page and .docx), from the settings page.
+ * Transfer details printed on the contract form (print page), from the settings page.
  * A detail that is not set is left out (no fallback numbers).
  */
 export function contractPaymentLines(p: {

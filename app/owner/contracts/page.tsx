@@ -199,7 +199,7 @@ export default function OwnerContractsPage() {
         if (data.tempPassword) {
           setNewAccount({ email: formData.tenant_email.trim(), password: data.tempPassword });
         } else {
-          alert('🎉 บันทึกสัญญาเช่าเรียบร้อยแล้ว (ผู้เช่ามีบัญชีอยู่แล้ว ใช้รหัสผ่านเดิม) สามารถกดพิมพ์แบบฟอร์มสัญญา (Word) ได้ทันที');
+          alert('🎉 บันทึกสัญญาเช่าเรียบร้อยแล้ว (ผู้เช่ามีบัญชีอยู่แล้ว ใช้รหัสผ่านเดิม) สามารถกดดาวน์โหลดสัญญา (PDF) ได้ทันที');
         }
         setIsCreateModalOpen(false);
         setFormData({
@@ -748,15 +748,6 @@ export default function OwnerContractsPage() {
                               <span>ดาวน์โหลดสัญญา (PDF)</span>
                             </a>
 
-                            {/* Print / Download Contract Button */}
-                            <a
-                              href={`/api/contracts/export-docx?id=${c.id}`}
-                              className="px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
-                              title="พิมพ์แบบฟอร์มสัญญา (Word)"
-                            >
-                              <span>🖨️</span>
-                              <span>Word</span>
-                            </a>
 
                             {/* View or Upload Signed Paper Contract */}
                             {c.contract_file_url ? (
@@ -1152,7 +1143,7 @@ export default function OwnerContractsPage() {
               <div className="p-6 space-y-5">
                 <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-2xl text-purple-300 text-xs leading-relaxed space-y-1">
                   <p className="font-bold">📝 ขั้นตอนบันทึกสัญญาฉบับจริง:</p>
-                  <p>1. พิมพ์สัญญาเช่าฉบับสมบูรณ์ (A4) หรือดาวน์โหลด Word จากระบบ</p>
+                  <p>1. พิมพ์สัญญาเช่าฉบับสมบูรณ์ (A4) หรือบันทึกเป็น PDF จากระบบ</p>
                   <p>2. ผู้เช่าและเจ้าของหอพักลงลายมือชื่อจริงร่วมกันในวันเข้าหอพัก</p>
                   <p>3. ถ่ายรูปหรือสแกนหน้าที่เซ็นชื่อแล้ว อัปโหลดบันทึกลงในระบบเพื่อเป็นหลักฐานอ้างอิงถาวร</p>
                 </div>
