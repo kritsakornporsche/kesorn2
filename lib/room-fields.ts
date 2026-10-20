@@ -17,3 +17,23 @@ export function badRoomNumber(room: Record<string, unknown> | null | undefined):
   }
   return null;
 }
+
+// ── Room status (commit 28a) ────────────────────────────────────────────────────────────────────────────────────────
+// The owner sets only "ว่าง" (Available) or "ปิดปรับปรุง" (Maintenance). Occupied / Reserved / pending states come from
+// contracts only — a room set to "มีผู้เช่า" by hand had no contract, left the walk-in list and could not get a contract.
+export const MANUAL_ROOM_STATUSES = ['Available', 'Maintenance'] as const;
+export const isManualRoomStatus = (s: unknown) => (MANUAL_ROOM_STATUSES as readonly string[]).includes(String(s ?? ''));
+export const ROOM_STATUS_MESSAGE = 'ตั้งสถานะห้องเองได้เฉพาะ "ว่าง" หรือ "ปิดปรับปรุง" — "มีผู้เช่า" / "จองแล้ว" / "รออนุมัติ" ระบบตั้งจากสัญญาเท่านั้น';
+export const ROOM_STATUS_LOCKED_MESSAGE = 'สถานะห้องนี้ระบบตั้งจากสัญญา แก้สถานะเองไม่ได้';
+
+/**
+ * The status a create / edit may save, or the reason it may not. `current` is the room's status on an edit (undefined
+ * on a create). A room whose status comes from a contract keeps it; a free room may be Available or Maintenance only.
+ */
+export function roomStatusFor(next: unknown, current?: string | null): { ok: true; status: string } | { ok: false; message: string } {
+  const wanted = next === undefined || next === null || next === '' ? (current ?? 'Available') : String(next);
+  if (current !== undefined && current !== null && !isManualRoomStatus(current)) {
+    return wanted === current ? { ok: true, status: current } : { ok: false, message: ROOM_STATUS_LOCKED_MESSAGE };
+  }
+  return isManualRoomStatus(wanted) ? { ok: true, status: wanted } : { ok: false, message: ROOM_STATUS_MESSAGE };
+}

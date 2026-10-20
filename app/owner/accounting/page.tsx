@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import TestRoomBadge from '@/components/TestRoomBadge';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 interface Transaction {
   id: number;
@@ -223,7 +224,7 @@ export default function OwnerAccounting() {
                 <div>
                   <label className="text-muted-foreground text-xs font-bold uppercase tracking-wider block mb-1.5">จำนวน (บาท)</label>
                   <input
-                    type="number"
+                    type="number" {...NUMBER_INPUT_PROPS}
                     value={form.amount}
                     onChange={e => setForm(f => ({ ...f, amount: Number(e.target.value) }))}
                     className="w-full bg-card border border-white/20/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-primary"

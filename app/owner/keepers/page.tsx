@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
 
 interface Keeper {
   id: number;
@@ -276,7 +277,8 @@ export default function KeepersManagement() {
                     <label className="text-[10px] font-black uppercase text-muted-foreground">เบอร์โทรศัพท์</label>
                     <input 
                       value={formData.phone}
-                      onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                      {...PHONE_INPUT_PROPS}
+                      onChange={(e) => setFormData({...formData, phone: phoneDigits(e.target.value)})}
                       className="w-full px-6 py-4 bg-card border border-border rounded-2xl focus:bg-card focus:border-primary outline-none"
                       placeholder="081-XXX-XXXX"
                     />

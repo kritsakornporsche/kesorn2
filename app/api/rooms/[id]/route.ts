@@ -6,7 +6,7 @@ import { expireDueMoveIns } from '@/lib/moveIn';
 import { capCheck, depositFor, ratesForRoom, type Rates } from '@/lib/billing';
 import { isTestRoom } from '@/lib/test-rooms';
 import { mapEmbedUrl, resolveMapUrl } from '@/lib/maps';
-import { badRoomNumber } from '@/lib/room-fields';
+import { badRoomNumber, roomStatusFor } from '@/lib/room-fields';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -107,7 +107,15 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const sql = getDormDbFromSession(session);
-    
+
+    // commit 28a: status — a free room "ว่าง" / "ปิดปรับปรุง" only; a status from a contract cannot be changed by hand
+    const currentRow = await sql`SELECT status FROM rooms WHERE id = ${id} LIMIT 1`;
+    if (currentRow.length === 0) {
+      return NextResponse.json({ success: false, message: 'Room not found' }, { status: 404 });
+    }
+    const st = roomStatusFor(status, currentRow[0].status);
+    if (!st.ok) return NextResponse.json({ success: false, message: st.message, field: 'status' }, { status: 400 });
+
     // Check if room number already exists for a DIFFERENT room IN THE SAME DORMITORY
     const existing = await sql`SELECT id FROM rooms WHERE room_number = ${room_number} AND id != ${id}`;
     if (existing.length > 0) {
@@ -127,7 +135,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       SET room_number = ${room_number}, 
           room_type = ${room_type}, 
           price = ${price}, 
-          status = ${status}, 
+          status = ${st.status}, 
           floor = ${floor}, 
           image_url = ${image_url || null},
           deposit_amount = ${deposit}

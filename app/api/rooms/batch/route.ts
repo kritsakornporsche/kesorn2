@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
 import { capCheck, depositFor } from '@/lib/billing';
-import { badRoomNumber } from '@/lib/room-fields';
+import { badRoomNumber, roomStatusFor } from '@/lib/room-fields';
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,6 +32,9 @@ export async function POST(req: NextRequest) {
       if (bad) {
         return NextResponse.json({ success: false, message: `ห้อง ${room?.room_number ?? '-'}: ${bad.message}`, field: bad.field }, { status: 400 });
       }
+      // commit 28a: new rooms are "ว่าง" or "ปิดปรับปรุง" only
+      const st = roomStatusFor(room?.status);
+      if (!st.ok) return NextResponse.json({ success: false, message: `ห้อง ${room?.room_number ?? '-'}: ${st.message}`, field: 'status' }, { status: 400 });
       if (!room?.room_number || room.price === undefined) continue;
       const deposit = room.deposit_amount !== undefined && room.deposit_amount !== null && room.deposit_amount !== '' ? parseFloat(room.deposit_amount) : 3000;
       const cap = capCheck(Number(room.price), depositFor({ room_number: room.room_number, deposit_amount: deposit }));
@@ -54,6 +57,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Check if room number already exists in this dorm
+      // status: checked for every room above (roomStatusFor — Available / Maintenance only)
       const existing = await sql`SELECT id FROM rooms WHERE room_number = ${room_number} AND dorm_id = ${targetDormId}`;
       if (existing && existing.length > 0) {
         skippedCount++;

@@ -12,6 +12,7 @@ import { checkPaperFile } from '@/lib/paper-file-check';
 import { kindAndTopic } from '@/components/maintenance/shared';
 import { statusText } from '@/lib/status-text';
 import TestRoomBadge from '@/components/TestRoomBadge';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 type State = 'Notified' | 'Returned' | 'Settled' | 'Closed' | 'Cancelled';
 
@@ -327,11 +328,11 @@ function ReturnForm({ s, act, url }: { s: Settlement; act: ReturnType<typeof use
         </label>
         <label className="space-y-1">
           <span className="block font-bold">เลขมิเตอร์ไฟวันคืนห้อง (บังคับ)</span>
-          <input type="number" min="0" step="0.01" value={finalMeter} onChange={(e) => setFinalMeter(e.target.value)} className={`${inputClass} w-full`} />
+          <input type="number" {...NUMBER_INPUT_PROPS} min="0" step="0.01" value={finalMeter} onChange={(e) => setFinalMeter(e.target.value)} className={`${inputClass} w-full`} />
         </label>
         <label className="space-y-1">
           <span className="block font-bold">เลขมิเตอร์ก่อนหน้า</span>
-          <input type="number" min="0" step="0.01" value={prevMeter} onChange={(e) => setPrevMeter(e.target.value)} placeholder="เฉพาะเมื่อระบบไม่มี" className={`${inputClass} w-full`} />
+          <input type="number" {...NUMBER_INPUT_PROPS} min="0" step="0.01" value={prevMeter} onChange={(e) => setPrevMeter(e.target.value)} placeholder="เฉพาะเมื่อระบบไม่มี" className={`${inputClass} w-full`} />
         </label>
         <label className="space-y-1">
           <span className="block font-bold">วันที่ได้รับหนังสือแจ้ง (กระดาษ)</span>
@@ -462,7 +463,7 @@ function DamagesForm({ s, act, url }: { s: Settlement; act: ReturnType<typeof us
       {items.map((it, i) => (
         <div key={i} className="flex flex-wrap items-center gap-2">
           <input value={it.reason} onChange={(e) => setItems((l) => l.map((x, j) => (j === i ? { ...x, reason: e.target.value } : x)))} placeholder="เหตุผล" className={`${inputClass} flex-1 min-w-[200px]`} />
-          <input type="number" min="0" step="0.01" value={it.amount} onChange={(e) => setItems((l) => l.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))} placeholder="ยอด (บาท)" className={`${inputClass} w-32`} />
+          <input type="number" {...NUMBER_INPUT_PROPS} min="0" step="0.01" value={it.amount} onChange={(e) => setItems((l) => l.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))} placeholder="ยอด (บาท)" className={`${inputClass} w-32`} />
           <button onClick={() => setItems((l) => l.filter((_, j) => j !== i))} className="text-rose-300 text-xs font-bold px-2">✕</button>
         </div>
       ))}
@@ -512,7 +513,7 @@ function MoneyBlock({ s, act, url }: { s: Settlement; act: ReturnType<typeof use
         <div className="space-y-2">
           <p className="text-rose-300 font-bold">สัญญานี้ไม่มีบิลค่าจอง/บิลเข้าอยู่ในระบบ — กรุณาตรวจและยืนยันยอดเงินประกันที่รับไว้จริง{m.suggested_deposit !== null ? ` (ค่าตั้งต้นจากสัญญา ${baht(m.suggested_deposit)})` : ''}</p>
           <div className="flex flex-wrap items-center gap-2">
-            <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="ยอดเงินประกัน" className={`${inputClass} w-36`} />
+            <input type="number" {...NUMBER_INPUT_PROPS} min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="ยอดเงินประกัน" className={`${inputClass} w-36`} />
             <select value={recordedAs} onChange={(e) => setRecordedAs(e.target.value as any)} className={inputClass}>
               <option value="">— เงินนี้บันทึกไว้อย่างไร —</option>
               <option value="income">เคยบันทึกเป็นรายรับในระบบ (ปรับประเภท)</option>

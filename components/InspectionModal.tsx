@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { PHOTOS_TOTAL_MAX_BYTES, preparePhoto } from '@/lib/inspection-photo-check';
 import { QUANTITY_MAX, isCountableName, quantityMin } from '@/lib/room-items';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 type Condition = 'Good' | 'Damaged' | 'Missing';
 export type InspectionKind = 'move_in' | 'move_out';
@@ -267,7 +268,7 @@ export default function InspectionModal({ contractId, kind = 'move_in', onClose,
                     <label className="flex items-center gap-1 text-[11px] font-bold text-slate-300">
                       จำนวน
                       <input
-                        type="number"
+                        type="number" {...NUMBER_INPUT_PROPS}
                         min={quantityMin(kind)}
                         max={QUANTITY_MAX}
                         step={1}

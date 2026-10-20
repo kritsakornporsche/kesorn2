@@ -16,6 +16,7 @@ import { itemsForRoomType } from '@/lib/room-items';
 import { TEST_ROOM_PAGE_BADGE, isTestRoom } from '@/lib/test-rooms';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 import { mapDirectUrl, mapEmbedUrl } from '@/lib/maps';
+import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
 
 export default function RoomBookingPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -773,11 +774,11 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                         เบอร์โทรศัพท์ผู้เช่า <span className="text-rose-500">*</span>
                       </label>
                       <input
-                        type="tel"
                         className="w-full px-5 py-3.5 rounded-2xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
                         placeholder="08X-XXX-XXXX"
                         value={bookingData.phone ?? ''}
-                        onChange={(e) => setBookingData({ ...bookingData, phone: e.target.value })}
+                        {...PHONE_INPUT_PROPS}
+                        onChange={(e) => setBookingData({ ...bookingData, phone: phoneDigits(e.target.value) })}
                       />
                     </div>
 
@@ -786,11 +787,11 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                         เบอร์โทรผู้ปกครอง <span className="text-rose-500">*</span>
                       </label>
                       <input
-                        type="tel"
                         className="w-full px-5 py-3.5 rounded-2xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
                         placeholder="08X-XXX-XXXX (ผู้ปกครอง)"
                         value={bookingData.parent_phone ?? ''}
-                        onChange={(e) => setBookingData({ ...bookingData, parent_phone: e.target.value })}
+                        {...PHONE_INPUT_PROPS}
+                        onChange={(e) => setBookingData({ ...bookingData, parent_phone: phoneDigits(e.target.value) })}
                       />
                     </div>
                   </div>

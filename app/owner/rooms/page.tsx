@@ -6,11 +6,12 @@ import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import { formatBaht } from '@/lib/format';
 import { statusText } from '@/lib/status-text';
-import { badRoomNumber, isNegative, NEGATIVE_TEXT } from '@/lib/room-fields';
+import { badRoomNumber, isManualRoomStatus, isNegative } from '@/lib/room-fields';
 import { ROOM_TYPES, roomTypeLabel } from '@/lib/room-types';
 import { itemsForRoomType } from '@/lib/room-items';
 import { isTestRoom } from '@/lib/test-rooms';
 import TestRoomBadge from '@/components/TestRoomBadge';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 interface Room {
   id: number;
@@ -142,7 +143,7 @@ export default function RoomsManagement() {
     return list;
   };
 
-  // commit 24: number fields may not be negative — red "ห้ามติดลบ" under the field and the save button disabled
+  // commit 24 / 28a: number fields cannot go negative — "-" "e" "+" cannot be typed (lib/number-input); save stays disabled as a guard
   const formNegative = !!badRoomNumber(formData);
   const batchNegative = [batchForm.floor, batchForm.startRoom, batchForm.endRoom, batchForm.price, batchForm.deposit_amount].some(isNegative);
 
@@ -610,24 +611,30 @@ export default function RoomsManagement() {
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">ชั้น (Floor)</label>
                         <input 
-                            type="number" 
+                            type="number" {...NUMBER_INPUT_PROPS} 
                             value={formData.floor}
                             onChange={(e) => setFormData({...formData, floor: parseInt(e.target.value) || 1})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground focus:bg-card transition-all"
                         />
-                    {isNegative(formData.floor) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                     </div>
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">สถานะ</label>
+                        {/* commit 28a: "ว่าง" / "ปิดปรับปรุง" only; a status from a contract is shown read-only */}
+                        {editingRoom && !isManualRoomStatus(editingRoom.status) ? (
+                          <div className="w-full px-6 py-4 bg-secondary border border-border rounded-[24px] font-black text-muted-foreground">
+                            {statusText('room', editingRoom.status)}
+                            <span className="block text-[10px] font-bold mt-1">ระบบตั้งจากสัญญา แก้เองไม่ได้</span>
+                          </div>
+                        ) : (
                         <select 
                             value={formData.status}
                             onChange={(e) => setFormData({...formData, status: e.target.value})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground focus:bg-card cursor-pointer"
                         >
                             <option value="Available">ว่าง</option>
-                            <option value="Occupied">มีผู้เช่า</option>
                             <option value="Maintenance">ปิดปรับปรุง</option>
                         </select>
+                        )}
                     </div>
                   </div>
 
@@ -642,7 +649,7 @@ export default function RoomsManagement() {
                       <div className="relative group max-w-xs mx-auto">
                           <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-muted-foreground group-focus-within:scale-110 transition-transform">฿</span>
                           <input 
-                            type="number" 
+                            type="number" {...NUMBER_INPUT_PROPS} 
                             required
                             value={formData.price}
                             onChange={(e) => setFormData({...formData, price: parseFloat(e.target.value) || 0})}
@@ -650,7 +657,6 @@ export default function RoomsManagement() {
                             placeholder="4500"
                           />
                       </div>
-                    {isNegative(formData.price) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
@@ -661,14 +667,13 @@ export default function RoomsManagement() {
                         <div className="relative">
                           <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
                           <input 
-                            type="number" 
+                            type="number" {...NUMBER_INPUT_PROPS} 
                             value={formData.deposit_amount}
                             onChange={(e) => setFormData({...formData, deposit_amount: parseFloat(e.target.value) || 0})}
                             className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all"
                             placeholder="3000"
                           />
                         </div>
-                      {isNegative(formData.deposit_amount) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                       </div>
 
                       <div className="space-y-1.5 sm:col-span-2">
@@ -768,14 +773,13 @@ export default function RoomsManagement() {
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">ชั้น (Floor)</label>
                         <input 
-                          type="number" 
+                          type="number" {...NUMBER_INPUT_PROPS} 
                           required
                           min={1}
                           value={batchForm.floor}
                           onChange={(e) => setBatchForm({...batchForm, floor: parseInt(e.target.value) || 1})}
                           className="w-full px-6 py-4 bg-background border border-border rounded-[24px] focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 focus:bg-card outline-none font-black text-foreground text-lg transition-all"
                         />
-                    {isNegative(batchForm.floor) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                     </div>
                   </div>
 
@@ -783,7 +787,7 @@ export default function RoomsManagement() {
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">เลขห้องเริ่มต้น (Start)</label>
                         <input 
-                          type="number" 
+                          type="number" {...NUMBER_INPUT_PROPS} 
                           required
                           min={1}
                           value={batchForm.startRoom}
@@ -791,12 +795,11 @@ export default function RoomsManagement() {
                           className="w-full px-6 py-4 bg-background border border-border rounded-[24px] focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 focus:bg-card outline-none font-black text-foreground text-lg transition-all"
                           placeholder="1"
                         />
-                    {isNegative(batchForm.startRoom) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                     </div>
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">เลขห้องสิ้นสุด (End)</label>
                         <input 
-                          type="number" 
+                          type="number" {...NUMBER_INPUT_PROPS} 
                           required
                           min={1}
                           value={batchForm.endRoom}
@@ -804,7 +807,6 @@ export default function RoomsManagement() {
                           className="w-full px-6 py-4 bg-background border border-border rounded-[24px] focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 focus:bg-card outline-none font-black text-foreground text-lg transition-all"
                           placeholder="10"
                         />
-                    {isNegative(batchForm.endRoom) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                     </div>
                   </div>
 
@@ -853,7 +855,6 @@ export default function RoomsManagement() {
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground focus:bg-card cursor-pointer"
                         >
                             <option value="Available">ว่าง</option>
-                            <option value="Occupied">มีผู้เช่า</option>
                             <option value="Maintenance">ปิดปรับปรุง</option>
                         </select>
                     </div>
@@ -870,14 +871,13 @@ export default function RoomsManagement() {
                       <div className="relative group max-w-xs mx-auto">
                           <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-muted-foreground group-focus-within:scale-110 transition-transform">฿</span>
                           <input 
-                            type="number" 
+                            type="number" {...NUMBER_INPUT_PROPS} 
                             required
                             value={batchForm.price}
                             onChange={(e) => setBatchForm({...batchForm, price: parseFloat(e.target.value) || 0})}
                             className="w-full pl-14 pr-6 py-4 bg-white/5 border border-emerald-500/40 rounded-[24px] font-black outline-none text-foreground text-2xl text-center focus:ring-4 focus:ring-emerald-500/10 focus:bg-card transition-all"
                           />
                       </div>
-                    {isNegative(batchForm.price) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
@@ -888,14 +888,13 @@ export default function RoomsManagement() {
                         <div className="relative">
                           <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">฿</span>
                           <input 
-                            type="number" 
+                            type="number" {...NUMBER_INPUT_PROPS} 
                             value={batchForm.deposit_amount}
                             onChange={(e) => setBatchForm({...batchForm, deposit_amount: parseFloat(e.target.value) || 0})}
                             className="w-full pl-8 pr-3 py-3 bg-background border border-border rounded-2xl font-bold text-foreground text-sm outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all"
                             placeholder="3000"
                           />
                         </div>
-                      {isNegative(batchForm.deposit_amount) && <p className="text-xs font-bold text-red-500 ml-1 mt-1">{NEGATIVE_TEXT}</p>}
                       </div>
 
                       <div className="space-y-1.5 sm:col-span-2">

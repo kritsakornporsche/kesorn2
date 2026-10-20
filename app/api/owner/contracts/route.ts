@@ -7,6 +7,7 @@ import { issueMoveInBill, missingMessage, recordSignedPaper } from '@/lib/moveIn
 import { formDeposit, withPaperLink } from '@/lib/contract-files';
 import { formatBaht, formatThaiDate } from '@/lib/format';
 import { parseOccupants } from '@/lib/occupants';
+import { parsePhone } from '@/lib/phone';
 
 export async function GET(req: Request) {
   try {
@@ -149,6 +150,12 @@ export async function POST(req: Request) {
 
     const occ = parseOccupants(body.occupants);
     if (!occ.ok) return NextResponse.json({ success: false, message: occ.message }, { status: 400 });
+    // commit 28a: phones digits only, 9–10 digits (lib/phone)
+    const tph = parsePhone(tenantPhone);
+    if (!tph.ok) return NextResponse.json({ success: false, message: tph.message }, { status: 400 });
+    tenantPhone = tph.value;
+    const pph = parsePhone(body.parent_phone);
+    if (!pph.ok) return NextResponse.json({ success: false, message: pph.message }, { status: 400 });
 
     // Account + Active contract through the single contract service (room becomes Occupied).
     // A new account gets a random temporary password, returned once so the owner can pass it on.

@@ -5,6 +5,7 @@ import { handleSignOut } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
+import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
 
 export default function ProfilePage() {
   const { data: session, status, update } = useSession();
@@ -176,9 +177,9 @@ export default function ProfilePage() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-[0.1em] text-[#A08D74] px-1">เบอร์โทรศัพท์</label>
                   <input 
-                    type="tel" 
                     value={formData.phone || ''}
-                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                    {...PHONE_INPUT_PROPS}
+                    onChange={(e) => setFormData({...formData, phone: phoneDigits(e.target.value)})}
                     placeholder="08X-XXX-XXXX"
                     className="w-full bg-background border border-border rounded-2xl px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 text-foreground"
                   />

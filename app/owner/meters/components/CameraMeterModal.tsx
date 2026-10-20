@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 interface CameraMeterModalProps {
   isOpen: boolean;
@@ -784,7 +785,7 @@ export default function CameraMeterModal({
                 <div className="relative flex-1">
                   <input
                     ref={readingInputRef}
-                    type="number"
+                    type="number" {...NUMBER_INPUT_PROPS}
                     step="any"
                     value={detectedReading}
                     onChange={(e) => setDetectedReading(e.target.value)}

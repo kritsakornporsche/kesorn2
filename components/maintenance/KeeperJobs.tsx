@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { useRates } from '@/lib/use-rates';
 import KeeperSidebar from '@/app/keeper/components/KeeperSidebar';
 import { KIND_TEXT, PhotoPicker, PhotoStrip, StateBadge, baht, postJson, thaiDateTime, type Job, type Kind } from '@/components/maintenance/shared';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 const inputClass = 'bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white';
 
@@ -133,7 +134,7 @@ function KeeperJobCard({ job, onDone }: { job: Job; onDone: () => void }) {
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="บันทึกสิ่งที่ทำ" className={`${inputClass} w-full`} />
           <PhotoPicker value={photos} onChange={setPhotos} />
           <div className="flex flex-wrap gap-1.5">
-            <input type="number" min="0" step="0.01" value={charge} onChange={(e) => setCharge(e.target.value)} placeholder="เสนอค่าใช้จ่าย (ว่าง = ไม่มี)" className={`${inputClass} w-48`} />
+            <input type="number" {...NUMBER_INPUT_PROPS} min="0" step="0.01" value={charge} onChange={(e) => setCharge(e.target.value)} placeholder="เสนอค่าใช้จ่าย (ว่าง = ไม่มี)" className={`${inputClass} w-48`} />
             <input value={chargeNote} onChange={(e) => setChargeNote(e.target.value)} placeholder="เหตุผล เช่น ผู้เช่าทำแตก / ค่าอะไหล่" className={`${inputClass} flex-1 min-w-[200px]`} />
           </div>
           <p className="text-[11px] text-slate-400">ไม่เสนอค่าใช้จ่าย → งานเสร็จสิ้นทันที · เสนอค่าใช้จ่าย → รอเจ้าของหอตรวจสอบและตัดสินว่าจะเรียกเก็บผู้เช่าหรือไม่</p>

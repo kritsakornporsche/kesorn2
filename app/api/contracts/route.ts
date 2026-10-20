@@ -2,6 +2,7 @@ import { getDb } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { parseOccupants } from '@/lib/occupants';
+import { parsePhone } from '@/lib/phone';
 import { requestBooking } from '@/lib/bookings';
 
 // A guest asks to book a room (approve first, then pay): no slip and no payment here.
@@ -23,17 +24,22 @@ export async function POST(req: NextRequest) {
     if (!roomId) {
       return NextResponse.json({ success: false, message: 'Room ID is required' }, { status: 400 });
     }
+    // commit 28a: phones digits only, 9–10 digits (lib/phone)
+    const ph = parsePhone(phone, true);
+    if (!ph.ok) return NextResponse.json({ success: false, message: ph.message }, { status: 400 });
+    const pph = parsePhone(parentPhone);
+    if (!pph.ok) return NextResponse.json({ success: false, message: pph.message }, { status: 400 });
     const occ = parseOccupants(occupants);
     if (!occ.ok) return NextResponse.json({ success: false, message: occ.message }, { status: 400 });
 
     const result = await requestBooking({
       email: userEmail,
       name: tenantName || session.user.name || null,
-      phone: phone || null,
+      phone: ph.value,
       idCardNumber: idCardNumber || null,
       idCardImage: idCardImage || null,
       address: tenantAddress || null,
-      parentPhone: parentPhone || null,
+      parentPhone: pph.value,
       roomId: Number(roomId),
       startDate,
       endDate,

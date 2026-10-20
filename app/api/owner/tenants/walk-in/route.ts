@@ -8,6 +8,7 @@ import { bookingFeeFor, getDormPromptPay } from '@/lib/billing';
 import { createContract, contractMessage } from '@/lib/contracts';
 import { voidFailedBooking } from '@/lib/bookings';
 import { parseOccupants } from '@/lib/occupants';
+import { parsePhone } from '@/lib/phone';
 
 /**
  * POST /api/owner/tenants/walk-in
@@ -89,9 +90,14 @@ export async function POST(req: Request) {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const cleanPhone = phone.trim().replace(/[\s-]/g, '');
+    // commit 28a: phones digits only, 9–10 digits (lib/phone)
+    const ph = parsePhone(phone, true);
+    if (!ph.ok) return NextResponse.json({ success: false, message: ph.message }, { status: 400 });
+    const pph = parsePhone(parentPhone);
+    if (!pph.ok) return NextResponse.json({ success: false, message: pph.message }, { status: 400 });
+    const cleanPhone = ph.value as string;
     const cleanName = tenantName.trim();
-    const cleanParentPhone = parentPhone ? parentPhone.trim().replace(/[\s-]/g, '') : null;
+    const cleanParentPhone = pph.value;
     const cleanIdCard = idCardNumber ? idCardNumber.trim().replace(/[\s-]/g, '') : null;
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

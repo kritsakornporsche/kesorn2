@@ -11,6 +11,8 @@ import { contractDepositLabel, statusText } from '@/lib/status-text';
 import TestRoomBadge from '@/components/TestRoomBadge';
 import { testRoomSuffix, testRoomsLast } from '@/lib/test-rooms';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
+import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 interface Contract {
   id: number;
@@ -900,10 +902,10 @@ export default function OwnerContractsPage() {
                         เบอร์โทรศัพท์ผู้เช่า
                       </label>
                       <input
-                        type="text"
                         placeholder="089-123-4567"
                         value={formData.tenant_phone}
-                        onChange={(e) => setFormData({ ...formData, tenant_phone: e.target.value })}
+                        {...PHONE_INPUT_PROPS}
+                        onChange={(e) => setFormData({ ...formData, tenant_phone: phoneDigits(e.target.value) })}
                         className="w-full px-6 py-4 bg-background border border-border rounded-2xl text-foreground font-bold outline-none focus:border-primary transition-all"
                       />
                     </div>
@@ -939,7 +941,7 @@ export default function OwnerContractsPage() {
                         เงินประกัน (ตามกติกาของห้อง)
                       </label>
                       <input
-                        type="number"
+                        type="number" {...NUMBER_INPUT_PROPS}
                         required
                         readOnly={!formData.deposit_outside_system}
                         value={formData.deposit_amount}

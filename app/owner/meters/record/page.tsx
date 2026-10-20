@@ -9,6 +9,7 @@ import { useRates } from '@/lib/use-rates';
 import { ratesForRoom } from '@/lib/billing';
 import TestRoomBadge from '@/components/TestRoomBadge';
 import { testRoomSuffix, testRoomsLast } from '@/lib/test-rooms';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 interface RoomRecord {
   id: number;
@@ -625,7 +626,7 @@ export default function MeterRecordMobileFlowPage() {
 
               <div className="relative">
                 <input
-                  type="number"
+                  type="number" {...NUMBER_INPUT_PROPS}
                   step="0.01"
                   placeholder={`เลขครั้งนี้ (เดิม ${prevVal ?? '-'})`}
                   value={inputReading}
@@ -637,7 +638,7 @@ export default function MeterRecordMobileFlowPage() {
               {currentRoom.previous_reading === null && (
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-amber-300">ห้องนี้ไม่มีเลขมิเตอร์ก่อนหน้าในระบบ — กรอกเลขก่อนหน้า</label>
-                  <input type="number" step="0.01" min="0" value={inputPrevious} onChange={(e) => setInputPrevious(e.target.value)}
+                  <input type="number" {...NUMBER_INPUT_PROPS} step="0.01" min="0" value={inputPrevious} onChange={(e) => setInputPrevious(e.target.value)}
                     className="w-full bg-slate-950 border border-amber-500/40 rounded-xl px-4 py-2.5 text-sm font-mono font-bold text-white focus:outline-none focus:border-primary" />
                 </div>
               )}
@@ -656,7 +657,7 @@ export default function MeterRecordMobileFlowPage() {
                   {meterEvent === 'rollover' && (
                     <div className="space-y-1">
                       <label className="text-[11px] text-slate-400">เลขสูงสุดของมิเตอร์ก่อนวนกลับ 0 (ค่าเริ่มคำนวณจากจำนวนหลัก แก้ได้)</label>
-                      <input type="number" step="0.01" min="0" value={rolloverAt} onChange={(e) => setRolloverAt(e.target.value)}
+                      <input type="number" {...NUMBER_INPUT_PROPS} step="0.01" min="0" value={rolloverAt} onChange={(e) => setRolloverAt(e.target.value)}
                         className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-sm font-mono font-bold text-white" />
                     </div>
                   )}
@@ -664,12 +665,12 @@ export default function MeterRecordMobileFlowPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <label className="text-[11px] text-slate-400">เลขสุดท้ายของเครื่องเก่า</label>
-                        <input type="number" step="0.01" min="0" value={oldMeterFinal} onChange={(e) => setOldMeterFinal(e.target.value)}
+                        <input type="number" {...NUMBER_INPUT_PROPS} step="0.01" min="0" value={oldMeterFinal} onChange={(e) => setOldMeterFinal(e.target.value)}
                           className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-sm font-mono font-bold text-white" />
                       </div>
                       <div className="space-y-1">
                         <label className="text-[11px] text-slate-400">เลขเริ่มของเครื่องใหม่</label>
-                        <input type="number" step="0.01" min="0" value={newMeterStart} onChange={(e) => setNewMeterStart(e.target.value)}
+                        <input type="number" {...NUMBER_INPUT_PROPS} step="0.01" min="0" value={newMeterStart} onChange={(e) => setNewMeterStart(e.target.value)}
                           className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-sm font-mono font-bold text-white" />
                       </div>
                     </div>

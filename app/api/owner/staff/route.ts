@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { getDb } from '@/lib/db';
 import { Pool } from '@/lib/mysql-adapter';
 import { requireRole } from '@/lib/authz';
+import { parsePhone } from '@/lib/phone';
 
 const DORM_ID = 1;
 const SUB_ROLES = ['maid', 'technician'];
@@ -42,6 +43,8 @@ export async function POST(req: Request) {
   if (String(password).length < 6) {
     return NextResponse.json({ success: false, message: 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร' }, { status: 400 });
   }
+  const ph = parsePhone(phone); // commit 28a
+  if (!ph.ok) return NextResponse.json({ success: false, message: ph.message }, { status: 400 });
   if (role !== 'manager' && !(role === 'keeper' && SUB_ROLES.includes(sub_role))) {
     return NextResponse.json({ success: false, message: 'ตำแหน่งไม่ถูกต้อง' }, { status: 400 });
   }
@@ -61,13 +64,13 @@ export async function POST(req: Request) {
     await client.query('START TRANSACTION', []);
     const userRes: any = await client.query(
       'INSERT INTO users (name, email, password, phone, role, primary_role, sub_role, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
-      [name.trim(), cleanEmail, hashed, phone || null, role, role, subRole]
+      [name.trim(), cleanEmail, hashed, ph.value, role, role, subRole]
     );
     const userId = userRes.rows.insertId;
     if (role === 'keeper') {
       await client.query(
         'INSERT INTO keepers (user_id, name, email, phone, position, dorm_id) VALUES (?, ?, ?, ?, ?, ?)',
-        [userId, name.trim(), cleanEmail, phone || null, subRole === 'maid' ? 'Maid' : 'Technician', DORM_ID]
+        [userId, name.trim(), cleanEmail, ph.value, subRole === 'maid' ? 'Maid' : 'Technician', DORM_ID]
       );
     }
     await client.query('COMMIT', []);
@@ -105,7 +108,9 @@ export async function PATCH(req: Request) {
     await sql`UPDATE users SET name = ${String(name).trim()} WHERE id = ${id}`;
   }
   if (phone !== undefined) {
-    await sql`UPDATE users SET phone = ${phone || null} WHERE id = ${id}`;
+    const ph = parsePhone(phone); // commit 28a
+    if (!ph.ok) return NextResponse.json({ success: false, message: ph.message }, { status: 400 });
+    await sql`UPDATE users SET phone = ${ph.value} WHERE id = ${id}`;
   }
   if (is_active !== undefined) {
     await sql`UPDATE users SET is_active = ${is_active ? 1 : 0} WHERE id = ${id}`;

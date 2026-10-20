@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDormDbFromSession, getPlatformDb } from '@/lib/db';
 import { auth } from '@/auth';
 import bcrypt from 'bcryptjs';
+import { parsePhone } from '@/lib/phone';
 
 export async function GET() {
   try {
@@ -53,7 +54,10 @@ export async function PATCH(request: Request) {
       }, { status: 403 });
     }
 
-    const { name, phone, bio, image_url, password } = body;
+    const { name, bio, image_url, password } = body;
+    const ph = parsePhone(body.phone); // commit 28a: digits only, 9–10
+    if (!ph.ok) return NextResponse.json({ success: false, message: ph.message }, { status: 400 });
+    const phone = ph.value;
     
     let sql;
     if ((session.user as any).role === 'platform_admin') {

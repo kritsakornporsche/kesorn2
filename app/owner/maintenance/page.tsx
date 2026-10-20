@@ -13,6 +13,7 @@ import {
   CHARGE_REASON_TEXT, KIND_TEXT, PhotoPicker, kindAndTopic, PhotoStrip, StateBadge, baht, postJson, thaiDateTime,
   type ChargeReason, type Job, type Kind,
 } from '@/components/maintenance/shared';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 interface Keeper { id: number; name: string; phone: string | null }
 interface LegacyCleaning { id: number; status: string; job_type: string | null; notes: string | null; created_at: string; room_number: string | null }
@@ -225,7 +226,7 @@ function JobCard({ job, keepers, isOwner, onDone }: { job: Job; keepers: Keeper[
           {isOwner ? (
             <>
               <div className="flex flex-wrap gap-1.5">
-                <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className={`${inputClass} w-28`} />
+                <input type="number" {...NUMBER_INPUT_PROPS} min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className={`${inputClass} w-28`} />
                 <select value={chargeReason} onChange={(e) => setChargeReason(e.target.value as any)} className={inputClass}>
                   <option value="">— เหตุผล —</option>
                   {(Object.keys(CHARGE_REASON_TEXT) as ChargeReason[]).map((r) => <option key={r} value={r}>{CHARGE_REASON_TEXT[r]}</option>)}

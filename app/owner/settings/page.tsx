@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { FIELD_LABELS, LANDLORD_LABELS, RATE_FIELDS, RATE_NOTES } from '@/lib/settings-fields';
+import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 // The one place for rates and payment details (lib/settings.ts). Owner edits; manager sees it read-only.
 // Bills already sent or paid keep their amounts and late fee; draft monthly bills are re-priced on save.
@@ -234,10 +236,10 @@ export default function OwnerSettings() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">เบอร์โทรศัพท์ติดต่อ</label>
                   <input
-                    type="text"
                     required
                     value={formData.phone}
-                    onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                    {...PHONE_INPUT_PROPS}
+                    onChange={e => setFormData({ ...formData, phone: phoneDigits(e.target.value) })}
                     className="w-full bg-card border border-white/20 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-primary"
                     placeholder="เช่น 02-XXX-XXXX"
                   />
@@ -258,10 +260,9 @@ export default function OwnerSettings() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">{LANDLORD_LABELS.landlord_phone} (ใช้ในสัญญา)</label>
                   <input
-                    type="text"
-                    inputMode="tel"
                     value={formData.landlord_phone}
-                    onChange={e => setFormData({ ...formData, landlord_phone: e.target.value })}
+                    {...PHONE_INPUT_PROPS}
+                    onChange={e => setFormData({ ...formData, landlord_phone: phoneDigits(e.target.value) })}
                     className="w-full bg-card border border-white/20 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-primary"
                     placeholder="เช่น 08X-XXX-XXXX (ว่างได้)"
                   />
@@ -345,7 +346,7 @@ export default function OwnerSettings() {
                   <div key={f} className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block pl-1">{FIELD_LABELS[f]}</label>
                     <input
-                      type="number"
+                      type="number" {...NUMBER_INPUT_PROPS}
                       step="0.01"
                       min="0"
                       required

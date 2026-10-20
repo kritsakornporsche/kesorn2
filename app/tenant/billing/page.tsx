@@ -7,6 +7,7 @@ import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
 import Image from 'next/image';
 import { formatBaht, formatThaiDateTime, PAYMENT_METHOD_LABEL } from '@/lib/format';
 import { isPaidStatus, statusText } from '@/lib/status-text';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 // One-line label of a bill that is not split into rent / utilities (same rule as the receipt: lines only when they add up)
 const BILL_TYPE_LINE: Record<string, string> = {
@@ -633,7 +634,7 @@ export default function TenantBillingPage() {
                   หน่วยไฟฟ้าที่ถูกต้อง (หน่วย) *
                 </label>
                 <input
-                  type="number"
+                  type="number" {...NUMBER_INPUT_PROPS}
                   step="any"
                   required
                   value={disputeReading}

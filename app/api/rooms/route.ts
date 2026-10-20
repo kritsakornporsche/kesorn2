@@ -6,7 +6,7 @@ import { expireDueBookings } from '@/lib/bookings';
 import { expireDueMoveIns } from '@/lib/moveIn';
 import { capCheck, depositFor } from '@/lib/billing';
 import { isHiddenTestRoom } from '@/lib/test-rooms';
-import { badRoomNumber } from '@/lib/room-fields';
+import { badRoomNumber, roomStatusFor } from '@/lib/room-fields';
 
 export async function GET(req: NextRequest) {
   try {
@@ -137,6 +137,9 @@ export async function POST(req: NextRequest) {
     if (bad) {
       return NextResponse.json({ success: false, message: bad.message, field: bad.field }, { status: 400 });
     }
+    // commit 28a: a new room is "ว่าง" or "ปิดปรับปรุง" only — occupied / booked come from contracts
+    const st = roomStatusFor(status);
+    if (!st.ok) return NextResponse.json({ success: false, message: st.message, field: 'status' }, { status: 400 });
 
     const sql = getDb();
 
@@ -156,7 +159,7 @@ export async function POST(req: NextRequest) {
 
     const result = await sql`
       INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount)
-      VALUES (${room_number}, ${room_type}, ${price}, ${status || 'Available'}, ${floor || 1}, ${image_url || null}, ${dormId}, ${deposit})
+      VALUES (${room_number}, ${room_type}, ${price}, ${st.status}, ${floor || 1}, ${image_url || null}, ${dormId}, ${deposit})
     `;
     
     const newRoomId = (result as any).insertId;

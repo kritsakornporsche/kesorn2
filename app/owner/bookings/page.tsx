@@ -9,6 +9,7 @@ import { InspectionButton, type InspectionStatus } from '@/components/Inspection
 import { roomTypeLabel } from '@/lib/room-types';
 import TestRoomBadge from '@/components/TestRoomBadge';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 interface Booking {
   contract_id: number;
@@ -878,7 +879,7 @@ export default function OwnerBookingsPage() {
                     </label>
                   </div>
                   <input
-                    type="number"
+                    type="number" {...NUMBER_INPUT_PROPS}
                     step="0.01"
                     min="0"
                     required

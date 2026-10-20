@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 interface DormRule {
   id: number;
@@ -468,7 +469,7 @@ export default function OwnerRulesPage() {
                 <div className="space-y-1.5">
                   <label className="text-white/80 font-bold uppercase">อัตราค่าปรับเมื่อฝ่าฝืน (บาท) - หากไม่มีใส่ 0</label>
                   <input
-                    type="number"
+                    type="number" {...NUMBER_INPUT_PROPS}
                     min="0"
                     step="50"
                     value={form.fine_amount}
@@ -549,7 +550,7 @@ export default function OwnerRulesPage() {
                 <div className="space-y-1.5">
                   <label className="text-white/80 font-bold uppercase">อัตราค่าปรับ (บาท)</label>
                   <input
-                    type="number"
+                    type="number" {...NUMBER_INPUT_PROPS}
                     min="0"
                     step="50"
                     value={form.fine_amount}

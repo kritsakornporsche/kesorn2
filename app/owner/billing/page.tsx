@@ -8,6 +8,7 @@ import { useRates } from '@/lib/use-rates';
 import { bangkokDate } from '@/lib/billing';
 import { formatBaht, formatThaiDate, formatThaiDateTime, PAYMENT_METHOD_LABEL } from '@/lib/format';
 import TestRoomBadge from '@/components/TestRoomBadge';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 interface BillPayment {
   id: number;
@@ -1064,7 +1065,7 @@ export default function OwnerMonthlyBillingPage() {
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">เลขมิเตอร์ครั้งนี้ที่ถูกต้อง:</label>
                 <input
-                  type="number"
+                  type="number" {...NUMBER_INPUT_PROPS}
                   step="0.01"
                   required
                   placeholder="เช่น 2645.00"
@@ -1131,7 +1132,7 @@ export default function OwnerMonthlyBillingPage() {
               <label className="block space-y-1">
                 <span className="text-slate-400">จำนวนเงิน (บาท) — น้อยกว่ายอดคงเหลือได้ (ชำระบางส่วน)</span>
                 <input
-                  type="number" min="0.01" step="0.01"
+                  type="number" {...NUMBER_INPUT_PROPS} min="0.01" step="0.01"
                   value={receiveForm.amount}
                   onChange={(e) => setReceiveForm({ ...receiveForm, amount: e.target.value })}
                   className={`w-full bg-slate-950 border rounded-xl px-3 py-2 text-white font-mono ${receiveAmountError ? 'border-red-500/70' : 'border-white/10'}`}

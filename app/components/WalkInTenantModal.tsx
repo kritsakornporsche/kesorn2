@@ -6,6 +6,7 @@ import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 import { testRoomsLast } from '@/lib/test-rooms';
 import TestRoomBadge from '@/components/TestRoomBadge';
+import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
 
 interface WalkInModalProps {
   isOpen: boolean;
@@ -359,10 +360,10 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                     เบอร์โทรศัพท์ผู้เช่า <span className="text-red-400">*</span>
                   </label>
                   <input
-                    type="tel"
                     placeholder="เช่น 0636040550"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    {...PHONE_INPUT_PROPS}
+                    onChange={(e) => setPhone(phoneDigits(e.target.value))}
                     className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-primary"
                   />
                   <p className="text-[10px] text-emerald-400 font-semibold">🔒 เบอร์นี้จะถูกใช้เป็นรหัสผ่านเริ่มต้น</p>
@@ -373,10 +374,10 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                     เบอร์โทรผู้ปกครอง / ผู้ติดต่อฉุกเฉิน
                   </label>
                   <input
-                    type="tel"
                     placeholder="เช่น 0812345678"
                     value={parentPhone}
-                    onChange={(e) => setParentPhone(e.target.value)}
+                    {...PHONE_INPUT_PROPS}
+                    onChange={(e) => setParentPhone(phoneDigits(e.target.value))}
                     className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-primary"
                   />
                 </div>
