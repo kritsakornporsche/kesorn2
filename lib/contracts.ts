@@ -16,12 +16,13 @@ const SIGNABLE = new Set(['pendingownersignature', 'pendingcontract', 'pendingfi
 // MoveOutPending: set by the move-out flow before commit 12; such contracts keep their room until the owner closes them
 export const ROOM_HOLDING_STATUSES = ['BookingRequested', 'BookingApproved', 'PendingOwnerSignature', 'PendingContract', 'PendingFirstBill', 'Active', 'MoveOutPending'];
 
-export type ContractRefusal = 'room_not_found' | 'room_unavailable' | 'room_has_active_contract' | 'staff_account'
+export type ContractRefusal = 'room_not_found' | 'room_unavailable' | 'room_has_active_contract' | 'staff_account' | 'not_active'
   | 'no_account' | 'not_found' | 'invalid_status' | 'deposit_mismatch' | 'deposit_reason_required' | 'has_open_contract';
 
 export const CONTRACT_MESSAGES: Record<ContractRefusal, string> = {
   room_not_found: 'ไม่พบข้อมูลห้องพัก',
   room_unavailable: 'ห้องพักนี้ไม่ว่างในขณะนี้',
+  not_active: 'ต่อสัญญาได้เฉพาะสัญญาที่มีผลอยู่ (Active)',
   room_has_active_contract: 'ห้องพักนี้มีสัญญาที่มีสถานะ Active อยู่แล้ว ไม่สามารถสร้างสัญญาใหม่ได้',
   staff_account: 'อีเมลนี้เป็นบัญชีพนักงาน/เจ้าของหอ ใช้เป็นบัญชีผู้เช่าไม่ได้',
   no_account: 'ไม่พบบัญชีผู้ใช้',
@@ -341,6 +342,8 @@ export function renewContract(contractId: number, input: RenewContractInput) {
   return run(async (client) => {
     const old = (await client.query('SELECT * FROM contracts WHERE id = ? FOR UPDATE', [contractId])).rows[0];
     if (!old) refuse('not_found');
+    // commit 28-7: a cancelled / ended / already renewed contract cannot become Active again by "renewing" it
+    if (old.status !== 'Active') refuse('not_active');
     await client.query("UPDATE contracts SET status = 'Renewed', renewal_requested = 0 WHERE id = ?", [contractId]);
     const created = await createContractTx(client, {
       tenantId: old.tenant_id,

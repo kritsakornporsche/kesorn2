@@ -157,6 +157,8 @@ export async function POST(req: Request) {
     const pph = parsePhone(body.parent_phone);
     if (!pph.ok) return NextResponse.json({ success: false, message: pph.message }, { status: 400 });
 
+    // commit 28-7: this form records a tenant who lived here before the system (new tenants go through walk-in → steps
+    // 3–7): the room must be free (no booking / contract holding it) and the parent phone is kept.
     // Account + Active contract through the single contract service (room becomes Occupied).
     // A new account gets a random temporary password, returned once so the owner can pass it on.
     const tempPassword = temporaryPassword();
@@ -182,6 +184,8 @@ export async function POST(req: Request) {
       tenantAddress: tenant_address?.trim() || null,
       occupants: occ.value,
       depositOutsideSystem: outsideSystem ? { reason: String(body.deposit_note || '') } : null,
+      requireRoomFree: true,
+      parentPhone: pph.value,
     });
     if (!created.ok) {
       return NextResponse.json({ success: false, message: contractMessage(created) }, { status: 400 });

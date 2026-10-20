@@ -455,7 +455,7 @@ export default function OwnerContractsPage() {
             onClick={() => setIsCreateModalOpen(true)}
             className="px-6 py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-black rounded-2xl text-sm shadow-lg shadow-primary/20 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
           >
-            + สร้างสัญญาใหม่
+            + บันทึกผู้เช่าเดิม (ก่อนใช้ระบบ)
           </button>
         </div>
 
@@ -812,8 +812,11 @@ export default function OwnerContractsPage() {
             <div className="bg-card rounded-[36px] w-full max-w-2xl border border-border shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
               <div className="bg-[#0B0F19] border-b border-border p-8 flex items-center justify-between shrink-0">
                 <div>
-                  <h2 className="text-2xl font-black text-foreground">📝 บันทึกสัญญาเช่าห้องพักใหม่</h2>
+                  <h2 className="text-2xl font-black text-foreground">📝 บันทึกผู้เช่าเดิม (ก่อนใช้ระบบ)</h2>
                   <p className="text-xs text-muted-foreground font-medium mt-1">
+                    ใช้กับผู้เช่าที่อยู่ก่อนใช้ระบบเท่านั้น — สัญญามีผลทันที · ผู้เช่าใหม่ให้ใช้ Walk-in ที่หน้าทะเบียนผู้เช่า แล้วทำตามขั้น 3–7
+                  </p>
+                  <p className="text-xs text-muted-foreground font-medium">
                     กรอกชื่อและที่อยู่ตามบัตรประชาชนด้วยตนเอง (ระบบไม่เก็บเลขบัตรและรูปบัตร)
                   </p>
                 </div>

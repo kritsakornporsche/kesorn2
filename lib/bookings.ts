@@ -21,7 +21,7 @@ const PAID = ['PendingOwnerSignature', 'PendingContract', 'PendingFirstBill'];
 
 export type BookingRefusal = ContractRefusal | 'not_found' | 'not_owner'
   | 'not_requested' | 'not_approved' | 'expired' | 'slip_rejected' | 'slip_time' | 'payment_failed'
-  | 'not_paid_booking' | 'too_early' | 'first_bill_paid' | 'legacy';
+  | 'not_paid_booking' | 'too_early' | 'first_bill_paid' | 'legacy' | 'bad_dates' | 'not_cancellable';
 
 export type BookingResult<T> = ({ ok: true } & T) | { ok: false; reason: BookingRefusal; message: string; expected?: number };
 
@@ -42,6 +42,8 @@ const MESSAGES: Partial<Record<BookingRefusal, string>> = {
   too_early: 'ยังไม่เลยวันเข้าพักที่นัดไว้',
   first_bill_paid: 'มีการชำระบิลแรกเข้าแล้ว กรุณาจัดการด้วยมือ',
   legacy: 'สัญญาแบบเดิม — จัดการด้วยมือ (ไม่มีบิลเข้าอยู่ในระบบใหม่ จึงตรวจการชำระก่อนริบค่าจองไม่ได้)',
+  bad_dates: 'วันที่ไม่ถูกต้อง: วันเริ่มสัญญาต้องไม่ก่อนวันนี้ และวันสิ้นสุดต้องอยู่หลังวันเริ่ม',
+  not_cancellable: 'ไม่สามารถยกเลิกการจองได้ เนื่องจากอยู่ในขั้นตอนทำสัญญา/ชำระค่าแรกเข้าแล้ว',
 };
 
 export { withRetry };
@@ -153,9 +155,21 @@ export interface BookingRequestInput {
   occupants?: number | null;
 }
 
-/** A guest asks to book a room (no payment yet). One booking/contract per account until it ends; the room must be free. */
+const isDate = (v: unknown) => {
+  const s = String(v ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T12:00:00+07:00`);
+  return !Number.isNaN(d.getTime()) && bangkokDate(d) === s;
+};
+
+/**
+ * A guest asks to book a room (no payment yet). One booking/contract per account until it ends; the room must be free.
+ * commit 28-7: the dates are checked here (start not before today in Thai time, end after start).
+ */
 export function requestBooking(input: BookingRequestInput, now: Date) {
   return run(async (client) => {
+    if (!isDate(input.startDate) || !isDate(input.endDate) || String(input.endDate) <= String(input.startDate)
+      || String(input.startDate) < bangkokDate(now)) refuse('bad_dates');
     await expireBookings(client, now);
 
     const room = (await client.query('SELECT room_number FROM rooms WHERE id = ?', [input.roomId])).rows[0];
@@ -311,6 +325,31 @@ export function cancelUnpaidBooking(contractId: number, by: number | null, now: 
     await releaseRoom(client, c.room_id);
     return { contractId };
   });
+}
+
+/**
+ * The booker cancels a paid booking before the move-in bill (steps 3–6, commit 28-7): the booking fee is not refunded
+ * (it becomes income); only this booking's own unpaid booking bill is cancelled; the room is released if nothing else
+ * holds it. Row locked; someone else's booking reads as not found.
+ */
+export async function cancelPaidBooking(contractId: number, user: { id: number | null; email: string }, now: Date) {
+  const result = await run(async (client) => {
+    const c = await lockBooking(client, contractId);
+    const own = (c.tenant_user_id && user.id && Number(c.tenant_user_id) === Number(user.id))
+      || (!!c.tenant_email && c.tenant_email.toLowerCase() === user.email.toLowerCase());
+    if (!own) refuse('not_found');
+    if (!['PendingOwnerSignature', 'PendingContract'].includes(c.status) || c.move_in_bill_id) refuse('not_cancellable');
+    await client.query(
+      "UPDATE contracts SET status = 'Cancelled', cancelled_at = ?, cancelled_by = ?, cancel_reason = 'ผู้จองกดยกเลิกการจอง (ไม่คืนค่าจอง)' WHERE id = ?",
+      [now, user.id, contractId]
+    );
+    await cancelUnpaidBookingBill(client, c.booking_bill_id);
+    await releaseRoom(client, c.room_id);
+    return { contractId, tenantId: c.tenant_id as number, roomNumber: c.room_number as string };
+  });
+  if (!result.ok) return result;
+  const forfeited = await forfeitBookingFee(result.tenantId);
+  return { ...result, forfeited };
 }
 
 /**

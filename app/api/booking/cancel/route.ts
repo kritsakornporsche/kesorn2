@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
-import { forfeitBookingFee } from '@/lib/deposits';
-import { cancelUnpaidBooking } from '@/lib/bookings';
+import { cancelPaidBooking, cancelUnpaidBooking } from '@/lib/bookings';
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -17,9 +16,8 @@ export async function POST(req: Request) {
 
     // 1. Find the pending contract
     let targetContractId = contractId;
-    let targetRoomId = roomId;
 
-    if (!targetContractId && !targetRoomId) {
+    if (!targetContractId && !roomId) {
       // Find latest contract in PendingContract state for this user
       const userContracts = await sql`
         SELECT c.id, c.room_id, c.status
@@ -32,7 +30,6 @@ export async function POST(req: Request) {
       `;
       if (userContracts.length > 0) {
         targetContractId = userContracts[0].id;
-        targetRoomId = userContracts[0].room_id;
       }
     }
 
@@ -68,49 +65,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, message: 'ยกเลิกคำขอจองแล้ว ห้องเปิดให้ผู้อื่นจองแล้ว' });
     }
 
-    if (currentStatus !== 'PendingContract' && currentStatus !== 'PendingOwnerSignature') {
-      return NextResponse.json({
-        success: false,
-        message: 'ไม่สามารถยกเลิกการจองได้ เนื่องจากอยู่ในขั้นตอนทำสัญญา/ชำระค่าแรกเข้าแล้ว'
-      }, { status: 400 });
+    // Paid booking (commit 28-7): through lib/bookings — row locked, this booking's own bill only, the room released
+    // only if nothing else holds it, the booking fee forfeited
+    const paid = await cancelPaidBooking(Number(targetContractId), { id: Number((session.user as any).id) || null, email: session.user.email }, new Date());
+    if (!paid.ok) {
+      return NextResponse.json({ success: false, message: paid.message }, { status: paid.reason === 'not_found' ? 404 : 400 });
     }
-
-    targetRoomId = targetRoomId || contractData[0].room_id;
-
-    // 3. Mark contract as Cancelled (deposit non-refundable)
-    await sql`
-      UPDATE contracts 
-      SET status = 'Cancelled', renewal_note = 'ผู้จองกดยกเลิกการจอง (ไม่คืนค่าจอง)'
-      WHERE id = ${targetContractId}
-    `;
-
-    // 3.1 Cancel any associated booking bills
-    try {
-      await sql`
-        UPDATE bills 
-        SET status = 'Cancelled' 
-        WHERE (tenant_id IN (SELECT tenant_id FROM contracts WHERE id = ${targetContractId}) OR room_number IN (SELECT room_number FROM rooms WHERE id = ${targetRoomId}))
-          AND bill_type = 'booking'
-          AND LOWER(status) NOT IN ('cancelled', 'paid', 'partial')
-      `;
-    } catch (bErr) {
-      console.warn('Could not cancel booking bill:', bErr);
-    }
-
-    // 3.2 The booking fee is not refunded: what is held as deposit becomes income
-    if (contractData[0].tenant_id) {
-      await forfeitBookingFee(Number(contractData[0].tenant_id));
-    }
-
-    // 4. Reset room status to Available immediately
-    if (targetRoomId) {
-      await sql`
-        UPDATE rooms 
-        SET status = 'Available' 
-        WHERE id = ${targetRoomId}
-      `;
-    }
-
     return NextResponse.json({
       success: true,
       message: 'ยกเลิกการจองเรียบร้อยแล้ว ห้องพักกลับสู่สถานะว่าง',
