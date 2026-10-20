@@ -8,6 +8,8 @@ import { expireDueMoveIns } from '@/lib/moveIn';
 import { signedPaperOf, withPaperLink } from '@/lib/contract-files';
 import { formatBaht } from '@/lib/format';
 import { INSPECTABLE, inspectionStatuses, type InspectionStatus } from '@/lib/inspections';
+import { stepOf } from '@/lib/booking-steps';
+import { serverErrorMessage } from '@/lib/db-errors';
 
 export async function GET(req: Request) {
   try {
@@ -60,6 +62,8 @@ export async function GET(req: Request) {
         c.start_meter_reading,
         c.paper_signed_date,
         c.paper_uploaded_at,
+        c.data_confirmed_at,
+        (SELECT cu.name FROM users cu WHERE cu.id = c.data_confirmed_by) AS data_confirmed_by_name,
         COALESCE(t.name, u.name, 'ไม่ระบุชื่อ') as guest_name,
         COALESCE(t.email, u.email, '') as guest_email,
         COALESCE(t.phone, u.phone, '') as guest_phone,
@@ -118,15 +122,23 @@ export async function GET(req: Request) {
       const cap = capCheck(moveIn.rent, moveIn.deposit);
       const pastStart = Boolean(b.start_date) && bangkokDate(now) > bangkokDate(b.start_date);
       const firstBillPaid = String(b.first_bill_status || '').toLowerCase() === 'paid';
+      const paperUploaded = signedPaperOf(b.contract_file_url) === 'uploaded' && Boolean(b.paper_signed_date);
+      const inspectionStatus = inspections?.[Number(b.contract_id)] ?? null;
+      // commit 28: steps 1–7 (lib/booking-steps.ts) — the page shows these; the server checks the same rules
+      const steps = stepOf({
+        status: b.booking_status, data_confirmed_at: b.data_confirmed_at, move_in_bill_id: b.move_in_bill_id,
+        move_in_bill_status: b.first_bill_status, inspection_status: inspectionStatus, paper_uploaded: paperUploaded,
+      });
       return {
         ...withPaperLink(b, 'contract_id'),
         booking_fee: bookingFeeFor(b.room_number),
-        inspection_status: inspections?.[Number(b.contract_id)] ?? null,
+        inspection_status: inspectionStatus,
+        steps,
         // Move-in (lib/moveIn.ts): amounts from the room on the server; contracts without move_in_bill_id are older ones
         move_in: { ...moveIn, cap_ok: cap.ok, cap_message: cap.ok ? null : cap.message },
         legacy: b.booking_status === 'PendingFirstBill' && !b.move_in_bill_id,
         move_in_bill_paid: firstBillPaid,
-        paper_uploaded: signedPaperOf(b.contract_file_url) === 'uploaded' && Boolean(b.paper_signed_date),
+        paper_uploaded: paperUploaded,
         move_in_overdue_partial: b.booking_status === 'PendingFirstBill' && pastStart && !firstBillPaid && Number(b.first_bill_payments || 0) > 0,
         can_issue_move_in: ['PendingOwnerSignature', 'PendingContract'].includes(b.booking_status) && !b.move_in_bill_id && !pastStart,
         seconds_to_expire: b.expires_at ? secondsTo(new Date(b.expires_at)) : null,
@@ -148,7 +160,7 @@ export async function GET(req: Request) {
     });
   } catch (error: any) {
     console.error('[API Owner Bookings GET Error]', error);
-    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, message: serverErrorMessage(error, 'โหลดรายการจองไม่สำเร็จ') }, { status: 500 });
   }
 }
 

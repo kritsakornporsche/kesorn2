@@ -8,9 +8,13 @@ const MIGRATION_COLUMNS: Record<string, string> = {
   landlord_name: '018',
   landlord_phone: '018',
   quantity: '019',
+  data_confirmed_at: '021',
+  data_confirmed_by: '021',
+  ack_paper_by: '021',
 };
 const MIGRATION_TABLES: Record<string, string> = {
   contract_occupant_changes: '020',
+  contract_data_changes: '021',
 };
 
 export const migrationMessage = (number: string) => `ฐานข้อมูลยังไม่ได้อัปเดต (migration ${number})`;

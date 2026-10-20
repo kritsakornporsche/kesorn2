@@ -5,6 +5,9 @@ import { bookingDeadlines, expireDueBookings } from '@/lib/bookings';
 import { bookingFeeFor, moveInAmounts } from '@/lib/billing';
 import { expireDueMoveIns } from '@/lib/moveIn';
 import { signedPaperOf, withPaperLink } from '@/lib/contract-files';
+import { inspectionStatuses, type InspectionStatus } from '@/lib/inspections';
+import { stepOf } from '@/lib/booking-steps';
+import { serverErrorMessage } from '@/lib/db-errors';
 
 export async function GET() {
   const session = await auth();
@@ -52,6 +55,7 @@ export async function GET() {
         c.cancelled_at,
         c.move_in_bill_id,
         c.paper_signed_date,
+        c.data_confirmed_at,
         r.deposit_amount AS room_deposit_amount,
         dp.phone AS dorm_contact_phone,
         c.start_meter_reading AS initial_meter_reading,
@@ -73,8 +77,12 @@ export async function GET() {
 
     // Time left, computed with the server clock: the page counts down from these values, not the browser clock
     const secondsTo = (d: Date) => Math.max(0, Math.floor((d.getTime() - now.getTime()) / 1000));
+    // Move-in inspection status of these contracts (step 4)
+    const inspections: Record<number, InspectionStatus> = await inspectionStatuses(bookings.map((b: any) => Number(b.contract_id)));
     const data = bookings.map((b: any) => {
       const deadlines = b.approved_at ? bookingDeadlines(new Date(b.approved_at)) : null;
+      const paperUploaded = signedPaperOf(b.contract_file_url) === 'uploaded' && Boolean(b.paper_signed_date);
+      const inspectionStatus = inspections[Number(b.contract_id)] ?? 'none';
       return {
         ...withPaperLink(b, 'contract_id'),
         booking_fee: bookingFeeFor(b.room_number),
@@ -82,7 +90,13 @@ export async function GET() {
         move_in: moveInAmounts({ room_number: b.room_number, price: b.price, deposit_amount: b.room_deposit_amount }),
         legacy: b.status === 'PendingFirstBill' && !b.move_in_bill_id,
         move_in_bill_paid: String(b.first_bill_status || '').toLowerCase() === 'paid',
-        paper_uploaded: signedPaperOf(b.contract_file_url) === 'uploaded' && Boolean(b.paper_signed_date),
+        paper_uploaded: paperUploaded,
+        inspection_status: inspectionStatus,
+        // commit 28: steps 1–7 (lib/booking-steps.ts), the same as on the owner's bookings page
+        steps: stepOf({
+          status: b.status, data_confirmed_at: b.data_confirmed_at, move_in_bill_id: b.move_in_bill_id,
+          move_in_bill_status: b.first_bill_status, inspection_status: inspectionStatus, paper_uploaded: paperUploaded,
+        }),
         print_url: `/contract-print/${b.contract_id}?print=1`, // print page → Save as PDF (same text as the Word file)
         seconds_to_expire: b.expires_at ? secondsTo(new Date(b.expires_at)) : null,
         seconds_to_pay: b.status === 'BookingApproved' && deadlines ? secondsTo(deadlines.payBy) : null,
@@ -96,6 +110,6 @@ export async function GET() {
     });
   } catch (error: any) {
     console.error('[Booking Status Error]', error);
-    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, message: serverErrorMessage(error, 'โหลดสถานะการจองไม่สำเร็จ') }, { status: 500 });
   }
 }
