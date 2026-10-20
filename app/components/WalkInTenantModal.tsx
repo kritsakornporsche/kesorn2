@@ -9,6 +9,8 @@ import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 import { testRoomsLast } from '@/lib/test-rooms';
 import TestRoomBadge from '@/components/TestRoomBadge';
 import OccupiedRooms from '@/components/OccupiedRooms';
+import PartyFields from '@/components/PartyFields';
+import { EMPTY_PARTY, checkParty, joinAddress, joinName, type PartyValue } from '@/lib/contract-party';
 import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
 
 interface WalkInModalProps {
@@ -36,8 +38,9 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
 
   // Form State
   const [selectedRoomId, setSelectedRoomId] = useState<string>('');
-  const [tenantName, setTenantName] = useState('');
-  const [tenantAddress, setTenantAddress] = useState('');
+  // commit 28-8b: name and address in the contract form's fields (components/PartyFields)
+  const [party, setParty] = useState<PartyValue>(EMPTY_PARTY);
+  const tenantName = joinName(party);
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [parentPhone, setParentPhone] = useState('');
@@ -71,8 +74,7 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
 
   const resetForm = () => {
     setSelectedRoomId('');
-    setTenantName('');
-    setTenantAddress('');
+    setParty(EMPTY_PARTY);
     setEmail('');
     setPhone('');
     setParentPhone('');
@@ -108,8 +110,9 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
       alert('กรุณาเลือกห้องพักที่ต้องการจอง');
       return;
     }
-    if (!tenantName.trim()) {
-      alert('กรุณาระบุชื่อ-นามสกุลผู้เช่า');
+    const pc = checkParty(party);
+    if (!pc.ok) {
+      alert(pc.message);
       return;
     }
     if (!email.trim() || !email.includes('@')) {
@@ -195,11 +198,12 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
           startDate,
           endDate,
           monthlyRent: selectedRoom?.price || 2800,
+          ...party,
           tenantName,
           email,
           phone,
           parentPhone,
-          tenantAddress,
+          tenantAddress: joinAddress(party),
           occupants,
           paymentMethod: payMethod,
           ...(payMethod === 'cash' ? { cashAmount: roomFee, cashPaidAt } : { slipUrl: slipData }),
@@ -327,18 +331,15 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
 
               {/* Form Input Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300">
-                    ชื่อ-นามสกุล (จากบัตรปชช.) <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="เช่น นายกฤษกร บัวอินทร์"
-                    value={tenantName}
-                    onChange={(e) => setTenantName(e.target.value)}
-                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-primary"
+                <div className="space-y-1.5 sm:col-span-2">
+                  <PartyFields
+                    value={party}
+                    onChange={setParty}
+                    inputClass="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-primary"
+                    labelClass="text-xs font-bold text-slate-300"
+                    hintClass="text-[11px] text-slate-400"
                   />
-                  <p className="text-[10px] text-slate-500">ชื่อนี้จะถูกใช้เป็นชื่อบัญชีผู้ใช้</p>
+                  <p className="text-[10px] text-slate-500">คำนำหน้า + ชื่อ + นามสกุล ใช้เป็นชื่อบัญชีผู้ใช้</p>
                 </div>
 
                 <div className="space-y-1.5">
@@ -379,17 +380,6 @@ export default function WalkInTenantModal({ isOpen, onClose, onSuccess }: WalkIn
                     {...PHONE_INPUT_PROPS}
                     onChange={(e) => setParentPhone(phoneDigits(e.target.value))}
                     className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-primary"
-                  />
-                </div>
-
-                <div className="space-y-1.5 sm:col-span-2">
-                  <label className="text-xs font-bold text-slate-300">ที่อยู่ตามบัตรประชาชน</label>
-                  <textarea
-                    rows={2}
-                    placeholder="ที่อยู่ตามทะเบียนบ้าน/บัตรประชาชน"
-                    value={tenantAddress}
-                    onChange={(e) => setTenantAddress(e.target.value)}
-                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-primary resize-none"
                   />
                 </div>
 

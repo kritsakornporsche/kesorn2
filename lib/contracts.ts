@@ -7,6 +7,7 @@ import { randomInt } from 'crypto';
 import { bangkokDate, bookingFeeFor, depositFor } from '@/lib/billing';
 import { formatBaht } from '@/lib/format';
 import { withTransaction, type Client } from '@/lib/bill-status';
+import type { Party } from '@/lib/contract-party';
 
 // Accounts that run the dorm can never be turned into a tenant (or have their password/role changed here)
 const STAFF_ROLES = new Set(['owner', 'manager', 'keeper', 'admin', 'platform_admin', 'researcher']);
@@ -214,6 +215,8 @@ export interface CreateContractInput {
   /** @deprecated Ignored — the ID card image is not stored (PDPA, commit 16) */
   idCardImage?: string | null;
   tenantAddress?: string | null;
+  /** commit 28-8b: the tenant in the contract form's fields (022 columns), from booking / walk-in / pre-system form */
+  party?: Party | null;
   parentPhone?: string | null;
   parentContractId?: number | null;
   note?: string | null;
@@ -224,6 +227,14 @@ export interface CreateContractInput {
    * received outside the system, so another amount is allowed and the contract is marked deposit_outside_system.
    */
   depositOutsideSystem?: { reason: string } | null;
+}
+
+/** The 022 columns of a contract from the checked fields (NULL when the caller sent one-field name / address) */
+function partyColumns(p: Party | null | undefined): (string | null)[] {
+  if (!p) return Array(11).fill(null);
+  const a = p.address;
+  const v = (s: string) => s || null;
+  return [p.title, p.firstName, p.lastName, a.houseNo, v(a.moo), v(a.soi), v(a.road), a.subdistrict, a.district, a.province, v(a.postcode)];
 }
 
 /** createContract inside a transaction the caller has started (refusals throw Refused). */
@@ -274,14 +285,17 @@ export async function createContractTx(client: Client, input: CreateContractInpu
   const contractId = (await client.query(
     `INSERT INTO contracts (tenant_id, room_id, start_date, end_date, deposit_amount, status, signature_data, owner_signature_data,
        signed_at, slip_url, contract_file_url, tenant_address, parent_phone, parent_contract_id, renewal_note, occupants,
-       deposit_outside_system, deposit_note, approved_at, approved_by, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       deposit_outside_system, deposit_note, approved_at, approved_by, expires_at,
+       tenant_title, tenant_first_name, tenant_last_name, addr_house_no, addr_moo, addr_soi, addr_road,
+       addr_subdistrict, addr_district, addr_province, addr_postcode)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [tenantId, room.id, input.startDate, input.endDate, deposit, input.status, input.signature || null,
       input.ownerSignature || null, input.signedAt || null, input.slipUrl || null, input.contractFileUrl || null,
       input.tenantAddress || null, input.parentPhone || null,
       input.parentContractId || null, input.note || null, Math.max(1, Math.floor(Number(input.occupants) || 1)),
       outside ? 1 : 0, outside ? String(outside.reason).trim().slice(0, 500) : null,
-      input.approvedAt || null, input.approvedBy || null, input.expiresAt || null]
+      input.approvedAt || null, input.approvedBy || null, input.expiresAt || null,
+      ...partyColumns(input.party)]
   )).rows.insertId;
 
   await client.query('UPDATE rooms SET status = ? WHERE id = ?', [isActive ? 'Occupied' : 'Reserved', room.id]);

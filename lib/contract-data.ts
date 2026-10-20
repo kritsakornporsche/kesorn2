@@ -14,7 +14,7 @@ import { isPaper } from '@/lib/contract-files';
 import { parseOccupants, OCCUPANTS_MESSAGE } from '@/lib/occupants';
 import { BOOKING_PAID_STATUSES } from '@/lib/booking-steps';
 import {
-  ADDRESS_FIELDS, NAME_PART_MAX, TITLES, addressFromText, joinAddress, joinName, splitName,
+  ADDRESS_FIELDS, NAME_PART_MAX, PARTY_MESSAGES, TITLES, addressFromText, joinAddress, joinName, splitName,
   type AddressParts, type Title,
 } from '@/lib/contract-party';
 
@@ -33,10 +33,11 @@ const MESSAGES: Record<ContractDataRefusal, string> = {
   already_confirmed: 'ยืนยันข้อมูลสัญญานี้แล้ว — ถ้าต้องแก้ ให้ใช้ "แก้ข้อมูลสัญญา" พร้อมเหตุผล',
   not_confirmed: 'ยังไม่ได้ยืนยันข้อมูลสัญญา — กด "ยืนยันข้อมูลสัญญา" ก่อน',
   paper_locked: 'อัปโหลดสัญญาที่ลงนามแล้ว แก้ข้อมูลไม่ได้ ต้องทำสัญญาใหม่',
-  bad_name: `กรุณากรอกชื่อและนามสกุลผู้เช่า (ช่องละไม่เกิน ${NAME_PART_MAX} ตัวอักษร)`,
-  bad_title: `กรุณาเลือกคำนำหน้า (${TITLES.join(' / ')})`,
-  bad_address: 'กรุณากรอกที่อยู่ตามบัตรประชาชน: บ้านเลขที่ ตำบล/แขวง อำเภอ/เขต และจังหวัด (ช่องละไม่เกิน 100 ตัวอักษร)',
-  bad_postcode: 'รหัสไปรษณีย์ต้องเป็นตัวเลข 5 หลัก',
+  // commit 28-8b: the same words as the forms that start a contract (lib/contract-party)
+  bad_name: PARTY_MESSAGES.bad_name,
+  bad_title: PARTY_MESSAGES.bad_title,
+  bad_address: PARTY_MESSAGES.bad_address,
+  bad_postcode: PARTY_MESSAGES.bad_postcode,
   bad_occupants: OCCUPANTS_MESSAGE,
   bad_dates: 'วันที่ไม่ถูกต้อง: วันสิ้นสุดสัญญาต้องอยู่หลังวันเริ่มสัญญา',
   start_passed: 'วันเริ่มสัญญาต้องไม่ก่อนวันนี้',

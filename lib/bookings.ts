@@ -10,6 +10,7 @@ import { ROOM_HOLDING_STATUSES, createContractTx, Refused, contractMessage, with
 import { recordPaymentInTransaction, slipPaidAt } from '@/lib/payments';
 import { forfeitBookingFee } from '@/lib/deposits';
 import { formatBaht } from '@/lib/format';
+import type { Party } from '@/lib/contract-party';
 
 export const PAY_MINUTES = 10; // transfer within 10 minutes of approval
 export const UPLOAD_MINUTES = 15; // slip upload accepted until approval + 15 minutes
@@ -153,6 +154,8 @@ export interface BookingRequestInput {
   signature?: string | null;
   /** occupants of the room (lib/occupants, checked by the API) — on the contract from the booking (commit 27) */
   occupants?: number | null;
+  /** commit 28-8b: name / address in the contract form's fields (checked by the API); name / address are then its one-line forms */
+  party?: Party | null;
 }
 
 const isDate = (v: unknown) => {
@@ -189,6 +192,7 @@ export function requestBooking(input: BookingRequestInput, now: Date) {
       oneOpenContract: true,
       signature: input.signature || 'CONFIRMED_E_CONTRACT',
       tenantAddress: input.address,
+      party: input.party ?? null,
       parentPhone: input.parentPhone,
       occupants: input.occupants ?? 1,
       // no expiry: waits until the owner/manager approves or rejects

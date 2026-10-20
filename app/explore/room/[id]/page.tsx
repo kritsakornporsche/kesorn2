@@ -19,6 +19,8 @@ import { TEST_ROOM_PAGE_BADGE, isTestRoom } from '@/lib/test-rooms';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 import { mapDirectUrl, mapEmbedUrl } from '@/lib/maps';
 import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
+import PartyFields from '@/components/PartyFields';
+import { ADDRESS_FIELDS, EMPTY_PARTY, checkParty, joinAddress, joinName, partyFromText, type PartyValue } from '@/lib/contract-party';
 
 export default function RoomBookingPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -41,13 +43,17 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
     id_card_address: '',
     id_card_image: '',
     occupants: 1,
-    houseNo: '',
+    // commit 28-8b: the name and address in the contract form's fields (components/PartyFields); name / id_card_address /
+    // village are their one-line forms (preview and older drafts)
+    ...EMPTY_PARTY,
     village: '',
-    road: '',
-    subdistrict: '',
-    district: '',
-    province: '',
   });
+  const partyOf = (d: typeof bookingData): PartyValue => ({
+    title: d.title, firstName: d.firstName, lastName: d.lastName,
+    ...(Object.fromEntries(ADDRESS_FIELDS.map((f) => [f.key, (d as any)[f.key] ?? ''])) as any),
+  });
+  const setParty = (p: PartyValue) => setBookingData((prev) => ({ ...prev, ...p, name: joinName(p), id_card_address: joinAddress(p), village: p.moo }));
+  const partyCheck = checkParty(partyOf(bookingData));
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSimulator, setShowSimulator] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -117,11 +123,12 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
   useEffect(() => {
     if (sessionStatus === 'authenticated' && session?.user) {
-      setBookingData((prev) => ({
-        ...prev,
-        name: prev.name && prev.name !== 'guest' ? prev.name : ((session.user?.name && session.user?.name !== 'guest') ? session.user.name : ''),
-        email: prev.email || session.user?.email || '',
-      }));
+      setBookingData((prev) => {
+        const name = prev.name && prev.name !== 'guest' ? prev.name : ((session.user?.name && session.user?.name !== 'guest') ? session.user.name : '');
+        // the account's name as a start for the separate fields (the booker checks them)
+        const p = prev.firstName ? {} : (({ title, firstName, lastName }) => ({ title, firstName, lastName }))(partyFromText(name));
+        return { ...prev, ...p, name, email: prev.email || session.user?.email || '' };
+      });
     }
   }, [sessionStatus, session]);
 
@@ -148,7 +155,11 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
             } else {
               setStep(1);
             }
-            setBookingData((prev) => ({ ...prev, ...data.data.booking_data }));
+            setBookingData((prev) => {
+              const d = { ...prev, ...data.data.booking_data };
+              // a draft saved before 28-8b has one-field name / address: split it for the fields
+              return d.firstName || !d.name ? d : { ...d, ...partyFromText(d.name, d.id_card_address) };
+            });
           }
         } catch (e) {
           console.error('[Fetch Progress Error]', e);
@@ -215,10 +226,9 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
           signature: 'CONFIRMED_E_CONTRACT',
           startDate: bookingData.start_date,
           endDate: bookingData.end_date,
-          tenantName: bookingData.name,
+          ...partyOf(bookingData),
           phone: bookingData.phone,
           parentPhone: bookingData.parent_phone,
-          tenantAddress: bookingData.id_card_address,
           occupants: bookingData.occupants,
         })
       });
@@ -840,43 +850,19 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   </p>
                 </div>
 
-                {/* Extracted Fields */}
+                {/* commit 28-8b: name and address in the contract form's fields — step 3 of the dorm shows them as typed here */}
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
-                        ชื่อ-นามสกุล ผู้เช่า <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        className="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
-                        placeholder="นาย/นางสาว..."
-                        value={bookingData.name ?? ''}
-                        onChange={(e) => setBookingData({ ...bookingData, name: e.target.value })}
-                      />
-                    </div>
-                  </div>
+                  <PartyFields
+                    value={partyOf(bookingData)}
+                    onChange={setParty}
+                    inputClass="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
+                    labelClass="text-xs font-bold text-muted-foreground block"
+                    hintClass="text-[11px] font-bold text-muted-foreground block"
+                  />
+                  {!partyCheck.ok && partyOf(bookingData).houseNo && (
+                    <p className="text-[11px] font-bold text-rose-500" data-party-problem>{partyCheck.message}</p>
+                  )}
                   <p className="text-[11px] text-muted-foreground">🔒 ระบบไม่เก็บเลขบัตรประชาชนและรูปบัตร (เลขบัตรกรอกด้วยมือในสัญญากระดาษตอนเซ็น)</p>
-
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
-                        ที่อยู่ตามทะเบียนบ้าน / บัตรประชาชน <span className="text-rose-500">*</span>
-                      </label>
-                      {bookingData.subdistrict && (
-                        <span className="text-[10px] font-bold text-primary">
-                          ✓ แยกช่องอัตโนมัติ: ต.{bookingData.subdistrict} อ.{bookingData.district} จ.{bookingData.province}
-                        </span>
-                      )}
-                    </div>
-                    <textarea
-                      rows={2}
-                      className="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-bold text-xs"
-                      placeholder="บ้านเลขที่ หมู่ ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
-                      value={bookingData.id_card_address ?? ''}
-                      onChange={(e) => setBookingData({ ...bookingData, id_card_address: e.target.value })}
-                    />
-                  </div>
 
                   {/* commit 27: occupants (water is charged per person); only the tenant's details are kept */}
                   <div className="space-y-1">
@@ -932,7 +918,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   </div>
                   <button
                     onClick={handleFinalSubmit}
-                    disabled={!bookingData.name || !bookingData.id_card_address || isProcessing || !costs}
+                    disabled={!partyCheck.ok || isProcessing || !costs}
                     className="w-full py-5 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-sm transition-all shadow-xl shadow-primary/25 hover:scale-[1.02] active:scale-95 disabled:opacity-40 cursor-pointer"
                   >
                     {isProcessing ? 'กำลังส่งคำขอจอง...' : 'ส่งคำขอจอง →'}

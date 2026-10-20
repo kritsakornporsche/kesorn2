@@ -11,6 +11,8 @@ import { checkPaperFile } from '@/lib/paper-file-check';
 import { contractDepositLabel, statusText } from '@/lib/status-text';
 import TestRoomBadge from '@/components/TestRoomBadge';
 import OccupiedRooms from '@/components/OccupiedRooms';
+import PartyFields from '@/components/PartyFields';
+import { EMPTY_PARTY, checkParty, joinAddress, joinName, type PartyValue } from '@/lib/contract-party';
 import { testRoomSuffix, testRoomsLast } from '@/lib/test-rooms';
 import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
@@ -84,6 +86,8 @@ export default function OwnerContractsPage() {
   const [isUploadingSigned, setIsUploadingSigned] = useState(false);
 
   // New Contract Form State
+  // commit 28-8b: the tenant's name and address in the contract form's fields (components/PartyFields)
+  const [party, setParty] = useState<PartyValue>(EMPTY_PARTY);
   const [formData, setFormData] = useState({
     tenant_name: '',
     tenant_email: '',
@@ -180,7 +184,12 @@ export default function OwnerContractsPage() {
   // Create Contract Submission
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.room_id || !formData.tenant_name || !formData.tenant_email) {
+    const pc = checkParty(party);
+    if (!pc.ok) {
+      alert(pc.message);
+      return;
+    }
+    if (!formData.room_id || !formData.tenant_email) {
       alert('กรุณากรอกข้อมูลสำคัญให้ครบถ้วน');
       return;
     }
@@ -192,6 +201,9 @@ export default function OwnerContractsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
+          ...party,
+          tenant_name: joinName(party),
+          tenant_address: joinAddress(party),
           contract_file_url: formData.contract_file_url || 'CONTRACT_DOCUMENT',
           dormId: ownerDormId
         }),
@@ -204,6 +216,7 @@ export default function OwnerContractsPage() {
           alert('🎉 บันทึกสัญญาเช่าเรียบร้อยแล้ว (ผู้เช่ามีบัญชีอยู่แล้ว ใช้รหัสผ่านเดิม) สามารถกดดาวน์โหลดสัญญา (PDF) ได้ทันที');
         }
         setIsCreateModalOpen(false);
+        setParty(EMPTY_PARTY);
         setFormData({
           tenant_name: '',
           tenant_email: '',
@@ -856,37 +869,14 @@ export default function OwnerContractsPage() {
                     <OccupiedRooms tone="theme" />
                   </div>
 
-                  {/* Name (the ID number is not stored — PDPA) */}
-                  <div className="grid grid-cols-1 gap-6">
-                    <div className="space-y-2">
-                      <label className="block text-[10px] font-black text-foreground/50 uppercase tracking-widest">
-                        ชื่อ-นามสกุล ผู้เช่า <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="สมชาย ใจดี"
-                        value={formData.tenant_name}
-                        onChange={(e) => setFormData({ ...formData, tenant_name: e.target.value })}
-                        className="w-full px-6 py-4 bg-background border border-border rounded-2xl text-foreground font-bold outline-none focus:border-primary transition-all"
-                      />
-                    </div>
-
-                  </div>
-
-                  {/* Address from ID Card */}
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-black text-foreground/50 uppercase tracking-widest">
-                      ที่อยู่ตามบัตรประชาชน
-                    </label>
-                    <textarea
-                      rows={2}
-                      placeholder="99/50 หมู่ 3 ซอยงามวงศ์วาน 54 แขวงลาดยาว เขตจตุจักร กรุงเทพฯ 10900"
-                      value={formData.tenant_address}
-                      onChange={(e) => setFormData({ ...formData, tenant_address: e.target.value })}
-                      className="w-full px-6 py-4 bg-background border border-border rounded-2xl text-foreground font-medium outline-none focus:border-primary transition-all text-sm resize-none"
-                    ></textarea>
-                  </div>
+                  {/* Name and address as on the ID card, in the contract form's fields (the ID number is not stored — PDPA) */}
+                  <PartyFields
+                    value={party}
+                    onChange={setParty}
+                    inputClass="w-full px-4 py-3 bg-background border border-border rounded-2xl text-foreground font-bold outline-none focus:border-primary transition-all text-sm"
+                    labelClass="block text-[10px] font-black text-foreground/50 uppercase tracking-widest"
+                    hintClass="block text-[11px] font-bold text-muted-foreground"
+                  />
 
                   {/* Contact Info */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

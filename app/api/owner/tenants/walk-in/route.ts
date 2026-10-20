@@ -6,6 +6,7 @@ import { verifySlipWithSlipOK } from '@/lib/slipok';
 import { recordPayment, slipPaidAt } from '@/lib/payments';
 import { bookingFeeFor, getDormPromptPay } from '@/lib/billing';
 import { createContract, contractMessage } from '@/lib/contracts';
+import { checkParty, hasPartyFields, type Party } from '@/lib/contract-party';
 import { voidFailedBooking } from '@/lib/bookings';
 import { parseOccupants } from '@/lib/occupants';
 import { parsePhone } from '@/lib/phone';
@@ -42,12 +43,10 @@ export async function POST(req: Request) {
       startDate,
       endDate,
       monthlyRent,
-      tenantName,
       email,
       phone,
       parentPhone,
       idCardNumber,
-      tenantAddress,
       slipUrl,
       paymentMethod: rawMethod,
       cashAmount,
@@ -63,6 +62,18 @@ export async function POST(req: Request) {
     // commit 27: occupants of the room (1–MAX_OCCUPANTS, lib/occupants)
     const occ = parseOccupants(body.occupants);
     if (!occ.ok) return NextResponse.json({ success: false, message: occ.message }, { status: 400 });
+
+    // commit 28-8b: the walk-in form sends the contract form's fields (lib/contract-party checkParty); the one-line name /
+    // address are made from them. Older callers may still send tenantName / tenantAddress.
+    let { tenantName, tenantAddress } = body;
+    let party: Party | null = null;
+    if (hasPartyFields(body)) {
+      const p = checkParty(body);
+      if (!p.ok) return NextResponse.json({ success: false, reason: p.reason, message: p.message }, { status: 400 });
+      party = p.party;
+      tenantName = party.fullName;
+      tenantAddress = party.addressText;
+    }
 
     // Validation
     if (!roomId || !tenantName || !email || !phone || (!isCash && !slipUrl)) {
@@ -224,6 +235,7 @@ export async function POST(req: Request) {
       approvedBy: guard.user.id,
       idCardNumber: cleanIdCard,
       tenantAddress: tenantAddress || null,
+      party,
       parentPhone: cleanParentPhone,
     });
     if (!created.ok) {

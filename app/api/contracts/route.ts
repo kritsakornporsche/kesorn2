@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { parseOccupants } from '@/lib/occupants';
 import { parsePhone } from '@/lib/phone';
 import { requestBooking } from '@/lib/bookings';
+import { checkParty, hasPartyFields, type Party } from '@/lib/contract-party';
 
 // A guest asks to book a room (approve first, then pay): no slip and no payment here.
 // Accepted at any time (it waits for approval); one open request per account; the room must be free.
@@ -19,7 +20,19 @@ export async function POST(req: NextRequest) {
   const sql = getDb();
 
   try {
-    const { roomId, signature, startDate, endDate, tenantName, phone, parentPhone, idCardNumber, tenantAddress, idCardImage, occupants } = await req.json();
+    const body = await req.json();
+    const { roomId, signature, startDate, endDate, phone, parentPhone, idCardNumber, idCardImage, occupants } = body;
+    let { tenantName, tenantAddress } = body;
+    // commit 28-8b: the booking form sends the contract form's fields (required: title, first / last name, บ้านเลขที่,
+    // ตำบล, อำเภอ, จังหวัด); the one-line name / address are made from them. Older callers may still send one field each.
+    let party: Party | null = null;
+    if (hasPartyFields(body)) {
+      const p = checkParty(body);
+      if (!p.ok) return NextResponse.json({ success: false, reason: p.reason, message: p.message }, { status: 400 });
+      party = p.party;
+      tenantName = party.fullName;
+      tenantAddress = party.addressText;
+    }
 
     if (!roomId) {
       return NextResponse.json({ success: false, message: 'Room ID is required' }, { status: 400 });
@@ -45,6 +58,7 @@ export async function POST(req: NextRequest) {
       endDate,
       signature: signature || null,
       occupants: occ.value,
+      party,
     }, new Date());
 
     if (!result.ok) {

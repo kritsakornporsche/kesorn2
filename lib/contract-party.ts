@@ -77,3 +77,65 @@ export function addressFromText(text: string | null | undefined): AddressParts {
     subdistrict: part(p.subdistrict), district: part(p.district), province: part(p.province), postcode: part(p.postalCode),
   };
 }
+
+// ── The forms that start a contract (commit 28-8b) ──────────────────────────────────────────────────────────────────
+// Online booking, walk-in and the pre-system tenant form ask the same separate fields as step 3 (components/PartyFields)
+// and the contract keeps them from the start, so step 3 only checks / corrects them.
+
+/** The fields as a form holds them (flat — the same keys the APIs take) */
+export type PartyValue = { title: string; firstName: string; lastName: string } & AddressParts;
+export const EMPTY_PARTY: PartyValue = { title: '', firstName: '', lastName: '', ...EMPTY_ADDRESS };
+
+export type PartyRefusal = 'bad_title' | 'bad_name' | 'bad_address' | 'bad_postcode';
+export const PARTY_MESSAGES: Record<PartyRefusal, string> = {
+  bad_title: `กรุณาเลือกคำนำหน้า (${TITLES.join(' / ')})`,
+  bad_name: `กรุณากรอกชื่อและนามสกุลผู้เช่า (ช่องละไม่เกิน ${NAME_PART_MAX} ตัวอักษร)`,
+  bad_address: 'กรุณากรอกที่อยู่ตามบัตรประชาชน: บ้านเลขที่ ตำบล/แขวง อำเภอ/เขต และจังหวัด (ช่องละไม่เกิน 100 ตัวอักษร)',
+  bad_postcode: 'รหัสไปรษณีย์ต้องเป็นตัวเลข 5 หลัก',
+};
+
+/** Checked fields, with the one-line name / address kept for every other page */
+export interface Party {
+  title: Title;
+  firstName: string;
+  lastName: string;
+  address: AddressParts;
+  /** title + first + last (tenants.name — the account name) */
+  fullName: string;
+  /** contracts.tenant_address / tenants.address */
+  addressText: string;
+}
+
+const clean = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
+
+/**
+ * The tenant's fields from a form or a request: title, first name, last name, บ้านเลขที่, ตำบล, อำเภอ and จังหวัด are
+ * required; หมู่ / ซอย / ถนน are not; รหัสไปรษณีย์, when given, is 5 digits. Same rules on the page and the server.
+ */
+export function checkParty(input: Partial<Record<keyof PartyValue, unknown>> | null | undefined):
+  { ok: true; party: Party } | { ok: false; reason: PartyRefusal; message: string } {
+  const no = (reason: PartyRefusal) => ({ ok: false as const, reason, message: PARTY_MESSAGES[reason] });
+  const v = input || {};
+  const title = clean(v.title);
+  if (!TITLES.includes(title as Title)) return no('bad_title');
+  const firstName = clean(v.firstName);
+  const lastName = clean(v.lastName);
+  if (!firstName || !lastName || firstName.length > NAME_PART_MAX || lastName.length > NAME_PART_MAX) return no('bad_name');
+  const address = Object.fromEntries(ADDRESS_FIELDS.map((f) => [f.key, clean(v[f.key])])) as unknown as AddressParts;
+  if (ADDRESS_FIELDS.some((f) => (f.required && !address[f.key]) || address[f.key].length > 100)) return no('bad_address');
+  if (address.postcode && !/^\d{5}$/.test(address.postcode)) return no('bad_postcode');
+  const party = { title: title as Title, firstName, lastName, address };
+  return { ok: true, party: { ...party, fullName: joinName(party), addressText: joinAddress(address) } };
+}
+
+/** Whether a request sent the separate fields (older callers still send one-field name / address) */
+export function hasPartyFields(body: unknown): boolean {
+  const b = (body || {}) as Record<string, unknown>;
+  return ['title', 'firstName', 'lastName', 'houseNo'].some((k) => b[k] !== undefined && b[k] !== null);
+}
+
+/** A form filled in from a one-field name / address (an account's name, a saved draft) — best effort */
+export function partyFromText(name: string | null | undefined, address?: string | null): PartyValue {
+  const n = splitName(name);
+  return { ...EMPTY_PARTY, ...(address ? addressFromText(address) : {}), title: n.title, firstName: n.firstName, lastName: n.lastName };
+}

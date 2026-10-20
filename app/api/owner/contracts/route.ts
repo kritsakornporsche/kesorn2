@@ -3,6 +3,7 @@ import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { createContract, temporaryPassword, contractMessage } from '@/lib/contracts';
+import { checkParty, hasPartyFields, type Party } from '@/lib/contract-party';
 import { issueMoveInBill, missingMessage, moveInStatus, recordSignedPaper } from '@/lib/moveIn';
 import { formDeposit, withPaperLink } from '@/lib/contract-files';
 import { formatBaht, formatThaiDate } from '@/lib/format';
@@ -103,12 +104,21 @@ export async function POST(req: Request) {
       deposit_amount, 
       contract_file_url,
       id_card_number,
-      tenant_address,
       id_card_image
     } = body;
+    let tenant_address = body.tenant_address;
 
     const sql = getDb();
     let tenantName = tenant_name;
+    // commit 28-8b: the pre-system tenant form sends the contract form's fields (lib/contract-party checkParty)
+    let party: Party | null = null;
+    if (hasPartyFields(body)) {
+      const p = checkParty(body);
+      if (!p.ok) return NextResponse.json({ success: false, reason: p.reason, message: p.message }, { status: 400 });
+      party = p.party;
+      tenantName = party.fullName;
+      tenant_address = party.addressText;
+    }
     let tenantEmail = tenant_email;
     let tenantPhone = tenant_phone;
 
@@ -182,6 +192,7 @@ export async function POST(req: Request) {
       idCardNumber: id_card_number?.trim() || null,
       idCardImage: id_card_image || null,
       tenantAddress: tenant_address?.trim() || null,
+      party,
       occupants: occ.value,
       depositOutsideSystem: outsideSystem ? { reason: String(body.deposit_note || '') } : null,
       requireRoomFree: true,
