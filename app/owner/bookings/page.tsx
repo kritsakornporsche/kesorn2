@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
@@ -97,18 +97,29 @@ export default function OwnerBookingsPage() {
     setTimeout(() => setToast(null), 4500);
   };
 
-  const fetchBookings = async () => {
+  // commit 28a: new booking requests show up without pressing refresh — the list is reloaded quietly every
+  // REFRESH_MS and when the tab comes back; a request not seen before raises the "มีคำขอจองใหม่" bar.
+  const seenRequests = useRef<Set<number> | null>(null);
+  const [newRequests, setNewRequests] = useState(0);
+  const fetchBookings = async (opts: { silent?: boolean } = {}) => {
     try {
-      setLoading(true);
-      const res = await fetch('/api/owner/bookings');
+      if (!opts.silent) setLoading(true);
+      const res = await fetch('/api/owner/bookings', { cache: 'no-store' });
       const data = await res.json();
       if (data.success) {
-        setBookings(data.data || []);
+        const list: Booking[] = data.data || [];
+        const requested = list.filter((b) => b.booking_status === 'BookingRequested').map((b) => Number(b.contract_id));
+        if (seenRequests.current) {
+          const fresh = requested.filter((id) => !seenRequests.current!.has(id)).length;
+          if (fresh > 0) setNewRequests((n) => n + fresh);
+        }
+        seenRequests.current = new Set([...(seenRequests.current || []), ...requested]);
+        setBookings(list);
       }
     } catch (e) {
       console.error('Fetch bookings error:', e);
     } finally {
-      setLoading(false);
+      if (!opts.silent) setLoading(false);
     }
   };
 
@@ -213,13 +224,16 @@ export default function OwnerBookingsPage() {
     }
   };
 
-  // Requests waiting / bookings waiting for payment change on their own (expiry): refresh every 15 s while any exist
-  const hasOpen = bookings.some((b) => b.booking_status === 'BookingRequested' || b.booking_status === 'BookingApproved');
+  // Always refresh quietly every REFRESH_MS while the tab is visible, and at once when it comes back (commit 28a)
   useEffect(() => {
-    if (!hasOpen) return;
-    const id = setInterval(fetchBookings, 15_000);
-    return () => clearInterval(id);
-  }, [hasOpen]);
+    if (authStatus !== 'authenticated') return;
+    const REFRESH_MS = 20_000;
+    const id = setInterval(() => { if (document.visibilityState === 'visible') fetchBookings({ silent: true }); }, REFRESH_MS);
+    const onBack = () => { if (document.visibilityState === 'visible') fetchBookings({ silent: true }); };
+    document.addEventListener('visibilitychange', onBack);
+    window.addEventListener('focus', onBack);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', onBack); window.removeEventListener('focus', onBack); };
+  }, [authStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredBookings = bookings.filter((b) => {
     // Tab filter
@@ -268,6 +282,17 @@ export default function OwnerBookingsPage() {
         </div>
       )}
 
+      {/* New booking requests since the page was opened (commit 28a) */}
+      {newRequests > 0 && (
+        <div role="status" className="flex items-center justify-between gap-3 px-5 py-3 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-sm font-bold">
+          <span>🛎️ มีคำขอจองใหม่ {newRequests} รายการ</span>
+          <span className="flex gap-2">
+            <button onClick={() => { setActiveTab('REQ'); setNewRequests(0); }} className="px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 text-xs font-black">ดูคำขอ</button>
+            <button onClick={() => setNewRequests(0)} className="px-3 py-1.5 rounded-xl bg-white/10 text-white text-xs font-bold">ปิด</button>
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/10">
         <div>
@@ -282,7 +307,7 @@ export default function OwnerBookingsPage() {
 
         <div className="flex items-center gap-3">
           <button
-            onClick={fetchBookings}
+            onClick={() => fetchBookings()}
             className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white font-bold text-xs rounded-xl border border-white/10 transition-all flex items-center gap-2"
           >
             <span>🔄</span>
