@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
+import { DynamicBillQrModal } from '@/components/features/DynamicBillQrModal';
 import Image from 'next/image';
 import { formatBaht, formatThaiDateTime, PAYMENT_METHOD_LABEL } from '@/lib/format';
 import { isPaidStatus, statusText } from '@/lib/status-text';
@@ -62,6 +63,7 @@ export default function TenantBillingPage() {
   const [qrData, setQrData] = useState<{qrImage: string, amount: number, promptpayNumber: string, promptpayName?: string | null} | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState('');
+  const [showDynamicQr, setShowDynamicQr] = useState(false);
 
   // Dispute Form State
   const [disputeReading, setDisputeReading] = useState('');
@@ -494,21 +496,29 @@ export default function TenantBillingPage() {
                    </div>
                    
                    {/* Action Area */}
-                   <div className="bg-card border-t xl:border-t-0 xl:border-l border-border p-6 sm:p-8 flex flex-col justify-center gap-3 xl:w-72">
+                   <div className="bg-card border-t xl:border-t-0 xl:border-l border-border p-6 sm:p-8 flex flex-col justify-center gap-2.5 xl:w-72">
                       {isPayable ? (
                         <>
                           <button 
                             disabled={isPendingCorrection}
+                            onClick={() => { setSelectedBill(bill); setShowDynamicQr(true); }}
+                            className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black py-3 px-3 rounded-2xl transition-all shadow-md shadow-emerald-600/20 active:scale-[0.98] flex items-center justify-center gap-2 text-xs disabled:opacity-50 cursor-pointer"
+                          >
+                            <span>⚡</span>
+                            <span>ชำระเงินด่วน (ตรวจเงินเข้าทันที)</span>
+                          </button>
+                          <button 
+                            disabled={isPendingCorrection}
                             onClick={() => handleOpenQR(bill)}
-                            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-black py-3.5 px-4 rounded-2xl transition-all shadow-lg shadow-primary/20 active:scale-[0.98] flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+                            className="w-full bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 font-bold py-2 px-3 rounded-2xl transition-all active:scale-[0.98] text-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                           >
                             <span>💳</span>
-                            <span>ชำระผ่าน QR Code</span>
+                            <span>QR โค้ดมาตรฐาน</span>
                           </button>
                           <button 
                             disabled={isPendingCorrection}
                             onClick={() => { setSelectedBill(bill); setModalType('upload'); }}
-                            className="w-full bg-secondary hover:bg-secondary/80 text-foreground border border-border font-bold py-3 px-4 rounded-2xl transition-all active:scale-[0.98] text-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                            className="w-full bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground border border-border font-bold py-2 px-3 rounded-2xl transition-all active:scale-[0.98] text-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                           >
                             <span>📎</span>
                             <span>แจ้งโอนเงิน / แนบสลิป</span>
@@ -783,6 +793,28 @@ export default function TenantBillingPage() {
            </div>
          </div>
       )}
+
+      {/* Dynamic PromptPay QR Modal (Real-time Instant Auto Detection) */}
+      <DynamicBillQrModal
+        isOpen={showDynamicQr}
+        onClose={() => {
+          setShowDynamicQr(false);
+          fetchBills();
+        }}
+        billId={selectedBill?.id}
+        roomNumber={selectedBill?.room_number || '104'}
+        tenantName={session?.user?.name || 'ผู้เช่า'}
+        billTitle={selectedBill?.title || 'ค่าเช่าห้องพัก'}
+        amount={Number(selectedBill?.outstanding ?? selectedBill?.total_amount ?? selectedBill?.amount ?? 1)}
+        enableSatang={true}
+        onPaid={() => {
+          fetchBills();
+        }}
+        onSwitchToSlip={() => {
+          setShowDynamicQr(false);
+          setModalType('upload');
+        }}
+      />
     </>
   );
 }

@@ -93,12 +93,35 @@ export default function NotificationsPopover() {
         )}
       </button>
 
-      {/* Popover Dropdown */}
+      {/* Popover Dropdown (Full-screen on Mobile, Floating Dropdown on Desktop) */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-card text-card-foreground border border-border rounded-2xl shadow-2xl z-50 overflow-hidden transform opacity-100 scale-100 transition-all origin-top-right">
-          
-          {/* Tabs Navigation Header */}
-          <div className="bg-secondary/50 p-2 border-b border-border flex items-center gap-1">
+        <>
+          {/* Mobile Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 sm:hidden"
+            onClick={() => setIsOpen(false)}
+          />
+
+          <div className="fixed inset-0 sm:inset-auto sm:absolute sm:right-0 sm:mt-2 w-full sm:w-96 h-[100dvh] sm:h-auto sm:max-h-[580px] bg-card text-card-foreground border-0 sm:border sm:border-border sm:rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col transform opacity-100 scale-100 transition-all origin-top-right">
+            
+            {/* Mobile-only Header Bar with Close Button */}
+            <div className="flex sm:hidden items-center justify-between px-4 py-3 border-b border-border bg-secondary/80 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🔔</span>
+                <span className="text-sm font-black text-foreground">การแจ้งเตือนและข่าวสาร</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="w-8 h-8 rounded-full bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground flex items-center justify-center text-sm font-bold cursor-pointer"
+                aria-label="ปิด"
+              >
+                ✕
+              </button>
+            </div>
+            
+            {/* Tabs Navigation Header */}
+            <div className="bg-secondary/50 p-2 border-b border-border flex items-center gap-1 shrink-0">
             <button
               onClick={() => setActiveTab('notifications')}
               className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
@@ -132,8 +155,8 @@ export default function NotificationsPopover() {
 
           {/* Tab 1: Notifications */}
           {activeTab === 'notifications' && (
-            <div>
-              <div className="px-4 py-2.5 border-b border-border flex items-center justify-between bg-secondary/20">
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-border flex items-center justify-between bg-secondary/20 shrink-0">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">รายการแจ้งเตือนส่วนตัว</span>
                 {unreadCount > 0 && (
                   <button 
@@ -145,7 +168,7 @@ export default function NotificationsPopover() {
                 )}
               </div>
               
-              <div className="max-h-[380px] overflow-y-auto">
+              <div className="flex-1 overflow-y-auto sm:max-h-[380px]">
                 {loading ? (
                   <div className="p-8 text-center text-muted-foreground text-sm">กำลังโหลด...</div>
                 ) : notifications.length === 0 ? (
@@ -179,15 +202,15 @@ export default function NotificationsPopover() {
 
           {/* Tab 2: System Updates (Daily Progress) */}
           {activeTab === 'updates' && (
-            <div>
-              <div className="px-4 py-2.5 border-b border-border flex items-center justify-between bg-secondary/20">
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-border flex items-center justify-between bg-secondary/20 shrink-0">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-purple-500 dark:text-purple-300">ประวัติการปรับปรุงระบบ</span>
                 <span className="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                   {SYSTEM_UPDATES[0]?.version}
                 </span>
               </div>
 
-              <div className="max-h-[380px] overflow-y-auto p-3 space-y-3">
+              <div className="flex-1 overflow-y-auto sm:max-h-[380px] p-3 space-y-3">
                 {latestUpdates.map((upd) => (
                   <div 
                     key={upd.date}
@@ -219,7 +242,7 @@ export default function NotificationsPopover() {
               </div>
 
               {/* View Full Updates Link */}
-              <div className="p-3 bg-secondary/40 border-t border-border text-center">
+              <div className="p-3 bg-secondary/40 border-t border-border text-center shrink-0">
                 <Link
                   href="/updates"
                   onClick={() => setIsOpen(false)}
@@ -233,6 +256,7 @@ export default function NotificationsPopover() {
           )}
 
         </div>
+        </>
       )}
     </div>
   );

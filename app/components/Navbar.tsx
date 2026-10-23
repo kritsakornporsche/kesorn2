@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { handleSignOut } from '@/lib/auth-client';
 import { cn } from '@/lib/utils';
+import NotificationsPopover from '@/components/NotificationsPopover';
 import { useState, useEffect } from 'react';
 
 export default function Navbar() {
@@ -125,6 +126,7 @@ export default function Navbar() {
                     </svg>
                     <span className="hidden xs:inline">ไปที่แดชบอร์ด</span>
                   </Link>
+                  <NotificationsPopover />
                 </div>
               )}
 

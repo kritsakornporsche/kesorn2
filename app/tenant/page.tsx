@@ -8,6 +8,7 @@ import Link from 'next/link';
 import AnnouncementsSection from '../components/AnnouncementsSection';
 import DormRulesCard from './components/DormRulesCard';
 import CancelBookingButton from './components/CancelBookingButton';
+import TenantLiveMeterCard from './components/TenantLiveMeterCard';
 import { roomTypeLabel } from '@/lib/room-types';
 
 async function getDashboardData() {
@@ -241,34 +242,39 @@ export default async function TenantDashboard() {
         {/* 2. ACTIVE TENANT WELCOME SECTION (เมื่อมีสัญญา Active) */}
         {/* ========================================================================= */}
         {roomInfo && (
-          <section className="relative overflow-hidden bg-card rounded-[3rem] border border-border p-8 sm:p-12 shadow-2xl shadow-[#3E342B]/5">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full -mr-32 -mt-32 blur-3xl" />
-              <div className="relative z-10 flex flex-col lg:flex-row justify-between items-center gap-8">
-                  <div className="text-center lg:text-left">
-                      <h1 className="text-4xl md:text-5xl font-black text-foreground tracking-tight mb-3">
-                          ยินดีต้อนรับสู่บ้านใหม่
-                      </h1>
-                      <p className="text-base text-muted-foreground font-medium max-w-md">
-                          {roomInfo.dorm_name || 'SmartDom Dormitory'} พร้อมดูแลความสุขและการใช้ชีวิตของคุณในทุกวัน
-                      </p>
-                  </div>
-                  
-                  <div className="flex gap-4 md:gap-6 flex-wrap justify-center">
-                      <div className="bg-card px-8 py-5 rounded-3xl border border-border text-center min-w-[130px] transform hover:scale-105 transition-transform">
-                          <span className="block text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-1">Room</span>
-                          <span className="text-3xl font-black text-foreground">{roomInfo.room_number}</span>
-                      </div>
-                      <div className="bg-card px-8 py-5 rounded-3xl border border-border text-center min-w-[130px] transform hover:scale-105 transition-transform">
-                          <span className="block text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-1">Floor</span>
-                          <span className="text-3xl font-black text-foreground">{roomInfo.floor}</span>
-                      </div>
-                      <div className="bg-card px-8 py-5 rounded-3xl border border-border text-center min-w-[130px] transform hover:scale-105 transition-transform">
-                          <span className="block text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-1">Type</span>
-                          <span className="text-lg font-black text-foreground truncate max-w-[120px]">{roomTypeLabel(roomInfo.room_type)}</span>
-                      </div>
-                  </div>
-              </div>
-          </section>
+          <>
+            <section className="relative overflow-hidden bg-card rounded-[3rem] border border-border p-8 sm:p-12 shadow-2xl shadow-[#3E342B]/5">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full -mr-32 -mt-32 blur-3xl" />
+                <div className="relative z-10 flex flex-col lg:flex-row justify-between items-center gap-8">
+                    <div className="text-center lg:text-left">
+                        <h1 className="text-4xl md:text-5xl font-black text-foreground tracking-tight mb-3">
+                            ยินดีต้อนรับสู่บ้านใหม่
+                        </h1>
+                        <p className="text-base text-muted-foreground font-medium max-w-md">
+                            {roomInfo.dorm_name || 'SmartDom Dormitory'} พร้อมดูแลความสุขและการใช้ชีวิตของคุณในทุกวัน
+                        </p>
+                    </div>
+                    
+                    <div className="flex gap-4 md:gap-6 flex-wrap justify-center">
+                        <div className="bg-card px-8 py-5 rounded-3xl border border-border text-center min-w-[130px] transform hover:scale-105 transition-transform">
+                            <span className="block text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-1">Room</span>
+                            <span className="text-3xl font-black text-foreground">{roomInfo.room_number}</span>
+                        </div>
+                        <div className="bg-card px-8 py-5 rounded-3xl border border-border text-center min-w-[130px] transform hover:scale-105 transition-transform">
+                            <span className="block text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-1">Floor</span>
+                            <span className="text-3xl font-black text-foreground">{roomInfo.floor}</span>
+                        </div>
+                        <div className="bg-card px-8 py-5 rounded-3xl border border-border text-center min-w-[130px] transform hover:scale-105 transition-transform">
+                            <span className="block text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-1">Type</span>
+                            <span className="text-lg font-black text-foreground truncate max-w-[120px]">{roomTypeLabel(roomInfo.room_type)}</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Smart Meter Real-time Telemetry Card */}
+            <TenantLiveMeterCard roomNumber={roomInfo.room_number} />
+          </>
         )}
 
         {/* ========================================================================= */}

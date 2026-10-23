@@ -46,7 +46,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         if (!r.ok) return fail(r);
         await notifyUser(r.tenantUserId, 'บันทึกการคืนห้องแล้ว',
           r.finalBillId ? `บิลสุดท้ายก่อนย้ายออก ฿${formatBaht(r.finalAmount)} — จะหักจากเงินประกันตอนสรุปยอด` : 'บันทึกการคืนห้องแล้ว รอสรุปยอดเงินประกัน',
-          '/tenant/move-out', now);
+          '/guest/move-out/summary', now);
         return NextResponse.json({ success: true, message: 'บันทึกการคืนห้องแล้ว สัญญาสิ้นสุด', data: r });
       }
       case 'damages': {
@@ -66,13 +66,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           r.refund > 0
             ? `ได้รับเงินประกันคืน ฿${formatBaht(r.refund)} ภายในวันที่ ${new Date(`${r.refundDueDate}T00:00:00+07:00`).toLocaleDateString('th-TH')}`
             : r.tenantStillOwes > 0 ? `ยังมียอดค้างชำระ ฿${formatBaht(r.tenantStillOwes)} หลังหักเงินประกัน` : 'ปิดเรื่องย้ายออกแล้ว',
-          '/tenant/move-out', now);
+          '/guest/move-out/summary', now);
         return NextResponse.json({ success: true, message: r.closed ? 'หักเงินประกันและปิดเรื่องแล้ว' : 'หักเงินประกันแล้ว รอบันทึกการคืนเงิน', data: r });
       }
       case 'refund': {
         const r = await recordRefund(targetId, { file: body.file }, user, now);
         if (!r.ok) return fail(r);
-        await notifyUser(r.tenantUserId, 'คืนเงินประกันแล้ว', `เจ้าของหอโอนคืนเงินประกัน ฿${formatBaht(r.refund)} แล้ว`, '/tenant/move-out', now);
+        await notifyUser(r.tenantUserId, 'คืนเงินประกันแล้ว', `เจ้าของหอโอนคืนเงินประกัน ฿${formatBaht(r.refund)} แล้ว`, '/guest/move-out/summary', now);
         return NextResponse.json({ success: true, message: 'บันทึกการคืนเงินประกันและปิดเรื่องแล้ว', data: r });
       }
       case 'close_legacy': {

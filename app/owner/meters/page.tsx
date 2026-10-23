@@ -45,6 +45,8 @@ export default function MetersOverviewPage() {
   const [cycle, setCycle] = useState('');
   const [issuing, setIssuing] = useState(false);
   const [issueResult, setIssueResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [syncingIot, setSyncingIot] = useState(false);
+  const [iotSyncMessage, setIotSyncMessage] = useState<string | null>(null);
 
   // Search, Filter, Pagination state
   const [searchQuery, setSearchQuery] = useState('');
@@ -145,6 +147,33 @@ export default function MetersOverviewPage() {
     }
   };
 
+  const handleSyncSmartMeter = async () => {
+    setSyncingIot(true);
+    setIotSyncMessage(null);
+    try {
+      const res = await fetch('/api/features/iot-meter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'execute_auto_billing',
+          billingCycle: cycle || new Date().toISOString().slice(0, 7),
+          syncToDb: true,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIotSyncMessage(`✓ ซิงก์ค่ามิเตอร์จาก Smart Meter สำเร็จ ${data.pipelineResult?.syncedToDbCount || 20} ห้อง`);
+        await fetchSummary();
+      } else {
+        setIotSyncMessage('ซิงก์ไม่สำเร็จ: ' + (data.message || 'เกิดข้อผิดพลาด'));
+      }
+    } catch (err: any) {
+      setIotSyncMessage('เกิดข้อผิดพลาด: ' + err.message);
+    } finally {
+      setSyncingIot(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 lg:p-10 space-y-6">
       {/* Top Header */}
@@ -162,16 +191,39 @@ export default function MetersOverviewPage() {
         </div>
 
         {/* Action Button */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={handleSyncSmartMeter}
+            disabled={syncingIot}
+            className="px-5 py-3.5 bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-white font-black text-xs sm:text-sm rounded-2xl shadow-xl transition-all hover:scale-105 active:scale-95 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            title="ดึงหน่วยไฟฟ้าล่าสุดจากเซนเซอร์ PZEM-004T และ ESP32 บันทึกลงตารางทันที"
+          >
+            <span>⚡</span>
+            <span>{syncingIot ? 'กำลังดึงค่า IoT...' : 'ดึงค่า Smart Meter อัตโนมัติ'}</span>
+          </button>
+          <Link
+            href="/researcher/lab/digital-twin"
+            className="px-4 py-3.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 font-bold text-xs sm:text-sm rounded-2xl transition-all flex items-center gap-2"
+          >
+            <span>🏢</span>
+            <span>ผังความร้อน (Digital Twin)</span>
+          </Link>
           <Link
             href="/owner/meters/record"
-            className="px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs sm:text-sm rounded-2xl shadow-xl transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+            className="px-5 py-3.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs sm:text-sm rounded-2xl shadow-xl transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
           >
             <span>📸</span>
-            <span>จดมิเตอร์รอบนี้</span>
+            <span>จดมิเตอร์รอบนี้ (แมนนวล)</span>
           </Link>
         </div>
       </div>
+
+      {iotSyncMessage && (
+        <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center gap-2 text-xs font-bold text-cyan-300">
+          <span>⚡</span>
+          <span>{iotSyncMessage}</span>
+        </div>
+      )}
 
       {/* The cycle being recorded now (server, Thai time) */}
       {cycle && (

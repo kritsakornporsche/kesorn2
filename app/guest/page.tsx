@@ -8,6 +8,7 @@ import Image from 'next/image';
 import { roomTypeLabel } from '@/lib/room-types';
 import { signedPaperText, type SignedPaper } from '@/lib/signed-paper';
 import TenantInspectionCard from '@/components/TenantInspectionCard';
+import { DynamicBillQrModal } from '@/components/features/DynamicBillQrModal';
 import { BECOME_TENANT_TEXT, NextStepLine, StepBadge, StepChecklist } from '@/components/BookingSteps';
 import type { BookingSteps } from '@/lib/booking-steps';
 
@@ -67,6 +68,7 @@ export default function GuestDashboardPage() {
   const [paying, setPaying] = useState(false);
   const [previewContractUrl, setPreviewContractUrl] = useState<string | null>(null);
   const [showSlipModal, setShowSlipModal] = useState(false);
+  const [showDynamicQr, setShowDynamicQr] = useState(false);
   const [slipFile, setSlipFile] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -98,11 +100,6 @@ export default function GuestDashboardPage() {
       return;
     }
     if (authStatus === 'authenticated') {
-      const userRole = (session?.user as any)?.role;
-      if (userRole === 'tenant') {
-        router.push('/tenant');
-        return;
-      }
       fetchBookingStatus();
     }
   }, [authStatus, session, router]);
@@ -513,12 +510,22 @@ export default function GuestDashboardPage() {
                       ✓ ชำระค่าแรกเข้าแล้ว {booking.paper_uploaded ? '— สัญญามีผลแล้ว (รีเฟรชหน้านี้เพื่อเข้าหน้าผู้เช่า)' : '— รอหอพักอัปโหลดสัญญาที่เซ็นแล้ว'}
                     </p>
                   ) : (
-                    <button
-                      onClick={() => setShowSlipModal(true)}
-                      className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm rounded-xl shadow-xl transition-all flex items-center justify-center gap-2 hover:brightness-110 active:scale-95"
-                    >
-                      <span>💳 ชำระบิลค่าแรกเข้า (฿{firstBillTotal.toLocaleString('th-TH')})</span>
-                    </button>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <button
+                        onClick={() => setShowDynamicQr(true)}
+                        className="flex-1 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-sm rounded-xl shadow-xl transition-all flex items-center justify-center gap-2 hover:brightness-110 active:scale-95 cursor-pointer"
+                      >
+                        <span>⚡</span>
+                        <span>ชำระเงินด่วน (฿{firstBillTotal.toLocaleString('th-TH')})</span>
+                      </button>
+                      <button
+                        onClick={() => setShowSlipModal(true)}
+                        className="py-3 sm:py-4 px-5 bg-white/10 hover:bg-white/20 text-slate-200 border border-white/15 font-bold text-xs sm:text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <span>📎</span>
+                        <span>แนบสลิป</span>
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
@@ -666,6 +673,31 @@ export default function GuestDashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Dynamic PromptPay QR Modal (Real-time Instant Auto Detection) */}
+      <DynamicBillQrModal
+        isOpen={showDynamicQr}
+        onClose={() => {
+          setShowDynamicQr(false);
+          fetchBookingStatus();
+        }}
+        billId={booking?.first_bill_id}
+        roomNumber={booking?.room_number || '104'}
+        tenantName={session?.user?.name || 'ผู้เข้าพัก'}
+        billTitle={`ค่าแรกเข้าห้อง ${booking?.room_number || ''}`}
+        amount={firstBillTotal || 1}
+        enableSatang={true}
+        onPaid={async () => {
+          showToast('ชำระค่าแรกเข้าเรียบร้อยแล้ว!', 'success');
+          await fetchBookingStatus();
+          if (update) await update();
+          router.refresh();
+        }}
+        onSwitchToSlip={() => {
+          setShowDynamicQr(false);
+          setShowSlipModal(true);
+        }}
+      />
     </div>
   );
 }

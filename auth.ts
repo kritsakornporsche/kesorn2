@@ -83,36 +83,40 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     async signIn() { return true; },
 
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger, session }) {
       if (user) {
+        token.name = user.name;
+        token.email = user.email;
         if ((user as any).role) {
           token.role = (user as any).role;
           token.sub_role = (user as any).sub_role || null;
-        } else {
-          // OAuth Sign-in: lookup email in users table
-          const email = user.email?.toLowerCase().trim();
-          if (email) {
-            const sql = getDb();
-            try {
-              const dbUsers = await sql`
-                SELECT COALESCE(role, primary_role, 'guest') as role, sub_role 
-                FROM users 
-                WHERE LOWER(email) = ${email} OR LOWER(name) = ${email} LIMIT 1
-              `;
-              if (dbUsers.length > 0) {
-                token.role = dbUsers[0].role || 'guest';
-                token.sub_role = dbUsers[0].sub_role || null;
-              } else {
-                token.role = 'guest';
-                token.sub_role = null;
-              }
-            } catch (e) {
-              console.error('[Auth JWT: OAuth lookup]', e);
-            }
-          }
         }
-        token.name = user.name;
+      }
 
+      if (trigger === 'update' && session?.role) {
+        token.role = session.role;
+      }
+
+      // Sync role dynamically from DB so that role changes (e.g. move-out downgrade to guest) take effect immediately without re-login
+      const lookupEmail = (token.email || user?.email)?.toLowerCase().trim();
+      if (lookupEmail) {
+        const sql = getDb();
+        try {
+          const dbUsers = await sql`
+            SELECT COALESCE(role, primary_role, 'guest') as role, sub_role 
+            FROM users 
+            WHERE LOWER(email) = ${lookupEmail} OR LOWER(name) = ${lookupEmail} LIMIT 1
+          `;
+          if (dbUsers.length > 0) {
+            token.role = dbUsers[0].role || 'guest';
+            token.sub_role = dbUsers[0].sub_role || null;
+          }
+        } catch (e) {
+          console.error('[Auth JWT: Sync role error]', e);
+        }
+      }
+
+      if (user) {
         // Resolve dormId (GUARD-01)
         const email = user.email?.toLowerCase().trim();
         const userId = user.id;

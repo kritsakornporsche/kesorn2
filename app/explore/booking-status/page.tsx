@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import PromptPayBankSelector from '@/app/components/PromptPayBankSelector';
+import { DynamicBillQrModal } from '@/components/features/DynamicBillQrModal';
 import { formatBaht } from '@/lib/format';
 import { BOOKING_REQUEST_NOTE } from '@/lib/booking-text';
 import { BECOME_TENANT_TEXT, NextStepLine, StepChecklist } from '@/components/BookingSteps';
@@ -77,6 +78,7 @@ export default function BookingStatusPage() {
   // Countdown base: elapsed time since the last response (monotonic), not the device's wall clock
   const syncedAt = useRef<number>(0);
   const [, setTick] = useState(0);
+  const [dynamicQrTarget, setDynamicQrTarget] = useState<Booking | null>(null);
 
   const showToast = (message: string, type: ToastType) => {
     setToast({ message, type });
@@ -283,6 +285,16 @@ export default function BookingStatusPage() {
                       หอพักยังไม่ได้ตั้งเลขพร้อมเพย์ กรุณาติดต่อหอพัก{phoneOf(booking) ? ` โทร ${phoneOf(booking)}` : ''}
                     </div>
                   )}
+                  {toPay !== null && toPay > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setDynamicQrTarget(booking)}
+                      className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs shadow-lg shadow-emerald-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <span>⚡</span>
+                      <span>ชำระค่าจองด่วน (ตรวจเงินเข้าอัตโนมัติ ไม่ต้องส่งสลิป)</span>
+                    </button>
+                  )}
                   {qr && toPay !== null && toPay > 0 && (
                     <PromptPayBankSelector
                       qrImage={qr.qrImage}
@@ -407,6 +419,29 @@ export default function BookingStatusPage() {
           </div>
         )}
       </div>
+
+      {/* Dynamic PromptPay QR Modal for Booking Fee */}
+      {dynamicQrTarget && (
+        <DynamicBillQrModal
+          isOpen={Boolean(dynamicQrTarget)}
+          onClose={() => {
+            setDynamicQrTarget(null);
+            fetchBookings();
+          }}
+          billId={null}
+          roomNumber={dynamicQrTarget.room_number || '104'}
+          tenantName={session?.user?.name || 'ผู้จองห้อง'}
+          billTitle={`ค่าจองห้อง ${dynamicQrTarget.room_number}`}
+          amount={Number(dynamicQrTarget.booking_fee || 1000)}
+          enableSatang={true}
+          onPaid={async () => {
+            showToast('ชำระค่าจองห้องพักเรียบร้อยแล้ว!', 'success');
+            setDynamicQrTarget(null);
+            await fetchBookings();
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

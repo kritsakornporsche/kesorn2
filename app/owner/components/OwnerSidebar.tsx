@@ -76,22 +76,12 @@ export default function OwnerSidebar({ isOpen, onClose }: OwnerSidebarProps) {
 
   const NavContent = (
     <div className="flex flex-col h-full bg-slate-900 text-slate-100 border-r border-white/10 transition-all duration-300 select-none">
-      {/* Brand Header */}
-      <div className="p-3.5 border-b border-white/10 flex items-center justify-between shrink-0">
-        {!isCollapsed ? (
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-primary/20 text-primary border border-primary/40 flex items-center justify-center font-bold text-sm shrink-0">
-              🏢
-            </div>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-xs font-black text-white truncate">หอพักเกษร 2</h3>
-              <p className="text-[10px] text-slate-400 truncate">ระบบจัดการหอพักเดี่ยว</p>
-            </div>
-          </div>
-        ) : (
-          <div className="w-8 h-8 rounded-xl bg-primary/20 text-primary border border-primary/40 flex items-center justify-center font-bold text-sm mx-auto">
-            🏢
-          </div>
+      {/* Clean Sidebar Top & Collapse Toggle */}
+      <div className={`p-3 border-b border-white/10 flex items-center shrink-0 ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
+        {!isCollapsed && (
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 px-1">
+            เมนูหลัก
+          </span>
         )}
 
         {/* Desktop Collapse Toggle Button */}
