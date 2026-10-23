@@ -84,6 +84,9 @@ export interface SmartMeterRoomNode {
     lastHardwarePacketAt: string | null;
     lastUpdatedAt: string;
     pendingCommand: Esp32CommandType | null;
+    espStatus?: 'ONLINE' | 'OFFLINE';
+    pzemStatus?: 'CONNECTED' | 'WAITING_AC' | 'DISCONNECTED' | 'SIMULATED';
+    rawSensorStatus?: string;
   };
 }
 
@@ -164,13 +167,13 @@ export function createInitialSmartMeterFleet(): SmartMeterRoomNode[] {
       rentPrice: 3500,
       nodeMode: 'REAL_IOT_HYBRID',
       loadProfile: 'GAMER_PC',
-      prevKwh: 1420.5,
-      usedKwh: 148.4,
+      prevKwh: 367.5,
+      usedKwh: 0.0,
       waterPrev: 42,
       waterUsed: 4,
-      acOn: true,
+      acOn: false,
       waterHeaterOn: false,
-      pcLoadOn: true,
+      pcLoadOn: false,
     },
     {
       roomNumber: '102',
@@ -543,6 +546,8 @@ export function createInitialSmartMeterFleet(): SmartMeterRoomNode[] {
         lastHardwarePacketAt: null,
         lastUpdatedAt: nowIso,
         pendingCommand: null,
+        espStatus: 'OFFLINE',
+        pzemStatus: cfg.nodeMode === 'REAL_IOT_HYBRID' ? 'WAITING_AC' : 'SIMULATED',
       },
     };
   });
@@ -795,7 +800,7 @@ void handleServerCommand(const String& cmd) {
     setRelayState(false);
   } else if (cmd == "RESET_KWH_COUNTER") {
     pzem.resetEnergy();
-    fallbackEnergyKwh = 1420.50;
+    fallbackEnergyKwh = 367.50;
     Serial.println("🔄 [PZEM] Energy counter reset!");
   } else if (cmd == "SET_INTERVAL_2S") {
     telemetryIntervalMs = 2000;

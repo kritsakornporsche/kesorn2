@@ -20,6 +20,7 @@ export function IotSmartMeterLab() {
   const [floorFilter, setFloorFilter] = useState<FloorFilter>('ALL');
   const [rooms, setRooms] = useState<SmartMeterRoomNode[]>([]);
   const [selectedRoomNo, setSelectedRoomNo] = useState<string>('101');
+  const [inspectingRoomNo, setInspectingRoomNo] = useState<string | null>(null);
   const [summary, setSummary] = useState<{
     totalRooms: number;
     occupiedRoomsCount: number;
@@ -46,7 +47,7 @@ export function IotSmartMeterLab() {
   const [toast, setToast] = useState<{ title: string; body: string; tone?: 'emerald' | 'cyan' | 'amber' | 'rose' } | null>(null);
 
   // Simulated ESP32 Hardware Packet Tester Inputs
-  const [simHwRoom, setSimHwRoom] = useState<string>('101');
+  const [simHwRoom, setSimHwRoom] = useState<string>('102');
   const [simHwVoltage, setSimHwVoltage] = useState<number>(229.4);
   const [simHwCurrent, setSimHwCurrent] = useState<number>(7.85);
   const [simHwPower, setSimHwPower] = useState<number>(1710);
@@ -62,6 +63,59 @@ export function IotSmartMeterLab() {
   const [relayPin, setRelayPin] = useState<number>(26);
   const [intervalMs, setIntervalMs] = useState<number>(3000);
   const [copiedScript, setCopiedScript] = useState<boolean>(false);
+
+  // Edit Meter Modal State
+  const [editingMeterRoom, setEditingMeterRoom] = useState<SmartMeterRoomNode | null>(null);
+  const [editCurrentKwh, setEditCurrentKwh] = useState<string>('');
+  const [editPrevKwh, setEditPrevKwh] = useState<string>('');
+  const [editWaterCurrent, setEditWaterCurrent] = useState<string>('');
+  const [editWaterPrev, setEditWaterPrev] = useState<string>('');
+  const [isSavingMeter, setIsSavingMeter] = useState<boolean>(false);
+
+  const openEditMeterModal = (room: SmartMeterRoomNode) => {
+    setEditingMeterRoom(room);
+    setEditCurrentKwh(room.currentMeterKwh.toFixed(2));
+    setEditPrevKwh(room.previousMonthKwh.toFixed(2));
+    setEditWaterCurrent(room.waterCurrentM3.toString());
+    setEditWaterPrev(room.waterPreviousM3.toString());
+  };
+
+  const handleSaveMeterReading = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!editingMeterRoom) return;
+    setIsSavingMeter(true);
+    try {
+      const res = await fetch('/api/features/iot-meter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'set_meter_reading',
+          roomNumber: editingMeterRoom.roomNumber,
+          currentMeterKwh: parseFloat(editCurrentKwh),
+          previousMonthKwh: parseFloat(editPrevKwh),
+          waterCurrentM3: parseFloat(editWaterCurrent),
+          waterPreviousM3: parseFloat(editWaterPrev),
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setRooms(json.rooms || []);
+        setSummary(json.summary || null);
+        showToast(
+          `⚙️ อัปเดตเลขมิเตอร์ห้อง ${editingMeterRoom.roomNumber} สำเร็จ`,
+          `ตั้งค่าเลขปัจจุบันเป็น ${parseFloat(editCurrentKwh).toFixed(2)} kWh เรียบร้อยแล้ว`,
+          'emerald'
+        );
+        setEditingMeterRoom(null);
+      } else {
+        showToast('เกิดข้อผิดพลาด', json.message || 'ไม่สามารถบันทึกได้', 'rose');
+      }
+    } catch {
+      showToast('เกิดข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'rose');
+    } finally {
+      setIsSavingMeter(false);
+    }
+  };
 
   const showToast = useCallback(
     (title: string, body: string, tone: 'emerald' | 'cyan' | 'amber' | 'rose' = 'cyan') => {
@@ -98,6 +152,10 @@ export function IotSmartMeterLab() {
     if (typeof window !== 'undefined') {
       setServerUrl(window.location.origin);
     }
+    const livePollTimer = setInterval(() => {
+      fetchFleetState();
+    }, 2500);
+    return () => clearInterval(livePollTimer);
   }, [fetchFleetState]);
 
   // Live 3-second tick when liveSimRunning is true
@@ -123,6 +181,8 @@ export function IotSmartMeterLab() {
   }, [liveSimRunning]);
 
   const selectedRoom = rooms.find((r) => r.roomNumber === selectedRoomNo) || rooms[0] || null;
+  const inspectingRoom = inspectingRoomNo ? rooms.find((r) => r.roomNumber === inspectingRoomNo) || null : null;
+  const esp32Node = rooms.find((r) => r.nodeMode === 'REAL_IOT_HYBRID') || rooms.find((r) => r.roomNumber === '101') || rooms[0] || null;
 
   // Fast-forward simulation (+1 day, +7 days, +30 days)
   const handleFastForward = async (hours: number, label: string) => {
@@ -470,16 +530,70 @@ export function IotSmartMeterLab() {
             <div className="text-[11px] text-slate-400 mt-0.5">สั่งตัด/ต่อไฟระยะไกลผ่าน ESP32</div>
           </div>
 
-          <div className="rounded-2xl bg-slate-950/80 border border-emerald-500/30 p-4 col-span-2 sm:col-span-1">
-            <div className="text-[11px] font-bold text-emerald-300">โหนดฮาร์ดแวร์ ESP32 (Real IoT)</div>
-            <div className="text-lg font-black text-white mt-1 flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-              <span>ห้อง 101 พร้อมเชื่อมต่อ</span>
-            </div>
-            <div className="text-[11px] text-slate-400 mt-0.5">
-              รับค่าจริงแล้ว {summary?.hardwareConnectedCount || 0} โหนด • API พร้อมรับค่า
-            </div>
-          </div>
+          {(() => {
+            const r101 = rooms.find((r) => r.roomNumber === '101');
+            const isEspOnline = r101?.esp32Meta?.espStatus === 'ONLINE';
+            const pzemStatus = r101?.esp32Meta?.pzemStatus;
+
+            return (
+              <div
+                className={`rounded-2xl p-4 col-span-2 sm:col-span-1 border transition-all ${
+                  isEspOnline
+                    ? 'bg-slate-950/90 border-emerald-400/60 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                    : 'bg-slate-950/80 border-rose-500/30'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-300">ฮาร์ดแวร์ห้อง 101</span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-black border flex items-center gap-1.5 ${
+                      isEspOnline
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
+                        : 'bg-rose-500/20 text-rose-300 border-rose-400/30'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        isEspOnline ? 'bg-emerald-400 animate-ping' : 'bg-rose-400'
+                      }`}
+                    />
+                    {isEspOnline ? 'ESP32 ONLINE' : 'ESP32 OFFLINE'}
+                  </span>
+                </div>
+
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-xs font-mono font-bold text-white">
+                    {isEspOnline ? (r101?.esp32Meta?.ipAddress || 'Connected') : 'ไม่มีสัญญาณ'}
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-black border ${
+                      pzemStatus === 'CONNECTED'
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40'
+                        : isEspOnline
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-400/40'
+                        : 'bg-slate-800 text-slate-500 border-white/10'
+                    }`}
+                  >
+                    {pzemStatus === 'CONNECTED'
+                      ? '⚡ PZEM 220V READY'
+                      : isEspOnline
+                      ? '⚠️ PZEM รอไฟ AC'
+                      : 'PZEM OFFLINE'}
+                  </span>
+                </div>
+
+                <div className="text-[10px] text-slate-400 mt-1 truncate">
+                  {isEspOnline
+                    ? `WiFi: ${r101?.esp32Meta?.wifiRssi || -50} dBm • ${
+                        pzemStatus === 'CONNECTED'
+                          ? `วัดไฟจริง: ${r101?.voltage.toFixed(1)}V (${r101?.activePowerWatt}W)`
+                          : 'เซนเซอร์รอจ่ายไฟ AC 220V'
+                      }`
+                    : 'รอ ESP32 ส่งแพ็กเก็ตแรกเข้า Server'}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* 4 Navigation Tabs */}
@@ -522,9 +636,501 @@ export function IotSmartMeterLab() {
           TAB 1: 20-ROOM SMART METER GRID & INTERACTIVE LOAD INSPECTOR
       ===================================================================== */}
       {activeTab === 'METER_GRID' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left 8 Cols: 20-Room LCD Smart Meter Grid */}
-          <div className="lg:col-span-8 space-y-4">
+        inspectingRoomNo ? (
+          /* =====================================================================
+             DEDICATED FULL-PAGE ROOM INSPECTOR (เมื่อคลิกดูรายละเอียดที่ห้องใดห้องหนึ่ง)
+          ===================================================================== */
+          <div className="space-y-6">
+            {/* Top Navigation & Breadcrumb Header */}
+            <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/90 border border-cyan-500/30 rounded-3xl p-5 shadow-2xl">
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setInspectingRoomNo(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-white/10 hover:border-cyan-400/50 text-xs font-black text-cyan-300 hover:text-white transition-all flex items-center gap-2 group shadow-sm"
+                >
+                  <span className="transition-transform group-hover:-translate-x-1">←</span>
+                  <span>กลับหน้ารวมมิเตอร์ 20 ห้อง & Log ESP32</span>
+                </button>
+                <div className="h-6 w-[1px] bg-white/10 hidden sm:block" />
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-xl font-black text-white">
+                      ห้อง {inspectingRoom?.roomNumber || inspectingRoomNo}
+                    </h2>
+                    <span className="text-xs text-slate-400">({inspectingRoom?.roomType || 'Standard'})</span>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                        inspectingRoom?.nodeMode === 'REAL_IOT_HYBRID'
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
+                          : 'bg-indigo-500/20 text-indigo-300 border-indigo-400/40'
+                      }`}
+                    >
+                      {inspectingRoom?.nodeMode === 'REAL_IOT_HYBRID' ? '📡 REAL IoT NODE' : '🤖 SIMULATOR NODE'}
+                    </span>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                        inspectingRoom?.relayState === 'ON'
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                          : 'bg-rose-500/30 text-rose-200 border-rose-400/50'
+                      }`}
+                    >
+                      {inspectingRoom?.relayState === 'ON' ? '⚡ จ่ายไฟปกติ' : '🛑 ตัดกระแสไฟ'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    ผู้เช่า: <strong className="text-slate-200">{inspectingRoom?.tenantName || 'ห้องว่าง (Standby)'}</strong> • Device ID: <code className="text-cyan-300 font-mono">{inspectingRoom?.deviceId || '-'}</code>
+                  </p>
+                </div>
+              </div>
+
+              {/* Quick Room Switcher */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 font-bold hidden md:inline">สลับดูห้องอื่น:</span>
+                <select
+                  value={inspectingRoomNo}
+                  onChange={(e) => {
+                    setInspectingRoomNo(e.target.value);
+                    setSelectedRoomNo(e.target.value);
+                  }}
+                  className="px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs font-black text-cyan-300 focus:outline-none focus:border-cyan-400 cursor-pointer"
+                >
+                  {rooms.map((r) => (
+                    <option key={r.roomNumber} value={r.roomNumber}>
+                      ห้อง {r.roomNumber} {r.nodeMode === 'REAL_IOT_HYBRID' ? '(📡 ESP32)' : ''} - {r.tenantName || 'ห้องว่าง'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {inspectingRoom && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                {/* Left 7 Cols: Digital LCD Meter & Quick Adjustments & Appliance Switches */}
+                <div className="lg:col-span-7 space-y-6">
+                  {/* Digital LCD Meter Screen */}
+                  <div className="rounded-3xl bg-slate-900/90 border border-cyan-500/30 p-6 space-y-4 shadow-xl">
+                    <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                      <div>
+                        <span className="text-[10px] font-mono font-black uppercase tracking-wider text-cyan-400">
+                          DIGITAL SMART METER SCREEN • {inspectingRoom.deviceId}
+                        </span>
+                        <h3 className="text-lg font-black text-white">
+                          หน้าจอดิจิทัลอ่านค่ามิเตอร์ไฟฟ้า (Real-Time Reading)
+                        </h3>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openEditMeterModal(inspectingRoom)}
+                        className="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-200 text-xs font-black transition-all flex items-center gap-1.5 shadow-sm"
+                      >
+                        ✏️ ปรับแก้เลขมิเตอร์ (Calibrate)
+                      </button>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-950 border border-cyan-500/20 p-5 font-mono">
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-xs text-slate-400">CURRENT METER COUNTER</span>
+                        <span className="text-xs text-cyan-400 font-bold">
+                          +{inspectingRoom.monthlyUnitsKwh.toFixed(2)} kWh ในรอบบิลนี้
+                        </span>
+                      </div>
+                      <div className="text-3xl sm:text-4xl font-black tracking-wider text-emerald-300 mt-1">
+                        {inspectingRoom.currentMeterKwh.toFixed(2)} <span className="text-sm text-slate-400 font-normal">kWh</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-white/10 text-xs">
+                        <div className="bg-slate-900/60 p-2.5 rounded-xl border border-white/5">
+                          <span className="text-slate-400 block text-[10px]">VOLTAGE (แรงดัน)</span>
+                          <span className="text-white font-black text-base">{inspectingRoom.voltage.toFixed(1)} V</span>
+                        </div>
+                        <div className="bg-slate-900/60 p-2.5 rounded-xl border border-white/5">
+                          <span className="text-slate-400 block text-[10px]">CURRENT (กระแส)</span>
+                          <span className="text-white font-black text-base">{inspectingRoom.current.toFixed(2)} A</span>
+                        </div>
+                        <div className="bg-slate-900/60 p-2.5 rounded-xl border border-white/5">
+                          <span className="text-slate-400 block text-[10px]">POWER (กำลังไฟ)</span>
+                          <span
+                            className={`font-black text-base ${
+                              inspectingRoom.activePowerWatt >= 3000 ? 'text-rose-400 animate-pulse' : 'text-amber-300'
+                            }`}
+                          >
+                            {inspectingRoom.activePowerWatt} W
+                          </span>
+                        </div>
+                        <div className="bg-slate-900/60 p-2.5 rounded-xl border border-white/5">
+                          <span className="text-slate-400 block text-[10px]">POWER FACTOR / FREQ</span>
+                          <span className="text-cyan-300 font-black text-base">
+                            {inspectingRoom.esp32Meta?.powerFactor || 0.95} / 50Hz
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Quick Meter Adjustment & Bill Preview */}
+                    <div className="rounded-2xl bg-slate-950/70 border border-white/10 p-4 space-y-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-400">เลขมิเตอร์ยกยอดมาจากเดือนก่อน:</span>
+                        <span className="font-mono font-bold text-slate-200">
+                          {inspectingRoom.previousMonthKwh.toFixed(2)} kWh
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-400">เลขมิเตอร์ปัจจุบัน (อ่านสด):</span>
+                        <span className="font-mono font-black text-emerald-300">
+                          {inspectingRoom.currentMeterKwh.toFixed(2)} kWh
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs border-t border-white/10 pt-2">
+                        <span className="text-slate-200 font-bold">หน่วยไฟที่ใช้เดือนนี้ (× ฿8):</span>
+                        <span className="font-mono font-black text-amber-300 text-sm">
+                          {inspectingRoom.monthlyUnitsKwh.toFixed(2)} kWh = ฿
+                          {(inspectingRoom.monthlyUnitsKwh * 8).toLocaleString('th-TH', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </div>
+
+                      {inspectingRoom.roomNumber === '101' || inspectingRoom.nodeMode === 'REAL_IOT_HYBRID' ? (
+                        <div className="pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleSendEsp32Command(inspectingRoom.roomNumber, 'RESET_KWH_COUNTER')}
+                            className="w-full py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-white/10 text-xs font-bold text-rose-300 transition-all text-center"
+                          >
+                            รีเซ็ต 0 kWh (ส่งคำสั่ง RESET_KWH_COUNTER ไปยัง PZEM)
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateRoomLoad(inspectingRoom.roomNumber, { addKwh: 10 })}
+                            className="py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-white/10 text-xs font-bold text-cyan-300 transition-all"
+                          >
+                            +10 kWh
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateRoomLoad(inspectingRoom.roomNumber, { addKwh: 50 })}
+                            className="py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-white/10 text-xs font-bold text-amber-300 transition-all"
+                          >
+                            +50 kWh
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSendEsp32Command(inspectingRoom.roomNumber, 'RESET_KWH_COUNTER')}
+                            className="py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-white/10 text-xs font-bold text-rose-300 transition-all"
+                          >
+                            รีเซ็ต 0 kWh
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Interactive Appliance Load Switches (เฉพาะห้องจำลอง 102–210 เท่านั้น / ห้อง 101 ใช้ฮาร์ดแวร์จริง) */}
+                  {inspectingRoom.roomNumber === '101' || inspectingRoom.nodeMode === 'REAL_IOT_HYBRID' ? (
+                    <div className="rounded-3xl bg-slate-900/90 border border-emerald-500/30 p-5 space-y-2 shadow-xl">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                        <h4 className="text-sm font-bold text-white">
+                          โหนดฮาร์ดแวร์จริง ESP32 + PZEM-004T
+                        </h4>
+                      </div>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        ห้อง {inspectingRoom.roomNumber} รับส่งข้อมูลกับเซ็นเซอร์วัดไฟจริงแบบ Real-Time ไม่มีตัวควบคุมจำลองโหลดเครื่องใช้ไฟฟ้า
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-3xl bg-slate-900/90 border border-white/10 p-6 space-y-4 shadow-xl">
+                      <div>
+                        <h4 className="text-sm font-black text-white">
+                          จำลองเปิด-ปิดเครื่องใช้ไฟฟ้าในห้อง (กระทบค่า A, W, kWh แบบ Real-Time)
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          คลิกเพื่อสลับสถานะเปิด/ปิดเครื่องใช้ไฟฟ้า ระบบจะคำนวณกำลังวัตต์และกระแสแอมป์ใหม่ทันที
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {[
+                          {
+                            key: 'acOn' as const,
+                            label: '❄️ เครื่องปรับอากาศ (Inverter AC)',
+                            watt: '+1,150 W',
+                            desc: 'แอร์ห้องนอน เบอร์ 5',
+                            active: inspectingRoom.appliances.acOn,
+                          },
+                          {
+                            key: 'waterHeaterOn' as const,
+                            label: '🚿 เครื่องทำน้ำอุ่น (Water Heater)',
+                            watt: '+3,300 W',
+                            desc: 'เครื่องทำน้ำอุ่นในห้องน้ำ',
+                            active: inspectingRoom.appliances.waterHeaterOn,
+                          },
+                          {
+                            key: 'pcLoadOn' as const,
+                            label: '🖥️ คอมพิวเตอร์ / ทีวี / ตู้เย็น',
+                            watt: '+420 W',
+                            desc: 'โหลดพื้นฐานประจำห้อง',
+                            active: inspectingRoom.appliances.pcLoadOn,
+                          },
+                          {
+                            key: 'faultOverload' as const,
+                            label: '⚠️ จำลองไฟรั่ว / โหลดเกินพิกัด',
+                            watt: '+4,800 W',
+                            desc: 'ทดสอบระบบเตือน Overload',
+                            active: inspectingRoom.appliances.faultOverload,
+                          },
+                        ].map((item) => (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() =>
+                              handleUpdateRoomLoad(inspectingRoom.roomNumber, {
+                                appliances: { [item.key]: !item.active },
+                              })
+                            }
+                            className={`flex flex-col justify-between p-3.5 rounded-2xl border text-left transition-all ${
+                              item.active
+                                ? item.key === 'faultOverload'
+                                  ? 'bg-rose-500/25 border-rose-400 text-white ring-2 ring-rose-400/30'
+                                  : 'bg-cyan-500/20 border-cyan-400/60 text-white ring-2 ring-cyan-400/30'
+                                : 'bg-slate-950/80 border-white/10 text-slate-400 hover:text-white hover:border-white/20'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-xs">{item.label}</span>
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-black font-mono ${
+                                  item.active ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-400'
+                                }`}
+                              >
+                                {item.active ? 'ON (ทำงาน)' : 'OFF (ปิด)'}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5 text-[11px]">
+                              <span className="text-slate-400 text-[10px]">{item.desc}</span>
+                              <span className="font-mono font-bold text-amber-300">{item.watt}</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right 5 Cols: Mode Switcher, Hardware Diagnostics, Relay Breaker, Tenant Info */}
+                <div className="lg:col-span-5 space-y-6">
+                  {/* Mode Switcher */}
+                  {inspectingRoom.roomNumber === '101' ? (
+                    <div className="rounded-3xl bg-slate-900/90 border border-emerald-500/30 p-4 space-y-2 shadow-xl">
+                      <div className="text-xs font-bold text-white">โหมดฮาร์ดแวร์ประจำห้อง 101</div>
+                      <div className="py-2.5 px-3 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 text-center">
+                        📡 โหมดฮาร์ดแวร์ ESP32 ถาวร (ไม่มีโหมดจำลอง)
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-3xl bg-slate-900/90 border border-white/10 p-5 space-y-3 shadow-xl">
+                      <div className="text-xs font-black text-white">โหมดการทำงานของโหนดมิเตอร์ห้อง {inspectingRoom.roomNumber}</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateRoomLoad(inspectingRoom.roomNumber, { nodeMode: 'REAL_IOT_HYBRID' })
+                          }
+                          className={`py-2.5 px-3 rounded-xl text-xs font-black border transition-all ${
+                            inspectingRoom.nodeMode === 'REAL_IOT_HYBRID'
+                              ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-md'
+                              : 'bg-slate-950 text-slate-400 border-white/10 hover:text-white'
+                          }`}
+                        >
+                          📡 เชื่อมต่อ ESP32 จริง
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateRoomLoad(inspectingRoom.roomNumber, { nodeMode: 'SMART_SIMULATOR' })
+                          }
+                          className={`py-2.5 px-3 rounded-xl text-xs font-black border transition-all ${
+                            inspectingRoom.nodeMode === 'SMART_SIMULATOR'
+                              ? 'bg-indigo-500 text-white border-indigo-300 shadow-md'
+                              : 'bg-slate-950 text-slate-400 border-white/10 hover:text-white'
+                          }`}
+                        >
+                          🤖 โหมดจำลองอัจฉริยะ
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Real IoT Hardware Node Diagnostic Panel */}
+                  {inspectingRoom.nodeMode === 'REAL_IOT_HYBRID' && (
+                    <div
+                      className={`rounded-3xl p-5 space-y-4 border transition-all shadow-xl ${
+                        inspectingRoom.esp32Meta?.isHardwareConnected
+                          ? 'bg-slate-900/95 border-emerald-500/40 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
+                          : 'bg-slate-900/95 border-rose-500/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                        <span className="text-xs font-black text-white flex items-center gap-2">
+                          <span
+                            className={`w-2.5 h-2.5 rounded-full ${
+                              inspectingRoom.esp32Meta?.isHardwareConnected
+                                ? 'bg-emerald-400 animate-ping'
+                                : 'bg-rose-500'
+                            }`}
+                          />
+                          ฮาร์ดแวร์จริง: {inspectingRoom.deviceId}
+                        </span>
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                            inspectingRoom.esp32Meta?.isHardwareConnected
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
+                              : 'bg-rose-500/20 text-rose-300 border-rose-400/40'
+                          }`}
+                        >
+                          {inspectingRoom.esp32Meta?.isHardwareConnected ? 'ESP32 ONLINE' : 'ESP32 OFFLINE'}
+                        </span>
+                      </div>
+
+                      {/* ESP32 Details Grid */}
+                      <div className="grid grid-cols-2 gap-2 text-[11px] font-mono bg-slate-950 p-3 rounded-2xl border border-white/5">
+                        <div>
+                          <span className="text-slate-500 block text-[9px]">IP ADDRESS</span>
+                          <span className="text-slate-200 font-bold">{inspectingRoom.esp32Meta?.ipAddress || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[9px]">WIFI RSSI</span>
+                          <span className="text-emerald-300 font-bold">
+                            {inspectingRoom.esp32Meta?.wifiRssi ? `${inspectingRoom.esp32Meta.wifiRssi} dBm` : '-'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[9px]">MAC ADDRESS</span>
+                          <span className="text-slate-400 text-[10px] truncate block">
+                            {inspectingRoom.esp32Meta?.macAddress || '-'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[9px]">LAST PACKET</span>
+                          <span className="text-cyan-300 text-[10px]">
+                            {inspectingRoom.esp32Meta?.lastHardwarePacketAt
+                              ? new Date(inspectingRoom.esp32Meta.lastHardwarePacketAt).toLocaleTimeString('th-TH')
+                              : 'ยังไม่เคยรับ'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* PZEM-004T Status Banner */}
+                      <div
+                        className={`p-3.5 rounded-2xl border text-xs flex items-center justify-between gap-2 ${
+                          inspectingRoom.esp32Meta?.pzemStatus === 'CONNECTED'
+                            ? 'bg-cyan-950/40 border-cyan-400/40 text-cyan-200'
+                            : inspectingRoom.esp32Meta?.isHardwareConnected
+                            ? 'bg-amber-950/40 border-amber-400/40 text-amber-200'
+                            : 'bg-slate-950 border-white/10 text-slate-400'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-black flex items-center gap-1.5">
+                            <span>⚡ PZEM-004T:</span>
+                            <span>
+                              {inspectingRoom.esp32Meta?.pzemStatus === 'CONNECTED'
+                                ? '🟢 CONNECTED (วัดไฟ 220V สำเร็จ)'
+                                : inspectingRoom.esp32Meta?.isHardwareConnected
+                                ? '🟠 WAITING AC (รอไฟบ้าน 220V)'
+                                : '🔴 OFFLINE'}
+                            </span>
+                          </div>
+                          <div className="text-[10px] opacity-80 mt-0.5">
+                            {inspectingRoom.esp32Meta?.pzemStatus === 'CONNECTED'
+                              ? `วัดจริง: ${inspectingRoom.voltage.toFixed(1)}V • ${inspectingRoom.current.toFixed(2)}A • ${inspectingRoom.activePowerWatt}W`
+                              : inspectingRoom.esp32Meta?.isHardwareConnected
+                              ? 'ESP32 ส่งสัญญาณได้แล้ว แต่ PZEM ยังไม่อ่านค่า (โปรดต่อไฟ 220V AC เข้า L/N หรือตรวจสาย RX/TX)'
+                              : 'บอร์ด ESP32 ออฟไลน์'}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleSendEsp32Command(inspectingRoom.roomNumber, 'FORCE_READ_NOW')}
+                          className="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/40 border border-cyan-400/40 text-[10px] font-black text-cyan-300 shrink-0 transition-all"
+                        >
+                          🔄 ดึงค่าสด
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Remote Breaker Relay Control */}
+                  <div className="rounded-3xl bg-slate-900/90 border border-white/10 p-5 space-y-3.5 shadow-xl">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-white">เบรกเกอร์ตัด-ต่อไฟระยะไกล (Smart Breaker Relay)</span>
+                      <span
+                        className={`text-xs font-black ${
+                          inspectingRoom.relayState === 'ON' ? 'text-emerald-400' : 'text-rose-400'
+                        }`}
+                      >
+                        {inspectingRoom.relayState === 'ON' ? '🟢 จ่ายไฟปกติ (ON)' : '🔴 ตัดกระแสไฟ (OFF)'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSendEsp32Command(inspectingRoom.roomNumber, 'RELAY_ON')}
+                        className={`py-3 px-3 rounded-xl text-xs font-black border transition-all ${
+                          inspectingRoom.relayState === 'ON'
+                            ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-lg'
+                            : 'bg-slate-950 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'
+                        }`}
+                      >
+                        🟢 สั่งจ่ายไฟ (RELAY ON)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSendEsp32Command(inspectingRoom.roomNumber, 'RELAY_OFF')}
+                        className={`py-3 px-3 rounded-xl text-xs font-black border transition-all ${
+                          inspectingRoom.relayState === 'OFF'
+                            ? 'bg-rose-500 text-white border-rose-300 shadow-lg'
+                            : 'bg-slate-950 text-rose-300 border-rose-500/30 hover:bg-rose-500/20'
+                        }`}
+                      >
+                        🔴 สั่งตัดไฟ (RELAY OFF)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Tenant & Room Info */}
+                  <div className="rounded-3xl bg-slate-900/90 border border-white/10 p-5 space-y-3 shadow-xl">
+                    <div className="text-xs font-black text-white">ข้อมูลผู้เช่าและสัญญาห้อง {inspectingRoom.roomNumber}</div>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center justify-between bg-slate-950 p-2.5 rounded-xl border border-white/5">
+                        <span className="text-slate-400">ชื่อผู้เช่า:</span>
+                        <span className="font-bold text-white">{inspectingRoom.tenantName || 'ห้องว่าง (Standby)'}</span>
+                      </div>
+                      <div className="flex items-center justify-between bg-slate-950 p-2.5 rounded-xl border border-white/5">
+                        <span className="text-slate-400">ประเภทห้อง:</span>
+                        <span className="font-bold text-cyan-300">{inspectingRoom.roomType} (ชั้น {inspectingRoom.floor})</span>
+                      </div>
+                      <div className="flex items-center justify-between bg-slate-950 p-2.5 rounded-xl border border-white/5">
+                        <span className="text-slate-400">มิเตอร์น้ำประปา:</span>
+                        <span className="font-mono font-bold text-slate-200">
+                          {inspectingRoom.waterCurrentM3} m³ (งวดก่อน: {inspectingRoom.waterPreviousM3} m³)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left 8 Cols: 20-Room LCD Smart Meter Grid */}
+            <div className="lg:col-span-8 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/80 border border-white/10 rounded-2xl p-4">
               <div className="flex items-center gap-2">
                 {(['ALL', 1, 2] as FloorFilter[]).map((fl) => (
@@ -578,7 +1184,7 @@ export function IotSmartMeterLab() {
                       {/* Top Header */}
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             <span className="text-base font-black text-white">ห้อง {room.roomNumber}</span>
                             <span
                               className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${
@@ -589,8 +1195,41 @@ export function IotSmartMeterLab() {
                             >
                               {isRealNode ? '📡 ESP32 IoT' : '🤖 SIM'}
                             </span>
+                            {isRealNode && (
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[9px] font-black flex items-center gap-1 border ${
+                                  room.esp32Meta?.espStatus === 'ONLINE'
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
+                                    : 'bg-rose-500/20 text-rose-300 border-rose-400/30'
+                                }`}
+                              >
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full ${
+                                    room.esp32Meta?.espStatus === 'ONLINE' ? 'bg-emerald-400 animate-ping' : 'bg-rose-400'
+                                  }`}
+                                />
+                                {room.esp32Meta?.espStatus === 'ONLINE' ? 'ESP ONLINE' : 'ESP OFFLINE'}
+                              </span>
+                            )}
+                            {isRealNode && (
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[9px] font-black border ${
+                                  room.esp32Meta?.pzemStatus === 'CONNECTED'
+                                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40'
+                                    : room.esp32Meta?.espStatus === 'ONLINE'
+                                    ? 'bg-amber-500/20 text-amber-300 border-amber-400/40'
+                                    : 'bg-slate-800 text-slate-500 border-white/10'
+                                }`}
+                              >
+                                {room.esp32Meta?.pzemStatus === 'CONNECTED'
+                                  ? '⚡ 220V READY'
+                                  : room.esp32Meta?.espStatus === 'ONLINE'
+                                  ? '⚠️ WAITING AC'
+                                  : 'PZEM OFF'}
+                              </span>
+                            )}
                           </div>
-                          <div className="text-[11px] text-slate-400 truncate max-w-[160px]">
+                          <div className="text-[11px] text-slate-400 truncate max-w-[160px] mt-0.5">
                             {room.tenantName || 'ห้องว่าง (Standby)'}
                           </div>
                         </div>
@@ -609,7 +1248,20 @@ export function IotSmartMeterLab() {
                       {/* Digital LCD Meter Screen */}
                       <div className="mt-3 rounded-xl bg-slate-950 border border-cyan-500/20 p-3 font-mono">
                         <div className="flex items-baseline justify-between">
-                          <span className="text-[10px] text-slate-400">MITER READING</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-slate-400">METER READING</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditMeterModal(room);
+                              }}
+                              title={`ปรับแก้เลขมิเตอร์ห้อง ${room.roomNumber}`}
+                              className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-cyan-500/20 text-slate-300 hover:text-cyan-300 text-[10px] font-bold transition-all border border-white/5 hover:border-cyan-500/30 flex items-center gap-1"
+                            >
+                              ✏️ แก้ไข
+                            </button>
+                          </div>
                           <span className="text-[10px] text-cyan-400 font-bold">
                             +{room.monthlyUnitsKwh.toFixed(2)} kWh เดือนนี้
                           </span>
@@ -643,31 +1295,51 @@ export function IotSmartMeterLab() {
                       {/* Appliance Active Pills & Est Cost */}
                       <div className="mt-2.5 flex items-center justify-between text-[11px]">
                         <div className="flex items-center gap-1">
-                          {room.appliances.acOn && (
-                            <span title="เปิดแอร์" className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300">
-                              ❄️ แอร์
-                            </span>
-                          )}
-                          {room.appliances.waterHeaterOn && (
-                            <span title="เครื่องทำน้ำอุ่น" className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">
-                              🚿 น้ำอุ่น
-                            </span>
-                          )}
-                          {room.appliances.pcLoadOn && (
-                            <span title="คอมพิวเตอร์" className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300">
-                              🖥️ PC
-                            </span>
-                          )}
-                          {room.appliances.faultOverload && (
-                            <span className="px-1.5 py-0.5 rounded bg-rose-500 text-white font-black animate-bounce">
-                              ⚠️ โหลดเกิน!
-                            </span>
+                          {isRealNode ? (
+                            <span className="text-[10px] text-emerald-400 font-mono">📡 PZEM-004T (ฮาร์ดแวร์จริง)</span>
+                          ) : (
+                            <>
+                              {room.appliances.acOn && (
+                                <span title="เปิดแอร์" className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300">
+                                  ❄️ แอร์
+                                </span>
+                              )}
+                              {room.appliances.waterHeaterOn && (
+                                <span title="เครื่องทำน้ำอุ่น" className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">
+                                  🚿 น้ำอุ่น
+                                </span>
+                              )}
+                              {room.appliances.pcLoadOn && (
+                                <span title="คอมพิวเตอร์" className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300">
+                                  🖥️ PC
+                                </span>
+                              )}
+                              {room.appliances.faultOverload && (
+                                <span className="px-1.5 py-0.5 rounded bg-rose-500 text-white font-black animate-bounce">
+                                  ⚠️ โหลดเกิน!
+                                </span>
+                              )}
+                            </>
                           )}
                         </div>
                         <span className="font-black text-emerald-300">
                           ≈ ฿{Math.round(room.monthlyUnitsKwh * 8).toLocaleString()}
                         </span>
                       </div>
+
+                      {/* View Details / Control Room Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedRoomNo(room.roomNumber);
+                          setInspectingRoomNo(room.roomNumber);
+                        }}
+                        className="mt-3 w-full py-2 px-3 rounded-xl bg-slate-950 hover:bg-cyan-500/20 border border-white/10 hover:border-cyan-400/40 text-xs font-bold text-slate-300 hover:text-cyan-300 transition-all flex items-center justify-center gap-1.5 group shadow-sm"
+                      >
+                        <span>🔍 ดูรายละเอียด & ควบคุมห้อง {room.roomNumber}</span>
+                        <span className="transition-transform group-hover:translate-x-1 font-mono">→</span>
+                      </button>
                     </div>
                   );
                 })}
@@ -675,212 +1347,80 @@ export function IotSmartMeterLab() {
             )}
           </div>
 
-          {/* Right 4 Cols: Selected Room Smart Meter Inspector & Remote Load / Relay Controller */}
-          {selectedRoom && (
-            <div className="lg:col-span-4 rounded-3xl bg-slate-900/95 border border-cyan-500/40 p-5 space-y-5 shadow-2xl sticky top-6">
-              <div className="flex items-start justify-between gap-2 border-b border-white/10 pb-4">
-                <div>
-                  <span className="text-[10px] font-mono font-black uppercase tracking-wider text-cyan-400">
-                    SMART METER INSPECTOR • {selectedRoom.deviceId}
-                  </span>
-                  <h3 className="text-xl font-black text-white mt-0.5">
-                    ห้อง {selectedRoom.roomNumber} ({selectedRoom.roomType})
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    ผู้เช่า: <strong className="text-slate-200">{selectedRoom.tenantName || 'ห้องว่าง'}</strong>
-                  </p>
+          {/* Right 4 Cols: ESP32 Telemetry Log (Plain / Undecorated) */}
+          <div className="lg:col-span-4 rounded-2xl bg-slate-900 border border-white/10 p-4 space-y-3 sticky top-6">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-white">
+                  ESP32 Log (ห้อง {esp32Node?.roomNumber || '101'})
+                </h3>
+                <div className="text-xs text-slate-400 font-mono">
+                  IP: {esp32Node?.esp32Meta?.ipAddress || '-'} | RSSI: {esp32Node?.esp32Meta?.wifiRssi ? `${esp32Node.esp32Meta.wifiRssi} dBm` : '-'}
                 </div>
-                <span
-                  className={`px-2.5 py-1 rounded-full text-[10px] font-black border ${
-                    selectedRoom.nodeMode === 'REAL_IOT_HYBRID'
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
-                      : 'bg-indigo-500/20 text-indigo-300 border-indigo-400/40'
-                  }`}
+              </div>
+              <span
+                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                  esp32Node?.esp32Meta?.espStatus === 'ONLINE'
+                    ? 'bg-emerald-500/20 text-emerald-300'
+                    : 'bg-rose-500/20 text-rose-300'
+                }`}
+              >
+                {esp32Node?.esp32Meta?.espStatus === 'ONLINE' ? 'ONLINE' : 'OFFLINE'}
+              </span>
+            </div>
+
+            {esp32Node && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSendEsp32Command(esp32Node.roomNumber, 'FORCE_READ_NOW')}
+                  className="flex-1 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-white/10 text-slate-300 hover:text-white text-xs font-mono transition-all text-center"
                 >
-                  {selectedRoom.nodeMode === 'REAL_IOT_HYBRID' ? '📡 REAL IoT NODE' : '🤖 SIMULATOR NODE'}
-                </span>
+                  Force Read
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedRoomNo(esp32Node.roomNumber);
+                    setInspectingRoomNo(esp32Node.roomNumber);
+                  }}
+                  className="flex-1 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-white/10 text-slate-300 hover:text-white text-xs font-mono transition-all text-center"
+                >
+                  จัดการห้อง 101 →
+                </button>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-xs text-slate-400 font-mono">
+                <span>Logs ({telemetryLogs.length})</span>
+                <span className="text-[10px]">auto-refresh 2.5s</span>
               </div>
 
-              {/* Mode Switcher */}
-              <div className="rounded-2xl bg-slate-950/90 border border-white/10 p-3.5 space-y-2">
-                <div className="text-[11px] font-bold text-slate-300">โหมดการทำงานของโหนดมิเตอร์ห้องนี้</div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleUpdateRoomLoad(selectedRoom.roomNumber, { nodeMode: 'REAL_IOT_HYBRID' })
-                    }
-                    className={`py-2 px-3 rounded-xl text-xs font-black border transition-all ${
-                      selectedRoom.nodeMode === 'REAL_IOT_HYBRID'
-                        ? 'bg-emerald-500 text-slate-950 border-emerald-300'
-                        : 'bg-slate-900 text-slate-400 border-white/10'
-                    }`}
-                  >
-                    📡 เชื่อมต่อ ESP32 จริง
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleUpdateRoomLoad(selectedRoom.roomNumber, { nodeMode: 'SMART_SIMULATOR' })
-                    }
-                    className={`py-2 px-3 rounded-xl text-xs font-black border transition-all ${
-                      selectedRoom.nodeMode === 'SMART_SIMULATOR'
-                        ? 'bg-indigo-500 text-white border-indigo-300'
-                        : 'bg-slate-900 text-slate-400 border-white/10'
-                    }`}
-                  >
-                    🤖 โหมดจำลองอัจฉริยะ
-                  </button>
-                </div>
-              </div>
-
-              {/* Remote Breaker Relay Control (Sends command to ESP32 + updates simulator) */}
-              <div className="rounded-2xl bg-slate-950/90 border border-white/10 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-white">เบรกเกอร์ตัด-ต่อไฟระยะไกล (Smart Relay)</span>
-                  <span
-                    className={`text-xs font-black ${
-                      selectedRoom.relayState === 'ON' ? 'text-emerald-400' : 'text-rose-400'
-                    }`}
-                  >
-                    {selectedRoom.relayState === 'ON' ? '🟢 จ่ายไฟปกติ (ON)' : '🔴 ตัดกระแสไฟ (OFF)'}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSendEsp32Command(selectedRoom.roomNumber, 'RELAY_ON')}
-                    className={`py-2.5 px-3 rounded-xl text-xs font-black border transition-all ${
-                      selectedRoom.relayState === 'ON'
-                        ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-lg'
-                        : 'bg-slate-900 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'
-                    }`}
-                  >
-                    🟢 สั่งจ่ายไฟ (RELAY ON)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSendEsp32Command(selectedRoom.roomNumber, 'RELAY_OFF')}
-                    className={`py-2.5 px-3 rounded-xl text-xs font-black border transition-all ${
-                      selectedRoom.relayState === 'OFF'
-                        ? 'bg-rose-500 text-white border-rose-300 shadow-lg'
-                        : 'bg-slate-900 text-rose-300 border-rose-500/30 hover:bg-rose-500/20'
-                    }`}
-                  >
-                    🔴 สั่งตัดไฟ (RELAY OFF)
-                  </button>
-                </div>
-              </div>
-
-              {/* Interactive Appliance Load Switches */}
-              <div className="rounded-2xl bg-slate-950/90 border border-white/10 p-4 space-y-2.5">
-                <div className="text-xs font-black text-white">
-                  จำลองเปิด-ปิดเครื่องใช้ไฟฟ้าในห้อง (กระทบค่า A, W, kWh ทันที)
-                </div>
-
-                {[
-                  {
-                    key: 'acOn' as const,
-                    label: '❄️ เครื่องปรับอากาศ (Inverter AC)',
-                    watt: '+1,150 W',
-                    active: selectedRoom.appliances.acOn,
-                  },
-                  {
-                    key: 'waterHeaterOn' as const,
-                    label: '🚿 เครื่องทำน้ำอุ่น (Water Heater)',
-                    watt: '+3,300 W',
-                    active: selectedRoom.appliances.waterHeaterOn,
-                  },
-                  {
-                    key: 'pcLoadOn' as const,
-                    label: '🖥️ คอมพิวเตอร์ / ทีวี / ตู้เย็น',
-                    watt: '+420 W',
-                    active: selectedRoom.appliances.pcLoadOn,
-                  },
-                  {
-                    key: 'faultOverload' as const,
-                    label: '⚠️ จำลองไฟรั่ว / โหลดเกินพิกัด (Overload)',
-                    watt: '+4,800 W',
-                    active: selectedRoom.appliances.faultOverload,
-                  },
-                ].map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() =>
-                      handleUpdateRoomLoad(selectedRoom.roomNumber, {
-                        appliances: { [item.key]: !item.active },
-                      })
-                    }
-                    className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-xs font-bold transition-all ${
-                      item.active
-                        ? item.key === 'faultOverload'
-                          ? 'bg-rose-500/30 border-rose-400 text-white'
-                          : 'bg-cyan-500/20 border-cyan-400/60 text-white'
-                        : 'bg-slate-900 border-white/10 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <span>{item.label}</span>
-                    <span className="font-mono text-[11px]">
-                      {item.watt} • {item.active ? 'ON' : 'OFF'}
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Quick Meter Adjustment & Bill Preview */}
-              <div className="rounded-2xl bg-slate-950/90 border border-white/10 p-4 space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-400">เลขมิเตอร์ต้นเดือน:</span>
-                  <span className="font-mono font-bold text-slate-200">
-                    {selectedRoom.previousMonthKwh.toFixed(2)} kWh
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-400">เลขมิเตอร์ปัจจุบัน:</span>
-                  <span className="font-mono font-black text-emerald-300">
-                    {selectedRoom.currentMeterKwh.toFixed(2)} kWh
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs border-t border-white/10 pt-2">
-                  <span className="text-slate-300 font-bold">หน่วยไฟที่ใช้เดือนนี้ (×฿8):</span>
-                  <span className="font-mono font-black text-amber-300">
-                    {selectedRoom.monthlyUnitsKwh.toFixed(2)} kWh = ฿
-                    {(selectedRoom.monthlyUnitsKwh * 8).toLocaleString('th-TH', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => handleUpdateRoomLoad(selectedRoom.roomNumber, { addKwh: 10 })}
-                    className="py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-white/10 text-[11px] font-bold text-cyan-300"
-                  >
-                    +10 kWh
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleUpdateRoomLoad(selectedRoom.roomNumber, { addKwh: 50 })}
-                    className="py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-white/10 text-[11px] font-bold text-amber-300"
-                  >
-                    +50 kWh
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSendEsp32Command(selectedRoom.roomNumber, 'RESET_KWH_COUNTER')}
-                    className="py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-white/10 text-[11px] font-bold text-rose-300"
-                  >
-                    รีเซ็ต 0 kWh
-                  </button>
-                </div>
+              <div className="bg-black/90 border border-white/10 rounded-xl p-3 font-mono text-[11px] leading-relaxed max-h-[520px] overflow-y-auto space-y-1 text-slate-300">
+                {telemetryLogs.length === 0 ? (
+                  <div className="text-slate-500">รอรับข้อมูลจาก ESP32...</div>
+                ) : (
+                  telemetryLogs.map((log) => (
+                    <div key={log.id} className="whitespace-pre-wrap break-all border-b border-white/5 pb-1">
+                      <span className="text-slate-500">[{new Date(log.timestamp).toLocaleTimeString('th-TH')}]</span>{' '}
+                      <span className="text-emerald-400">[{log.deviceId}]</span>{' '}
+                      <span>{log.voltage}V</span>{' '}
+                      <span>{log.current}A</span>{' '}
+                      <span className="text-amber-300">{log.powerWatt}W</span>{' '}
+                      <span className="text-cyan-300">{log.energyKwh.toFixed(2)}kWh</span>{' '}
+                      <span className="text-slate-400">PF:{log.powerFactor}</span>{' '}
+                      <span className="text-slate-400">Relay:{log.relayState}</span>{' '}
+                      <span className="text-slate-600">({log.ipAddress})</span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
-          )}
+          </div>
         </div>
-      )}
+      )
+    )}
 
       {/* =====================================================================
           TAB 2: ONE-CLICK AUTO BILLING PIPELINE
@@ -1528,6 +2068,219 @@ export function IotSmartMeterLab() {
             <pre className="text-[11px] leading-relaxed font-mono text-cyan-100 overflow-x-auto max-h-[680px] overflow-y-auto p-3 rounded-2xl bg-black/60 border border-white/5">
               <code>{arduinoCode}</code>
             </pre>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          MODAL: EDIT / CALIBRATE METER READING (RESEARCHER TOOL)
+          Safe-Viewport Modal Pattern (Anti-Overflow, Mobile Friendly, 85dvh)
+      ===================================================================== */}
+      {editingMeterRoom && (
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto overscroll-contain animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg rounded-3xl bg-slate-900 border border-cyan-500/30 shadow-2xl max-h-[85dvh] flex flex-col overflow-hidden my-auto text-white">
+            {/* Sticky Modal Header */}
+            <div className="shrink-0 flex items-start justify-between border-b border-white/10 p-5 sm:p-6 bg-slate-950/80">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                    {editingMeterRoom.nodeMode === 'REAL_IOT_HYBRID' ? '🟢 REAL IOT NODE' : '🤖 SMART SIMULATOR'}
+                  </span>
+                  <span className="text-xs text-slate-400 font-mono">
+                    ID: {editingMeterRoom.deviceId}
+                  </span>
+                </div>
+                <h3 className="text-base sm:text-lg font-black text-white mt-1 flex items-center gap-2">
+                  <span>⚙️ ปรับตั้งเลขมิเตอร์ ห้อง {editingMeterRoom.roomNumber}</span>
+                  <span className="text-sm font-normal text-slate-400">({editingMeterRoom.roomType})</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  ผู้เช่า: {editingMeterRoom.tenantName || 'ห้องว่าง'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingMeterRoom(null)}
+                className="p-1.5 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-all text-xs shrink-0 cursor-pointer"
+              >
+                ✕ ปิด
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveMeterReading} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              {/* Scrollable Body (Never overflows outside screen) */}
+              <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-4 custom-scrollbar">
+                {/* Electric Meter Group */}
+                <div className="rounded-2xl bg-slate-950 p-4 border border-white/10 space-y-3">
+                  <div className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                    <span>⚡ มิเตอร์ไฟฟ้า (Electricity Meter - kWh)</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 mb-1">
+                        เลขมิเตอร์ปัจจุบัน (Current):
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="0.01"
+                          required
+                          value={editCurrentKwh}
+                          onChange={(e) => setEditCurrentKwh(e.target.value)}
+                          className="w-full rounded-xl bg-slate-900 border border-cyan-500/40 px-3 py-2 text-sm font-mono font-black text-emerald-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                          placeholder="3675.00"
+                        />
+                        <span className="absolute right-3 top-2.5 text-xs text-slate-500 font-mono">kWh</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 mb-1">
+                        เลขยกมาต้นงวด (Previous):
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="0.01"
+                          required
+                          value={editPrevKwh}
+                          onChange={(e) => setEditPrevKwh(e.target.value)}
+                          className="w-full rounded-xl bg-slate-900 border border-white/20 px-3 py-2 text-sm font-mono font-bold text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                          placeholder="3675.00"
+                        />
+                        <span className="absolute right-3 top-2.5 text-xs text-slate-500 font-mono">kWh</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Live Preview Box */}
+                  {(() => {
+                    const curr = parseFloat(editCurrentKwh) || 0;
+                    const prev = parseFloat(editPrevKwh) || 0;
+                    const diff = Math.max(0, curr - prev);
+                    const cost = diff * 8;
+                    return (
+                      <div className="rounded-xl bg-cyan-950/40 border border-cyan-500/20 p-2.5 flex items-center justify-between text-xs">
+                        <span className="text-slate-300">
+                          หน่วยไฟใช้จริงเดือนนี้: <strong className="text-amber-300 font-mono">{diff.toFixed(2)} kWh</strong>
+                        </span>
+                        <span className="text-slate-300">
+                          ค่าไฟโดยประมาณ: <strong className="text-emerald-300 font-mono">฿{cost.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                        </span>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Quick Helper Presets */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="text-[10px] text-slate-500 mr-1">ทางลัด:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const prev = parseFloat(editPrevKwh) || 0;
+                        setEditCurrentKwh(prev.toFixed(2));
+                      }}
+                      className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-[10px] text-slate-300 border border-white/10 cursor-pointer"
+                    >
+                      หน่วยใช้ = 0 (เท่ากับต้นงวด)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const curr = parseFloat(editCurrentKwh) || 0;
+                        setEditCurrentKwh((curr + 10).toFixed(2));
+                      }}
+                      className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-[10px] text-cyan-300 border border-white/10 cursor-pointer"
+                    >
+                      +10 kWh
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const curr = parseFloat(editCurrentKwh) || 0;
+                        setEditCurrentKwh((curr + 50).toFixed(2));
+                      }}
+                      className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-[10px] text-amber-300 border border-white/10 cursor-pointer"
+                    >
+                      +50 kWh
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const curr = parseFloat(editCurrentKwh) || 0;
+                        setEditCurrentKwh((curr + 100).toFixed(2));
+                      }}
+                      className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-[10px] text-rose-300 border border-white/10 cursor-pointer"
+                    >
+                      +100 kWh
+                    </button>
+                  </div>
+                </div>
+
+                {/* Water Meter Group */}
+                <div className="rounded-2xl bg-slate-950 p-4 border border-white/10 space-y-3">
+                  <div className="text-xs font-black text-sky-300 flex items-center gap-1.5">
+                    <span>💧 มิเตอร์น้ำประปา (Water Meter - m³)</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 mb-1">
+                        เลขมิเตอร์น้ำปัจจุบัน:
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="1"
+                          required
+                          value={editWaterCurrent}
+                          onChange={(e) => setEditWaterCurrent(e.target.value)}
+                          className="w-full rounded-xl bg-slate-900 border border-sky-500/40 px-3 py-2 text-sm font-mono font-bold text-sky-200 focus:outline-none focus:ring-2 focus:ring-sky-400"
+                        />
+                        <span className="absolute right-3 top-2.5 text-xs text-slate-500 font-mono">m³</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 mb-1">
+                        เลขยกมาต้นงวด:
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="1"
+                          required
+                          value={editWaterPrev}
+                          onChange={(e) => setEditWaterPrev(e.target.value)}
+                          className="w-full rounded-xl bg-slate-900 border border-white/20 px-3 py-2 text-sm font-mono font-bold text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-400"
+                        />
+                        <span className="absolute right-3 top-2.5 text-xs text-slate-500 font-mono">m³</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sticky Footer Modal Actions */}
+              <div className="shrink-0 flex items-center justify-end gap-3 p-4 sm:p-5 bg-slate-950/90 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setEditingMeterRoom(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingMeter}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs shadow-lg transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingMeter ? '⏳ กำลังบันทึก...' : '💾 บันทึกเลขมิเตอร์'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

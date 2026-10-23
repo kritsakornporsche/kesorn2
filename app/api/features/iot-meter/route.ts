@@ -49,6 +49,8 @@ let telemetryLogs: Esp32TelemetryLog[] = [
 ];
 
 let latestPipelineResult: AutoBillingPipelineResult | null = null;
+let room101HardwareBaseKwh = 367.50;
+let room101LatestRawPzemKwh = 0.0;
 
 function buildFleetSummary(rooms: SmartMeterRoomNode[]) {
   const totalLoadWatt = rooms.reduce((sum, r) => sum + r.activePowerWatt, 0);
@@ -75,6 +77,42 @@ function buildFleetSummary(rooms: SmartMeterRoomNode[]) {
   };
 }
 
+function evaluateFleetLiveness(rooms: SmartMeterRoomNode[]): SmartMeterRoomNode[] {
+  const now = Date.now();
+  return rooms.map((r) => {
+    if (r.nodeMode !== 'REAL_IOT_HYBRID') {
+      return {
+        ...r,
+        esp32Meta: {
+          ...r.esp32Meta,
+          isHardwareConnected: false,
+          espStatus: 'OFFLINE' as const,
+          pzemStatus: 'SIMULATED' as const,
+        },
+      };
+    }
+
+    const lastPkt = r.esp32Meta.lastHardwarePacketAt;
+    // Increased timeout from 12s to 35s to prevent intermittent offline flip due to TLS/PZEM read latency
+    const isOnline = Boolean(lastPkt && now - new Date(lastPkt).getTime() < 35000);
+    const pzemSt = !isOnline
+      ? ('DISCONNECTED' as const)
+      : r.esp32Meta.pzemStatus === 'CONNECTED'
+      ? ('CONNECTED' as const)
+      : ('WAITING_AC' as const);
+
+    return {
+      ...r,
+      esp32Meta: {
+        ...r.esp32Meta,
+        isHardwareConnected: isOnline,
+        espStatus: isOnline ? ('ONLINE' as const) : ('OFFLINE' as const),
+        pzemStatus: pzemSt,
+      },
+    };
+  });
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const pollDeviceId = searchParams.get('deviceId');
@@ -98,6 +136,8 @@ export async function GET(req: NextRequest) {
       serverTime: new Date().toISOString(),
     });
   }
+
+  smartMeterFleet = evaluateFleetLiveness(smartMeterFleet);
 
   return NextResponse.json({
     success: true,
@@ -141,12 +181,32 @@ export async function POST(req: NextRequest) {
       const room = smartMeterFleet[targetIdx];
       const nowIso = new Date().toISOString();
 
-      const voltage = Number(body.voltage ?? room.voltage) || 228.5;
-      const current = Number(body.current ?? room.current) || 0;
-      const powerWatt = Math.round(Number(body.power ?? body.activePowerWatt ?? voltage * current * 0.95));
-      const energyKwh = Number(
-        (body.energyKwh !== undefined ? Number(body.energyKwh) : room.currentMeterKwh + 0.02).toFixed(2)
-      );
+      const voltage =
+        body.voltage !== undefined && !isNaN(Number(body.voltage))
+          ? Number(body.voltage)
+          : room.voltage;
+      const current =
+        body.current !== undefined && !isNaN(Number(body.current))
+          ? Number(body.current)
+          : 0;
+      const powerWatt =
+        body.power !== undefined && !isNaN(Number(body.power))
+          ? Math.round(Number(body.power))
+          : Math.round(voltage * current * 0.95);
+      // Real Hardware PEA Meter Calibration (5(15)A Meter No. 5900359398)
+      const rawPzemKwh =
+        body.energyKwh !== undefined && !isNaN(Number(body.energyKwh))
+          ? Number(body.energyKwh)
+          : 0;
+      if (roomNumber === '101') {
+        room101LatestRawPzemKwh = rawPzemKwh;
+      }
+      const energyKwh =
+        roomNumber === '101'
+          ? Number((room101HardwareBaseKwh + rawPzemKwh).toFixed(2))
+          : Number(
+              (body.energyKwh !== undefined ? Number(body.energyKwh) : room.currentMeterKwh + 0.02).toFixed(2)
+            );
       const pf = Number(body.pf ?? body.powerFactor ?? 0.95);
       const frequencyHz = Number(body.frequency ?? 50.0);
       const relayState = body.relayState === 'OFF' ? 'OFF' : 'ON';
@@ -175,6 +235,24 @@ export async function POST(req: NextRequest) {
           ? 'ON'
           : relayState;
 
+      const sensorStatusRaw = String(body.sensorStatus || body.pzemStatus || '');
+      const isPzemHardwareOk =
+        sensorStatusRaw === 'PZEM_HARDWARE' ||
+        sensorStatusRaw === 'CONNECTED' ||
+        (voltage > 40.0 && sensorStatusRaw !== 'WAITING_AC');
+      const pzemStatusVal: 'CONNECTED' | 'WAITING_AC' = isPzemHardwareOk ? 'CONNECTED' : 'WAITING_AC';
+
+      const prevKwh =
+        roomNumber === '101' && (room.previousMonthKwh > 1000 || room.previousMonthKwh < 100)
+          ? room101HardwareBaseKwh
+          : room.previousMonthKwh;
+      const currentKwhVal =
+        deliveredCmd === 'RESET_KWH_COUNTER' ? prevKwh : energyKwh;
+      const monthlyUnitsVal =
+        deliveredCmd === 'RESET_KWH_COUNTER'
+          ? 0
+          : Math.max(0, Number((currentKwhVal - prevKwh).toFixed(2)));
+
       const updatedRoom: SmartMeterRoomNode = {
         ...room,
         nodeMode: 'REAL_IOT_HYBRID',
@@ -183,12 +261,9 @@ export async function POST(req: NextRequest) {
         activePowerWatt: effectiveRelay === 'OFF' ? 0 : powerWatt,
         powerFactor: pf,
         frequencyHz,
-        currentMeterKwh:
-          deliveredCmd === 'RESET_KWH_COUNTER' ? room.previousMonthKwh : energyKwh,
-        monthlyUnitsKwh:
-          deliveredCmd === 'RESET_KWH_COUNTER'
-            ? 0
-            : Math.max(0, Number((energyKwh - room.previousMonthKwh).toFixed(2))),
+        previousMonthKwh: prevKwh,
+        currentMeterKwh: currentKwhVal,
+        monthlyUnitsKwh: monthlyUnitsVal,
         relayState: effectiveRelay,
         esp32Meta: {
           ...room.esp32Meta,
@@ -196,6 +271,9 @@ export async function POST(req: NextRequest) {
           macAddress: mac,
           wifiRssi: rssi,
           isHardwareConnected: true,
+          espStatus: 'ONLINE',
+          pzemStatus: pzemStatusVal,
+          rawSensorStatus: sensorStatusRaw,
           lastHardwarePacketAt: nowIso,
           lastUpdatedAt: nowIso,
           pendingCommand: null,
@@ -306,6 +384,8 @@ export async function POST(req: NextRequest) {
         },
       };
 
+      smartMeterFleet = evaluateFleetLiveness(smartMeterFleet);
+
       return NextResponse.json({
         success: true,
         commandItem: cmdItem,
@@ -321,6 +401,12 @@ export async function POST(req: NextRequest) {
     // -------------------------------------------------------------------------
     if (action === 'toggle_room_load') {
       const roomNumber = String(body.roomNumber || '101');
+      if (roomNumber === '101' && body.appliances) {
+        return NextResponse.json(
+          { success: false, message: 'ห้อง 101 เป็นโหนดฮาร์ดแวร์จริง ไม่อนุญาตให้ใช้ตัวควบคุมจำลองโหลด' },
+          { status: 400 }
+        );
+      }
       const idx = smartMeterFleet.findIndex((r) => r.roomNumber === roomNumber);
       if (idx === -1) {
         return NextResponse.json({ success: false, message: 'Room not found' }, { status: 404 });
@@ -358,8 +444,74 @@ export async function POST(req: NextRequest) {
         },
       };
 
+      smartMeterFleet = evaluateFleetLiveness(smartMeterFleet);
+
       return NextResponse.json({
         success: true,
+        room: smartMeterFleet[idx],
+        rooms: smartMeterFleet,
+        summary: buildFleetSummary(smartMeterFleet),
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // 3.5 SET / CALIBRATE ROOM METER READING (RESEARCHER EXPERIMENTATION)
+    // -------------------------------------------------------------------------
+    if (action === 'set_meter_reading') {
+      const roomNumber = String(body.roomNumber || '101');
+      const idx = smartMeterFleet.findIndex((r) => r.roomNumber === roomNumber);
+      if (idx === -1) {
+        return NextResponse.json({ success: false, message: 'Room not found' }, { status: 404 });
+      }
+
+      const room = smartMeterFleet[idx];
+      const newCurrentKwh =
+        body.currentMeterKwh !== undefined && !isNaN(Number(body.currentMeterKwh))
+          ? Number(Number(body.currentMeterKwh).toFixed(2))
+          : room.currentMeterKwh;
+
+      const newPrevKwh =
+        body.previousMonthKwh !== undefined && !isNaN(Number(body.previousMonthKwh))
+          ? Number(Number(body.previousMonthKwh).toFixed(2))
+          : room.previousMonthKwh;
+
+      const newWaterCurrent =
+        body.waterCurrentM3 !== undefined && !isNaN(Number(body.waterCurrentM3))
+          ? Math.max(0, Number(body.waterCurrentM3))
+          : room.waterCurrentM3;
+
+      const newWaterPrev =
+        body.waterPreviousM3 !== undefined && !isNaN(Number(body.waterPreviousM3))
+          ? Math.max(0, Number(body.waterPreviousM3))
+          : room.waterPreviousM3;
+
+      const newMonthlyUnitsKwh = Math.max(0, Number((newCurrentKwh - newPrevKwh).toFixed(2)));
+      const newWaterUnits = Math.max(0, newWaterCurrent - newWaterPrev);
+
+      // If calibrating Room 101 (real hardware node), synchronize the baseline offset
+      if (roomNumber === '101') {
+        room101HardwareBaseKwh = Number((newCurrentKwh - room101LatestRawPzemKwh).toFixed(2));
+      }
+
+      smartMeterFleet[idx] = {
+        ...room,
+        currentMeterKwh: newCurrentKwh,
+        previousMonthKwh: newPrevKwh,
+        monthlyUnitsKwh: newMonthlyUnitsKwh,
+        waterCurrentM3: newWaterCurrent,
+        waterPreviousM3: newWaterPrev,
+        waterUnitsUsed: newWaterUnits,
+        esp32Meta: {
+          ...room.esp32Meta,
+          lastUpdatedAt: new Date().toISOString(),
+        },
+      };
+
+      smartMeterFleet = evaluateFleetLiveness(smartMeterFleet);
+
+      return NextResponse.json({
+        success: true,
+        message: `ปรับค่ามิเตอร์ห้อง ${roomNumber} เป็น ${newCurrentKwh.toFixed(2)} kWh สำเร็จ`,
         room: smartMeterFleet[idx],
         rooms: smartMeterFleet,
         summary: buildFleetSummary(smartMeterFleet),
@@ -374,13 +526,8 @@ export async function POST(req: NextRequest) {
       const nowIso = new Date().toISOString();
 
       smartMeterFleet = smartMeterFleet.map((room) => {
-        // If room is connected to real ESP32 hardware within last 30s and this is a regular tick, preserve real hardware readings
-        const isLiveHw =
-          room.esp32Meta.isHardwareConnected &&
-          room.esp32Meta.lastHardwarePacketAt &&
-          Date.now() - new Date(room.esp32Meta.lastHardwarePacketAt).getTime() < 30000;
-
-        if (isLiveHw && fastForwardHours === 0) {
+        // Room 101 / Real IoT Node is physical hardware: never overwrite with simulation
+        if (room.roomNumber === '101' || room.nodeMode === 'REAL_IOT_HYBRID') {
           return room;
         }
 
@@ -431,6 +578,8 @@ export async function POST(req: NextRequest) {
           },
         };
       });
+
+      smartMeterFleet = evaluateFleetLiveness(smartMeterFleet);
 
       return NextResponse.json({
         success: true,
