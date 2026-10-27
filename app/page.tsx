@@ -7,6 +7,9 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Navbar from './components/Navbar';
 import ChatWidget from '@/app/components/ChatWidget';
+import { useRates } from '@/lib/use-rates';
+import { mapDirectUrl, mapEmbedUrl } from '@/lib/maps';
+import { isAirconType, roomTypeLabel } from '@/lib/room-types';
 
 interface Room {
   id: number;
@@ -37,43 +40,10 @@ interface DormInfo {
   electricity_rate: number;
   facilities: string;
   map_url: string;
+  /** commit 27b: embed URL from the server (lib/maps) */
+  map_embed_url?: string;
   min_price: number;
   available_rooms_count: number;
-}
-
-function getGoogleMapsEmbedUrl(mapUrl?: string, address?: string, dormName?: string) {
-  if (mapUrl) {
-    const trimmed = mapUrl.trim();
-    if (trimmed.includes('/embed')) {
-      return trimmed;
-    }
-    const coordMatch = trimmed.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
-    if (coordMatch) {
-      const lat = coordMatch[1];
-      const lng = coordMatch[2];
-      return `https://maps.google.com/maps?q=${lat},${lng}&t=&z=16&ie=UTF8&iwloc=&output=embed`;
-    }
-    try {
-      const url = new URL(trimmed);
-      const q = url.searchParams.get('q') || url.searchParams.get('query');
-      if (q) {
-        return `https://maps.google.com/maps?q=${encodeURIComponent(q)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
-      }
-    } catch (e) {}
-    if (trimmed.startsWith('http')) {
-      return `https://maps.google.com/maps?q=${encodeURIComponent(trimmed)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
-    }
-  }
-  const query = [dormName, address, 'พะเยา'].filter(Boolean).join(' ');
-  return `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
-}
-
-function getGoogleMapsDirectUrl(mapUrl?: string, address?: string, dormName?: string) {
-  if (mapUrl && !mapUrl.includes('/embed') && mapUrl.startsWith('http')) {
-    return mapUrl;
-  }
-  const query = [dormName, address, 'พะเยา'].filter(Boolean).join(' ');
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
 const DORM_GALLERY = [
@@ -132,6 +102,7 @@ export default function Home() {
   const { data: session } = useSession();
 
   const [dormInfo, setDormInfo] = useState<DormInfo | null>(null);
+  const rates = useRates();
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterTab, setFilterTab] = useState<'all' | 'available' | 'moving_out'>('all');
@@ -331,7 +302,7 @@ export default function Home() {
               <div>
                 <span className="text-[10px] font-bold text-muted-foreground uppercase block">ค่าไฟฟ้า</span>
                 <span className="text-sm font-black text-amber-500">
-                  ฿4.88 <span className="text-[11px] font-medium text-muted-foreground">/ หน่วย</span>
+                  ฿{rates.electricityPerUnit} <span className="text-[11px] font-medium text-muted-foreground">/ หน่วย</span>
                 </span>
               </div>
             </div>
@@ -361,7 +332,7 @@ export default function Home() {
               <div>
                 <span className="text-[10px] font-bold text-muted-foreground uppercase block">เงินประกัน</span>
                 <span className="text-sm font-black text-blue-500">
-                  ฿2,000 <span className="text-[11px] font-medium text-muted-foreground">(คืนครบสัญญา)</span>
+                  ฿2,000 <span className="text-[11px] font-medium text-muted-foreground">(คืนตามเงื่อนไขสัญญา)</span>
                 </span>
               </div>
             </div>
@@ -398,15 +369,15 @@ export default function Home() {
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center font-bold text-xs shrink-0">✓</span>
-                  <span><strong>อัตราค่าใช้จ่าย:</strong> ค่าน้ำประปา 100 บาท/คน/เดือน • ค่าไฟหน่วยละ 4.88 บาท • ค่าส่วนกลาง 150 บาท/เดือน</span>
+                  <span><strong>อัตราค่าใช้จ่าย:</strong> ค่าน้ำประปา {rates.waterPerPerson} บาท/คน/เดือน • ค่าไฟหน่วยละ {rates.electricityPerUnit} บาท • ค่าส่วนกลาง {rates.commonFee} บาท/เดือน</span>
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center font-bold text-xs shrink-0">✕</span>
-                  <span><strong>ห้ามสูบบุหรี่และสิ่งเสพติด:</strong> ปลอดบุหรี่ในห้องพักและอาคารเด็ดขาด</span>
+                  <span><strong>ห้ามสูบบุหรี่และสิ่งเสพติด:</strong> ห้ามสูบบุหรี่ทุกพื้นที่ภายในหอพัก</span>
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center font-bold text-xs shrink-0">ℹ</span>
-                  <span><strong>เงื่อนไขเข้าพัก:</strong> ค่าจอง 1,000 บาท • ค่ามัดจำรวม 3,000 บาท (ส่วนที่เหลือ 2,000 บาท ชำระวันทำสัญญาเข้าพัก)</span>
+                  <span><strong>เงื่อนไขเข้าพัก:</strong> ค่าจอง 1,000 บาท • เงินประกันรวม 3,000 บาท (ส่วนที่เหลือ 2,000 บาท ชำระวันทำสัญญาเข้าพัก)</span>
                 </li>
               </ul>
             </div>
@@ -546,7 +517,7 @@ export default function Home() {
                 <span>ขอเส้นทางนำทาง ↗</span>
               </a>
               <a
-                href={getGoogleMapsDirectUrl(dormInfo?.map_url, dormInfo?.address, dormName)}
+                href={mapDirectUrl(dormInfo?.map_url, dormInfo?.address, dormName)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-4 py-2.5 bg-secondary hover:bg-secondary/80 text-foreground text-xs font-bold rounded-xl border border-border flex items-center gap-1.5 transition-all"
@@ -560,7 +531,7 @@ export default function Home() {
           <div className="w-full h-72 sm:h-96 rounded-2xl overflow-hidden border border-border shadow-inner relative bg-muted/40">
             <iframe
               title={`แผนที่ ${dormName}`}
-              src={getGoogleMapsEmbedUrl(dormInfo?.map_url, dormInfo?.address, dormName)}
+              src={dormInfo?.map_embed_url || mapEmbedUrl(dormInfo?.map_url, dormInfo?.address, dormName)}
               className="w-full h-full border-0"
               loading="lazy"
               allowFullScreen
@@ -646,7 +617,7 @@ export default function Home() {
               {filteredRooms.map((room) => {
                 const available = isAvailable(room);
                 const movingOut = isMovingOut(room);
-                const isAirCon = (room.room_type || '').toLowerCase().includes('air') || (room.room_type || '').includes('แอร์');
+                const isAirCon = isAirconType(room.room_type);
 
                 return (
                   <Link
@@ -685,7 +656,7 @@ export default function Home() {
                           <span className="text-xs font-medium text-white/90"> /เดือน</span>
                         </div>
                         <span className="text-[10px] text-emerald-300 font-bold block drop-shadow">
-                          ✓ ค่าน้ำ ฿100/คน/ด. • ค่าไฟ ฿8/หน่วย • ฟรี Wi-Fi
+                          ✓ ค่าน้ำ ฿{rates.waterPerPerson}/คน/ด. • ค่าไฟ ฿{rates.electricityPerUnit}/หน่วย • ฟรี Wi-Fi
                         </span>
                       </div>
                     </div>
@@ -703,7 +674,7 @@ export default function Home() {
                         </div>
 
                         <p className="text-xs text-muted-foreground font-medium">
-                          ประเภท: {room.room_type || 'ห้องมาตรฐาน'} • ชั้น {room.floor || 1}
+                          ประเภท: {roomTypeLabel(room.room_type)} • ชั้น {room.floor || 1}
                         </p>
 
                         {movingOut && room.move_out_date && (

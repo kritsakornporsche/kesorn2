@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    if (!session || (session.user as any)?.role !== 'owner') {
+    if (!session) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    const guard = await requireRole(['owner']);
+    if ('response' in guard) return guard.response;
 
     const { apiKey } = await req.json();
     const keyToTest = (apiKey || '').trim();

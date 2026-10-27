@@ -82,21 +82,15 @@ export default function SignInContent() {
       if (forceDestination) {
         targetPath = forceDestination;
       } else if (callbackUrl) {
-        const isResearcherPath = callbackUrl.startsWith('/researcher') || callbackUrl.startsWith('/sequence');
         const isOwnerPath = callbackUrl.startsWith('/owner');
         const isTenantPath = callbackUrl.startsWith('/tenant');
         const isKeeperPath = callbackUrl.startsWith('/keeper');
-        const isPlatformPath = callbackUrl.startsWith('/platform');
 
-        if (isResearcherPath && userRole !== 'researcher') {
-          targetPath = redirectUrl;
-        } else if (isOwnerPath && userRole !== 'owner') {
+        if (isOwnerPath && userRole !== 'owner' && userRole !== 'manager') {
           targetPath = redirectUrl;
         } else if (isTenantPath && userRole !== 'tenant') {
           targetPath = redirectUrl;
         } else if (isKeeperPath && userRole !== 'keeper') {
-          targetPath = redirectUrl;
-        } else if (isPlatformPath && userRole !== 'platform_admin') {
           targetPath = redirectUrl;
         } else {
           targetPath = callbackUrl;
@@ -201,7 +195,7 @@ export default function SignInContent() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-[#0F172A] px-6 py-4 text-sm font-bold text-white focus:bg-[#0F172A] focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-white/30"
+                className="w-full rounded-2xl border border-slate-300 bg-white px-6 py-4 text-sm font-bold text-slate-900 focus:bg-white focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-slate-400 shadow-xs"
                 placeholder="you@example.com หรือ admin"
               />
             </div>
@@ -219,7 +213,7 @@ export default function SignInContent() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-2xl border border-white/10 bg-[#0F172A] px-6 py-4 text-sm font-bold text-white focus:bg-[#0F172A] focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-white/30 pr-12"
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-6 py-4 text-sm font-bold text-slate-900 focus:bg-white focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-slate-400 shadow-xs pr-12"
                   placeholder="••••••••"
                 />
                 <button
@@ -253,6 +247,7 @@ export default function SignInContent() {
             </button>
           </form>
 
+          {process.env.NODE_ENV === 'development' && (
           <div className="mt-8 pt-6 border-t border-border">
             <div className="flex items-center justify-center gap-2 mb-3">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
@@ -262,27 +257,27 @@ export default function SignInContent() {
             </div>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { label: '👑 เจ้าของหอ', user: 'owner', dest: '/owner' },
-                { label: '🏠 ลูกหอ', user: 'tenant', dest: '/tenant' },
-                { label: '🔬 นักวิจัย', user: 'researcher', dest: '/researcher' },
-                { label: '🧹 แม่บ้าน', user: 'maid', dest: '/keeper/maid' },
-                { label: '🔧 ช่างซ่อม', user: 'technician', dest: '/keeper/technician' },
-                { label: '🛡️ แอดมิน', user: 'admin', dest: '/platform' },
-                { label: '🌐 แขก (Guest) / แดชบอร์ดการจอง', user: 'guest', dest: '/guest' },
+                { label: '👑 เจ้าของหอ', user: 'owner', email: 'owner@kesorn.com', dest: '/owner' },
+                // commit 24: demo manager (same pattern as the others: password = the role name; the account is created separately)
+                { label: '🗂️ ผู้จัดการ', user: 'manager', email: 'manager@kesorn.com', dest: '/owner' },
+                { label: '🏠 ลูกหอ', user: 'tenant', email: 'tenant@kesorn.com', dest: '/tenant' },
+                { label: '🧹 แม่บ้าน', user: 'maid', email: 'maid@kesorn.com', dest: '/keeper/maid' },
+                { label: '🔧 ช่างซ่อม', user: 'technician', email: 'technician@kesorn.com', dest: '/keeper/technician' },
+                { label: '🌐 แขก (Guest) / แดชบอร์ดการจอง', user: 'guest', email: 'guest@kesorn.com', dest: '/guest' },
               ].map((roleItem) => (
                 <button
                   key={roleItem.user}
                   type="button"
                   disabled={loading}
                   onClick={() => {
-                    setEmail(roleItem.user);
+                    setEmail(roleItem.email);
                     setPassword(roleItem.user);
-                    loginWithCredentials(roleItem.user, roleItem.user, roleItem.dest);
+                    loginWithCredentials(roleItem.email, roleItem.user, roleItem.dest);
                   }}
-                  className={`py-2.5 px-2 text-[11px] font-black rounded-xl border transition-all text-center cursor-pointer select-none active:scale-95 disabled:opacity-50 shadow-sm ${
+                  className={`py-2.5 px-2 text-[11px] font-black rounded-xl border transition-all text-center cursor-pointer select-none active:scale-95 disabled:opacity-50 shadow-xs ${
                     roleItem.user === 'guest'
-                      ? 'col-span-3 bg-gradient-to-r from-cyan-900/60 to-blue-900/60 border-cyan-500/50 text-cyan-200 hover:brightness-125'
-                      : 'border-white/10 bg-slate-900 hover:bg-primary hover:text-white text-slate-200 hover:border-primary/50'
+                      ? 'col-span-3 bg-cyan-50 border-cyan-200 text-cyan-800 hover:bg-cyan-100'
+                      : 'border-slate-200 bg-slate-50 hover:bg-primary hover:text-white text-slate-700 hover:border-primary'
                   }`}
                 >
                   {roleItem.label}
@@ -290,6 +285,7 @@ export default function SignInContent() {
               ))}
             </div>
           </div>
+          )}
 
           <div className="mt-6 text-center">
              <Link 

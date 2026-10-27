@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import bcrypt from 'bcryptjs';
+import { joinName } from '@/lib/contract-party';
+import { phoneDigits } from '@/lib/phone';
 
 // ─── POST /api/auth/signup ─────────────────────────────────────────────────────
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { username, email, password, role = 'guest', sub_role = null } = body;
+    const { username, email, password } = body;
 
     // ── Validate required fields ──────────────────────────────────────────────
     if (!username || !username.trim() || !email || !password) {
@@ -41,19 +43,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // ── Validate role ─────────────────────────────────────────────────────────
-    const validRoles = ['guest', 'tenant', 'keeper', 'owner', 'researcher'];
-    const chosenRole = validRoles.includes(role) ? role : 'guest';
-
-    if (chosenRole === 'keeper') {
-      const validSubRoles = ['maid', 'technician'];
-      if (!validSubRoles.includes(sub_role)) {
-        return NextResponse.json(
-          { success: false, message: 'กรุณาระบุประเภทบุคลากรให้ถูกต้อง (แม่บ้าน หรือ ช่างซ่อม)' },
-          { status: 400 }
-        );
-      }
-    }
+    // ── Role: self-signup is always guest (tenants come from contracts, staff from the owner) ──
+    const chosenRole = 'guest';
 
     const sql = getDb();
     const usernameClean = username.trim();
@@ -81,41 +72,43 @@ export async function POST(request: Request) {
       );
     }
 
-    // ── Check if email has been verified via OTP ─────────────────────────────
-    try {
-      const verifications = await sql`
-        SELECT id FROM email_verifications 
-        WHERE email = ${cleanEmail} AND is_verified = 1 
-        ORDER BY id DESC LIMIT 1
-      `;
-      // In production or when verification record required, enforce OTP
-      if (!verifications || verifications.length === 0) {
-        // Fallback for tests if needed, but flag requirement
-        if (process.env.NODE_ENV === 'production') {
-          return NextResponse.json(
-            { success: false, message: 'กรุณายืนยันรหัส OTP ที่ส่งไปยังอีเมลของคุณก่อนสมัครสมาชิก' },
-            { status: 400 }
-          );
-        }
-      }
-    } catch (e: any) {
-      console.warn('[email_verifications check in signup skipped or table not created yet]:', e?.message);
-    }
+    // ── Extract Tenant Profile Details ─────────────────────────────────────────
+    const rawParty = body.party || {
+      title: body.title || '',
+      firstName: body.firstName || '',
+      lastName: body.lastName || '',
+      houseNo: body.houseNo || '',
+      moo: body.moo || '',
+      soi: body.soi || '',
+      road: body.road || '',
+      subdistrict: body.subdistrict || '',
+      district: body.district || '',
+      province: body.province || '',
+      postcode: body.postcode || '',
+    };
+
+    const phoneVal = body.phone ? phoneDigits(body.phone) : null;
+    const parentPhoneVal = (body.parentPhone || body.parent_phone) ? phoneDigits(body.parentPhone || body.parent_phone) : null;
+    const displayName = (rawParty.firstName && rawParty.lastName) ? joinName(rawParty) : usernameClean;
+    const partyJson = (rawParty.firstName || rawParty.houseNo) ? JSON.stringify(rawParty) : null;
 
     // ── Hash password with BCrypt ─────────────────────────────────────────────
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // ── Insert user with role, primary_role, sub_role, is_active ──────────────
+    // ── Insert user with role, primary_role, phone, parent_phone, party_data ──
     const result = await sql`
-      INSERT INTO users (name, email, password, role, primary_role, sub_role, is_active)
+      INSERT INTO users (name, email, password, role, primary_role, sub_role, is_active, phone, parent_phone, party_data)
       VALUES (
-        ${usernameClean},
+        ${displayName},
         ${cleanEmail},
         ${hashedPassword},
         ${chosenRole},
         ${chosenRole},
-        ${chosenRole === 'keeper' ? sub_role : null},
-        1
+        ${null},
+        1,
+        ${phoneVal},
+        ${parentPhoneVal},
+        ${partyJson}
       )
     `;
     
@@ -128,10 +121,13 @@ export async function POST(request: Request) {
         data: {
           id: insertId,
           username: usernameClean,
-          name: usernameClean,
+          name: displayName,
           email: cleanEmail,
           role: chosenRole,
-          sub_role: chosenRole === 'keeper' ? sub_role : null,
+          sub_role: null,
+          phone: phoneVal,
+          parentPhone: parentPhoneVal,
+          party: rawParty,
         },
       },
       { status: 201 }

@@ -2,15 +2,22 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useConfirm } from '@/components/ConfirmModalProvider';
 
 export default function CancelBookingButton({ contractId, roomId }: { contractId: number, roomId: number }) {
   const [cancelling, setCancelling] = useState(false);
   const router = useRouter();
+  const { confirm, alert } = useConfirm();
 
   const handleCancel = async () => {
-    if (!confirm('คุณต้องการยกเลิกคำขอจองห้องพักนี้ใช่หรือไม่? เมื่อยกเลิกแล้วห้องพักจะกลับสู่สถานะว่าง')) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'ยืนยันยกเลิกการจองห้องพัก?',
+      description: 'ค่าจองที่ชำระแล้วจะไม่คืน (เป็นไปตามเงื่อนไขการจอง) และห้องจะเปิดให้ผู้อื่นจองทันที',
+      confirmText: 'ยืนยันยกเลิก',
+      cancelText: 'ย้อนกลับ',
+      variant: 'danger',
+    });
+    if (!ok) return;
 
     setCancelling(true);
     try {
@@ -21,14 +28,26 @@ export default function CancelBookingButton({ contractId, roomId }: { contractId
       });
       const data = await res.json();
       if (data.success) {
-        alert(data.message || 'ยกเลิกการจองเรียบร้อยแล้ว');
+        await alert({
+          title: 'ยกเลิกการจองแล้ว',
+          description: data.message || 'ยกเลิกการจองห้องพักเรียบร้อยแล้ว',
+          variant: 'success',
+        });
         router.refresh();
         window.location.reload();
       } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการยกเลิก');
+        await alert({
+          title: 'ยกเลิกไม่สำเร็จ',
+          description: data.message || 'เกิดข้อผิดพลาดในการยกเลิก',
+          variant: 'danger',
+        });
       }
-    } catch (e) {
-      alert('เกิดข้อผิดพลาดในการยกเลิกการจอง');
+    } catch (e: any) {
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        description: e?.message || 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้',
+        variant: 'danger',
+      });
     } finally {
       setCancelling(false);
     }

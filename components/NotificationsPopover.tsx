@@ -33,9 +33,9 @@ export default function NotificationsPopover() {
   const [pushPerm, setPushPerm] = useState<NotificationPermission | 'unsupported'>('default');
   const [showMobilePrompt, setShowMobilePrompt] = useState(false);
   const [iosHint, setIosHint] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
 
   const popoverRef = useRef<HTMLDivElement>(null);
-  const lastMaxIdRef = useRef<number | null>(null);
   const router = useRouter();
 
   const userRole = String((session?.user as any)?.role || '').toLowerCase();
@@ -44,169 +44,116 @@ export default function NotificationsPopover() {
   const userEmail = session?.user?.email || '';
   const isAuthenticatedMember =
     status === 'authenticated' &&
-    Boolean(session?.user) &&
-    userRole !== 'guest' &&
-    userRole !== '';
+    Boolean(session?.user);
 
-  const fireBrowserNotification = useCallback(async (title: string, body: string, url?: string) => {
-    try {
-      toast.info(title, { description: body });
-
-      if (title.includes('คำขอเปิดการแจ้งเตือน') || body.includes('เปิดการแจ้งเตือนสำหรับ mobile')) {
-        if (typeof window !== 'undefined' && (!('Notification' in window) || Notification.permission !== 'granted')) {
-          setShowMobilePrompt(true);
-        }
+  // Check initial Notification permission
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setPushPerm(Notification.permission);
+      if (Notification.permission === 'default' && isAuthenticatedMember) {
+        const t = setTimeout(() => setShowMobilePrompt(true), 2500);
+        return () => clearTimeout(t);
       }
+    } else {
+      setPushPerm('unsupported');
+    }
+  }, [isAuthenticatedMember]);
 
-      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-        if ('serviceWorker' in navigator) {
-          const reg = await navigator.serviceWorker.getRegistration('/sw.js');
-          if (reg) {
-            await reg.showNotification(title, {
-              body,
-              icon: '/favicon.ico',
-              badge: '/favicon.ico',
-              tag: `role-push-${Date.now()}`,
-              data: { url: url || window.location.pathname },
-            } as NotificationOptions);
-            return;
-          }
+  const handleEnablePush = async () => {
+    if (!isAuthenticatedMember) {
+      toast.error('กรุณาเข้าสู่ระบบก่อนเปิดรับการแจ้งเตือน');
+      return;
+    }
+
+    setIsSubscribing(true);
+    try {
+      const res = await subscribeDeviceToWebPush({
+        role: userRole || 'guest',
+        subRole: userSubRole,
+        userName: userName || session?.user?.name || '',
+        userEmail: userEmail || session?.user?.email || '',
+        sendConfirmationPush: true,
+      });
+
+      if (res.needsIosHomeScreen) {
+        setIosHint(true);
+        toast.warning(res.message);
+        return;
+      }
+      setPushPerm(res.permission);
+      if (res.success) {
+        setShowMobilePrompt(false);
+        toast.success(res.message, {
+          description: 'พร้อมรับการแจ้งเตือนผลอนุมัติการจองและข่าวสารสำคัญแล้ว',
+        });
+      } else {
+        toast.error(res.message);
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'เกิดข้อผิดพลาดในการเปิดการแจ้งเตือน');
+    } finally {
+      setIsSubscribing(false);
+    }
+  };
+
+  const handleTestNotification = async () => {
+    try {
+      const res = await fetch('/api/features/web-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send_email',
+          targetEmail: userEmail,
+          title: 'ทดสอบการแจ้งเตือน 🔔',
+          message: 'การแจ้งเตือนบนอุปกรณ์ของคุณทำงานได้อย่างถูกต้องแล้ว',
+          url: '/explore/booking-status',
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.sentCount > 0) {
+        toast.success('ส่งข้อความทดสอบแจ้งเตือนเรียบร้อยแล้ว');
+      } else {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('ทดสอบการแจ้งเตือน 🔔', {
+            body: 'การแจ้งเตือนบนอุปกรณ์ของคุณทำงานได้อย่างถูกต้องแล้ว',
+            icon: '/favicon.ico',
+          });
+          toast.success('แสดงการแจ้งเตือนทดสอบบนหน้าจอเรียบร้อยแล้ว');
+        } else {
+          toast.info('เปิดการแจ้งเตือนเพื่อรับข้อความทดสอบ');
         }
-        new Notification(title, { body, icon: '/favicon.ico' });
       }
     } catch {
-      // Fallback if mobile browser blocks direct constructor
-    }
-  }, []);
-
-  const handleEnableMobilePush = async () => {
-    if (!isAuthenticatedMember) {
-      toast.error('กรุณาเข้าสู่ระบบในบทบาทสมาชิกก่อนเปิดรับการแจ้งเตือน');
-      return;
-    }
-
-    const res = await subscribeDeviceToWebPush({
-      role: userRole,
-      subRole: userSubRole,
-      userName,
-      userEmail,
-      sendConfirmationPush: true,
-    });
-
-    if (res.needsIosHomeScreen) {
-      setIosHint(true);
-      toast.warning(res.message);
-      return;
-    }
-    setPushPerm(res.permission);
-    if (res.success) {
-      setShowMobilePrompt(false);
-      toast.success(res.message, {
-        description: 'สามารถพับหน้าจอหรือล็อกหน้าจอเพื่อรับแจ้งเตือนนอกแอปได้ทันที',
-      });
-    } else {
-      toast.error(res.message);
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('ทดสอบการแจ้งเตือน 🔔', {
+          body: 'การแจ้งเตือนบนอุปกรณ์ของคุณทำงานได้อย่างถูกต้องแล้ว',
+          icon: '/favicon.ico',
+        });
+        toast.success('แสดงการแจ้งเตือนทดสอบบนหน้าจอเรียบร้อยแล้ว');
+      }
     }
   };
 
   const fetchNotifications = useCallback(async () => {
-    if (!isAuthenticatedMember) {
-      setNotifications([]);
-      setUnreadCount(0);
-      setLoading(false);
-      return;
-    }
-
     try {
       const res = await fetch('/api/notifications');
       const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        const list: NotificationItem[] = data.data;
-        setNotifications(list);
-        setUnreadCount(data.unreadCount);
-
-        const newestUnread = list.find((n) => !n.is_read);
-        if (newestUnread) {
-          if (lastMaxIdRef.current !== null && newestUnread.id > lastMaxIdRef.current) {
-            fireBrowserNotification(newestUnread.title, newestUnread.message, newestUnread.action_url);
-          }
-          lastMaxIdRef.current = Math.max(lastMaxIdRef.current || 0, newestUnread.id);
-        } else if (lastMaxIdRef.current === null && list.length > 0) {
-          lastMaxIdRef.current = Math.max(...list.map((n) => n.id));
-        } else if (lastMaxIdRef.current === null) {
-          lastMaxIdRef.current = 0;
-        }
+      if (data.success) {
+        setNotifications(data.data || []);
+        setUnreadCount(data.unreadCount || 0);
       }
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticatedMember, fireBrowserNotification]);
+  }, []);
 
   useEffect(() => {
-    // Do NOT run notifications or push subscription for unauthenticated users or guests
-    if (!isAuthenticatedMember) {
-      setShowMobilePrompt(false);
-      setLoading(false);
-      return;
-    }
-
-    if (typeof window !== 'undefined') {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
-      }
-      if (isIosDevice() && !isStandalonePwa()) {
-        setIosHint(true);
-        setShowMobilePrompt(true);
-      } else if ('Notification' in window) {
-        setPushPerm(Notification.permission);
-        if (Notification.permission === 'granted') {
-          // Sync current logged-in role & identity with VAPID server
-          subscribeDeviceToWebPush({
-            role: userRole,
-            subRole: userSubRole,
-            userName,
-            userEmail,
-            sendConfirmationPush: false,
-          }).catch(() => {});
-        } else if (Notification.permission === 'default') {
-          const isMobileScreen =
-            window.innerWidth < 768 || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-          if (isMobileScreen) {
-            setShowMobilePrompt(true);
-          }
-        }
-      } else {
-        setPushPerm('unsupported');
-      }
-    }
-
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 5000);
-
-    let bc: BroadcastChannel | null = null;
-    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-      try {
-        bc = new BroadcastChannel('smartdorm_web_push');
-        bc.onmessage = (ev) => {
-          if (ev.data?.type === 'BROADCAST_ALL_ROLES') {
-            fetchNotifications();
-          } else if (ev.data?.type === 'REQUEST_MOBILE_PERMISSION') {
-            setShowMobilePrompt(true);
-            fetchNotifications();
-          }
-        };
-      } catch {
-        // ignore
-      }
-    }
-
-    return () => {
-      clearInterval(interval);
-      if (bc) bc.close();
-    };
-  }, [isAuthenticatedMember, userRole, userSubRole, userName, userEmail, fetchNotifications]);
+    const interval = setInterval(fetchNotifications, 10000); // Check every 10s
+    return () => clearInterval(interval);
+  }, [fetchNotifications]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -217,11 +164,6 @@ export default function NotificationsPopover() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  // Hide notification bell completely if not authenticated
-  if (!isAuthenticatedMember) {
-    return null;
-  }
 
   const handleMarkAsRead = async () => {
     try {
@@ -236,10 +178,28 @@ export default function NotificationsPopover() {
     }
   };
 
-  const handleNotificationClick = (actionUrl: string | null) => {
+  const handleNotificationClick = (e: React.MouseEvent, n: NotificationItem) => {
+    // 1. Mark as read immediately in UI
+    if (!n.is_read) {
+      setNotifications((prev) =>
+        prev.map((item) => (item.id === n.id ? { ...item, is_read: 1 } : item))
+      );
+      setUnreadCount((c) => Math.max(0, c - 1));
+      fetch('/api/notifications', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: n.id }),
+      }).catch(() => {});
+    }
+
     setIsOpen(false);
-    if (actionUrl) {
-      router.push(actionUrl);
+
+    const targetUrl = n.action_url || '/explore/booking-status';
+
+    // If already on the target page, trigger a full reload to show fresh state
+    if (typeof window !== 'undefined' && window.location.pathname === targetUrl) {
+      e.preventDefault();
+      window.location.reload();
     }
   };
 
@@ -247,22 +207,22 @@ export default function NotificationsPopover() {
 
   return (
     <>
-      {/* Floating Mobile Permission Request Modal / Banner (Only for authenticated members) */}
-      {showMobilePrompt && pushPerm !== 'granted' && (
-        <div className="fixed bottom-20 left-3 right-3 sm:left-auto sm:right-6 sm:bottom-6 sm:w-96 z-50 rounded-2xl bg-slate-900/95 text-white border border-cyan-400/50 p-4 shadow-2xl backdrop-blur-md">
+      {/* Floating Prompt Banner */}
+      {showMobilePrompt && pushPerm !== 'granted' && isAuthenticatedMember && (
+        <div className="fixed bottom-20 left-3 right-3 sm:left-auto sm:right-6 sm:bottom-6 sm:w-96 z-50 rounded-2xl bg-card text-foreground border border-primary/30 p-4 shadow-2xl backdrop-blur-md">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-2.5">
-              <span className="text-2xl">📲</span>
+              <span className="text-2xl">🔔</span>
               <div>
-                <h4 className="text-xs sm:text-sm font-black text-cyan-300">
-                  คำขอเปิดการแจ้งเตือนสำหรับมือถือ ({userName || userRole})
+                <h4 className="text-xs sm:text-sm font-black text-foreground">
+                  เปิดการแจ้งเตือนบนอุปกรณ์
                 </h4>
-                <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
-                  กดปุ่มด้านล่างเพื่ออนุญาตให้ระบบหอพักเกษร 2 แจ้งเตือนบิล งานซ่อม และข้อความสำคัญบนมือถือของคุณทันที
+                <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                  รับแจ้งเตือนผลอนุมัติการจองห้องพัก และข้อความสำคัญผ่าน Web Push ทันที
                 </p>
                 {iosHint && (
-                  <p className="text-[10px] text-amber-300 font-bold mt-1">
-                    💡 สำหรับ iPhone (Safari): กดปุ่มแชร์ ⬆️ แล้วเลือก &ldquo;เพิ่มไปยังหน้าจอโฮม (Add to Home Screen)&rdquo; ก่อนเปิดรับแจ้งเตือน
+                  <p className="text-[10px] text-amber-500 font-bold mt-1">
+                    💡 สำหรับ iPhone: กดปุ่มแชร์ ⬆️ แล้วเลือก &ldquo;เพิ่มไปยังหน้าจอโฮม&rdquo;
                   </p>
                 )}
               </div>
@@ -270,7 +230,7 @@ export default function NotificationsPopover() {
             <button
               type="button"
               onClick={() => setShowMobilePrompt(false)}
-              className="text-xs text-slate-400 hover:text-white px-1.5 py-0.5"
+              className="text-xs text-muted-foreground hover:text-foreground px-1.5 py-0.5 cursor-pointer"
             >
               ✕
             </button>
@@ -278,15 +238,16 @@ export default function NotificationsPopover() {
           <div className="mt-3 flex items-center gap-2">
             <button
               type="button"
-              onClick={handleEnableMobilePush}
-              className="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black text-xs shadow-lg transition-all cursor-pointer"
+              onClick={handleEnablePush}
+              disabled={isSubscribing}
+              className="flex-1 py-2 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs shadow-md transition-all cursor-pointer"
             >
-              🔔 กดอนุญาตเปิดการแจ้งเตือนบนมือถือ
+              {isSubscribing ? 'กำลังเปิด...' : '🔔 เปิดรับการแจ้งเตือน'}
             </button>
             <button
               type="button"
               onClick={() => setShowMobilePrompt(false)}
-              className="py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 font-bold text-xs cursor-pointer"
+              className="py-2 px-3 rounded-xl bg-secondary hover:bg-secondary/80 text-muted-foreground font-bold text-xs cursor-pointer"
             >
               ไว้ทีหลัง
             </button>
@@ -316,177 +277,247 @@ export default function NotificationsPopover() {
 
         {/* Popover Dropdown */}
         {isOpen && (
-          <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-card text-card-foreground border border-border rounded-2xl shadow-2xl z-50 overflow-hidden transform opacity-100 scale-100 transition-all origin-top-right">
-            {/* Tabs Navigation Header */}
-            <div className="bg-secondary/50 p-2 border-b border-border flex items-center gap-1">
-              <button
-                onClick={() => setActiveTab('notifications')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                  activeTab === 'notifications'
-                    ? 'bg-primary text-primary-foreground shadow-md'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-                }`}
-              >
-                <span>🔔 การแจ้งเตือน</span>
-                {unreadCount > 0 && (
-                  <span className="px-1.5 py-0.5 text-[10px] bg-red-500 text-white rounded-full font-black">
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
+          <>
+            {/* Mobile Backdrop */}
+            <div
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 sm:hidden"
+              onClick={() => setIsOpen(false)}
+            />
 
-              <button
-                onClick={() => setActiveTab('updates')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                  activeTab === 'updates'
-                    ? 'bg-purple-600 text-white shadow-md'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-                }`}
-              >
-                <span>🚀 อัปเดตระบบ</span>
-                <span className="px-1.5 py-0.5 text-[9px] bg-emerald-500 text-white rounded-full font-black uppercase">
-                  NEW
-                </span>
-              </button>
-            </div>
-
-            {/* Mobile Push Permission Status Bar inside Popover */}
-            <div className="px-3 py-2 bg-secondary/40 border-b border-border flex items-center justify-between gap-2">
-              <span className="text-[11px] font-bold text-muted-foreground">
-                📲 แจ้งเตือนมือถือ:{' '}
-                <strong className={pushPerm === 'granted' ? 'text-emerald-500' : 'text-amber-500'}>
-                  {pushPerm === 'granted' ? 'เปิดแล้ว' : 'ยังไม่เปิด'}
-                </strong>
-              </span>
-              {pushPerm !== 'granted' && (
+            <div className="fixed inset-0 sm:inset-auto sm:absolute sm:right-0 sm:mt-2 w-full sm:w-96 h-[100dvh] sm:h-auto sm:max-h-[580px] bg-card text-card-foreground border-0 sm:border sm:border-border sm:rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col transform opacity-100 scale-100 transition-all origin-top-right">
+              {/* Mobile Header Bar */}
+              <div className="flex sm:hidden items-center justify-between px-4 py-3 border-b border-border bg-secondary/80 shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🔔</span>
+                  <span className="text-sm font-black text-foreground">การแจ้งเตือน</span>
+                </div>
                 <button
                   type="button"
-                  onClick={handleEnableMobilePush}
-                  className="px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-[11px] cursor-pointer"
+                  onClick={() => setIsOpen(false)}
+                  className="w-8 h-8 rounded-full bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground flex items-center justify-center text-sm font-bold cursor-pointer"
+                  aria-label="ปิด"
                 >
-                  กดเปิดแจ้งเตือนมือถือ
+                  ✕
                 </button>
-              )}
-            </div>
-
-            {/* Tab 1: Notifications */}
-            {activeTab === 'notifications' && (
-              <div>
-                <div className="px-4 py-2.5 border-b border-border flex items-center justify-between bg-secondary/20">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                    รายการแจ้งเตือนส่วนตัว ({userName || userRole})
-                  </span>
-                  {unreadCount > 0 && (
-                    <button
-                      onClick={handleMarkAsRead}
-                      className="text-xs text-primary hover:underline font-bold cursor-pointer"
-                    >
-                      ทำเครื่องหมายอ่านแล้ว
-                    </button>
-                  )}
-                </div>
-
-                <div className="max-h-[380px] overflow-y-auto">
-                  {loading ? (
-                    <div className="p-8 text-center text-muted-foreground text-sm">กำลังโหลด...</div>
-                  ) : notifications.length === 0 ? (
-                    <div className="p-8 text-center flex flex-col items-center">
-                      <span className="text-4xl mb-3 opacity-50">📭</span>
-                      <p className="text-muted-foreground text-sm font-bold">ไม่มีการแจ้งเตือน</p>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-border">
-                      {notifications.map((n) => (
-                        <div
-                          key={n.id}
-                          onClick={() => handleNotificationClick(n.action_url)}
-                          className={`p-4 hover:bg-secondary/50 transition-colors cursor-pointer flex gap-4 ${
-                            n.is_read ? 'opacity-70' : 'bg-primary/5'
-                          }`}
-                        >
-                          <div className="flex-shrink-0 mt-1">
-                            {n.type === 'billing' ? '💰' : n.type === 'maintenance' ? '🔧' : '📢'}
-                          </div>
-                          <div>
-                            <h4
-                              className={`text-sm ${
-                                n.is_read ? 'font-medium text-muted-foreground' : 'font-bold text-foreground'
-                              }`}
-                            >
-                              {n.title}
-                            </h4>
-                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">
-                              {n.message}
-                            </p>
-                            <p className="text-[10px] font-bold text-muted-foreground/60 uppercase mt-2">
-                              {new Date(n.created_at).toLocaleString('th-TH')}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
               </div>
-            )}
 
-            {/* Tab 2: System Updates (Daily Progress) */}
-            {activeTab === 'updates' && (
-              <div>
-                <div className="px-4 py-2.5 border-b border-border flex items-center justify-between bg-secondary/20">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-purple-500 dark:text-purple-300">
-                    ประวัติการปรับปรุงระบบ
-                  </span>
-                  <span className="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                    {SYSTEM_UPDATES[0]?.version}
+              {/* Push Permission Status Bar & Enable Button */}
+              <div className="p-3 bg-secondary/60 border-b border-border flex flex-col gap-2 shrink-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                    <span>🔔</span>
+                    <span>การแจ้งเตือนบนอุปกรณ์</span>
+                  </div>
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                    pushPerm === 'granted'
+                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                      : pushPerm === 'denied'
+                      ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                      : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                  }`}>
+                    {pushPerm === 'granted' ? 'เปิดใช้งานแล้ว ✓' : pushPerm === 'denied' ? 'ถูกปิดกั้นในเบราว์เซอร์' : 'ยังไม่เปิดใช้งาน'}
                   </span>
                 </div>
 
-                <div className="max-h-[380px] overflow-y-auto p-3 space-y-3">
-                  {latestUpdates.map((upd) => (
-                    <div
-                      key={upd.date}
-                      className="p-3.5 rounded-xl bg-secondary/40 border border-border hover:border-purple-500/40 transition-all"
+                {pushPerm !== 'granted' && pushPerm !== 'denied' && (
+                  <button
+                    type="button"
+                    onClick={handleEnablePush}
+                    disabled={isSubscribing}
+                    className="w-full py-2 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs shadow-md transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer disabled:opacity-50"
+                  >
+                    <span>🔔</span>
+                    <span>{isSubscribing ? 'กำลังเปิด...' : 'เปิดการแจ้งเตือน'}</span>
+                  </button>
+                )}
+
+                {pushPerm === 'granted' && (
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <span className="text-[11px] text-muted-foreground">พร้อมรับแจ้งเตือนทันที</span>
+                    <button
+                      type="button"
+                      onClick={handleTestNotification}
+                      className="px-2.5 py-1 rounded-lg bg-secondary hover:bg-secondary/80 border border-border text-foreground font-bold text-[11px] transition-all cursor-pointer"
                     >
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                          <span>📅</span> {upd.date}
-                        </span>
-                        {upd.version && (
-                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-300 border border-purple-500/30">
-                            {upd.version}
-                          </span>
-                        )}
+                      ทดสอบแจ้งเตือน
+                    </button>
+                  </div>
+                )}
+
+                {pushPerm === 'denied' && (
+                  <p className="text-[10px] text-rose-400 leading-tight">
+                    💡 คลิกไอคอนแม่กุญแจ 🔒 ที่แถบ URL ด้านบน แล้วเลือกอนุญาตการแจ้งเตือน
+                  </p>
+                )}
+              </div>
+
+              {/* Tabs Navigation Header */}
+              <div className="bg-secondary/50 p-2 border-b border-border flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => setActiveTab('notifications')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    activeTab === 'notifications'
+                      ? 'bg-primary text-primary-foreground shadow-md'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                  }`}
+                >
+                  <span>🔔 การแจ้งเตือน</span>
+                  {unreadCount > 0 && (
+                    <span className="px-1.5 py-0.5 text-[10px] bg-red-500 text-white rounded-full font-black">
+                      {unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('updates')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    activeTab === 'updates'
+                      ? 'bg-purple-600 text-white shadow-md'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                  }`}
+                >
+                  <span>🚀 อัปเดตระบบ</span>
+                  <span className="px-1.5 py-0.5 text-[9px] bg-emerald-500 text-white rounded-full font-black uppercase">
+                    NEW
+                  </span>
+                </button>
+              </div>
+
+              {/* Tab 1: Notifications */}
+              {activeTab === 'notifications' && (
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  <div className="px-4 py-2 border-b border-border flex items-center justify-between bg-secondary/20 shrink-0">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                      รายการแจ้งเตือนส่วนตัว
+                    </span>
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={handleMarkAsRead}
+                        className="text-xs text-primary hover:underline font-bold cursor-pointer"
+                      >
+                        ทำเครื่องหมายอ่านแล้ว
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto sm:max-h-[380px]">
+                    {loading ? (
+                      <div className="p-8 text-center text-muted-foreground text-sm">กำลังโหลด...</div>
+                    ) : notifications.length === 0 ? (
+                      <div className="p-8 text-center flex flex-col items-center space-y-3">
+                        <span className="text-4xl opacity-50">📭</span>
+                        <p className="text-muted-foreground text-sm font-bold">ไม่มีการแจ้งเตือน</p>
                       </div>
-                      <p className="text-xs text-muted-foreground font-medium line-clamp-2 leading-snug mb-2">
-                        {upd.tagline}
-                      </p>
-                      <div className="space-y-1">
-                        {upd.tasks.slice(0, 2).map((t) => (
-                          <div key={t.id} className="text-[11px] text-foreground/80 flex items-start gap-1.5">
-                            <span className="text-purple-500 font-bold">•</span>
-                            <span className="font-semibold line-clamp-1">{t.title}</span>
-                          </div>
+                    ) : (
+                      <div className="divide-y divide-border/60">
+                        {notifications.map((n) => (
+                          <Link
+                            key={n.id}
+                            href={n.action_url || '/explore/booking-status'}
+                            onClick={(e) => handleNotificationClick(e, n)}
+                            className={`p-3.5 hover:bg-primary/10 transition-all cursor-pointer flex items-center justify-between gap-3 group ${
+                              n.is_read ? 'opacity-65 hover:opacity-100' : 'bg-primary/5'
+                            }`}
+                          >
+                            <div className="flex gap-3 items-start flex-1 min-w-0">
+                              <div className="flex-shrink-0 mt-0.5 text-base">
+                                {n.type === 'booking_approved' || n.title?.includes('อนุมัติ')
+                                  ? '✅'
+                                  : n.type === 'billing' || n.type === 'payment'
+                                  ? '💰'
+                                  : n.type === 'maintenance'
+                                  ? '🔧'
+                                  : '📢'}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <h4 className={`text-xs ${n.is_read ? 'font-bold text-foreground/80' : 'font-black text-foreground'}`}>
+                                    {n.title}
+                                  </h4>
+                                  {!n.is_read && (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2 leading-relaxed">
+                                  {n.message}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground/60 font-medium mt-1">
+                                  {new Date(n.created_at).toLocaleString('th-TH')}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex-shrink-0 self-center pl-1">
+                              <span className="inline-flex items-center justify-center w-7 h-7 rounded-xl bg-secondary group-hover:bg-primary group-hover:text-primary-foreground text-muted-foreground text-xs font-black transition-all shadow-sm group-hover:scale-110">
+                                →
+                              </span>
+                            </div>
+                          </Link>
                         ))}
                       </div>
-                    </div>
-                  ))}
+                    )}
+                  </div>
                 </div>
+              )}
 
-                {/* View Full Updates Link */}
-                <div className="p-3 bg-secondary/40 border-t border-border text-center">
-                  <Link
-                    href="/updates"
-                    onClick={() => setIsOpen(false)}
-                    className="w-full py-2 px-4 rounded-xl bg-purple-600/15 hover:bg-purple-600 text-purple-600 dark:text-purple-200 hover:text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm border border-purple-500/30"
-                  >
-                    <span>ดูรายละเอียดการอัปเดตทั้งหมด</span>
-                    <span>➔</span>
-                  </Link>
+              {/* Tab 2: System Updates */}
+              {activeTab === 'updates' && (
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  <div className="px-4 py-2 border-b border-border flex items-center justify-between bg-secondary/20 shrink-0">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-purple-500 dark:text-purple-300">
+                      ประวัติการปรับปรุงระบบ
+                    </span>
+                    <span className="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      {SYSTEM_UPDATES[0]?.version}
+                    </span>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto sm:max-h-[380px] p-3 space-y-3">
+                    {latestUpdates.map((upd) => (
+                      <div
+                        key={upd.date}
+                        className="p-3.5 rounded-xl bg-secondary/40 border border-border hover:border-purple-500/40 transition-all"
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                            <span>📅</span> {upd.date}
+                          </span>
+                          {upd.version && (
+                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-300 border border-purple-500/30">
+                              {upd.version}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground font-medium line-clamp-2 leading-snug mb-2">
+                          {upd.tagline}
+                        </p>
+                        <div className="space-y-1">
+                          {upd.tasks.slice(0, 2).map((t) => (
+                            <div key={t.id} className="text-[11px] text-foreground/80 flex items-start gap-1.5">
+                              <span className="text-purple-500 font-bold">•</span>
+                              <span className="font-semibold line-clamp-1">{t.title}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="p-3 bg-secondary/40 border-t border-border text-center shrink-0">
+                    <Link
+                      href="/updates"
+                      onClick={() => setIsOpen(false)}
+                      className="w-full py-2 px-4 rounded-xl bg-purple-600/15 hover:bg-purple-600 text-purple-600 dark:text-purple-200 hover:text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm border border-purple-500/30"
+                    >
+                      <span>ดูรายละเอียดการอัปเดตทั้งหมด</span>
+                      <span>➔</span>
+                    </Link>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          </>
         )}
       </div>
     </>

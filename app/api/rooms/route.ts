@@ -2,6 +2,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { expireDueBookings } from '@/lib/bookings';
+import { expireDueMoveIns } from '@/lib/moveIn';
+import { capCheck, depositFor } from '@/lib/billing';
+import { isHiddenTestRoom } from '@/lib/test-rooms';
+import { badRoomNumber, roomStatusFor } from '@/lib/room-fields';
 
 export async function GET(req: NextRequest) {
   try {
@@ -20,6 +25,9 @@ export async function GET(req: NextRequest) {
     }
 
     const sql = getDb();
+    // No scheduler: bookings past their deadline are expired whenever rooms are read
+    await expireDueBookings().catch((e) => console.warn('[expire bookings]', e));
+    await expireDueMoveIns().catch((e) => console.warn('[expire move-ins]', e));
 
     // ── Rule 16.4: Auto-recover rooms from Maintenance to Available when ready_to_occupy_date <= CURRENT_DATE ──
     try {
@@ -40,10 +48,8 @@ export async function GET(req: NextRequest) {
     if (isExplore) {
       query = sql`
         SELECT 
-          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at, r.ready_to_occupy_date,
+          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at, r.ready_to_occupy_date, r.amenities,
           COALESCE(r.deposit_amount, 3000) as deposit_amount,
-          COALESCE(r.water_rate, 100) as water_rate,
-          COALESCE(r.common_fee, 150) as common_fee,
           mor.move_out_date,
           mor.status as move_out_status,
           mor.id as move_out_request_id,
@@ -66,18 +72,16 @@ export async function GET(req: NextRequest) {
           OR mor.id IS NOT NULL
         )
         ORDER BY 
-          CASE WHEN r.room_number LIKE '%T01%' OR r.room_number LIKE '%TC01%' THEN 0 ELSE 1 END ASC,
-          r.floor ASC, 
+          r.floor ASC,
+          (r.room_number REGEXP '^[0-9]+$') DESC,
           CAST(r.room_number AS UNSIGNED) ASC, 
           r.room_number ASC
       `;
     } else {
       query = sql`
         SELECT 
-          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at,
+          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at, r.amenities,
           COALESCE(r.deposit_amount, 3000) as deposit_amount,
-          COALESCE(r.water_rate, 100) as water_rate,
-          COALESCE(r.common_fee, 150) as common_fee,
           mor.move_out_date,
           mor.status as move_out_status,
           mor.id as move_out_request_id,
@@ -95,15 +99,18 @@ export async function GET(req: NextRequest) {
         ) mor ON mor.room_id = r.id
         WHERE (r.dorm_id = ${targetDormId} OR r.dorm_id IS NULL)
         ORDER BY 
-          CASE WHEN r.room_number LIKE '%T01%' OR r.room_number LIKE '%TC01%' THEN 0 ELSE 1 END ASC,
-          r.floor ASC, 
+          r.floor ASC,
+          (r.room_number REGEXP '^[0-9]+$') DESC,
           CAST(r.room_number AS UNSIGNED) ASC, 
           r.room_number ASC
       `;
     }
 
     const rooms = await query;
-    return NextResponse.json({ success: true, data: rooms });
+    // commit 26c: in production test rooms (T01) are listed for the owner / manager only
+    const viewerRole = String(((await auth().catch(() => null))?.user as any)?.role || '');
+    const staff = viewerRole === 'owner' || viewerRole === 'manager';
+    return NextResponse.json({ success: true, data: staff ? rooms : (rooms as any[]).filter((r) => !isHiddenTestRoom(r.room_number)) });
 
   } catch (error: any) {
     console.error('[API Rooms GET Error]', error);
@@ -119,12 +126,20 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { room_number, room_type, price, status, floor, image_url, deposit_amount, water_rate, common_fee } = body;
+    const { room_number, room_type, price, status, floor, image_url, deposit_amount, amenities } = body;
     const dormId = parseInt(body.dorm_id || (session.user as any)?.dormId || '0', 10) || 1;
 
     if (!room_number || !room_type || price === undefined) {
       return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
     }
+    // commit 24: no negative rent / deposit / floor (same rule as the rooms page)
+    const bad = badRoomNumber(body);
+    if (bad) {
+      return NextResponse.json({ success: false, message: bad.message, field: bad.field }, { status: 400 });
+    }
+    // commit 28a: a new room is "ว่าง" or "ปิดปรับปรุง" only — occupied / booked come from contracts
+    const st = roomStatusFor(status);
+    if (!st.ok) return NextResponse.json({ success: false, message: st.message, field: 'status' }, { status: 400 });
 
     const sql = getDb();
 
@@ -135,12 +150,21 @@ export async function POST(req: NextRequest) {
     }
 
     const deposit = deposit_amount !== undefined && deposit_amount !== null && deposit_amount !== '' ? parseFloat(deposit_amount) : 3000;
-    const water = water_rate !== undefined && water_rate !== null && water_rate !== '' ? parseFloat(water_rate) : 100;
-    const common = common_fee !== undefined && common_fee !== null && common_fee !== '' ? parseFloat(common_fee) : 150;
+
+    // Deposit + first month's rent paid in advance may be at most 3 months of rent
+    const cap = capCheck(Number(price), depositFor({ room_number, deposit_amount: deposit }));
+    if (!cap.ok) {
+      return NextResponse.json({ success: false, message: cap.message }, { status: 400 });
+    }
+
+    let amenitiesStr: string | null = null;
+    if (amenities) {
+      amenitiesStr = typeof amenities === 'string' ? amenities : JSON.stringify(amenities);
+    }
 
     const result = await sql`
-      INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount, water_rate, common_fee)
-      VALUES (${room_number}, ${room_type}, ${price}, ${status || 'Available'}, ${floor || 1}, ${image_url || null}, ${dormId}, ${deposit}, ${water}, ${common})
+      INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount, amenities)
+      VALUES (${room_number}, ${room_type}, ${price}, ${st.status}, ${floor || 1}, ${image_url || null}, ${dormId}, ${deposit}, ${amenitiesStr})
     `;
     
     const newRoomId = (result as any).insertId;
@@ -148,7 +172,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ 
       success: true, 
       message: 'Room created successfully', 
-      data: { id: newRoomId, room_number, room_type, price, status, floor, deposit_amount: deposit, water_rate: water, common_fee: common } 
+      data: { id: newRoomId, room_number, room_type, price, status, floor, deposit_amount: deposit } 
     }, { status: 201 });
 
   } catch (error: any) {

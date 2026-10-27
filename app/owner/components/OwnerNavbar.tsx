@@ -5,13 +5,15 @@ import { useSession } from 'next-auth/react';
 import { handleSignOut } from '@/lib/auth-client';
 import { useState, useEffect } from 'react';
 import NotificationsPopover from '@/components/NotificationsPopover';
-import ThemeToggle from '@/app/components/ThemeToggle';
 
 interface OwnerNavbarProps {
   onToggleMobileMenu?: () => void;
+  /** Role read from the DB by the server layout. */
+  role: 'owner' | 'manager';
 }
 
-export default function OwnerNavbar({ onToggleMobileMenu }: OwnerNavbarProps) {
+export default function OwnerNavbar({ onToggleMobileMenu, role }: OwnerNavbarProps) {
+  const isManager = role === 'manager';
   const { data: session } = useSession();
   const [dormName, setDormName] = useState<string | null>(null);
   const [dorms, setDorms] = useState<any[]>([]);
@@ -89,18 +91,18 @@ export default function OwnerNavbar({ onToggleMobileMenu }: OwnerNavbarProps) {
         <Link
           href="/owner"
           className="flex items-center gap-2 sm:gap-3 hover:opacity-90 transition-opacity cursor-pointer group"
-          title="แดชบอร์ดเจ้าของหอพัก"
+          title={isManager ? 'แดชบอร์ดผู้จัดการหอพัก' : 'แดชบอร์ดเจ้าของหอพัก'}
         >
           <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-primary text-white flex items-center justify-center shadow-md shrink-0 group-hover:scale-105 transition-transform text-lg">
             🏢
           </div>
           <div className="hidden md:block">
             <h2 className="font-black text-foreground tracking-tight text-sm sm:text-base group-hover:text-primary transition-colors leading-none">
-              เกษร 2
+              หอพักเกษร 2
             </h2>
             <div className="flex items-center gap-1.5 leading-none mt-1">
               <span className="text-[9px] font-black text-primary uppercase tracking-[0.15em]">
-                Owner Portal
+                {isManager ? 'Manager Portal' : 'Owner Portal'}
               </span>
               <span className="hidden sm:inline text-muted-foreground text-[9px]">•</span>
               <span className="hidden sm:inline text-[9px] text-muted-foreground">ระบบจัดการหอพัก</span>
@@ -109,18 +111,8 @@ export default function OwnerNavbar({ onToggleMobileMenu }: OwnerNavbarProps) {
         </Link>
       </div>
 
-      {/* 2. Center: Dormitory Badge (Single Dorm: Kesorn 2) */}
-      <div className="flex-1 flex items-center justify-center min-w-0 px-1">
-        <div className="flex items-center gap-2 bg-secondary/80 border border-border px-3.5 py-1.5 rounded-2xl shadow-inner max-w-[240px]">
-          <span className="text-xs sm:text-sm shrink-0">🏢</span>
-          <span className="text-xs font-black text-foreground truncate">
-            หอพักเกษร 2
-          </span>
-          <span className="text-[10px] bg-primary/10 text-primary font-bold px-1.5 py-0.5 rounded-md">
-            เดี่ยว
-          </span>
-        </div>
-      </div>
+      {/* 2. Center: Spacer */}
+      <div className="flex-1" />
 
       {/* 3. Right side: Notifications, Theme Toggle, (Desktop: Explore, User Info, Sign Out) */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
@@ -156,13 +148,10 @@ export default function OwnerNavbar({ onToggleMobileMenu }: OwnerNavbarProps) {
         {/* Notifications Popover */}
         <NotificationsPopover />
 
-        {/* Theme Toggle Button */}
-        <ThemeToggle />
-
         {/* User Info (Desktop only, shown in Mobile Drawer) */}
         <div className="hidden md:block text-right pl-2 border-l border-border">
           <p className="text-xs font-bold text-foreground truncate max-w-[130px]">
-            {session?.user?.name || 'Owner'}
+            {session?.user?.name || (isManager ? 'Manager' : 'Owner')}
           </p>
           <p className="text-[10px] text-muted-foreground font-medium truncate max-w-[130px]">
             {dormName || 'SmartDom'}

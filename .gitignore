@@ -66,3 +66,6 @@ public/uploads/*/*
 # runtime data
 data/
 
+
+/storage/
+

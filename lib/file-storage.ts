@@ -28,7 +28,7 @@ export function saveBase64Image(
 
     const extMatch = meta.match(/data:image\/([a-zA-Z0-9\-\+]+)/);
     const rawExt = extMatch ? extMatch[1].toLowerCase() : 'jpg';
-    const ext = rawExt === 'jpeg' ? 'jpg' : rawExt;
+    const ext = rawExt === 'jpeg' ? 'jpg' : (rawExt === 'svg+xml' || rawExt === 'svg') ? 'svg' : rawExt;
     const buffer = Buffer.from(base64Data, 'base64');
 
     const uploadsDir = path.join(process.cwd(), 'public', 'uploads', folder);

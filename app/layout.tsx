@@ -46,6 +46,7 @@ export const viewport: Viewport = {
 import SessionProviderWrapper from "./components/SessionProviderWrapper";
 import { Toaster } from "sonner";
 import AppVersionBadge from "./components/AppVersionBadge";
+import { ConfirmModalProvider } from "@/components/ConfirmModalProvider";
 
 export default function RootLayout({
   children,
@@ -62,12 +63,8 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: `
           (function() {
             try {
-              var theme = localStorage.getItem('theme');
-              if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                document.documentElement.classList.add('dark');
-              } else {
-                document.documentElement.classList.remove('dark');
-              }
+              document.documentElement.classList.remove('dark');
+              localStorage.setItem('theme', 'light');
             } catch (e) {}
 
             // Safe guarded chunk reload handler (at most once per 10 seconds)
@@ -90,8 +87,10 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground font-sans transition-colors duration-200">
         <Toaster position="top-center" expand={true} richColors />
         <SessionProviderWrapper>
-          {children}
-          <AppVersionBadge />
+          <ConfirmModalProvider>
+            {children}
+            <AppVersionBadge />
+          </ConfirmModalProvider>
         </SessionProviderWrapper>
       </body>
     </html>

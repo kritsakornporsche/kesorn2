@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { sendWebPushToAllSubscriptions } from '@/lib/features/web-push-server';
 import {
   createInitialSmartMeterFleet,
   computeInstantElectricalMetrics,
@@ -113,6 +112,58 @@ function evaluateFleetLiveness(rooms: SmartMeterRoomNode[]): SmartMeterRoomNode[
   });
 }
 
+
+async function syncDbRoomsToFleet(fleet: SmartMeterRoomNode[]) {
+  try {
+    const sql = getDb();
+    const dbRooms = await sql`SELECT room_number, floor, price FROM rooms`;
+    for (const dbr of dbRooms) {
+      const exists = fleet.some((r) => String(r.roomNumber).trim().toLowerCase() === String(dbr.room_number).trim().toLowerCase());
+      if (!exists) {
+        fleet.push({
+          roomNumber: String(dbr.room_number),
+          floor: (Number(dbr.floor) || 1) as 1 | 2,
+          roomType: 'ห้องแอร์',
+          occupancyStatus: 'AVAILABLE',
+          tenantName: null,
+          rentPrice: Number(dbr.price) || 3000,
+          nodeMode: 'REAL_IOT_HYBRID',
+          deviceId: `ESP32-PZEM-${dbr.room_number}`,
+          loadProfile: 'STANDARD',
+          voltage: 228.6,
+          current: 0.85,
+          activePowerWatt: 194,
+          powerFactor: 0.96,
+          frequencyHz: 50.0,
+          previousMonthKwh: 120.0,
+          currentMeterKwh: 125.40,
+          monthlyUnitsKwh: 5.4,
+          waterPreviousM3: 10,
+          waterCurrentM3: 12,
+          waterUnitsUsed: 2,
+          relayState: 'ON',
+          appliances: { acOn: false, waterHeaterOn: false, pcLoadOn: false, faultOverload: false },
+          esp32Meta: {
+            macAddress: '24:6F:28:AA:FE:01',
+            ipAddress: '192.168.1.199',
+            wifiRssi: -55,
+            firmwareVersion: 'v2.7.0-PZEM004T',
+            samplingIntervalMs: 3000,
+            isHardwareConnected: true,
+            lastHardwarePacketAt: new Date().toISOString(),
+            lastUpdatedAt: new Date().toISOString(),
+            pendingCommand: null,
+            espStatus: 'ONLINE',
+            pzemStatus: 'CONNECTED',
+          },
+        });
+      }
+    }
+  } catch (dbe) {
+    console.warn('Sync DB rooms to IoT fleet warn:', dbe);
+  }
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const pollDeviceId = searchParams.get('deviceId');
@@ -137,6 +188,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  await syncDbRoomsToFleet(smartMeterFleet);
   smartMeterFleet = evaluateFleetLiveness(smartMeterFleet);
 
   return NextResponse.json({
@@ -591,7 +643,7 @@ export async function POST(req: NextRequest) {
     // -------------------------------------------------------------------------
     // 5. ONE-CLICK AUTO BILLING PIPELINE (20 ROOMS -> METERS -> BILLS + PUSH)
     // -------------------------------------------------------------------------
-    if (action === 'run_auto_billing_pipeline') {
+    if (action === 'run_auto_billing_pipeline' || action === 'execute_auto_billing') {
       const billingCycle = String(body.billingCycle || new Date().toISOString().slice(0, 7));
       const syncToDb = Boolean(body.syncToDb);
       const triggerPush = body.triggerPush !== false;
@@ -603,26 +655,52 @@ export async function POST(req: NextRequest) {
         try {
           const sql = getDb();
           for (const bill of pipelineResult.bills) {
+            const rawRoom = bill.roomNumber;
+            const simpleNum = String(parseInt(rawRoom, 10));
+            const moduloNum = String(parseInt(rawRoom, 10) % 100);
+
             const roomRows = await sql`
-              SELECT id, dorm_id FROM rooms WHERE room_number = ${bill.roomNumber} LIMIT 1
+              SELECT id, dorm_id FROM rooms 
+              WHERE room_number = ${rawRoom} 
+                 OR room_number = ${simpleNum} 
+                 OR room_number = ${moduloNum}
+              ORDER BY (room_number = ${rawRoom}) DESC
+              LIMIT 1
             `;
             if (roomRows.length > 0) {
               const roomId = roomRows[0].id;
               const dormId = roomRows[0].dorm_id || 1;
 
-              // 1. Insert Electricity Meter Snapshot into meter_readings
-              await sql`
-                INSERT INTO meter_readings (
-                  room_id, type, previous_reading, current_reading, units_used, reading_date
-                ) VALUES (
-                  ${roomId},
-                  'Electricity',
-                  ${bill.previousKwh},
-                  ${bill.currentKwh},
-                  ${bill.electricUnits},
-                  CURDATE()
-                )
+              // 1. Upsert Electricity Meter Snapshot into meter_readings table
+              const existingReading = await sql`
+                SELECT id FROM meter_readings 
+                WHERE room_id = ${roomId} AND type = 'Electricity' AND billing_cycle = ${billingCycle} AND kind = 'cycle'
+                LIMIT 1
               `;
+
+              if (existingReading.length > 0) {
+                await sql`
+                  UPDATE meter_readings
+                  SET previous_reading = ${bill.previousKwh},
+                      current_reading = ${bill.currentKwh},
+                      units_used = ${bill.electricUnits},
+                      recorded_at = NOW(),
+                      confirmed_at = NOW()
+                  WHERE id = ${existingReading[0].id}
+                `;
+              } else {
+                await sql`
+                  INSERT INTO meter_readings (
+                    dorm_id, room_id, type, billing_cycle, kind,
+                    previous_reading, current_reading, units_used,
+                    event, large_confirmed, recorded_by, recorded_at, confirmed_by, confirmed_at
+                  ) VALUES (
+                    ${dormId}, ${roomId}, 'Electricity', ${billingCycle}, 'cycle',
+                    ${bill.previousKwh}, ${bill.currentKwh}, ${bill.electricUnits},
+                    'normal', 1, 1, NOW(), 1, NOW()
+                  )
+                `;
+              }
               syncedCount++;
 
               // 2. Check if active tenant exists for this room and upsert bill
@@ -675,12 +753,15 @@ export async function POST(req: NextRequest) {
       let pushResult = null;
       if (triggerPush) {
         try {
-          pushResult = await sendWebPushToAllSubscriptions({
-            senderLabel: 'Researcher IoT Auto-Billing',
-            title: `⚡ ออกบิลอัตโนมัติสำเร็จ ${pipelineResult.totalBillsGenerated} ห้อง (รอบ ${billingCycle})`,
-            body: `รวมหน่วยไฟ ${pipelineResult.totalElectricUnitsKwh.toLocaleString()} kWh • ยอดรวมทั้งตึก ฿${pipelineResult.grandTotalRevenue.toLocaleString()}`,
-            url: '/researcher/lab/iot-meter',
-          });
+          const webPush = await import('@/lib/features/web-push-server').catch(() => null);
+          if (webPush && (webPush as any).sendWebPushToAllSubscriptions) {
+            pushResult = await (webPush as any).sendWebPushToAllSubscriptions({
+              senderLabel: 'Researcher IoT Auto-Billing',
+              title: `⚡ ออกบิลอัตโนมัติสำเร็จ ${pipelineResult.totalBillsGenerated} ห้อง (รอบ ${billingCycle})`,
+              body: `รวมหน่วยไฟ ${pipelineResult.totalElectricUnitsKwh.toLocaleString()} kWh • ยอดรวมทั้งตึก ฿${pipelineResult.grandTotalRevenue.toLocaleString()}`,
+              url: '/researcher/lab/iot-meter',
+            });
+          }
         } catch {
           // ignore push error
         }

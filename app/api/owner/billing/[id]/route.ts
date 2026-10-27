@@ -1,4 +1,6 @@
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
+import { isStatus } from '@/lib/bill-status';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
@@ -7,6 +9,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (!session || !session.user) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
+  const guard = await requireRole(['owner', 'manager']);
+  if ('response' in guard) return guard.response;
   const sql = getDb();
 
   const { id } = await params;
@@ -30,6 +34,20 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       else if (lower === 'unpaid' || lower === 'pending') normalizedStatus = 'Unpaid';
       else if (lower === 'overdue') normalizedStatus = 'Overdue';
       else if (lower === 'cancelled' || lower === 'canceled') normalizedStatus = 'Cancelled';
+    }
+
+    // Payments are recorded only through recordPayment (slip verification / receiving money)
+    if (normalizedStatus === 'Paid') {
+      return NextResponse.json({ success: false, message: 'บันทึกการชำระผ่านการรับเงินเท่านั้น' }, { status: 400 });
+    }
+
+    // Paid bills are locked; the owner can reverse a payment with /api/owner/billing/unpay
+    const existing = await sql`SELECT status FROM bills WHERE id = ${billId} LIMIT 1`;
+    if (existing.length === 0) {
+      return NextResponse.json({ success: false, message: 'ไม่พบบิล' }, { status: 404 });
+    }
+    if (isStatus(existing[0].status, 'paid') || isStatus(existing[0].status, 'partial')) {
+      return NextResponse.json({ success: false, message: 'บิลที่ชำระแล้วแก้ไขไม่ได้' }, { status: 400 });
     }
 
     if (normalizedStatus) {
@@ -70,57 +88,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
     // Real-time notification and accounting sync
     if (currentBill && normalizedStatus) {
-      const dormId = currentBill.dorm_id || 1;
       const tenantUserId = currentBill.tenant_user_id;
 
-      if (normalizedStatus === 'Paid') {
-        // 1. Notify tenant
-        if (tenantUserId) {
-          try {
-            await sql`
-              INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-              VALUES (
-                ${tenantUserId},
-                'การชำระเงินได้รับการอนุมัติแล้ว',
-                ${'ยอดชำระบิลรอบ ' + (currentBill.billing_cycle || '-') + ' จำนวน ฿' + Number(currentBill.amount || 0).toLocaleString('th-TH') + ' ได้รับการยืนยันเรียบร้อยแล้ว'},
-                'payment_approved',
-                0,
-                '/tenant/billing',
-                NOW()
-              )
-            `;
-          } catch (e) {
-            console.warn('[Billing Notification] Warn:', e);
-          }
-        }
-
-        // 2. Sync to accounting_transactions if not exists
-        try {
-          const existingTx = await sql`
-            SELECT id FROM accounting_transactions
-            WHERE reference_id = ${billId} AND reference_type = 'bill'
-            LIMIT 1
-          `;
-          if (existingTx.length === 0) {
-            await sql`
-              INSERT INTO accounting_transactions (dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date)
-              VALUES (
-                ${dormId},
-                'Income',
-                'Rent',
-                ${currentBill.amount || 0},
-                ${'ชำระบิลห้อง ' + (currentBill.room_number || '-') + ' (' + (currentBill.billing_cycle || '-') + ')'},
-                ${billId},
-                'bill',
-                ${new Date().toISOString().slice(0, 10)}
-              )
-            `;
-          }
-        } catch (txErr) {
-          console.warn('[Billing Accounting Sync] Warn:', txErr);
-        }
-
-      } else if (normalizedStatus === 'Cancelled') {
+      if (normalizedStatus === 'Cancelled') {
         // Handle bill cancellation: remove accounting transaction & notify tenant
         try {
           await sql`DELETE FROM accounting_transactions WHERE reference_type = 'bill' AND reference_id = ${billId}`;
@@ -186,6 +156,8 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   if (!session || !session.user) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
+  const guard = await requireRole(['owner', 'manager']);
+  if ('response' in guard) return guard.response;
   const sql = getDb();
 
   const { id } = await params;
@@ -195,6 +167,11 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   }
 
   try {
+    const existing = await sql`SELECT status FROM bills WHERE id = ${billId} LIMIT 1`;
+    if (existing.length > 0 && (isStatus(existing[0].status, 'paid') || isStatus(existing[0].status, 'partial'))) {
+      return NextResponse.json({ success: false, message: 'บิลที่ชำระแล้วลบไม่ได้' }, { status: 400 });
+    }
+
     // Nullify references in maintenance_requests and cleaning_jobs to prevent orphaned keys
     try {
       await sql`UPDATE maintenance_requests SET bill_id = NULL WHERE bill_id = ${billId}`;

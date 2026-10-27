@@ -1,6 +1,22 @@
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireRole, type CurrentUser } from '@/lib/authz';
+import { getRates, ratesForRoom } from '@/lib/billing';
+
+// Same tenant matching as /api/tenant/billing/list (bills.tenant_id -> tenants.id)
+async function tenantOwnsBill(sql: any, user: CurrentUser, billId: unknown) {
+  const rows = await sql`
+    SELECT b.id FROM bills b
+    JOIN tenants t ON t.id = b.tenant_id
+    WHERE b.id = ${billId} AND (t.user_id = ${user.id} OR LOWER(t.email) = ${user.email.toLowerCase()})
+      AND LOWER(b.status) <> 'draft'
+    LIMIT 1
+  `;
+  return rows.length > 0;
+}
+
+const forbidden = () => NextResponse.json({ success: false, message: 'ไม่มีสิทธิ์ใช้งานส่วนนี้' }, { status: 403 });
 
 // GET: Fetch disputes/corrections
 export async function GET(req: Request) {
@@ -10,9 +26,16 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
+    const guard = await requireRole(['owner', 'manager', 'tenant']);
+    if ('response' in guard) return guard.response;
+
     const { searchParams } = new URL(req.url);
     const billId = searchParams.get('billId');
     const sql = getDb();
+
+    if (guard.user.role === 'tenant' && (!billId || !(await tenantOwnsBill(sql, guard.user, billId)))) {
+      return forbidden();
+    }
 
     let corrections;
     if (billId) {
@@ -37,7 +60,7 @@ export async function GET(req: Request) {
           WHERE mr3.room_id = r.id 
             AND (mr3.billing_cycle = b.billing_cycle OR mr3.billing_cycle IS NULL)
             AND (mr3.type = 'Electricity' OR mr3.type = 'Electric')
-          ORDER BY mr3.id DESC 
+          ORDER BY (mr3.kind = 'cycle') DESC, mr3.id DESC 
           LIMIT 1
         )
         LEFT JOIN users u ON bc.requester_id = u.id
@@ -66,7 +89,7 @@ export async function GET(req: Request) {
           WHERE mr3.room_id = r.id 
             AND (mr3.billing_cycle = b.billing_cycle OR mr3.billing_cycle IS NULL)
             AND (mr3.type = 'Electricity' OR mr3.type = 'Electric')
-          ORDER BY mr3.id DESC 
+          ORDER BY (mr3.kind = 'cycle') DESC, mr3.id DESC 
           LIMIT 1
         )
         LEFT JOIN users u ON bc.requester_id = u.id
@@ -90,16 +113,28 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
+    const guard = await requireRole(['owner', 'manager', 'tenant']);
+    if ('response' in guard) return guard.response;
+
     const body = await req.json();
     const { billId, newElectricReading, reason, evidencePhotoUrl } = body;
+    // commit 24b: a negative (or non-number) reading would give negative units and lower the bill
+    if (newElectricReading === undefined || newElectricReading === null || newElectricReading === ''
+      || !Number.isFinite(Number(newElectricReading)) || Number(newElectricReading) < 0) {
+      return NextResponse.json({ success: false, message: 'เลขมิเตอร์ต้องเป็นตัวเลขและห้ามติดลบ' }, { status: 400 });
+    }
 
     const sql = getDb();
 
+    if (guard.user.role === 'tenant' && !(await tenantOwnsBill(sql, guard.user, billId))) {
+      return forbidden();
+    }
+
     // 1. Fetch bill details
     const billRes = await sql`
-      SELECT b.*, dp.electricity_rate, dp.water_rate, dp.common_fee 
+      SELECT b.*, r.price AS room_price
       FROM bills b
-      LEFT JOIN dormitory_profile dp ON 1=1
+      LEFT JOIN rooms r ON r.room_number = b.room_number
       WHERE b.id = ${billId}
       LIMIT 1
     `;
@@ -111,12 +146,13 @@ export async function POST(req: Request) {
     const bill = billRes[0];
 
     // Rule: Cannot edit if bill is already Paid
-    if (bill.status === 'Paid') {
+    if (['paid', 'partial'].includes(String(bill.status || '').toLowerCase())) {
       return NextResponse.json({ success: false, message: 'ไม่สามารถขอแก้ไขบิลที่ชำระเงินเรียบร้อยแล้วได้' }, { status: 400 });
     }
 
-    const userRole = (session.user as any)?.role === 'owner' ? 'owner' : 'tenant';
-    const userId = (session.user as any)?.id || 1;
+    // requested_by is ENUM('owner','tenant'): staff (owner/manager) are recorded as 'owner'
+    const userRole = guard.user.role === 'tenant' ? 'tenant' : 'owner';
+    const userId = guard.user.id;
 
     // Recalculate new total
     // Support either entering units directly or absolute meter reading
@@ -125,11 +161,14 @@ export async function POST(req: Request) {
     if (newUnits > prevReading && prevReading > 0) {
       newUnits = Math.max(0, newUnits - prevReading);
     }
-    const elecRate = 4.88;
-    const newElecAmount = Number((newUnits * elecRate).toFixed(2));
-    const waterAmount = Number(bill.water_amount || 100);
-    const commonFee = Number(bill.common_fee || 150);
-    const roomAmount = Number(bill.room_amount || 3400);
+    // Only the electricity part changes; the other parts keep what the bill charged (0 is a real amount, e.g. rent
+    // already paid by the move-in bill). A part the bill never stored comes from the current rates / the room's rent.
+    const rates = ratesForRoom(await getRates(sql), bill.room_number);
+    const stored = (v: unknown) => (v === null || v === undefined || v === '' ? null : Number(v));
+    const newElecAmount = Number((newUnits * rates.electricityPerUnit).toFixed(2));
+    const waterAmount = stored(bill.water_amount) ?? rates.waterPerPerson;
+    const commonFee = stored(bill.common_fee) ?? rates.commonFee;
+    const roomAmount = stored(bill.room_amount) ?? Number(bill.room_price || 0);
     const newTotal = Number((roomAmount + newElecAmount + waterAmount + commonFee).toFixed(2));
 
     // 2. Insert correction request
@@ -197,6 +236,9 @@ export async function PUT(req: Request) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
+    const guard = await requireRole(['owner', 'manager', 'tenant']);
+    if ('response' in guard) return guard.response;
+
     const body = await req.json();
     const { correctionId, action } = body; // action: 'approve' | 'reject'
 
@@ -213,10 +255,13 @@ export async function PUT(req: Request) {
       return NextResponse.json({ success: false, message: 'ไม่พบคำขอแก้ไข' }, { status: 404 });
     }
 
-    const role = (session.user as any)?.role;
-    const isStaff = role === 'owner' || role === 'keeper' || role === 'platform_admin';
+    const isStaff = guard.user.role === 'owner' || guard.user.role === 'manager';
 
     const corr = corrRes[0];
+
+    if (!isStaff && !(await tenantOwnsBill(sql, guard.user, corr.bill_id))) {
+      return forbidden();
+    }
 
     // Rule:
     // If requested_by === 'owner': Tenant must approve/reject. Staff cannot approve their own correction.
@@ -235,17 +280,23 @@ export async function PUT(req: Request) {
       }, { status: 403 });
     }
 
+    if (action === 'approve' && !(Number(corr.new_electric_reading) >= 0 && Number(corr.new_total_amount) >= 0)) {
+      // commit 24b: a request saved before the check above cannot lower the bill below zero units
+      return NextResponse.json({ success: false, message: 'คำขอนี้มีเลขมิเตอร์ติดลบ อนุมัติไม่ได้ กรุณาปฏิเสธแล้วส่งใหม่' }, { status: 400 });
+    }
+
     if (action === 'approve') {
       // 14.3.2: Recalculate bill and set 5 days due date (14.3.3)
       const newDueDate = new Date();
       newDueDate.setDate(newDueDate.getDate() + 5);
       newDueDate.setHours(23, 59, 59, 999);
+      const elecRate = ratesForRoom(await getRates(sql), corr.room_number).electricityPerUnit;
 
       await sql`
         UPDATE bills
         SET amount = ${corr.new_total_amount},
             electric_units = ${corr.new_electric_reading},
-            electric_amount = ${(corr.new_electric_reading * 4.88).toFixed(2)},
+            electric_amount = ${(corr.new_electric_reading * elecRate).toFixed(2)},
             due_date = ${newDueDate.toISOString().slice(0, 19).replace('T', ' ')},
             status = 'Unpaid',
             penalty_amount = 0.00,
@@ -260,6 +311,7 @@ export async function PUT(req: Request) {
         WHERE room_id = (SELECT id FROM rooms WHERE room_number = ${corr.room_number})
           AND billing_cycle = ${corr.billing_cycle}
           AND type = 'Electricity'
+          AND kind = 'cycle'
       `;
 
       await sql`

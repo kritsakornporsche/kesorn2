@@ -1,12 +1,16 @@
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { parsePhone } from '@/lib/phone';
 
 export async function GET(request: Request) {
   const session = await auth();
   if (!session) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
+  const guard = await requireRole(['owner']);
+  if ('response' in guard) return guard.response;
   const sql = getDb();
 
   try {
@@ -31,6 +35,8 @@ export async function POST(request: Request) {
   if (!session) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
+  const guard = await requireRole(['owner']);
+  if ('response' in guard) return guard.response;
   const sql = getDb();
 
   try {
@@ -40,11 +46,13 @@ export async function POST(request: Request) {
     if (!name || !position) {
       return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
     }
+    const ph = parsePhone(phone); // commit 28a
+    if (!ph.ok) return NextResponse.json({ success: false, message: ph.message }, { status: 400 });
 
     const targetDormId = parseInt(dorm_id || (session.user as any)?.dormId || '1', 10);
     const result = await sql`
       INSERT INTO keepers (name, email, phone, position, dorm_id)
-      VALUES (${name}, ${email || null}, ${phone || null}, ${position}, ${targetDormId})
+      VALUES (${name}, ${email || null}, ${ph.value}, ${position}, ${targetDormId})
     `;
 
     return NextResponse.json({ success: true, message: 'Keeper added successfully', data: { id: (result as any).insertId } });

@@ -7,6 +7,8 @@ import {
   savePushSubscription,
   removePushSubscription,
   sendWebPushToAllSubscriptions,
+  sendWebPushToRole,
+  sendWebPushToEmail,
   formatRoleThaiLabel,
 } from '@/lib/features/web-push-server';
 
@@ -30,11 +32,11 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { action, subscription, endpoint, title, message, url } = body;
+    const session = await auth();
+    const { action, subscription, endpoint, title, message, url, targetRole, targetEmail } = body;
 
     // 1. Unsubscribe on sign-out so logged-out users never receive notifications
     if (action === 'unsubscribe') {
-      const session = await auth();
       const email = body.userEmail || session?.user?.email || undefined;
       const updated = removePushSubscription(endpoint || subscription?.endpoint, email);
       return NextResponse.json({
@@ -43,9 +45,8 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 2. Subscribe device (Strictly requires an authenticated user session or active Researcher Lab)
+    // 2. Subscribe device
     if (action === 'subscribe' && subscription?.endpoint && subscription?.keys) {
-      const session = await auth();
       const email = (session?.user?.email || body.userEmail || '').trim().toLowerCase();
       const requestedRole = String(body.role || '').toLowerCase();
 
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest) {
         session?.user?.name || body.userName || (resolvedRole === 'researcher' ? 'Researcher' : '')
       ).trim();
 
-      // Query MySQL users & tenants table to resolve the true role accurately (never fall back to guest for logged-in members)
+      // Query MySQL users & tenants table to resolve the role accurately
       if (email) {
         try {
           const sql = getDb();
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
             if (u.name) resolvedName = u.name;
             if (u.sub_role) resolvedSubRole = String(u.sub_role).toLowerCase();
             const dbRole = String(u.db_role || '').toLowerCase();
-            if (dbRole && dbRole !== 'guest') {
+            if (dbRole) {
               resolvedRole = dbRole;
             } else if (Number(u.is_active_tenant) > 0) {
               resolvedRole = 'tenant';
@@ -92,16 +93,8 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Block subscription if role is still guest or unauthenticated
-      if (!resolvedRole || resolvedRole === 'guest') {
-        removePushSubscription(subscription.endpoint, email);
-        return NextResponse.json(
-          {
-            success: false,
-            message: 'ระบบแจ้งเตือนเปิดให้เฉพาะสมาชิกที่เข้าสู่ระบบในบทบาทหลัก (Owner, Tenant, Keeper, Researcher) เท่านั้น',
-          },
-          { status: 403 }
-        );
+      if (!resolvedRole) {
+        resolvedRole = 'guest';
       }
 
       const updatedList = savePushSubscription({
@@ -118,48 +111,70 @@ export async function POST(req: NextRequest) {
         createdAt: new Date().toISOString(),
       });
 
-      // Only send immediate confirmation push when explicitly requested by user button click
+      // Send confirmation push if requested
       let pushRes = null;
       if (body.sendConfirmationPush) {
         const roleLabel = formatRoleThaiLabel(resolvedRole, resolvedSubRole);
-        pushRes = await sendWebPushToAllSubscriptions({
-          title: `🔔 จาก: ระบบหอพักเกษร 2 ➔ ถึง: ${roleLabel} • ${resolvedName || email}`,
-          body: message || 'นี้คือการทดสอบการแจ้งเดือน',
-          senderLabel: 'Researcher (ผู้วิจัยระบบ)',
-          url: url || '/',
+        pushRes = await sendWebPushToEmail(email, {
+          title: `🔔 ระบบแจ้งเตือน SmartDom`,
+          body: message || 'เปิดรับการแจ้งเตือนสำเร็จแล้ว คุณจะได้รับการแจ้งเตือนผลอนุมัติการจองและบิลต่างๆ ทันที',
+          senderLabel: 'หอพักเกษร 2',
+          url: url || '/explore/booking-status',
+          tag: `confirm-sub-${Date.now()}`,
         });
       }
 
       return NextResponse.json({
         success: true,
-        role: resolvedRole,
-        roleLabel: formatRoleThaiLabel(resolvedRole, resolvedSubRole),
         subscriberCount: updatedList.length,
-        pushRes,
+        roleLabel: formatRoleThaiLabel(resolvedRole, resolvedSubRole),
+        message: 'เปิดรับการแจ้งเตือนเรียบร้อยแล้ว',
+        pushResult: pushRes,
       });
     }
 
-    if (action === 'send') {
-      const pushRes = await sendWebPushToAllSubscriptions({
-        title: title || '🔔 แจ้งเตือนจากหอพักเกษร 2',
-        body: message || 'นี้คือการทดสอบการแจ้งเดือน',
+    // 3. Send Push Notification to all, by role, or by email
+    const sender = (session?.user as any)?.role || 'system';
+
+    if (action === 'send_all') {
+      const res = await sendWebPushToAllSubscriptions({
+        title: title || 'ประกาศจากหอพักเกษร 2',
+        body: message || 'มีประกาศสำคัญจากระบบ กรุณาตรวจสอบในระบบ',
         url: url || '/',
+        tag: `push-all-${Date.now()}`,
       });
-
-      return NextResponse.json({
-        success: true,
-        ...pushRes,
-      });
+      return NextResponse.json({ success: true, ...res });
     }
 
-    return NextResponse.json(
-      { success: false, message: 'ไม่พบคำสั่งหรือข้อมูล subscription ไม่ครบถ้วน' },
-      { status: 400 }
-    );
+    if (action === 'send_role') {
+      if (!targetRole) {
+        return NextResponse.json({ success: false, message: 'Missing targetRole' }, { status: 400 });
+      }
+      const res = await sendWebPushToRole(targetRole, {
+        title: title || 'แจ้งเตือนตามบทบาทหน้าที่',
+        body: message || '',
+        url: url || '/',
+        tag: `push-role-${targetRole}-${Date.now()}`,
+      });
+      return NextResponse.json({ success: true, ...res });
+    }
+
+    if (action === 'send_email') {
+      if (!targetEmail) {
+        return NextResponse.json({ success: false, message: 'Missing targetEmail' }, { status: 400 });
+      }
+      const res = await sendWebPushToEmail(targetEmail, {
+        title: title || 'แจ้งเตือนเฉพาะบุคคล',
+        body: message || '',
+        url: url || '/',
+        tag: `push-email-${Date.now()}`,
+      });
+      return NextResponse.json({ success: true, ...res });
+    }
+
+    return NextResponse.json({ success: false, message: 'Unknown action' }, { status: 400 });
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, message: error.message || 'เกิดข้อผิดพลาดใน Web Push API' },
-      { status: 500 }
-    );
+    console.error('[Web Push API Error]', error);
+    return NextResponse.json({ success: false, message: error.message || 'Server error' }, { status: 500 });
   }
 }

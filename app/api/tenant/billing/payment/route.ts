@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { getDormPromptPay, getRates } from '@/lib/billing';
+import { getPaymentSummaries, outstandingFor, recordPayment, slipPaidAt } from '@/lib/payments';
+import { afterMoveInPayment, missingMessage } from '@/lib/moveIn';
+import { formatBaht } from '@/lib/format';
 import { auth } from '@/auth';
 
 export async function POST(req: Request) {
@@ -55,6 +59,11 @@ export async function POST(req: Request) {
       }
     }
 
+    // Drafts have not been sent to the tenant yet
+    if (String(bill.status || '').toLowerCase() === 'draft') {
+      return NextResponse.json({ success: false, message: 'ไม่พบรายการบิลนี้ในระบบ' }, { status: 404 });
+    }
+
     if (bill.status && bill.status.toLowerCase() === 'paid') {
       return NextResponse.json({ success: false, message: 'บิลนี้ได้รับการชำระเงินเรียบร้อยแล้ว' }, { status: 400 });
     }
@@ -62,67 +71,49 @@ export async function POST(req: Request) {
     // 2. Automated Verification with SlipOK
     const { verifySlipWithSlipOK } = await import('@/lib/slipok');
     const dormProfileRes = await sql`
-      SELECT name, promptpay_name, promptpay_number 
-      FROM dormitory_profile 
+      SELECT name, promptpay_name
+      FROM dormitory_profile
       LIMIT 1
     `;
     const expectedDorm = dormProfileRes[0] || {};
 
-    const baseAmount = Number(bill.amount);
-    let lateFee = 0;
-    if (bill.due_date) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const due = new Date(bill.due_date);
-      due.setHours(0, 0, 0, 0);
-      const diffTime = today.getTime() - due.getTime();
-      if (diffTime > 0) {
-        const daysOverdue = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-        lateFee = daysOverdue * 50;
-      }
-    }
-
     const dormConfig = {
       name: expectedDorm.promptpay_name || expectedDorm.name || 'หอพักเกษร 2',
-      promptpay: expectedDorm.promptpay_number || '0636040550',
+      promptpay: (await getDormPromptPay(sql)) || '',
       dormName: expectedDorm.name || 'หอพักเกษร 2'
     };
 
-    // Try total amount (including late fee if any)
-    let verifyRes = await verifySlipWithSlipOK(slipData, {
-      expectedAmount: baseAmount + lateFee,
+    // Expected = what is owed now. If only the amount differs, recordPayment makes the final check against
+    // what was owed at the transfer time (a slip from before midnight owes one day less late fee).
+    const paidSoFar = (await getPaymentSummaries(sql, [bill.id])).get(bill.id)?.paid_total || 0;
+    const owedNow = outstandingFor(bill, paidSoFar, new Date(), await getRates(sql));
+    const verifyRes = await verifySlipWithSlipOK(slipData, {
+      expectedAmount: owedNow.outstanding,
       expectedReceiver: dormConfig,
       billCreatedAt: bill.created_at,
     });
+    const slipUsable = verifyRes.success || verifyRes.failedCheck === 'amount';
 
-    // If verification failed and late fee > 0, also check if tenant transferred exact base amount
-    if (!verifyRes.success && lateFee > 0 && verifyRes.reason !== 'เวลาที่ทำรายการในสลิปเกิดขึ้นก่อนวันที่ออกบิล') {
-      const baseVerifyRes = await verifySlipWithSlipOK(slipData, {
-        expectedAmount: baseAmount,
-        expectedReceiver: dormConfig,
-        billCreatedAt: bill.created_at,
-      });
-      if (baseVerifyRes.success) {
-        verifyRes = baseVerifyRes;
-      }
-    }
-
-    // "แต่ถ้าไม่ตรง ไม่ว่าชื่อหรือยอดเงินให้ปฎิเสธ"
-    if (!verifyRes.success) {
+    // A rejected slip is kept on the bill so the owner can review it
+    const saveRejectedSlip = async (details: any) => {
       try {
         const { saveBase64Image } = await import('@/lib/file-storage');
         const storedSlipUrl = saveBase64Image(slipData, 'slips', `bill_${billId}_failed_${Date.now()}`) || slipData;
         await sql`
-          UPDATE bills 
+          UPDATE bills
           SET slip_url = ${storedSlipUrl},
               slip_verified = 0,
-              slip_data = ${JSON.stringify(verifyRes)}
+              slip_data = ${JSON.stringify(details)}
           WHERE id = ${billId}
         `;
       } catch (err) {
         console.warn('Failed to save rejected slip record:', err);
       }
+    };
 
+    // "แต่ถ้าไม่ตรง ไม่ว่าชื่อหรือยอดเงินให้ปฎิเสธ"
+    if (!slipUsable || verifyRes.amount === undefined) {
+      await saveRejectedSlip(verifyRes);
       return NextResponse.json({
         success: false,
         message: `สลิปไม่ผ่านการตรวจสอบ: ${verifyRes.message || 'ข้อมูลชื่อผู้รับเงินหรือยอดเงินไม่ถูกต้อง กรุณาตรวจสอบสลิปแล้วลองใหม่อีกครั้ง'}`,
@@ -138,49 +129,32 @@ export async function POST(req: Request) {
     const { saveBase64Image } = await import('@/lib/file-storage');
     const storedSlipUrl = saveBase64Image(slipData, 'slips', `bill_${billId}_${Date.now()}`) || slipData;
 
-    // Update bill status directly to 'Paid' (Auto-Approved)
-    await sql`
-      UPDATE bills 
-      SET status = 'Paid', 
-          slip_url = ${storedSlipUrl},
-          slip_verified = 1,
-          slip_verified_at = NOW(),
-          slipok_trans_ref = ${slipokRef},
-          slip_data = ${slipRaw}
-      WHERE id = ${billId}
-    `;
+    // Mark Paid (and record income) through the single payment entry point
+    const amountNum = Number(verifyRes.amount);
+    const payment = await recordPayment(Number(billId), {
+      amount: amountNum,
+      method: 'slip',
+      paidAt: slipPaidAt(verifyRes),
+      slipRef: slipokRef,
+      slipUrl: storedSlipUrl,
+      slipData: slipRaw,
+      recordedBy: Number((session.user as any)?.id) || null,
+    });
+    if (!payment.ok) {
+      const message = payment.reason === 'amount_mismatch'
+        ? `ยอดในสลิป ฿${formatBaht(amountNum)} ไม่ตรงกับยอดที่ต้องชำระ ฿${formatBaht(payment.required)} (รวมค่าปรับ ณ เวลาโอน)`
+        : payment.reason === 'duplicate_slip' ? 'สลิปนี้ถูกใช้ชำระเงินไปแล้ว ไม่สามารถใช้ซ้ำได้'
+        : payment.reason === 'already_paid' ? 'บิลนี้ชำระเรียบร้อยแล้ว' : 'ไม่สามารถชำระบิลนี้ได้';
+      if (payment.reason === 'amount_mismatch') await saveRejectedSlip({ ...verifyRes, success: false, reason: message });
+      return NextResponse.json({ success: false, message }, { status: 400 });
+    }
+
+    // A paid move-in bill may complete its contract (lib/moveIn.ts)
+    const activation = payment.status === 'Paid' ? await afterMoveInPayment(sql, Number(billId)) : null;
 
     const dormId = bill.dorm_id || 1;
     const roomNumber = bill.room_number || '-';
     const billTitle = bill.title || bill.billing_cycle || 'ค่าเช่าและบริการ';
-    const amountNum = Number(bill.amount || 0);
-
-    // Sync to accounting_transactions
-    try {
-      const existingTx = await sql`
-        SELECT id FROM accounting_transactions 
-        WHERE reference_id = ${billId} AND reference_type = 'bill' 
-        LIMIT 1
-      `;
-      if (existingTx.length === 0) {
-        await sql`
-          INSERT INTO accounting_transactions (
-            dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date
-          ) VALUES (
-            ${dormId},
-            'Income',
-            ${bill.bill_type === 'service' ? 'Service' : (bill.bill_type === 'booking' ? 'Deposit' : 'Rent')},
-            ${amountNum},
-            ${'ชำระบิลห้อง ' + roomNumber + ' (' + billTitle + ') (Ref: ' + (slipokRef || '-') + ') [SlipOK อนุมัติอัตโนมัติ]'},
-            ${billId},
-            'bill',
-            ${new Date().toISOString().slice(0, 10)}
-          )
-        `;
-      }
-    } catch (txErr) {
-      console.warn('[Billing Accounting Sync] Warn:', txErr);
-    }
 
     // 3. Create notifications for tenant and owner
     try {
@@ -225,6 +199,24 @@ export async function POST(req: Request) {
           )
         `;
       }
+
+      try {
+        const { sendWebPushToRole, sendWebPushToEmail } = await import('@/lib/features/web-push-server');
+        if (session?.user?.email) {
+          await sendWebPushToEmail(session.user.email, {
+            title: '✅ การชำระเงินได้รับการอนุมัติแล้ว',
+            body: 'บิล ' + billTitle + ' จำนวน ฿' + amountNum.toLocaleString('th-TH') + ' ยืนยันยอดชำระสำเร็จ',
+            url: '/tenant/billing',
+            tag: 'payment-approved-' + Date.now(),
+          }).catch(() => null);
+        }
+        await sendWebPushToRole('owner', {
+          title: '💰 ผู้เช่าห้อง ' + roomNumber + ' ชำระเงินสำเร็จ',
+          body: 'ชำระบิล ' + billTitle + ' จำนวน ฿' + amountNum.toLocaleString('th-TH'),
+          url: '/owner/billing',
+          tag: 'payment-received-' + Date.now(),
+        }).catch(() => null);
+      } catch {}
     } catch (notifErr) {
       console.error('[POST /api/tenant/billing/payment] Notification Error:', notifErr);
     }
@@ -232,7 +224,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ 
       success: true, 
       verified: true,
-      message: 'การชำระเงินได้รับการอนุมัติอัตโนมัติเรียบร้อยแล้ว (SlipOK ตรวจสอบยอดเงินและบัญชีถูกต้อง)',
+      message: 'การชำระเงินได้รับการอนุมัติอัตโนมัติเรียบร้อยแล้ว (SlipOK ตรวจสอบยอดเงินและบัญชีถูกต้อง)'
+        + (activation ? (activation.activated ? ' · สัญญามีผลแล้ว' : ` · ${missingMessage(activation.missing)}`) : ''),
+      activated: Boolean(activation?.activated),
       data: {
         billId,
         status: 'Paid',

@@ -57,13 +57,11 @@ export function loadPushSubscriptions(): StoredPushSubscription[] {
   try {
     const raw = JSON.parse(fs.readFileSync(SUBS_FILE, 'utf8'));
     if (!Array.isArray(raw)) return [];
-    // Filter out any unauthenticated or guest entries so only authenticated roles receive push
+    // Keep all authenticated subscriptions with email or name
     return raw.filter(
       (s: StoredPushSubscription) =>
         s &&
         s.endpoint &&
-        s.role &&
-        String(s.role).toLowerCase() !== 'guest' &&
         Boolean(s.userEmail || s.userName)
     );
   } catch {
@@ -98,6 +96,7 @@ export function formatRoleThaiLabel(role?: string, subRole?: string): string {
   const r = String(role || '').toLowerCase();
   if (r === 'owner') return 'Owner (เจ้าของหอพัก)';
   if (r === 'tenant') return 'Tenant (ผู้เช่า)';
+  if (r === 'guest') return 'Guest (ผู้จองห้องพัก)';
   if (r === 'keeper') {
     if (subRole === 'maid') return 'Keeper (แม่บ้าน)';
     if (subRole === 'technician') return 'Keeper (ช่างซ่อมบำรุง)';
@@ -108,14 +107,23 @@ export function formatRoleThaiLabel(role?: string, subRole?: string): string {
   return 'ผู้ใช้งานระบบ';
 }
 
-export async function sendWebPushToAllSubscriptions(payload: {
+interface PushPayload {
   title: string;
   body: string;
   senderLabel?: string;
   recipientLabel?: string;
   url?: string;
   tag?: string;
-}): Promise<{ sentCount: number; failedCount: number; totalSubscribers: number }> {
+}
+
+async function dispatchPushToSubscriptions(
+  subs: StoredPushSubscription[],
+  payload: PushPayload
+): Promise<{ sentCount: number; failedCount: number; totalSubscribers: number }> {
+  if (subs.length === 0) {
+    return { sentCount: 0, failedCount: 0, totalSubscribers: 0 };
+  }
+
   const keys = getOrGenerateVapidKeys();
   webpush.setVapidDetails(
     'mailto:kritsakorn801@gmail.com',
@@ -123,27 +131,20 @@ export async function sendWebPushToAllSubscriptions(payload: {
     keys.privateKey
   );
 
-  const subs = loadPushSubscriptions();
-  if (subs.length === 0) {
-    return { sentCount: 0, failedCount: 0, totalSubscribers: 0 };
-  }
-
   let sentCount = 0;
   let failedCount = 0;
-  const validSubs: StoredPushSubscription[] = [];
-  const fromText = payload.senderLabel || 'Researcher (ผู้วิจัยระบบ)';
+  const invalidEndpoints = new Set<string>();
 
   await Promise.all(
     subs.map(async (sub) => {
       try {
         const roleDisplay = formatRoleThaiLabel(sub.role, sub.subRole);
         const identityDisplay = sub.userName || sub.userEmail || '';
-        const toText =
-          payload.recipientLabel ||
-          `${roleDisplay}${identityDisplay ? ` • ${identityDisplay}` : ''}`;
 
-        const personalizedTitle = `🔔 จาก: ${fromText} ➔ ถึง: ${toText}`;
-        const personalizedBody = `${payload.body} (จาก: ${fromText} ➔ ถึง: ${toText})`;
+        const personalizedTitle = payload.title.includes('➔') 
+          ? payload.title 
+          : `🔔 ${payload.title}`;
+        const personalizedBody = `${payload.body}`;
 
         const messageString = JSON.stringify({
           title: personalizedTitle,
@@ -164,24 +165,46 @@ export async function sendWebPushToAllSubscriptions(payload: {
           }
         );
         sentCount++;
-        validSubs.push(sub);
       } catch (err: any) {
         failedCount++;
-        if (err?.statusCode !== 404 && err?.statusCode !== 410) {
-          validSubs.push(sub);
+        if (err?.statusCode === 404 || err?.statusCode === 410) {
+          invalidEndpoints.add(sub.endpoint);
         }
       }
     })
   );
 
-  if (validSubs.length !== subs.length) {
+  if (invalidEndpoints.size > 0) {
+    const list = loadPushSubscriptions();
+    const remaining = list.filter((s) => !invalidEndpoints.has(s.endpoint));
     ensureDataDir();
-    fs.writeFileSync(SUBS_FILE, JSON.stringify(validSubs, null, 2), 'utf8');
+    fs.writeFileSync(SUBS_FILE, JSON.stringify(remaining, null, 2), 'utf8');
   }
 
   return {
     sentCount,
     failedCount,
-    totalSubscribers: validSubs.length,
+    totalSubscribers: subs.length,
   };
+}
+
+export async function sendWebPushToAllSubscriptions(payload: PushPayload) {
+  const subs = loadPushSubscriptions();
+  return dispatchPushToSubscriptions(subs, payload);
+}
+
+export async function sendWebPushToRole(role: string, payload: PushPayload) {
+  const target = String(role).toLowerCase();
+  const subs = loadPushSubscriptions().filter(
+    (s) => String(s.role).toLowerCase() === target
+  );
+  return dispatchPushToSubscriptions(subs, payload);
+}
+
+export async function sendWebPushToEmail(email: string, payload: PushPayload) {
+  const target = String(email).trim().toLowerCase();
+  const subs = loadPushSubscriptions().filter(
+    (s) => s.userEmail && s.userEmail.trim().toLowerCase() === target
+  );
+  return dispatchPushToSubscriptions(subs, payload);
 }

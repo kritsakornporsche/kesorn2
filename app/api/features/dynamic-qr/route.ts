@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import qrcode from 'qrcode';
 import { getDb } from '@/lib/db';
+import { recordPayment } from '@/lib/payments';
+import { saveBase64Image } from '@/lib/file-storage';
 import {
   createDynamicPaymentSession,
   dynamicQrSessions,
@@ -17,7 +19,11 @@ async function syncApprovedBillToDatabase(session: DynamicPaymentSession) {
   if (!session.billId) return;
   try {
     const sql = getDb();
-    const transRef = session.matchedEmail?.transRef || session.receiptNo || `KTB-${Date.now()}`;
+    const bills = await sql`SELECT id, amount, status FROM bills WHERE id = ${session.billId} LIMIT 1`;
+    const bill = bills[0];
+    if (!bill) return;
+
+    const transRef = session.matchedEmail?.transRef || session.receiptNo || `DQR-${Date.now()}`;
     const rawMeta = JSON.stringify({
       verifiedBy: session.verifiedBy,
       sessionId: session.sessionId,
@@ -27,37 +33,90 @@ async function syncApprovedBillToDatabase(session: DynamicPaymentSession) {
       matchedEmail: session.matchedEmail,
     });
 
-    await sql`
-      UPDATE bills
-      SET status = 'Paid',
-          slip_verified = 1,
-          slip_verified_at = NOW(),
-          slipok_trans_ref = ${transRef},
-          slip_data = ${rawMeta}
-      WHERE id = ${session.billId}
-    `;
+    // Save screenshot / receipt slip as image evidence
+    const slipDataUrl = session.screenshotDataUrl || session.matchedEmail?.screenshotDataUrl;
+    let storedSlipUrl: string | null = null;
+    if (slipDataUrl) {
+      storedSlipUrl = saveBase64Image(slipDataUrl, 'slips', `dqr_auto_${session.roomNumber}_${session.sessionId}`);
+    }
 
-    const existingTx = await sql`
-      SELECT id FROM accounting_transactions
-      WHERE reference_id = ${session.billId} AND reference_type = 'bill'
-      LIMIT 1
-    `;
-    if (existingTx.length === 0) {
+    // 1. Record payment through central ACID transaction runner
+    // If Dynamic QR added random satang, pay the bill amount so recordPayment doesn't reject with 'exceeds'
+    const billAmount = Number(bill.amount || 0);
+    const recordAmount = billAmount > 0 ? Math.min(session.expectedAmount, billAmount) : session.expectedAmount;
+
+    const paymentResult = await recordPayment(session.billId, {
+      amount: recordAmount,
+      method: 'transfer',
+      paidAt: new Date(session.paidAt || Date.now()),
+      slipRef: transRef,
+      slipUrl: storedSlipUrl || undefined,
+      slipData: rawMeta,
+      note: `Dynamic QR [${session.verifiedBy || 'LINE_SERVER_LISTENER'}] Total: ฿${session.expectedAmount.toFixed(2)} Ref: ${transRef}`,
+      allowPartial: false,
+    });
+    console.log('[Dynamic QR recordPayment result]:', paymentResult);
+
+    // 2. Also ensure bills table metadata is recorded
+    if (storedSlipUrl) {
       await sql`
-        INSERT INTO accounting_transactions (
-          dorm_id, type, category, amount, description, reference_id, reference_type, transaction_date
-        ) VALUES (
-          1,
-          'Income',
-          'Rent',
-          ${session.expectedAmount},
-          ${`ชำระบิลห้อง ${session.roomNumber} (${session.billTitle}) [พร้อมเพย์กรุงไทย 063-604-0550 • Ref: ${transRef}]`},
-          ${session.billId},
-          'bill',
-          ${new Date().toISOString().slice(0, 10)}
-        )
+        UPDATE bills
+        SET slip_url = ${storedSlipUrl},
+            slip_verified = 1,
+            slip_verified_at = NOW(),
+            slipok_trans_ref = ${transRef},
+            slip_data = ${rawMeta}
+        WHERE id = ${session.billId}
+      `;
+    } else {
+      await sql`
+        UPDATE bills
+        SET slip_verified = 1,
+            slip_verified_at = NOW(),
+            slipok_trans_ref = ${transRef},
+            slip_data = ${rawMeta}
+        WHERE id = ${session.billId}
       `;
     }
+
+    // 3. Advance contract lifecycle if this bill belongs to a booking or first bill
+    const bookingContracts = await sql`
+      SELECT id FROM contracts WHERE booking_bill_id = ${session.billId} AND status IN ('BookingApproved', 'PendingPayment') LIMIT 1
+    `;
+    if (bookingContracts.length > 0) {
+      if (storedSlipUrl) {
+        await sql`
+          UPDATE contracts
+          SET status = 'PendingOwnerSignature',
+              signed_at = NOW(),
+              slip_url = ${storedSlipUrl}
+          WHERE id = ${bookingContracts[0].id}
+        `;
+      } else {
+        await sql`
+          UPDATE contracts
+          SET status = 'PendingOwnerSignature',
+              signed_at = NOW()
+          WHERE id = ${bookingContracts[0].id}
+        `;
+      }
+    }
+
+    // 4. Move-in bill: associate slip if present, then run afterMoveInPayment to activate contract
+    const moveInContracts = await sql`
+      SELECT id FROM contracts WHERE move_in_bill_id = ${session.billId} LIMIT 1
+    `;
+    if (moveInContracts.length > 0 && storedSlipUrl) {
+      await sql`
+        UPDATE contracts
+        SET slip_url = COALESCE(slip_url, ${storedSlipUrl})
+        WHERE id = ${moveInContracts[0].id}
+      `;
+    }
+
+    const { afterMoveInPayment } = await import('@/lib/moveIn');
+    const activation = await afterMoveInPayment(sql, session.billId);
+    console.log('[Dynamic QR afterMoveInPayment result]:', activation);
   } catch (err) {
     console.warn('[Dynamic QR DB Sync Warning]:', err);
   }

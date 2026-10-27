@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import crypto from 'crypto';
+import { verifyTurnstileToken } from '@/lib/turnstile';
 
 // ── Ensure Table Exists ──────────────────────────────────────────────────────
 async function ensureVerificationTable(sql: any) {
@@ -23,52 +24,7 @@ async function ensureVerificationTable(sql: any) {
   }
 }
 
-// ── Verify Cloudflare Turnstile Token ─────────────────────────────────────────
-async function verifyTurnstileToken(token: string, remoteIp?: string): Promise<{ success: boolean; message?: string }> {
-  // Cloudflare Turnstile Always-Pass dummy keys for development/testing
-  // 1x00000000000000000000AA (always passes)
-  // 2x00000000000000000000AB (always blocks)
-  const secretKey = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY || '1x0000000000000000000000000000000AA';
-
-  // If testing with mock token in dev
-  if (token === 'cf-mock-token-success' || secretKey.startsWith('1x000000')) {
-    return { success: true };
-  }
-
-  try {
-    const formData = new URLSearchParams();
-    formData.append('secret', secretKey);
-    formData.append('response', token);
-    if (remoteIp) {
-      formData.append('remoteip', remoteIp);
-    }
-
-    const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      body: formData,
-      headers: {
-        'content-type': 'application/x-www-form-urlencoded',
-      },
-    });
-
-    const outcome = await res.json();
-    if (outcome.success) {
-      return { success: true };
-    } else {
-      return { 
-        success: false, 
-        message: 'การตรวจสอบ Cloudflare Turnstile ไม่ผ่าน: ' + (outcome['error-codes']?.join(', ') || 'Invalid CAPTCHA token') 
-      };
-    }
-  } catch (error: any) {
-    console.error('[Turnstile verification error]:', error);
-    // In dev environment or fallback, allow pass if network issues
-    if (process.env.NODE_ENV !== 'production') {
-      return { success: true };
-    }
-    return { success: false, message: 'ไม่สามารถติดต่อเซิร์ฟเวอร์ Cloudflare เพื่อตรวจสอบความปลอดภัยได้' };
-  }
-}
+// Cloudflare Turnstile: lib/turnstile.ts (commit 26d — secret from the environment only; test keys / mock token in development only)
 
 // ── Mock or Real Mail Sender ──────────────────────────────────────────────────
 async function sendOtpEmail(email: string, otp: string) {

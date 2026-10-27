@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { capCheck, depositFor } from '@/lib/billing';
+import { badRoomNumber, roomStatusFor } from '@/lib/room-fields';
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,13 +25,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: 'Missing dormitory context' }, { status: 400 });
     }
 
+    // Deposit + first month's rent paid in advance may be at most 3 months of rent (checked before anything is created)
+    for (const room of rooms) {
+      // commit 24: no negative rent / deposit / floor — nothing is created if any room has one
+      const bad = badRoomNumber(room);
+      if (bad) {
+        return NextResponse.json({ success: false, message: `ห้อง ${room?.room_number ?? '-'}: ${bad.message}`, field: bad.field }, { status: 400 });
+      }
+      // commit 28a: new rooms are "ว่าง" or "ปิดปรับปรุง" only
+      const st = roomStatusFor(room?.status);
+      if (!st.ok) return NextResponse.json({ success: false, message: `ห้อง ${room?.room_number ?? '-'}: ${st.message}`, field: 'status' }, { status: 400 });
+      if (!room?.room_number || room.price === undefined) continue;
+      const deposit = room.deposit_amount !== undefined && room.deposit_amount !== null && room.deposit_amount !== '' ? parseFloat(room.deposit_amount) : 3000;
+      const cap = capCheck(Number(room.price), depositFor({ room_number: room.room_number, deposit_amount: deposit }));
+      if (!cap.ok) {
+        return NextResponse.json({ success: false, message: `ห้อง ${room.room_number}: ${cap.message}` }, { status: 400 });
+      }
+    }
+
     const sql = getDb();
     let createdCount = 0;
     let skippedCount = 0;
     const errors: string[] = [];
 
     for (const room of rooms) {
-      const { room_number, room_type, price, status, floor, image_url, deposit_amount, water_rate, common_fee } = room;
+      const { room_number, room_type, price, status, floor, image_url, deposit_amount, amenities } = room;
 
       if (!room_number || !room_type || price === undefined) {
         skippedCount++;
@@ -37,6 +57,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Check if room number already exists in this dorm
+      // status: checked for every room above (roomStatusFor — Available / Maintenance only)
       const existing = await sql`SELECT id FROM rooms WHERE room_number = ${room_number} AND dorm_id = ${targetDormId}`;
       if (existing && existing.length > 0) {
         skippedCount++;
@@ -44,12 +65,15 @@ export async function POST(req: NextRequest) {
       }
 
       const deposit = deposit_amount !== undefined && deposit_amount !== null && deposit_amount !== '' ? parseFloat(deposit_amount) : 3000;
-      const water = water_rate !== undefined && water_rate !== null && water_rate !== '' ? parseFloat(water_rate) : 100;
-      const common = common_fee !== undefined && common_fee !== null && common_fee !== '' ? parseFloat(common_fee) : 150;
+
+      let amenitiesStr: string | null = null;
+      if (amenities) {
+        amenitiesStr = typeof amenities === 'string' ? amenities : JSON.stringify(amenities);
+      }
 
       await sql`
-        INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount, water_rate, common_fee)
-        VALUES (${room_number}, ${room_type}, ${price}, ${status || 'Available'}, ${floor || 1}, ${image_url || null}, ${targetDormId}, ${deposit}, ${water}, ${common})
+        INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount, amenities)
+        VALUES (${room_number}, ${room_type}, ${price}, ${status || 'Available'}, ${floor || 1}, ${image_url || null}, ${targetDormId}, ${deposit}, ${amenitiesStr})
       `;
       createdCount++;
     }

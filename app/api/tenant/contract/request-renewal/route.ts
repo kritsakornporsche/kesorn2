@@ -1,73 +1,49 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
+import { notifyUser, ownerUserId } from '@/lib/move-out-notify';
 
+// A tenant asks to renew their own Active contract. Anyone else's contract id gets 404 so ids cannot be probed.
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    const body = await req.json();
-    const { contract_id, renewal_note } = body;
+    const guard = await requireRole(['tenant']);
+    if ('response' in guard) return guard.response;
+    const { user } = guard;
 
-    if (!contract_id) {
-      return NextResponse.json({ success: false, message: 'Missing contract_id' }, { status: 400 });
+    const body = await req.json().catch(() => ({}));
+    const contractId = Number(body?.contract_id);
+    const note = String(body?.renewal_note || '').trim().slice(0, 500) || 'ขอต่อสัญญาเช่า';
+    if (!Number.isInteger(contractId) || contractId <= 0) {
+      return NextResponse.json({ success: false, message: 'ไม่ได้ระบุสัญญา' }, { status: 400 });
     }
 
     const sql = getDb();
-
-    // Verify contract exists and belongs to tenant
     const contracts = await sql`
-      SELECT c.*, r.dorm_id as room_dorm_id FROM contracts c
-      JOIN rooms r ON c.room_id = r.id
-      LEFT JOIN tenants t ON c.tenant_id = t.id
-      LEFT JOIN users u ON t.user_id = u.id OR t.email = u.email
-      WHERE c.id = ${contract_id}
+      SELECT c.id, c.status FROM contracts c JOIN tenants t ON t.id = c.tenant_id
+      WHERE c.id = ${contractId} AND (t.user_id = ${user.id} OR LOWER(t.email) = LOWER(${user.email}))
       LIMIT 1
     `;
-
     if (contracts.length === 0) {
       return NextResponse.json({ success: false, message: 'ไม่พบสัญญาเช่าที่ระบุ' }, { status: 404 });
     }
-
-    // Flag contract as renewal_requested
-    await sql`
-      UPDATE contracts 
-      SET renewal_requested = 1, renewal_note = ${renewal_note || 'ขอต่อสัญญาเช่า'} 
-      WHERE id = ${contract_id}
-    `;
-
-    // Notify owner
-    try {
-      const dormId = contracts[0].dorm_id || 1;
-      const ownerRes = await sql`
-        SELECT u.id FROM users u
-        JOIN dormitory_registry dr ON dr.owner_id = u.id OR dr.owner_email = u.email
-        WHERE dr.id = ${dormId}
-        LIMIT 1
-      `;
-      if (ownerRes.length > 0) {
-        await sql`
-          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-          VALUES (
-            ${ownerRes[0].id},
-            'มีคำขอต่อสัญญาเช่าใหม่',
-            ${'ผู้เช่าได้ส่งคำขอต่อสัญญาเช่า (สัญญา #' + contract_id + '): ' + (renewal_note || 'ขอต่อสัญญาเช่า')},
-            'contract_renewal',
-            0,
-            '/owner/contracts',
-            NOW()
-          )
-        `;
-      }
-    } catch (ne) {
-      console.warn('Renewal notify warn:', ne);
+    if (contracts[0].status !== 'Active') {
+      return NextResponse.json({ success: false, message: 'ขอต่อสัญญาได้เฉพาะสัญญาที่มีผลอยู่' }, { status: 409 });
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'ส่งคำขอต่อสัญญาเช่าไปยังเจ้าของหอพักเรียบร้อยแล้ว'
-    });
-  } catch (err: any) {
+    await sql`UPDATE contracts SET renewal_requested = 1, renewal_note = ${note} WHERE id = ${contractId}`;
+
+    await notifyUser(
+      await ownerUserId(),
+      'มีคำขอต่อสัญญาเช่าใหม่',
+      `ผู้เช่าได้ส่งคำขอต่อสัญญาเช่า (สัญญา #${contractId}): ${note}`,
+      '/owner/contracts',
+      new Date(),
+      'contract_renewal'
+    );
+
+    return NextResponse.json({ success: true, message: 'ส่งคำขอต่อสัญญาเช่าไปยังเจ้าของหอพักเรียบร้อยแล้ว' });
+  } catch (err) {
     console.error('[Tenant Request Renewal Error]:', err);
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, message: 'ส่งคำขอไม่สำเร็จ' }, { status: 500 });
   }
 }

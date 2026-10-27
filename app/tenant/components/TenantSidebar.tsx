@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { handleSignOut } from '@/lib/auth-client';
 import NotificationsPopover from '@/components/NotificationsPopover';
-import ThemeToggle from '@/app/components/ThemeToggle';
 
 const navItems = [
   { href: '/tenant', label: 'หน้าหลัก', icon: '🏠', sublabel: 'ข้อมูลห้องพักและสถานะ', exact: true },
@@ -15,7 +14,6 @@ const navItems = [
   { href: '/tenant/chat', label: 'แชทหอพัก', icon: '💬', sublabel: 'สนทนากับเจ้าของหอพัก' },
   { href: '/tenant/contract', label: 'สัญญาเช่า', icon: '📝', sublabel: 'เงื่อนไขและวันหมดอายุ' },
   { href: '/tenant/announcements', label: 'ประกาศข่าวสาร', icon: '📢', sublabel: 'ข่าวสารจากหอพัก' },
-  { href: '/tenant/refund-request', label: 'ขอคืนเงินมัดจำ', icon: '💰', sublabel: 'คำร้องคืนเงินประกัน' },
   { href: '/tenant/move-out', label: 'แจ้งย้ายออก', icon: '🚪', sublabel: 'คำขอย้ายออกล่วงหน้า' },
   { href: '/', label: 'แนะนำหอเกษร 2', icon: '🏢', sublabel: 'ข้อมูลหอพักและสิ่งอำนวยความสะดวก' },
 ];
@@ -156,7 +154,7 @@ export default function TenantSidebar({
               <button
                 type="button"
                 onClick={() => {
-                  setMobileMenuOpen(false);
+                  setIsOpen(false);
                   handleSignOut('/');
                 }}
                 className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-rose-500/10 hover:bg-rose-500/15 border border-rose-500/20 text-rose-600 dark:text-rose-400 font-bold text-sm transition-all active:scale-[0.98] cursor-pointer"
@@ -241,9 +239,6 @@ export default function TenantSidebar({
 
           {/* Notifications */}
           <NotificationsPopover />
-
-          {/* Theme Toggle */}
-          <ThemeToggle />
 
           {/* User Info (desktop) */}
           <div className="text-right pl-3 border-l border-border hidden sm:block">

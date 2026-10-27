@@ -2,9 +2,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useConfirm } from '@/components/ConfirmModalProvider';
 
 export default function AcknowledgeButton({ id, isImportant }: { id: number, isImportant: boolean }) {
   const router = useRouter();
+  const { alert } = useConfirm();
   const [loading, setLoading] = useState(false);
 
   const handleAcknowledge = async () => {
@@ -17,10 +19,18 @@ export default function AcknowledgeButton({ id, isImportant }: { id: number, isI
       if (data.success) {
         router.refresh();
       } else {
-        alert(data.message);
+        await alert({
+          title: 'ทำรายการไม่สำเร็จ',
+          description: data.message || 'ไม่สามารถบันทึกการรับทราบได้',
+          variant: 'danger',
+        });
       }
     } catch (err) {
-      alert('เกิดข้อผิดพลาดในการรับทราบข่าวสาร');
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        description: 'เกิดข้อผิดพลาดในการรับทราบข่าวสาร',
+        variant: 'danger',
+      });
     } finally {
       setLoading(false);
     }
@@ -30,7 +40,7 @@ export default function AcknowledgeButton({ id, isImportant }: { id: number, isI
     <button 
       onClick={handleAcknowledge}
       disabled={loading}
-      className={`px-5 py-2.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all shadow-sm flex items-center gap-2 ${
+      className={`px-5 py-2.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all shadow-sm flex items-center gap-2 cursor-pointer ${
         isImportant 
           ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/20 active:scale-95 disabled:opacity-70' 
           : 'bg-primary hover:bg-primary/90 text-white shadow-primary/20 active:scale-95 disabled:opacity-70'

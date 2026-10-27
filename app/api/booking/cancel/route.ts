@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { auth } from '@/auth';
+import { cancelPaidBooking, cancelUnpaidBooking } from '@/lib/bookings';
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -15,22 +16,20 @@ export async function POST(req: Request) {
 
     // 1. Find the pending contract
     let targetContractId = contractId;
-    let targetRoomId = roomId;
 
-    if (!targetContractId && !targetRoomId) {
+    if (!targetContractId && !roomId) {
       // Find latest contract in PendingContract state for this user
       const userContracts = await sql`
         SELECT c.id, c.room_id, c.status
         FROM contracts c
         JOIN tenants t ON c.tenant_id = t.id
         WHERE (t.email = ${session.user.email} OR t.user_id = ${(session.user as any).id || 0})
-        AND c.status IN ('PendingContract', 'PendingOwnerSignature')
+        AND c.status IN ('BookingRequested', 'BookingApproved', 'PendingContract', 'PendingOwnerSignature')
         ORDER BY c.id DESC
         LIMIT 1
       `;
       if (userContracts.length > 0) {
         targetContractId = userContracts[0].id;
-        targetRoomId = userContracts[0].room_id;
       }
     }
 
@@ -39,50 +38,89 @@ export async function POST(req: Request) {
     }
 
     // 2. Check if the contract is strictly in PendingContract state (Can only cancel at 2.1.1)
-    const contractData = await sql`SELECT room_id, status FROM contracts WHERE id = ${targetContractId}`;
+    const contractData = await sql`SELECT room_id, tenant_id, status FROM contracts WHERE id = ${targetContractId}`;
     if (contractData.length === 0) {
       return NextResponse.json({ success: false, message: 'ไม่พบสัญญาที่ระบุ' }, { status: 404 });
     }
 
     const currentStatus = contractData[0].status;
-    if (currentStatus !== 'PendingContract' && currentStatus !== 'PendingOwnerSignature') {
-      return NextResponse.json({
-        success: false,
-        message: 'ไม่สามารถยกเลิกการจองได้ เนื่องจากอยู่ในขั้นตอนทำสัญญา/ชำระค่าแรกเข้าแล้ว'
-      }, { status: 400 });
-    }
 
-    targetRoomId = targetRoomId || contractData[0].room_id;
-
-    // 3. Mark contract as Cancelled (deposit non-refundable)
-    await sql`
-      UPDATE contracts 
-      SET status = 'Cancelled', renewal_note = 'ผู้จองกดยกเลิกการจอง (ไม่คืนเงินมัดจำ)'
-      WHERE id = ${targetContractId}
+    // Only the booker can cancel their own booking (paid or not)
+    const owner = await sql`
+      SELECT t.id FROM tenants t
+      WHERE t.id = ${contractData[0].tenant_id}
+        AND (LOWER(t.email) = LOWER(${session.user.email}) OR t.user_id = ${(session.user as any).id || 0})
+      LIMIT 1
     `;
-
-    // 3.1 Cancel any associated booking bills
-    try {
-      await sql`
-        UPDATE bills 
-        SET status = 'Cancelled' 
-        WHERE (tenant_id IN (SELECT tenant_id FROM contracts WHERE id = ${targetContractId}) OR room_number IN (SELECT room_number FROM rooms WHERE id = ${targetRoomId}))
-          AND bill_type = 'booking'
-          AND status != 'Cancelled'
-      `;
-    } catch (bErr) {
-      console.warn('Could not cancel booking bill:', bErr);
+    if (owner.length === 0) {
+      return NextResponse.json({ success: false, message: 'ไม่พบรายการจองที่สามารถยกเลิกได้' }, { status: 404 });
     }
 
-    // 4. Reset room status to Available immediately
-    if (targetRoomId) {
-      await sql`
-        UPDATE rooms 
-        SET status = 'Available' 
-        WHERE id = ${targetRoomId}
-      `;
+    // Get room & user details for notifications before cancel
+    const roomInfo = (await sql`
+      SELECT r.room_number, COALESCE(t.name, u.name, 'ผู้จอง') as guest_name
+      FROM contracts c
+      JOIN rooms r ON c.room_id = r.id
+      LEFT JOIN tenants t ON c.tenant_id = t.id
+      LEFT JOIN users u ON t.user_id = u.id OR t.email = u.email
+      WHERE c.id = ${targetContractId}
+    `)[0] || { room_number: '-', guest_name: 'ผู้จอง' };
+
+    const sendCancellationNotifications = async () => {
+      try {
+        const staff = await sql`SELECT id FROM users WHERE role IN ('owner', 'manager') AND COALESCE(is_active, 1) = 1`;
+        for (const u of staff) {
+          await sql`
+            INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+            VALUES (
+              ${u.id},
+              '❌ มีการยกเลิกการจองห้องพัก',
+              ${`คุณ ${roomInfo.guest_name} ได้ยกเลิกการจองห้อง ${roomInfo.room_number} (ห้องกลับสู่สถานะว่าง)`},
+              'booking_cancelled',
+              0,
+              '/owner/bookings',
+              NOW()
+            )
+          `.catch((e: any) => console.warn('[Cancel in-app notif error]', e));
+        }
+
+        const { sendWebPushToRole, sendWebPushToEmail } = await import('@/lib/features/web-push-server');
+        await sendWebPushToRole('owner', {
+          title: '❌ มีการยกเลิกการจองห้องพัก',
+          body: `คุณ ${roomInfo.guest_name} ได้ยกเลิกการจองห้อง ${roomInfo.room_number} (ห้องกลับสู่สถานะว่าง)`,
+          url: '/owner/bookings',
+          tag: `booking-cancelled-${targetContractId}`,
+        });
+
+        if (session?.user?.email) {
+          await sendWebPushToEmail(session.user.email, {
+            title: '❌ ยกเลิกการจองห้องพักเรียบร้อย',
+            body: `การจองห้อง ${roomInfo.room_number} ถูกยกเลิกเรียบร้อยแล้ว`,
+            url: '/explore',
+            tag: `guest-cancelled-${targetContractId}`,
+          });
+        }
+      } catch (err) {
+        console.warn('[Cancellation notifications error]', err);
+      }
+    };
+
+    // Not paid yet: cancel without forfeiting anything
+    if (currentStatus === 'BookingRequested' || currentStatus === 'BookingApproved') {
+      const cancelled = await cancelUnpaidBooking(Number(targetContractId), Number((session.user as any).id) || null, new Date());
+      if (!cancelled.ok) {
+        return NextResponse.json({ success: false, message: cancelled.message }, { status: 400 });
+      }
+      await sendCancellationNotifications();
+      return NextResponse.json({ success: true, message: 'ยกเลิกคำขอจองแล้ว ห้องเปิดให้ผู้อื่นจองแล้ว' });
     }
 
+    // Paid booking: through lib/bookings
+    const paid = await cancelPaidBooking(Number(targetContractId), { id: Number((session.user as any).id) || null, email: session.user.email }, new Date());
+    if (!paid.ok) {
+      return NextResponse.json({ success: false, message: paid.message }, { status: paid.reason === 'not_found' ? 404 : 400 });
+    }
+    await sendCancellationNotifications();
     return NextResponse.json({
       success: true,
       message: 'ยกเลิกการจองเรียบร้อยแล้ว ห้องพักกลับสู่สถานะว่าง',

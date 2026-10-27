@@ -1,7 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { dynamicQrHistory } from '@/lib/features/dynamic-bill-qr';
-import { sendWebPushToAllSubscriptions } from '@/lib/features/web-push-server';
+
+async function sendWebPushToAllSubscriptions(payload: any) {
+  try {
+    const webPush = await import('@/lib/features/web-push-server').catch(() => null);
+    if (webPush && (webPush as any).sendWebPushToAllSubscriptions) {
+      return await (webPush as any).sendWebPushToAllSubscriptions(payload);
+    }
+  } catch (e) {
+    // ignore
+  }
+  return { success: false, sentCount: 0, failedCount: 0 };
+}
 
 export type OccupancyStatus = 'OCCUPIED' | 'AVAILABLE' | 'RESERVED' | 'MAINTENANCE';
 export type BillingStatus = 'PAID' | 'PENDING' | 'OVERDUE' | 'NO_BILL';

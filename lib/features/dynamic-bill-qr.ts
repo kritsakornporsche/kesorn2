@@ -25,6 +25,7 @@ export interface ParsedBankEmail {
   transRef: string;
   receivedAt: string;
   rawSnippet: string;
+  screenshotDataUrl?: string | null;
 }
 
 export interface DynamicPaymentSession {
@@ -54,6 +55,7 @@ export interface DynamicPaymentSession {
   matchedEmail?: ParsedBankEmail | null;
   receiptNo?: string | null;
   receiptHash?: string | null;
+  screenshotDataUrl?: string | null;
   createdAt: string;
   paidAt?: string | null;
   expiresAt: string;
@@ -150,6 +152,8 @@ export async function readLineChatWindowOcr(): Promise<{
   foundWindow: boolean;
   windows: string;
   text: string;
+  screenshotDataUrl?: string | null;
+  windowEntries?: Array<{ text: string; screenshotDataUrl?: string | null }>;
   error?: string;
 }> {
   try {
@@ -176,6 +180,8 @@ export async function readLineChatWindowOcr(): Promise<{
       foundWindow: Boolean(data.foundWindow),
       windows: String(data.windows || ''),
       text: String(data.text || ''),
+      screenshotDataUrl: data.screenshotDataUrl || null,
+      windowEntries: Array.isArray(data.windowEntries) ? data.windowEntries : [],
       error: data.error,
     };
   } catch (err: any) {
@@ -183,6 +189,8 @@ export async function readLineChatWindowOcr(): Promise<{
       foundWindow: false,
       windows: '',
       text: '',
+      screenshotDataUrl: null,
+      windowEntries: [],
       error: err.message,
     };
   }
@@ -335,6 +343,77 @@ export function createDynamicPaymentSession(params: {
   return session;
 }
 
+export function generateReceiptSlipDataUrl(params: {
+  amount: number;
+  roomNumber: string;
+  tenantName?: string;
+  transRef: string;
+  paidAt: string;
+  methodTitle?: string;
+}): string {
+  const formattedAmt = params.amount.toLocaleString('th-TH', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const dateStr = new Date(params.paidAt).toLocaleString('th-TH', {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  });
+  const method = params.methodTitle || 'Krungthai Connext (LINE)';
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="780" viewBox="0 0 600 780">
+    <defs>
+      <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#0284c7" />
+        <stop offset="100%" stop-color="#0369a1" />
+      </linearGradient>
+    </defs>
+    <rect width="600" height="780" rx="32" fill="#0f172a" />
+    <rect x="20" y="20" width="560" height="740" rx="24" fill="#1e293b" stroke="#334155" stroke-width="2" />
+    <rect x="20" y="20" width="560" height="150" rx="24" fill="url(#bg)" />
+    
+    <text x="50" y="70" font-family="sans-serif" font-size="22" font-weight="900" fill="#ffffff">ธนาคารกรุงไทย · Krungthai NEXT</text>
+    <text x="50" y="100" font-family="sans-serif" font-size="14" fill="#e0f2fe">หลักฐานการรับชำระเงินอัตโนมัติ (Dynamic Bill QR)</text>
+    <text x="50" y="135" font-family="sans-serif" font-size="13" font-weight="bold" fill="#38bdf8">✓ ชำระเงินสำเร็จ (VERIFIED)</text>
+    
+    <rect x="40" y="195" width="520" height="110" rx="20" fill="#0f172a" stroke="#0284c7" stroke-width="1.5" />
+    <text x="65" y="235" font-family="sans-serif" font-size="14" fill="#94a3b8">จำนวนเงินที่โอนเข้า</text>
+    <text x="65" y="280" font-family="sans-serif" font-size="36" font-weight="900" fill="#38bdf8">฿${formattedAmt}</text>
+    <text x="520" y="280" text-anchor="end" font-family="sans-serif" font-size="14" font-weight="bold" fill="#4ade80">เงินเข้าบัญชีแล้ว</text>
+    
+    <g transform="translate(50, 340)" font-family="sans-serif">
+      <text x="0" y="25" font-size="14" fill="#94a3b8">ไปยังบัญชี</text>
+      <text x="500" y="25" text-anchor="end" font-size="14" font-weight="bold" fill="#f8fafc">พร้อมเพย์ 063-604-0550</text>
+      <text x="500" y="48" text-anchor="end" font-size="12" fill="#94a3b8">นาย กฤษกร บัวอินทร์ (เจ้าของหอพัก)</text>
+      <line x1="0" y1="65" x2="500" y2="65" stroke="#334155" stroke-dasharray="4" />
+
+      <text x="0" y="95" font-size="14" fill="#94a3b8">ห้องพัก</text>
+      <text x="500" y="95" text-anchor="end" font-size="14" font-weight="bold" fill="#38bdf8">ห้อง ${params.roomNumber}</text>
+      <line x1="0" y1="115" x2="500" y2="115" stroke="#334155" stroke-dasharray="4" />
+
+      <text x="0" y="145" font-size="14" fill="#94a3b8">ชื่อผู้เช่า / ผู้ชำระ</text>
+      <text x="500" y="145" text-anchor="end" font-size="14" font-weight="bold" fill="#f8fafc">${params.tenantName || 'ผู้เช่าห้อง ' + params.roomNumber}</text>
+      <line x1="0" y1="165" x2="500" y2="165" stroke="#334155" stroke-dasharray="4" />
+
+      <text x="0" y="195" font-size="14" fill="#94a3b8">ช่องทางตรวจจับ</text>
+      <text x="500" y="195" text-anchor="end" font-size="14" font-weight="bold" fill="#a78bfa">${method}</text>
+      <line x1="0" y1="215" x2="500" y2="215" stroke="#334155" stroke-dasharray="4" />
+
+      <text x="0" y="245" font-size="14" fill="#94a3b8">วัน-เวลาที่ตรวจพบ</text>
+      <text x="500" y="245" text-anchor="end" font-size="14" font-weight="bold" fill="#f8fafc">${dateStr}</text>
+      <line x1="0" y1="265" x2="500" y2="265" stroke="#334155" stroke-dasharray="4" />
+
+      <text x="0" y="295" font-size="13" fill="#94a3b8">รหัสอ้างอิง</text>
+      <text x="500" y="295" text-anchor="end" font-size="13" font-family="monospace" font-weight="bold" fill="#e2e8f0">${params.transRef}</text>
+    </g>
+
+    <rect x="40" y="685" width="520" height="50" rx="14" fill="#0f172a" />
+    <text x="300" y="715" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#64748b">หลักฐานนี้ถูกบันทึกอัตโนมัติโดยระบบตรวจจับยอดเงินเข้า หอพักเกษร</text>
+  </svg>`;
+
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+}
+
 export function approveDynamicPaymentSession(
   session: DynamicPaymentSession,
   matchedEmail: ParsedBankEmail,
@@ -349,12 +428,24 @@ export function approveDynamicPaymentSession(
     .slice(0, 16)
     .toUpperCase();
 
+  const screenshotDataUrl =
+    matchedEmail.screenshotDataUrl ||
+    generateReceiptSlipDataUrl({
+      amount: session.expectedAmount,
+      roomNumber: session.roomNumber,
+      tenantName: session.tenantName,
+      transRef: matchedEmail.transRef,
+      paidAt,
+      methodTitle: verifiedBy === 'LINE_SERVER_LISTENER' ? 'LINE Krungthai Connext (Screen OCR)' : 'Krungthai Connext Notification',
+    });
+
   session.status = 'PAID';
   session.verifiedBy = verifiedBy;
   session.matchedEmail = matchedEmail;
   session.paidAt = paidAt;
   session.receiptNo = receiptNo;
   session.receiptHash = `SHA256-${receiptHash}`;
+  session.screenshotDataUrl = screenshotDataUrl;
 
   dynamicQrSessions.set(session.sessionId, session);
 
@@ -483,6 +574,16 @@ export async function checkGmailImapForAmount(params: {
   const hasExactMatch = ocrText.includes(targetFormatted) || ocrText.includes(targetPlain);
 
   if (hasExactMatch) {
+    let matchingScreenshot = ocrRes.screenshotDataUrl || null;
+    if (ocrRes.windowEntries && ocrRes.windowEntries.length > 0) {
+      const match = ocrRes.windowEntries.find(
+        (w) => w.text && (w.text.includes(targetFormatted) || w.text.includes(targetPlain))
+      );
+      if (match && match.screenshotDataUrl) {
+        matchingScreenshot = match.screenshotDataUrl;
+      }
+    }
+
     const parsed: ParsedBankEmail = {
       found: true,
       bankName: 'LINE Krungthai Connext (Windows OCR)',
@@ -493,6 +594,7 @@ export async function checkGmailImapForAmount(params: {
       transRef: `KTB-LINE-${Date.now().toString(36).toUpperCase()}`,
       receivedAt: new Date().toISOString(),
       rawSnippet: ocrText.slice(0, 240),
+      screenshotDataUrl: matchingScreenshot,
     };
 
     return {

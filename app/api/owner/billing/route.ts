@@ -1,5 +1,9 @@
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
+import { bangkokDate, getRates, lateFeeRateOf } from '@/lib/billing';
+import { issueMonthlyBill, meterRefusalStatus } from '@/lib/meters';
+import { getPaymentSummaries, outstandingFor } from '@/lib/payments';
 import { NextResponse } from 'next/server';
 
 export async function GET(req: Request) {
@@ -7,9 +11,8 @@ export async function GET(req: Request) {
   if (!session || !session.user) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
-  if ((session.user as any)?.role !== 'owner') {
-    return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
-  }
+  const guard = await requireRole(['owner', 'manager']);
+  if ('response' in guard) return guard.response;
   const sql = getDb();
 
   try {
@@ -21,6 +24,7 @@ export async function GET(req: Request) {
         b.amount, 
         b.billing_cycle, 
         b.due_date, 
+        b.late_fee_rate,
         b.status, 
         b.slip_url,
         b.created_at,
@@ -28,6 +32,8 @@ export async function GET(req: Request) {
         COALESCE(b.bill_type, 'monthly') as bill_type,
         COALESCE(b.slip_verified, 0) as slip_verified,
         b.slipok_trans_ref,
+        b.paid_at,
+        b.payment_method,
         COALESCE(b.room_number, r.room_number, '-') as room_number,
         COALESCE(b.water_units, 0) as water_units,
         COALESCE(b.electric_units, 0) as electric_units,
@@ -66,33 +72,29 @@ export async function GET(req: Request) {
         WHERE mr3.room_id = r.id 
           AND (mr3.billing_cycle = b.billing_cycle OR mr3.billing_cycle IS NULL)
           AND (mr3.type = 'Electricity' OR mr3.type = 'Electric')
-        ORDER BY mr3.id DESC 
+        ORDER BY (mr3.kind = 'cycle') DESC, mr3.id DESC 
         LIMIT 1
       )
       ORDER BY b.due_date DESC, b.created_at DESC
     `;
     
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const rates = await getRates(sql);
+    const now = new Date();
 
+    const summaries = await getPaymentSummaries(sql, bills.map((b: any) => b.id));
     const enrichedBills = bills.map((b: any) => {
-      let daysOverdue = 0;
-      let lateFee = 0;
-      if (b.status === 'Unpaid' && b.due_date) {
-        const due = new Date(b.due_date);
-        due.setHours(0, 0, 0, 0);
-        const diffTime = today.getTime() - due.getTime();
-        if (diffTime > 0) {
-          daysOverdue = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-          lateFee = daysOverdue * 50;
-        }
-      }
+      const s = summaries.get(b.id) || { paid_total: 0, payments: [] };
+      const owed = outstandingFor(b, s.paid_total, now, rates);
       return {
         ...b,
-        days_overdue: daysOverdue,
-        late_fee: lateFee,
+        days_overdue: owed.daysOverdue,
+        late_fee: owed.lateFee,
+        late_fee_per_day: lateFeeRateOf(b, rates),
         base_amount: Number(b.amount),
-        total_amount: Number(b.amount) + lateFee
+        total_amount: owed.due,
+        paid_total: s.paid_total,
+        outstanding: owed.outstanding,
+        payments: s.payments,
       };
     });
 
@@ -108,30 +110,25 @@ export async function POST(req: Request) {
   if (!session || !session.user) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
-  if ((session.user as any)?.role !== 'owner') {
-    return NextResponse.json({ success: false, message: 'Forbidden: Owner role required' }, { status: 403 });
-  }
+  const guard = await requireRole(['owner', 'manager']);
+  if ('response' in guard) return guard.response;
   const sql = getDb();
 
   try {
     const body = await req.json();
-    const { 
-      tenant_id, 
-      title, 
-      amount, 
-      billing_cycle, 
-      due_date, 
-      room_number, 
-      water_units, 
-      electric_units, 
-      water_amount, 
-      electric_amount, 
-      room_amount 
+    let {
+      tenant_id,
+      title,
+      amount,
+      due_date,
+      water_units,
+      electric_units,
+      water_amount,
+      electric_amount,
+      room_amount,
+      common_fee,
     } = body;
-
-    if (!tenant_id || !title || !amount || !due_date) {
-      return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
-    }
+    const { billing_cycle, room_number } = body;
 
     // Normalize billing_cycle to YYYY-MM format
     let normalizedCycle = billing_cycle;
@@ -141,21 +138,43 @@ export async function POST(req: Request) {
         normalizedCycle = `${match[1]}-${match[2].padStart(2, '0')}`;
       }
     } else {
-      normalizedCycle = new Date().toISOString().slice(0, 7);
+      normalizedCycle = bangkokDate(new Date()).slice(0, 7);
     }
 
-    // Prevent duplicate bill for same tenant in same billing cycle
+    // Monthly bills: lib/meters.ts — priced on the server from the cycle's reading, Draft, one per tenant and cycle
+    // (amounts and due date from the client are ignored). Sent later, which notifies the tenant.
+    if (body.bill_type === 'monthly') {
+      const r = await issueMonthlyBill(String(room_number || ''), normalizedCycle, guard.user, new Date(), title);
+      if (!r.ok) return NextResponse.json({ success: false, message: r.message }, { status: meterRefusalStatus(r.reason) });
+      if (!r.issued) return NextResponse.json({ success: false, message: r.message, skipped: r.skipped, billId: r.billId }, { status: r.skipped === 'exists' || r.skipped === 'final_bill' ? 409 : 400 });
+      return NextResponse.json({
+        success: true,
+        data: { id: r.billId, tenant_id: r.tenantId, amount: r.amount, due_date: r.dueDate, billing_cycle: normalizedCycle, room_number: r.roomNumber, status: 'Draft' },
+      });
+    }
+
+    if (!tenant_id || !title || !amount || !due_date) {
+      return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
+    }
+
+    const isDraft = false;
+    const billType = body.bill_type || (title.includes('จอง') || title.includes('มัดจำ') ? 'booking' : (title.includes('ซ่อม') || title.includes('ทำความสะอาด') ? 'service' : 'monthly'));
+    if (billType === 'monthly') {
+      return NextResponse.json({ success: false, message: 'บิลรายเดือนออกได้จากเลขมิเตอร์เท่านั้น (bill_type: monthly + room_number)' }, { status: 400 });
+    }
+
+    // Same tenant, cycle and bill type only (a month also has repair / service / final bills)
     if (normalizedCycle) {
       const existing = await sql`
-        SELECT id FROM bills 
-        WHERE tenant_id = ${tenant_id} 
-        AND billing_cycle = ${normalizedCycle}
+        SELECT id FROM bills
+        WHERE tenant_id = ${tenant_id} AND billing_cycle = ${normalizedCycle} AND COALESCE(bill_type, 'monthly') = ${billType}
+          AND LOWER(status) NOT IN ('cancelled', 'canceled')
         LIMIT 1
       `;
       if (existing.length > 0) {
         return NextResponse.json({ 
           success: false, 
-          message: `มีใบแจ้งหนี้รอบบิล "${normalizedCycle}" สำหรับผู้เช่ารายนี้แล้ว ไม่สามารถออกบิลซ้ำได้` 
+          message: `มีใบแจ้งหนี้ประเภทนี้รอบบิล "${normalizedCycle}" สำหรับผู้เช่ารายนี้แล้ว ไม่สามารถออกบิลซ้ำได้` 
         }, { status: 400 });
       }
     }
@@ -174,6 +193,7 @@ export async function POST(req: Request) {
         water_amount, 
         electric_amount, 
         room_amount,
+        common_fee,
         bill_type
       )
       VALUES (
@@ -181,20 +201,21 @@ export async function POST(req: Request) {
         ${title}, 
         ${amount}, 
         ${normalizedCycle}, 
-        ${due_date}, 
-        'Unpaid', 
+        ${due_date},
+        ${isDraft ? 'Draft' : 'Unpaid'},
         ${room_number || null}, 
         ${water_units || 0}, 
         ${electric_units || 0}, 
         ${water_amount || 0}, 
         ${electric_amount || 0}, 
         ${room_amount || 0},
-        ${body.bill_type || (title.includes('จอง') || title.includes('มัดจำ') ? 'booking' : (title.includes('ซ่อม') || title.includes('ทำความสะอาด') ? 'service' : 'monthly'))}
+        ${common_fee || 0},
+        ${billType}
       )
     `;
 
-    // Notify tenant about new bill
-    try {
+    // Notify tenant about new bill (drafts are notified when sent)
+    if (!isDraft) try {
       const tenantUser = await sql`
         SELECT COALESCE(t.user_id, u.id) as user_id
         FROM tenants t
@@ -203,24 +224,23 @@ export async function POST(req: Request) {
         LIMIT 1
       `;
       if (tenantUser.length > 0 && tenantUser[0].user_id) {
-        await sql`
-          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-          VALUES (
-            ${tenantUser[0].user_id},
-            'ใบแจ้งหนี้ใหม่ประจำรอบบิล',
-            ${'มีใบแจ้งหนี้รอบบิล ' + (billing_cycle || '-') + ' จำนวน ฿' + Number(amount || 0).toLocaleString('th-TH') + ' กำหนดชำระภายใน ' + new Date(due_date).toLocaleDateString('th-TH')},
-            'billing',
-            0,
-            '/tenant/billing',
-            NOW()
-          )
-        `;
+        const { createUserNotification } = await import('@/lib/notifications');
+        await createUserNotification({
+          userId: tenantUser[0].user_id,
+          title: '📄 ใบแจ้งหนี้ใหม่ประจำรอบบิล',
+          message: `มีใบแจ้งหนี้รอบบิล ${normalizedCycle || '-'} จำนวน ฿${Number(amount || 0).toLocaleString('th-TH')} กำหนดชำระภายใน ${new Date(due_date).toLocaleDateString('th-TH')}`,
+          type: 'billing',
+          link: '/tenant/billing',
+        });
       }
     } catch (ne) {
       console.warn('Bill create notify warn:', ne);
     }
 
-    return NextResponse.json({ success: true, data: { id: (result as any).insertId, ...body } });
+    return NextResponse.json({
+      success: true,
+      data: { id: (result as any).insertId, ...body, tenant_id, title, amount, due_date, billing_cycle: normalizedCycle, electric_units, electric_amount, water_amount, room_amount, common_fee },
+    });
   } catch (err: any) {
     console.error('[Billing API POST] Error:', err);
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });

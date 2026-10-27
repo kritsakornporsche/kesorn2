@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { TURNSTILE_MOCK_TOKEN, turnstileSiteKey } from '@/lib/turnstile';
 
 declare global {
   interface Window {
@@ -40,17 +41,16 @@ export default function CloudflareTurnstile({
   const [isClient, setIsClient] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
-  // Cloudflare Turnstile Always-Pass test key for development/demo: 1x00000000000000000000AA
-  const siteKey =
-    process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY ||
-    '1x00000000000000000000AA';
+  // commit 26d: site key from the environment; Cloudflare's test key only in development (lib/turnstile)
+  const siteKey = turnstileSiteKey(process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY, process.env.NODE_ENV);
+  const devMode = process.env.NODE_ENV === 'development';
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
   useEffect(() => {
-    if (!isClient || !containerRef.current) return;
+    if (!isClient || !containerRef.current || !siteKey) return;
 
     // Check if script is already present
     const existingScript = document.getElementById('cf-turnstile-script');
@@ -119,6 +119,23 @@ export default function CloudflareTurnstile({
   }, [isClient, siteKey, onVerify, onError, onExpire]);
 
   // Fallback demo simulator button if script cannot be reached (offline or intranet)
+  if (!siteKey) {
+    return (
+      <div className={`p-3 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-xs font-bold text-rose-400 ${className}`}>
+        ระบบยืนยันว่าไม่ใช่บอท (Cloudflare Turnstile) ยังไม่ได้ตั้งค่า กรุณาแจ้งผู้ดูแลระบบ
+      </div>
+    );
+  }
+
+  // The script could not load: a mock button on a development machine only; elsewhere ask to try again
+  if (loadError && !devMode) {
+    return (
+      <div className={`p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs font-bold text-amber-500 ${className}`}>
+        โหลดระบบยืนยันว่าไม่ใช่บอทไม่สำเร็จ กรุณาตรวจการเชื่อมต่อแล้วลองใหม่
+      </div>
+    );
+  }
+
   if (loadError) {
     return (
       <div className={`p-3 bg-secondary/50 border border-border/80 rounded-2xl flex items-center justify-between gap-3 text-xs ${className}`}>
@@ -128,7 +145,7 @@ export default function CloudflareTurnstile({
         </div>
         <button
           type="button"
-          onClick={() => onVerify('cf-mock-token-success')}
+          onClick={() => onVerify(TURNSTILE_MOCK_TOKEN)}
           className="px-3 py-1.5 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 rounded-xl font-bold cursor-pointer transition-all active:scale-95 text-xs"
         >
           ✓ คลิกเพื่อยืนยันว่าไม่ใช่บอท

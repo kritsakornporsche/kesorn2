@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import bcrypt from 'bcryptjs';
+import { verifyPassword } from '@/lib/password';
+import { findLoginAccount } from '@/lib/login-lookup';
 
 export async function POST(request: Request) {
   try {
@@ -12,94 +13,35 @@ export async function POST(request: Request) {
     const inputNorm = email.toLowerCase().trim();
     const sql = getDb();
 
-    // Map role shortcuts to their official Kesorn 2 emails
-    const ROLE_SHORTCUT_MAP: Record<string, string> = {
-      tenant: 'tenant@kesorn.com',
-      owner: 'owner@kesorn.com',
-      admin: 'admin@smartdom.com',
-      maid: 'maid@kesorn.com',
-      tech: 'technician@kesorn.com',
-      technician: 'technician@kesorn.com',
-      researcher: 'researcher@kesorn.com',
-      guest: 'guest@kesorn.com',
-    };
-    const targetEmail = ROLE_SHORTCUT_MAP[inputNorm] || inputNorm;
+    const lookup = await findLoginAccount(sql, inputNorm);
+    if ('ambiguous' in lookup) {
+      return NextResponse.json({ success: false, message: 'ชื่อนี้ซ้ำกับหลายบัญชี กรุณาเข้าสู่ระบบด้วยอีเมล' }, { status: 409 });
+    }
 
-    const verifyPassword = async (storedHash: string): Promise<boolean> => {
-      if (!storedHash) return false;
-      if (storedHash.startsWith('$2')) {
-        const directMatch = await bcrypt.compare(password, storedHash);
-        if (directMatch) return true;
-        // Fallback: try lower-cased password in case user typed uppercase or capitalized
-        const lowerMatch = await bcrypt.compare(password.toLowerCase(), storedHash);
-        if (lowerMatch) return true;
-        if (password.toLowerCase() === 'tech' && await bcrypt.compare('technician', storedHash)) return true;
-        if (['tenant', 'tenant123', 'password', 'password123', '123456', 'Password123!', 'smartdom'].includes(password)) return true;
-        return false;
+    if ('found' in lookup) {
+      const { table, row: user } = lookup.found;
+      const isMatch = (await verifyPassword(password, user.password)).ok;
+      if (isMatch && !user.is_active) {
+        return NextResponse.json({ success: false, message: 'บัญชีนี้ถูกปิดใช้งาน' }, { status: 403 });
       }
-      if (storedHash.length === 64) {
-        const crypto = require('crypto');
-        const hash = crypto.createHash('sha256').update(password).digest('hex');
-        if (hash === storedHash) return true;
-        return crypto.createHash('sha256').update(password.toLowerCase()).digest('hex') === storedHash;
+      if (isMatch && table === 'platform_admins') {
+        return NextResponse.json({
+          success: true,
+          message: 'เข้าสู่ระบบสำเร็จ (Platform Admin)',
+          redirectUrl: '/explore',
+          user: { id: user.id, name: user.name, email: user.email, role: 'platform_admin', dormDbName: null },
+        });
       }
-      return password === storedHash || password.toLowerCase() === storedHash.toLowerCase() || (password.toLowerCase() === 'tech' && storedHash === 'technician') || ['tenant', 'tenant123', 'password', 'password123', '123456', 'Password123!', 'smartdom'].includes(password);
-    };
-
-    // ── 1. Check platform_admins ────────────────────────────────────────────
-    try {
-      const admins = await sql`
-        SELECT id, name, email, password, role FROM platform_admins
-        WHERE (
-          LOWER(email) = ${targetEmail} 
-          OR LOWER(email) = ${inputNorm} 
-          OR LOWER(name) = ${inputNorm}
-          OR SUBSTRING_INDEX(LOWER(email), '@', 1) = ${inputNorm}
-        ) AND is_active = TRUE LIMIT 1
-      `;
-      if (admins.length > 0) {
-        if (await verifyPassword(admins[0].password)) {
-          return NextResponse.json({
-            success: true,
-            message: 'เข้าสู่ระบบสำเร็จ (Platform Admin)',
-            redirectUrl: '/platform',
-            user: { ...admins[0], role: 'platform_admin', dormDbName: null },
-          });
-        } else {
-          return NextResponse.json({ success: false, message: 'รหัสผ่านไม่ถูกต้อง' }, { status: 401 });
-        }
-      }
-    } catch (e) { /* ignore */ }
-
-    // ── 2. Search users table (by email OR name/username OR role shortcut) ──
-    const users = await sql`
-      SELECT id, name, email, password, role, sub_role, is_active 
-      FROM users
-      WHERE (
-        LOWER(email) = ${targetEmail} 
-        OR LOWER(name) = ${inputNorm}
-        OR LOWER(email) = ${inputNorm}
-        OR SUBSTRING_INDEX(LOWER(email), '@', 1) = ${inputNorm}
-      )
-      ORDER BY (LOWER(email) = ${targetEmail}) DESC, (LOWER(email) = ${inputNorm}) DESC
-      LIMIT 1
-    `;
-
-    if (users.length > 0) {
-      const user = users[0];
-      const isMatch = await verifyPassword(user.password);
       if (isMatch) {
         const effectiveRole = user.role || 'guest';
         let redirectUrl = '/explore';
-        
-        if (effectiveRole === 'owner') redirectUrl = '/owner';
+
+        if (effectiveRole === 'owner' || effectiveRole === 'manager') redirectUrl = '/owner';
         else if (effectiveRole === 'tenant') redirectUrl = '/tenant';
         else if (effectiveRole === 'keeper') {
           if (user.sub_role === 'maid') redirectUrl = '/keeper/maid';
           else if (user.sub_role === 'technician') redirectUrl = '/keeper/technician';
           else redirectUrl = '/keeper';
-        } else if (effectiveRole === 'researcher') {
-          redirectUrl = '/researcher';
         }
 
         return NextResponse.json({

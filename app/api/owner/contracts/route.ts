@@ -1,17 +1,24 @@
 import { auth } from '@/auth';
+import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { createContract, temporaryPassword, contractMessage } from '@/lib/contracts';
+import { checkParty, hasPartyFields, type Party } from '@/lib/contract-party';
+import { issueMoveInBill, missingMessage, moveInStatus, recordSignedPaper } from '@/lib/moveIn';
+import { formDeposit, withPaperLink } from '@/lib/contract-files';
+import { formatBaht, formatThaiDate } from '@/lib/format';
+import { parseOccupants } from '@/lib/occupants';
+import { parsePhone } from '@/lib/phone';
+import { createUserNotification } from '@/lib/notifications';
 
 export async function GET(req: Request) {
   try {
     const session = await auth();
-    const role = (session?.user as any)?.role;
     if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
-      return NextResponse.json({ success: false, message: 'Forbidden: เฉพาะเจ้าของหอพัก' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
     const { searchParams } = new URL(req.url);
     const dormIdParam = searchParams.get('dormId');
     const userEmail = session.user.email;
@@ -51,6 +58,8 @@ export async function GET(req: Request) {
         c.renewal_requested,
         c.renewal_note,
         c.parent_contract_id,
+        c.paper_signed_date,
+        c.occupants,
         COALESCE(c.id_card_number, t.id_card_number, '') as id_card_number,
         COALESCE(c.tenant_address, t.address, '') as tenant_address,
         COALESCE(c.id_card_image, t.id_card_image, '') as id_card_image,
@@ -59,7 +68,8 @@ export async function GET(req: Request) {
         COALESCE(t.phone, u.phone, '') as tenant_phone,
         r.room_number,
         r.room_type,
-        r.price as monthly_rent
+        r.price as monthly_rent,
+        r.deposit_amount as room_deposit_amount
       FROM contracts c
       LEFT JOIN tenants t ON c.tenant_id = t.id
       LEFT JOIN users u ON t.user_id = u.id OR t.email = u.email
@@ -68,7 +78,7 @@ export async function GET(req: Request) {
       ORDER BY c.id DESC
     `;
 
-    return NextResponse.json({ success: true, data: contracts });
+    return NextResponse.json({ success: true, data: contracts.map((c: any) => ({ ...withPaperLink(c), form_deposit: formDeposit(c) })) });
   } catch (err: any) {
     console.error('[Contracts API GET] Error:', err);
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
@@ -78,13 +88,11 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    const role = (session?.user as any)?.role;
     if (!session?.user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
-      return NextResponse.json({ success: false, message: 'Forbidden: เฉพาะเจ้าของหอพัก' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
     const body = await req.json();
     const { 
       dormId,
@@ -97,12 +105,21 @@ export async function POST(req: Request) {
       deposit_amount, 
       contract_file_url,
       id_card_number,
-      tenant_address,
       id_card_image
     } = body;
+    let tenant_address = body.tenant_address;
 
     const sql = getDb();
     let tenantName = tenant_name;
+    // commit 28-8b: the pre-system tenant form sends the contract form's fields (lib/contract-party checkParty)
+    let party: Party | null = null;
+    if (hasPartyFields(body)) {
+      const p = checkParty(body);
+      if (!p.ok) return NextResponse.json({ success: false, reason: p.reason, message: p.message }, { status: 400 });
+      party = p.party;
+      tenantName = party.fullName;
+      tenant_address = party.addressText;
+    }
     let tenantEmail = tenant_email;
     let tenantPhone = tenant_phone;
 
@@ -130,119 +147,72 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // Check if room already has an active contract
-    const existingActiveContract = await sql`
-      SELECT id FROM contracts WHERE room_id = ${room_id} AND status = 'Active' LIMIT 1
-    `;
-    if (existingActiveContract.length > 0) {
-      return NextResponse.json({ 
-        success: false, 
-        message: 'ห้องพักนี้มีสัญญาที่มีสถานะ Active อยู่แล้ว ไม่สามารถสร้างสัญญาใหม่ซ้อนได้ กรุณายกเลิกหรือสิ้นสุดสัญญาเดิมก่อน' 
-      }, { status: 400 });
+    // The deposit is required: a number above zero (the form fills in the room's deposit from the server)
+    const depositNum = Number(deposit_amount);
+    if (deposit_amount === undefined || deposit_amount === null || deposit_amount === '' || !Number.isFinite(depositNum) || depositNum <= 0) {
+      return NextResponse.json({ success: false, message: 'กรุณาระบุเงินประกันเป็นตัวเลขมากกว่า 0' }, { status: 400 });
     }
 
-    const bcrypt = require('bcryptjs');
-
-    // 1. Check or create User account in `users` table
-    let users = await sql`SELECT id, primary_role FROM users WHERE email = ${tenantEmail.trim()} LIMIT 1`;
-    let userId: number;
-
-    if (users.length === 0) {
-      const defaultPasswordHash = await bcrypt.hash('smartdom', 12);
-      const userInsert = await sql`
-        INSERT INTO users (name, email, password, phone, role, primary_role)
-        VALUES (${tenantName.trim()}, ${tenantEmail.trim()}, ${defaultPasswordHash}, ${tenantPhone?.trim() || null}, 'tenant', 'tenant')
-      `;
-      userId = (userInsert as any).insertId;
-    } else {
-      userId = users[0].id;
-      // Upgrade role to tenant if current role is guest/user
-      await sql`
-        UPDATE users 
-        SET role = 'tenant',
-            primary_role = 'tenant', 
-            name = COALESCE(${tenantName.trim()}, name),
-            phone = COALESCE(${tenantPhone?.trim() || null}, phone)
-        WHERE id = ${userId}
-      `;
+    // Another deposit amount is allowed only for a tenant who lived here before the system, by the owner, with a reason
+    const outsideSystem = body.deposit_outside_system === true || body.deposit_outside_system === 'true';
+    if (outsideSystem && guard.user.role !== 'owner') {
+      return NextResponse.json({ success: false, message: 'กำหนดเงินประกันเอง (ผู้เช่าเดิม) ทำได้เฉพาะเจ้าของหอ' }, { status: 403 });
     }
 
-    const targetDormId = dormId || 1;
+    const occ = parseOccupants(body.occupants);
+    if (!occ.ok) return NextResponse.json({ success: false, message: occ.message }, { status: 400 });
+    // commit 28a: phones digits only, 9–10 digits (lib/phone)
+    const tph = parsePhone(tenantPhone);
+    if (!tph.ok) return NextResponse.json({ success: false, message: tph.message }, { status: 400 });
+    tenantPhone = tph.value;
+    const pph = parsePhone(body.parent_phone);
+    if (!pph.ok) return NextResponse.json({ success: false, message: pph.message }, { status: 400 });
 
-    // 2. Check or create Tenant record in `tenants` table
-    let tenants = await sql`SELECT id FROM tenants WHERE email = ${tenantEmail.trim()} OR user_id = ${userId} LIMIT 1`;
-    let tenantId: number;
-
-    if (tenants.length === 0) {
-      const tenantInsert = await sql`
-        INSERT INTO tenants (name, email, phone, room_id, user_id, id_card_number, id_card_image, address, status, move_in_date, dorm_id)
-        VALUES (${tenantName.trim()}, ${tenantEmail.trim()}, ${tenantPhone?.trim() || null}, ${room_id}, ${userId}, NULL, NULL, ${tenant_address?.trim() || null}, 'active', ${start_date}, ${targetDormId})
-      `;
-      tenantId = (tenantInsert as any).insertId;
-    } else {
-      tenantId = tenants[0].id;
-      await sql`
-        UPDATE tenants 
-        SET room_id = ${room_id}, 
-            name = ${tenantName.trim()}, 
-            phone = ${tenantPhone?.trim() || null},
-            user_id = ${userId},
-            status = 'active',
-            move_in_date = ${start_date},
-            move_out_date = NULL,
-            dorm_id = ${targetDormId},
-            id_card_number = NULL,
-            id_card_image = NULL,
-            address = COALESCE(${tenant_address?.trim() || null}, address)
-        WHERE id = ${tenantId}
-      `;
+    // commit 28-7: this form records a tenant who lived here before the system (new tenants go through walk-in → steps
+    // 3–7): the room must be free (no booking / contract holding it) and the parent phone is kept.
+    // Account + Active contract through the single contract service (room becomes Occupied).
+    // A new account gets a random temporary password, returned once so the owner can pass it on.
+    const tempPassword = temporaryPassword();
+    const created = await createContract({
+      account: {
+        email: tenantEmail.trim(),
+        name: tenantName.trim(),
+        phone: tenantPhone?.trim() || null,
+        idCardNumber: id_card_number?.trim() || null,
+        idCardImage: id_card_image || null,
+        address: tenant_address?.trim() || null,
+        role: 'tenant',
+        newPassword: tempPassword,
+      },
+      roomId: Number(room_id),
+      startDate: start_date,
+      endDate: end_date,
+      depositAmount: depositNum,
+      status: 'Active',
+      contractFileUrl: contract_file_url || null,
+      idCardNumber: id_card_number?.trim() || null,
+      idCardImage: id_card_image || null,
+      tenantAddress: tenant_address?.trim() || null,
+      party,
+      occupants: occ.value,
+      depositOutsideSystem: outsideSystem ? { reason: String(body.deposit_note || '') } : null,
+      requireRoomFree: true,
+      parentPhone: pph.value,
+    });
+    if (!created.ok) {
+      return NextResponse.json({ success: false, message: contractMessage(created) }, { status: 400 });
     }
+    const { contractId, tenantId, userId, createdUser } = created;
 
-    // 3. Assign role in `user_dorm_roles` table
-    const existingRoles = await sql`
-      SELECT id FROM user_dorm_roles WHERE user_id = ${userId} AND dorm_id = ${targetDormId} LIMIT 1
-    `;
-    if (existingRoles.length === 0) {
-      await sql`
-        INSERT INTO user_dorm_roles (user_id, dorm_id, role)
-        VALUES (${userId}, ${targetDormId}, 'tenant')
-      `;
-    }
-
-    // 4. Save Contract without storing 13-digit ID number or ID card image (PDPA Privacy by Design)
-    const contractInsert = await sql`
-      INSERT INTO contracts (
-        tenant_id, room_id, start_date, end_date, deposit_amount, status, contract_file_url,
-        id_card_number, tenant_address, id_card_image
-      )
-      VALUES (
-        ${tenantId}, ${room_id}, ${start_date}, ${end_date}, ${deposit_amount || 0}, 'Active', ${contract_file_url || null},
-        NULL, ${tenant_address?.trim() || null}, NULL
-      )
-    `;
-    const contractId = (contractInsert as any).insertId;
-
-    // 5. Update room status to 'Occupied'
-    await sql`
-      UPDATE rooms 
-      SET status = 'Occupied' 
-      WHERE id = ${room_id}
-    `;
-
-    // 6. Send welcome notification to tenant
+    // 6. Send welcome notification to tenant (In-app + Web Push)
     try {
-      await sql`
-        INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-        VALUES (
-          ${userId},
-          'สัญญาเช่าของคุณพร้อมใช้งานแล้ว',
-          ${'ยินดีต้อนรับสู่หอพัก สัญญาเช่าห้องพักของคุณได้รับการบันทึกเรียบร้อยแล้ว'},
-          'contract_created',
-          0,
-          '/tenant/contract',
-          NOW()
-        )
-      `;
+      await createUserNotification({
+        userId,
+        title: '🎉 สัญญาเช่าของคุณพร้อมใช้งานแล้ว',
+        message: 'ยินดีต้อนรับสู่หอพัก สัญญาเช่าห้องพักของคุณได้รับการบันทึกเรียบร้อยแล้ว',
+        type: 'contract_created',
+        link: '/tenant/contract',
+      });
     } catch (ne) {
       console.warn('Welcome contract notify warn:', ne);
     }
@@ -252,7 +222,9 @@ export async function POST(req: Request) {
       message: 'บันทึกสัญญาเช่าและปรับสถานะผู้เช่าสำเร็จเรียบร้อยแล้ว',
       contractId,
       tenantId,
-      userId
+      userId,
+      // Only for an account created now; never stored or logged
+      ...(createdUser ? { tempPassword } : {}),
     });
   } catch (err: any) {
     console.error('[Contracts API POST] Error:', err);
@@ -260,60 +232,47 @@ export async function POST(req: Request) {
   }
 }
 
+// PATCH { contractId, file, signedDate, confirm: true } — step 5: record the signed paper contract (stored outside
+// public/) and the date it was signed, after steps 3 and 4. The contract takes effect when its move-in bill is paid
+// (lib/moveIn.ts).
 export async function PATCH(req: Request) {
   try {
-    const session = await auth();
-    const role = (session?.user as any)?.role;
-    if (!session?.user) {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-    }
-    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
-      return NextResponse.json({ success: false, message: 'Forbidden: เฉพาะเจ้าของหอพัก' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
     const body = await req.json();
-    const { contractId, contract_file_url } = body;
-
-    if (!contractId || !contract_file_url) {
-      return NextResponse.json({ success: false, message: 'ข้อมูลไม่ครบถ้วน (ต้องการ contractId และ contract_file_url)' }, { status: 400 });
+    const contractId = Number(body.contractId);
+    if (!contractId) {
+      return NextResponse.json({ success: false, message: 'ข้อมูลไม่ครบถ้วน (ต้องการ contractId)' }, { status: 400 });
     }
 
-    const sql = getDb();
-    await sql`
-      UPDATE contracts 
-      SET contract_file_url = ${contract_file_url} 
-      WHERE id = ${contractId}
-    `;
+    const result = await recordSignedPaper(contractId, { file: body.file, signedDate: body.signedDate, by: guard.user.id, confirmed: body.confirm === true }, new Date());
+    if (!result.ok) {
+      return NextResponse.json({ success: false, message: result.message, reason: result.reason }, { status: moveInStatus(result.reason) });
+    }
 
-    // Also notify tenant that the physically signed contract has been recorded
-    try {
-      const contractRows = await sql`
-        SELECT c.tenant_id, t.user_id 
-        FROM contracts c 
-        JOIN tenants t ON c.tenant_id = t.id 
-        WHERE c.id = ${contractId} 
-        LIMIT 1
-      `;
-      if (contractRows.length > 0 && contractRows[0].user_id) {
-        await sql`
-          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-          VALUES (
-            ${contractRows[0].user_id},
-            'บันทึกรูปสัญญาเช่าฉบับลงนามจริงแล้ว',
-            'เจ้าของหอพักได้อัปโหลดรูปภาพสัญญาเช่าฉบับลงนามจริงเก็บไว้ในระบบเรียบร้อยแล้ว',
-            'contract_signed',
-            0,
-            '/tenant/contract',
-            NOW()
-          )
-        `;
+    if (result.tenantUserId) {
+      try {
+        await createUserNotification({
+          userId: result.tenantUserId,
+          title: result.activated ? '🎉 สัญญาเช่ามีผลสมบูรณ์แล้ว' : '📝 บันทึกสัญญาเช่าฉบับลงนามแล้ว',
+          message: result.activated
+            ? 'หอพักบันทึกสัญญาที่เซ็นแล้วและบิลเข้าอยู่ชำระครบ สัญญาของคุณมีผลสมบูรณ์แล้ว'
+            : 'หอพักบันทึกสัญญาเช่าฉบับลงนามเก็บไว้ในระบบแล้ว',
+          type: 'contract_signed',
+          link: result.activated ? '/tenant' : '/guest',
+        });
+      } catch (ne) {
+        console.warn('Notify signed contract warn:', ne);
       }
-    } catch (ne) {
-      console.warn('Notify signed contract warn:', ne);
     }
 
     return NextResponse.json({
       success: true,
-      message: 'บันทึกรูปภาพสัญญาเช่าฉบับลงนามจริงเข้าระบบเรียบร้อยแล้ว'
+      activated: result.activated,
+      missing: result.missing,
+      message: result.activated
+        ? 'บันทึกสัญญาที่เซ็นแล้ว — สัญญามีผลแล้ว'
+        : result.missing.includes('move_in_bill') && !result.missing.includes('paper') ? 'บันทึกสัญญาที่ลงนามแล้ว — ขั้นถัดไป: ออกบิลค่าแรกเข้า' : result.missing.length > 0 ? `บันทึกสัญญาที่เซ็นแล้ว — ${missingMessage(result.missing)}` : 'บันทึกสัญญาที่เซ็นแล้ว',
     });
   } catch (err: any) {
     console.error('[Contracts API PATCH] Error:', err);
@@ -321,203 +280,82 @@ export async function PATCH(req: Request) {
   }
 }
 
+// PUT { contract_id, initial_meter_reading } — step 6: issue the move-in bill (amounts from the room on the server, never
+// from the page) with the starting meter, only when steps 3–5 are done (409 with what is missing). Rules live in lib/moveIn.ts.
 export async function PUT(req: Request) {
   try {
-    const session = await auth();
-    const role = (session?.user as any)?.role;
-    if (!session?.user) {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-    }
-    if (role !== 'owner' && role !== 'keeper' && role !== 'platform_admin') {
-      return NextResponse.json({ success: false, message: 'Forbidden: เฉพาะเจ้าของหอพัก' }, { status: 403 });
-    }
+    const guard = await requireRole(['owner', 'manager']);
+    if ('response' in guard) return guard.response;
 
     const body = await req.json();
-    const { contract_id, contract_file_url, status, create_first_bill, monthly_rent, deposit_extra } = body;
-
-    if (!contract_id) {
+    const contractId = Number(body.contract_id || body.contractId);
+    if (!contractId) {
       return NextResponse.json({ success: false, message: 'Missing contract_id' }, { status: 400 });
     }
 
-    const sql = getDb();
-
-    // 1. Check existing contract
-    const contracts = await sql`
-      SELECT c.*, t.id as tenant_id, t.user_id, t.email as tenant_email, r.room_number, r.dorm_id
-      FROM contracts c
-      LEFT JOIN tenants t ON c.tenant_id = t.id
-      LEFT JOIN rooms r ON c.room_id = r.id
-      WHERE c.id = ${contract_id}
-      LIMIT 1
-    `;
-
-    if (contracts.length === 0) {
-      return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลสัญญาเช่า' }, { status: 404 });
+    const rawMeter = body.initial_meter_reading;
+    const meter = Number(rawMeter);
+    if (rawMeter === null || rawMeter === undefined || String(rawMeter).trim() === '' || !Number.isFinite(meter) || meter < 0) {
+      return NextResponse.json({ success: false, message: 'กรุณากรอกเลขมิเตอร์ไฟฟ้าเริ่มต้น (บังคับตอนทำสัญญา)' }, { status: 400 });
     }
 
-    const contract = contracts[0];
-    let savedFileUrl = contract_file_url;
+    const now = new Date();
 
-    // If Base64 string was sent, save it to disk in public/uploads/contracts
-    if (contract_file_url && contract_file_url.startsWith('data:')) {
+    // If signed paper file is provided in the combined step, record it first
+    if (body.file && body.signedDate) {
+      const paperRes = await recordSignedPaper(contractId, {
+        file: body.file,
+        signedDate: body.signedDate,
+        by: guard.user.id,
+        confirmed: body.confirm === true,
+      }, now);
+      if (!paperRes.ok) {
+        return NextResponse.json({ success: false, message: paperRes.message, reason: paperRes.reason }, { status: moveInStatus(paperRes.reason) });
+      }
+    }
+
+    // Name, address and occupants are confirmed in step 3 (lib/contract-data.ts) — nothing else is taken here
+    const result = await issueMoveInBill(contractId, {
+      startMeter: body.initial_meter_reading,
+      by: guard.user.id,
+      meterPhoto: body.meter_photo,
+      meterNote: body.meter_note,
+    }, now);
+    if (!result.ok) {
+      return NextResponse.json({ success: false, message: result.message, reason: result.reason }, { status: moveInStatus(result.reason) });
+    }
+
+    if (result.tenantUserId) {
       try {
-        const fs = require('fs');
-        const path = require('path');
-        const match = contract_file_url.match(/^data:([^;]+);base64,(.+)$/);
-        if (match) {
-          const mimeType = match[1];
-          const base64Data = match[2];
-          const ext = mimeType.includes('pdf') ? 'pdf' : mimeType.includes('png') ? 'png' : 'jpg';
-          const filename = `contract_${contract_id}_${Date.now()}.${ext}`;
-          const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'contracts');
-          if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-          }
-          const filePath = path.join(uploadDir, filename);
-          fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-          savedFileUrl = `/uploads/contracts/${filename}`;
-        }
-      } catch (err) {
-        console.error('[Save Contract File Error]', err);
-      }
-    }
-
-    const nextStatus = status || 'PendingFirstBill';
-
-    // 2. Update Contract status and file url
-    await sql`
-      UPDATE contracts 
-      SET 
-        contract_file_url = COALESCE(${savedFileUrl || null}, contract_file_url),
-        status = ${nextStatus}
-      WHERE id = ${contract_id}
-    `;
-
-    // 3. Create First Bill if requested
-    if (create_first_bill && contract.tenant_id) {
-      const rentAmount = Number(monthly_rent || 3400);
-      const extraDeposit = Number(deposit_extra || 2000);
-      const totalAmount = rentAmount + extraDeposit;
-      const now = new Date();
-      const cycleStr = `${now.getMonth() + 1}/${now.getFullYear()}`;
-      
-      const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + 7);
-      const dueDateStr = dueDate.toISOString().split('T')[0];
-
-      // Record initial electric meter reading if provided (anti-cheat base)
-      const { initial_meter_reading } = body;
-      if (initial_meter_reading !== undefined && initial_meter_reading !== null && contract.room_id) {
-        const initVal = parseFloat(initial_meter_reading) || 0;
-        const currentMonthCycle = new Date().toISOString().substring(0, 7);
-        try {
-          // Check if meter reading exists for this cycle or insert new base reading
-          const existingMeter = await sql`
-            SELECT id FROM meter_readings 
-            WHERE room_id = ${contract.room_id} AND type = 'Electricity' AND billing_cycle = ${currentMonthCycle}
-            LIMIT 1
-          `;
-          if (existingMeter.length > 0) {
-            await sql`
-              UPDATE meter_readings
-              SET previous_reading = ${initVal}, current_reading = ${initVal}, units_used = 0
-              WHERE id = ${existingMeter[0].id}
-            `;
-          } else {
-            await sql`
-              INSERT INTO meter_readings (
-                dorm_id, room_id, type, previous_reading, current_reading, units_used, billing_cycle
-              ) VALUES (
-                ${contract.dorm_id || 1}, ${contract.room_id}, 'Electricity', ${initVal}, ${initVal}, 0, ${currentMonthCycle}
-              )
-            `;
-          }
-        } catch (mErr) {
-          console.error('[Record Initial Meter Error]', mErr);
-        }
-      }
-
-      // Check if first bill already exists
-      const existingBills = await sql`
-        SELECT id FROM bills 
-        WHERE tenant_id = ${contract.tenant_id} AND (is_first_bill = 1 OR bill_type = 'booking')
-        LIMIT 1
-      `;
-
-      if (existingBills.length === 0) {
-        await sql`
-          INSERT INTO bills (
-            tenant_id,
-            dorm_id,
-            room_number,
-            title,
-            amount,
-            room_amount,
-            billing_cycle,
-            due_date,
-            status,
-            is_first_bill,
-            bill_type,
-            created_at
-          ) VALUES (
-            ${contract.tenant_id},
-            ${contract.dorm_id || 1},
-            ${contract.room_number || '-'},
-            ${'บิลค่าแรกเข้า (ค่าห้องเดือนแรก ฿' + rentAmount.toLocaleString() + ' + เงินประกันเพิ่ม ฿' + extraDeposit.toLocaleString() + ')'},
-            ${totalAmount},
-            ${rentAmount},
-            ${cycleStr},
-            ${dueDateStr},
-            'Unpaid',
-            1,
-            'booking',
-            NOW()
-          )
-        `;
-      } else {
-        // Update existing bill with new amount and Unpaid status
-        await sql`
-          UPDATE bills 
-          SET 
-            amount = ${totalAmount},
-            room_amount = ${rentAmount},
-            title = ${'บิลค่าแรกเข้า (ค่าห้องเดือนแรก ฿' + rentAmount.toLocaleString() + ' + เงินประกันเพิ่ม ฿' + extraDeposit.toLocaleString() + ')'},
-            due_date = ${dueDateStr},
-            status = 'Unpaid'
-          WHERE id = ${existingBills[0].id}
-        `;
-      }
-    }
-
-    // 4. Send notification to guest/tenant
-    if (contract.user_id) {
-      try {
-        await sql`
-          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-          VALUES (
-            ${contract.user_id},
-            'เจ้าของหอพักอัปโหลดสัญญาเช่าและออกบิลแรกเข้าแล้ว',
-            'กรุณาตรวจสอบเอกสารสัญญาเช่าและชำระบิลค่าแรกเข้าเพื่อเข้าสู่ขั้นตอนการเข้าพัก',
-            'contract_ready',
-            0,
-            '/guest',
-            NOW()
-          )
-        `;
+        const notifMsg = result.isLateMoveIn
+          ? `กรุณาชำระบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} (เข้าพักล่าช้า) เพื่อเปิดใช้งานสัญญาและรับกุญแจห้องพัก`
+          : `กรุณาชำระบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} ภายในวันเริ่มสัญญา ${formatThaiDate(result.dueDate)} — หากไม่ชำระ สัญญาจะถูกยกเลิกและค่าจองไม่คืน`;
+        await createUserNotification({
+          userId: result.tenantUserId,
+          title: '📄 หอพักออกบิลค่าแรกเข้าแล้ว',
+          message: notifMsg,
+          type: 'contract_ready',
+          link: '/guest',
+        });
       } catch (ne) {
         console.warn('Notify guest warn:', ne);
       }
     }
 
+    const message = result.isLateMoveIn
+      ? `บันทึกสัญญาและออกบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} เรียบร้อยแล้ว (หมายเหตุ: เข้าพักล่าช้ากว่าวันเริ่มสัญญา)`
+      : `บันทึกสัญญาและออกบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} เรียบร้อยแล้ว`;
+
     return NextResponse.json({
       success: true,
-      message: 'บันทึกสัญญาและส่งบิลค่าแรกเข้าไปยัง Guest เรียบร้อยแล้ว',
-      fileUrl: savedFileUrl
+      message,
+      billId: result.billId,
+      amount: result.dueAtMoveIn,
+      dueDate: result.dueDate,
+      isLateMoveIn: result.isLateMoveIn,
     });
   } catch (err: any) {
     console.error('[Contracts API PUT] Error:', err);
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
 }
-
-
