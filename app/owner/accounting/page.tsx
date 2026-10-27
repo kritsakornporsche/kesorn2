@@ -91,9 +91,9 @@ export default function OwnerAccounting() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-secondary/40">
-      <header className="h-20 bg-card/60 backdrop-blur-md border-b border-white/20/10 flex items-center justify-between px-10 shrink-0 sticky top-0 z-10">
+      <header className="h-20 bg-card/60 backdrop-blur-md border-b border-border flex items-center justify-between px-10 shrink-0 sticky top-0 z-10">
         <div>
-          <h1 className="text-xl font-black tracking-tight text-white">บัญชีหอพัก</h1>
+          <h1 className="text-xl font-black tracking-tight text-foreground">บัญชีหอพัก</h1>
           <p className="text-[10px] font-bold text-foreground/50 uppercase tracking-widest mt-0.5">Dormitory Accounting</p>
         </div>
         <button
@@ -112,7 +112,7 @@ export default function OwnerAccounting() {
           )}
           {/* KPI Row */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-            <div className="bg-card border border-white/20/10 shadow-sm rounded-2xl p-6">
+            <div className="bg-card border border-border shadow-sm rounded-2xl p-6">
               <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider mb-1">รายรับรวม</p>
               <p className="text-3xl font-black text-[#10B981]">฿{fmt(totals.income)}</p>
               {totals.depositReclass !== 0 && (
@@ -121,32 +121,32 @@ export default function OwnerAccounting() {
                 </p>
               )}
             </div>
-            <div className="bg-card border border-white/20/10 shadow-sm rounded-2xl p-6">
+            <div className="bg-card border border-border shadow-sm rounded-2xl p-6">
               <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider mb-1">รายจ่ายรวม</p>
               <p className="text-3xl font-black text-[#EF4444]">฿{fmt(totals.expense)}</p>
             </div>
-            <div className="bg-card border border-white/20/10 shadow-sm rounded-2xl p-6">
+            <div className="bg-card border border-border shadow-sm rounded-2xl p-6">
               <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider mb-1">กำไรสุทธิ</p>
-              <p className={`text-3xl font-black ${totals.profit >= 0 ? 'text-white' : 'text-[#EF4444]'}`}>
+              <p className={`text-3xl font-black ${totals.profit >= 0 ? 'text-foreground' : 'text-[#EF4444]'}`}>
                 ฿{fmt(totals.profit)}
               </p>
             </div>
-            <div className="bg-card border border-white/20/10 shadow-sm rounded-2xl p-6">
+            <div className="bg-card border border-border shadow-sm rounded-2xl p-6">
               <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider mb-1">เงินประกันที่ถืออยู่ (หนี้สิน)</p>
-              <p className="text-3xl font-black text-sky-400">฿{fmt(totals.depositsHeld)}</p>
+              <p className="text-3xl font-black text-sky-600">฿{fmt(totals.depositsHeld)}</p>
               <p className="text-[10px] text-muted-foreground mt-1">ต้องคืนผู้เช่า · ไม่นับเป็นรายได้</p>
             </div>
           </div>
 
           {/* Transaction Table */}
-          <div className="bg-card border border-white/20/10 shadow-sm rounded-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-white/20/10 bg-card">
-              <h3 className="text-white font-bold">รายการทั้งหมด</h3>
+          <div className="bg-card border border-border shadow-sm rounded-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-border bg-card">
+              <h3 className="text-foreground font-bold">รายการทั้งหมด</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[600px]">
                 <thead>
-                  <tr className="border-b border-white/20/10">
+                  <tr className="border-b border-border">
                     <th className="text-left px-6 py-3 text-muted-foreground text-xs uppercase tracking-widest font-bold">วันที่</th>
                     <th className="text-left px-6 py-3 text-muted-foreground text-xs uppercase tracking-widest font-bold">ประเภท</th>
                     <th className="text-left px-6 py-3 text-muted-foreground text-xs uppercase tracking-widest font-bold">หมวด</th>
@@ -154,29 +154,29 @@ export default function OwnerAccounting() {
                     <th className="text-right px-6 py-3 text-muted-foreground text-xs uppercase tracking-widest font-bold">จำนวน</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E5DFD3]">
+                <tbody className="divide-y divide-border">
                   {transactions.length === 0 ? (
                     <tr><td colSpan={5} className="px-6 py-12 text-center text-muted-foreground text-sm">ยังไม่มีรายการ</td></tr>
                   ) : transactions.map(t => (
-                    <tr key={t.id} className="hover:bg-card transition-colors">
-                      <td className="px-6 py-4 text-white/80">{t.transaction_date ? new Date(t.transaction_date).toLocaleDateString('th-TH') : '-'}</td>
+                    <tr key={t.id} className="hover:bg-secondary/40 transition-colors">
+                      <td className="px-6 py-4 text-foreground/80">{t.transaction_date ? new Date(t.transaction_date).toLocaleDateString('th-TH') : '-'}</td>
                       <td className="px-6 py-4">
                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
                           t.type === 'Income' ? 'bg-[#10B981]/10 text-[#10B981]'
-                            : t.type === 'Liability' ? 'bg-sky-500/10 text-sky-400'
+                            : t.type === 'Liability' ? 'bg-sky-50 text-sky-700 border border-sky-200'
                             : 'bg-[#EF4444]/10 text-[#EF4444]'
                         }`}>{t.type === 'Income' ? 'รายรับ' : t.type === 'Liability' ? 'หนี้สิน' : 'รายจ่าย'}</span>
                         {t.legacy && (
-                          <span className="ml-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-white/60" title="บันทึกก่อนแยกเงินประกันเป็นหนี้สิน">ข้อมูลแบบเดิม</span>
+                          <span className="ml-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200" title="บันทึกก่อนแยกเงินประกันเป็นหนี้สิน">ข้อมูลแบบเดิม</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-white/80">{t.category_label || t.category}</td>
-                      <td className="px-6 py-4 text-white">{t.description || '-'}{t.is_test_room && <TestRoomBadge force />}</td>
+                      <td className="px-6 py-4 text-foreground/80">{t.category_label || t.category}</td>
+                      <td className="px-6 py-4 text-foreground">{t.description || '-'}{t.is_test_room && <TestRoomBadge force />}</td>
                       {(() => {
                         // Income adds, expense subtracts; a reversal has a negative amount.
                         // Liability rows change the deposit held (received +, refunded/forfeited −), not profit.
                         const signed = t.type === 'Expense' ? -Number(t.amount) : Number(t.amount);
-                        const color = t.type === 'Liability' ? 'text-sky-400' : signed >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]';
+                        const color = t.type === 'Liability' ? 'text-sky-600' : signed >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]';
                         return (
                           <td className={`px-6 py-4 text-right font-bold ${color}`}>
                             {signed >= 0 ? '+' : '-'}฿{fmt(Math.abs(signed))}
@@ -188,7 +188,7 @@ export default function OwnerAccounting() {
                 </tbody>
               </table>
             </div>
-            <p className="px-6 py-3 border-t border-white/20/10 text-[11px] text-muted-foreground">
+            <p className="px-6 py-3 border-t border-border text-[11px] text-muted-foreground">
               แสดง 100 รายการล่าสุด · ยอดรวมด้านบนคิดจากทุกรายการ · เงินประกันบันทึกเป็น "หนี้สิน" (ไม่รวมในรายรับ/กำไร) ·
               แถวที่ติดป้าย "ข้อมูลแบบเดิม" บันทึกก่อนแยกเงินประกัน (ค่าจองเป็นรายรับ, คืนประกันเป็นรายจ่าย)
             </p>
@@ -198,16 +198,16 @@ export default function OwnerAccounting() {
 
       {/* Add Transaction Modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto" onClick={() => setShowForm(false)}>
-          <div className="bg-card border border-white/20/10 rounded-2xl p-6 sm:p-8 w-full max-w-md shadow-2xl my-auto" onClick={e => e.stopPropagation()}>
-            <h2 className="text-white font-black text-lg mb-6">บันทึกรายการใหม่</h2>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto" onClick={() => setShowForm(false)}>
+          <div className="bg-card border border-border rounded-2xl p-6 sm:p-8 w-full max-w-md shadow-2xl my-auto" onClick={e => e.stopPropagation()}>
+            <h2 className="text-foreground font-black text-lg mb-6">บันทึกรายการใหม่</h2>
             <div className="space-y-4">
               <div>
                 <label className="text-muted-foreground text-xs font-bold uppercase tracking-wider block mb-1.5">ประเภท</label>
                 <select
                   value={form.type}
                   onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
-                  className="w-full bg-card border border-white/20/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-primary"
+                  className="w-full bg-card border border-border rounded-xl px-4 py-3 text-foreground text-sm focus:outline-none focus:border-primary"
                 >
                   <option value="Income">รายรับ (Income)</option>
                   <option value="Expense">รายจ่าย (Expense)</option>
@@ -218,7 +218,7 @@ export default function OwnerAccounting() {
                 <input
                   value={form.category}
                   onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                  className="w-full bg-card border border-white/20/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-primary"
+                  className="w-full bg-card border border-border rounded-xl px-4 py-3 text-foreground text-sm focus:outline-none focus:border-primary"
                   placeholder="เช่น ค่าเช่า, ค่าซ่อมบำรุง"
                 />
               </div>
@@ -229,7 +229,7 @@ export default function OwnerAccounting() {
                     type="number" {...NUMBER_INPUT_PROPS}
                     value={form.amount}
                     onChange={e => setForm(f => ({ ...f, amount: Number(e.target.value) }))}
-                    className="w-full bg-card border border-white/20/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-primary"
+                    className="w-full bg-card border border-border rounded-xl px-4 py-3 text-foreground text-sm focus:outline-none focus:border-primary"
                   />
                 </div>
                 <div>
@@ -238,7 +238,7 @@ export default function OwnerAccounting() {
                     aria-label="วันที่รายการ"
                     value={form.transaction_date}
                     onChange={(v) => setForm(f => ({ ...f, transaction_date: v }))}
-                    className="w-full bg-card border border-white/20/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-primary"
+                    className="w-full bg-card border border-border rounded-xl px-4 py-3 text-foreground text-sm focus:outline-none focus:border-primary"
                   />
                 </div>
               </div>
@@ -247,12 +247,12 @@ export default function OwnerAccounting() {
                 <input
                   value={form.description}
                   onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                  className="w-full bg-card border border-white/20/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-primary"
+                  className="w-full bg-card border border-border rounded-xl px-4 py-3 text-foreground text-sm focus:outline-none focus:border-primary"
                   placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"
                 />
               </div>
               <div className="flex gap-3 pt-2">
-                <button onClick={() => setShowForm(false)} className="flex-1 py-3 bg-card text-muted-foreground rounded-xl font-bold text-sm hover:bg-white/10 transition-colors border border-white/20/10">ยกเลิก</button>
+                <button onClick={() => setShowForm(false)} className="flex-1 py-3 bg-secondary text-foreground rounded-xl font-bold text-sm hover:bg-secondary/80 transition-colors border border-border">ยกเลิก</button>
                 <button onClick={handleSubmit} className="flex-1 py-3 bg-primary text-white rounded-xl font-bold text-sm hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20">บันทึก</button>
               </div>
             </div>

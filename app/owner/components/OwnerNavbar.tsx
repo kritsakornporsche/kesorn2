@@ -5,7 +5,6 @@ import { useSession } from 'next-auth/react';
 import { handleSignOut } from '@/lib/auth-client';
 import { useState, useEffect } from 'react';
 import NotificationsPopover from '@/components/NotificationsPopover';
-import ThemeToggle from '@/app/components/ThemeToggle';
 
 interface OwnerNavbarProps {
   onToggleMobileMenu?: () => void;
@@ -148,9 +147,6 @@ export default function OwnerNavbar({ onToggleMobileMenu, role }: OwnerNavbarPro
 
         {/* Notifications Popover */}
         <NotificationsPopover />
-
-        {/* Theme Toggle Button */}
-        <ThemeToggle />
 
         {/* User Info (Desktop only, shown in Mobile Drawer) */}
         <div className="hidden md:block text-right pl-2 border-l border-border">

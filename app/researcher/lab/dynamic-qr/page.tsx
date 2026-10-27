@@ -385,6 +385,29 @@ export default function Module2DynamicQrLabPage() {
                 </div>
               </div>
 
+              {session.screenshotDataUrl && (
+                <div className="p-3 rounded-2xl bg-slate-950 border border-white/10 text-left space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-300 font-bold">📷 หลักฐานเงินเข้า (แคปหน้าจอ):</span>
+                    <a
+                      href={session.screenshotDataUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-sky-400 hover:text-sky-300 font-bold underline"
+                    >
+                      เปิดดูภาพเต็ม ↗
+                    </a>
+                  </div>
+                  <div className="max-h-48 overflow-hidden rounded-xl border border-white/10 bg-black/60 flex items-center justify-center">
+                    <img
+                      src={session.screenshotDataUrl}
+                      alt="หลักฐานเงินเข้า"
+                      className="max-h-48 w-auto object-contain"
+                    />
+                  </div>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={() => createQr(parseFloat(amountInput) || 1, enableSatang, selectedRoom, tenantName)}

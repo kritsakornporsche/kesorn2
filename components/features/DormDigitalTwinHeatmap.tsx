@@ -96,7 +96,7 @@ export function DormDigitalTwinHeatmap() {
       if (currentPerm === 'default' && typeof window !== 'undefined' && 'Notification' in window) {
         try {
           currentPerm = await Notification.requestPermission();
-          setPushPermission(currentPerm);
+          setPushPermission(currentPerm as NotificationPermission | 'unsupported');
         } catch {
           // ignore
         }
@@ -919,8 +919,8 @@ export function DormDigitalTwinHeatmap() {
                   roomNumber={selectedRoom.roomNumber}
                   tenantName={selectedRoom.tenantName || `ผู้เช่าห้อง ${selectedRoom.roomNumber}`}
                   billTitle={`บิลค่าเช่าและน้ำไฟ ห้อง ${selectedRoom.roomNumber}`}
-                  baseAmount={1.0}
-                  onPaidSuccess={() => {
+                  amount={1.0}
+                  onPaid={() => {
                     updateRoomState(
                       selectedRoom.roomNumber,
                       { billingStatus: 'PAID' },

@@ -19,7 +19,7 @@ export async function GET() {
     }
     
     const userResult = await sql`
-      SELECT id, email, name, role, primary_role, created_at, image_url, phone, bio
+      SELECT id, email, name, role, primary_role, created_at, image_url, phone, parent_phone, party_data, bio
       FROM users
       WHERE email = ${session.user.email}
     `;
@@ -29,9 +29,27 @@ export async function GET() {
     }
 
     const user = userResult[0];
+    let party = null;
+    if (user.party_data) {
+      try {
+        party = typeof user.party_data === 'string' ? JSON.parse(user.party_data) : user.party_data;
+      } catch (e) {
+        console.error('Failed to parse party_data:', e);
+      }
+    }
+
     // Compute effective role same as auth.ts so Profile page shows correct badge
     const effectiveRole = (session.user as any).role || user.role || user.primary_role || 'guest';
-    return NextResponse.json({ success: true, data: { ...user, role: effectiveRole } });
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...user,
+        role: effectiveRole,
+        party,
+        parentPhone: user.parent_phone || '',
+        parent_phone: user.parent_phone || '',
+      }
+    });
 
   } catch (error: any) {
     console.error('Profile GET Error:', error);
@@ -54,10 +72,13 @@ export async function PATCH(request: Request) {
       }, { status: 403 });
     }
 
-    const { name, bio, image_url, password } = body;
-    const ph = parsePhone(body.phone); // commit 28a: digits only, 9–10
-    if (!ph.ok) return NextResponse.json({ success: false, message: ph.message }, { status: 400 });
-    const phone = ph.value;
+    const { name, bio, image_url, password, party, parentPhone } = body;
+    let phone = null;
+    if (body.phone) {
+      const ph = parsePhone(body.phone);
+      if (!ph.ok) return NextResponse.json({ success: false, message: ph.message }, { status: 400 });
+      phone = ph.value;
+    }
     
     let sql;
     if ((session.user as any).role === 'platform_admin') {
@@ -66,18 +87,31 @@ export async function PATCH(request: Request) {
       sql = getDormDbFromSession(session);
     }
 
-    // If password is being updated
+    const partyJson = party ? JSON.stringify(party) : null;
+    const parentPhoneVal = parentPhone || body.parent_phone || null;
+
     if (password) {
       const hashedPassword = await bcrypt.hash(password, 10);
       await sql`
         UPDATE users 
-        SET name = ${name}, phone = ${phone}, bio = ${bio}, image_url = ${image_url}, password = ${hashedPassword}
+        SET name = COALESCE(${name}, name),
+            phone = COALESCE(${phone}, phone),
+            parent_phone = COALESCE(${parentPhoneVal}, parent_phone),
+            party_data = COALESCE(${partyJson}, party_data),
+            bio = ${bio},
+            image_url = ${image_url},
+            password = ${hashedPassword}
         WHERE email = ${session.user.email}
       `;
     } else {
       await sql`
         UPDATE users 
-        SET name = ${name}, phone = ${phone}, bio = ${bio}, image_url = ${image_url}
+        SET name = COALESCE(${name}, name),
+            phone = COALESCE(${phone}, phone),
+            parent_phone = COALESCE(${parentPhoneVal}, parent_phone),
+            party_data = COALESCE(${partyJson}, party_data),
+            bio = ${bio},
+            image_url = ${image_url}
         WHERE email = ${session.user.email}
       `;
     }

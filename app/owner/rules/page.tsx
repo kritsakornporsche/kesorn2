@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
+import { useConfirm } from '@/components/ConfirmModalProvider';
 
 interface DormRule {
   id: number;
@@ -34,6 +35,7 @@ const CATEGORIES = [
 export default function OwnerRulesPage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
+  const { confirm, alert } = useConfirm();
 
   const [dorms, setDorms] = useState<DormItem[]>([]);
   const [selectedDormId, setSelectedDormId] = useState<number | null>(null);
@@ -108,7 +110,11 @@ export default function OwnerRulesPage() {
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDormId || !form.title.trim() || !form.description.trim()) {
-      alert('กรุณากรอกหัวข้อและรายละเอียดกฎระเบียบ');
+      await alert({
+        title: 'ข้อมูลไม่ครบถ้วน',
+        description: 'กรุณากรอกหัวข้อและรายละเอียดกฎระเบียบ',
+        variant: 'warning',
+      });
       return;
     }
     setSubmitting(true);
@@ -127,15 +133,27 @@ export default function OwnerRulesPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert('✓ เพิ่มกฎระเบียบเรียบร้อยแล้ว');
+        await alert({
+          title: 'เพิ่มกฎระเบียบสำเร็จ',
+          description: 'เพิ่มกฎระเบียบเรียบร้อยแล้ว',
+          variant: 'success',
+        });
         setIsAddModalOpen(false);
         setForm({ title: '', description: '', category: 'ทั่วไป', fine_amount: 0, is_active: true });
         fetchRules(selectedDormId);
       } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการเพิ่มกฎ');
+        await alert({
+          title: 'เพิ่มไม่สำเร็จ',
+          description: data.message || 'เกิดข้อผิดพลาดในการเพิ่มกฎ',
+          variant: 'danger',
+        });
       }
     } catch (err: any) {
-      alert('เกิดข้อผิดพลาด: ' + err.message);
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        description: err.message || 'ไม่สามารถดำเนินการได้',
+        variant: 'danger',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -161,14 +179,26 @@ export default function OwnerRulesPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert('✓ บันทึกการแก้ไขเรียบร้อยแล้ว');
+        await alert({
+          title: 'บันทึกสำเร็จ',
+          description: 'บันทึกการแก้ไขเรียบร้อยแล้ว',
+          variant: 'success',
+        });
         setEditingRule(null);
         if (selectedDormId) fetchRules(selectedDormId);
       } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการแก้ไข');
+        await alert({
+          title: 'บันทึกไม่สำเร็จ',
+          description: data.message || 'เกิดข้อผิดพลาดในการแก้ไข',
+          variant: 'danger',
+        });
       }
     } catch (err: any) {
-      alert('เกิดข้อผิดพลาด: ' + err.message);
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        description: err.message || 'ไม่สามารถดำเนินการได้',
+        variant: 'danger',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -176,18 +206,37 @@ export default function OwnerRulesPage() {
 
   // Handle Delete Rule
   const handleDeleteRule = async (ruleId: number) => {
-    if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการลบกฎระเบียบข้อนี้?')) return;
+    const ok = await confirm({
+      title: 'ยืนยันลบกฎระเบียบ?',
+      description: 'คุณแน่ใจหรือไม่ว่าต้องการลบกฎระเบียบข้อนี้ออกจากระบบ?',
+      confirmText: 'ลบกฎระเบียบ',
+      cancelText: 'ยกเลิก',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/owner/rules?id=${ruleId}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
-        alert('✓ ลบกฎระเบียบเรียบร้อยแล้ว');
+        await alert({
+          title: 'ลบสำเร็จ',
+          description: 'ลบกฎระเบียบเรียบร้อยแล้ว',
+          variant: 'success',
+        });
         if (selectedDormId) fetchRules(selectedDormId);
       } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการลบ');
+        await alert({
+          title: 'ลบไม่สำเร็จ',
+          description: data.message || 'เกิดข้อผิดพลาดในการลบ',
+          variant: 'danger',
+        });
       }
     } catch (err: any) {
-      alert('เกิดข้อผิดพลาด: ' + err.message);
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        description: err.message || 'ไม่สามารถดำเนินการได้',
+        variant: 'danger',
+      });
     }
   };
 
@@ -224,14 +273,26 @@ export default function OwnerRulesPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert(data.message || '✓ คัดลอกกฎระเบียบสำเร็จ');
+        await alert({
+          title: 'คัดลอกสำเร็จ',
+          description: data.message || 'คัดลอกกฎระเบียบสำเร็จเรียบร้อย',
+          variant: 'success',
+        });
         setIsCloneModalOpen(false);
         fetchRules(selectedDormId);
       } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการคัดลอก');
+        await alert({
+          title: 'คัดลอกไม่สำเร็จ',
+          description: data.message || 'เกิดข้อผิดพลาดในการคัดลอก',
+          variant: 'danger',
+        });
       }
     } catch (err: any) {
-      alert('เกิดข้อผิดพลาด: ' + err.message);
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        description: err.message || 'ไม่สามารถดำเนินการได้',
+        variant: 'danger',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -347,8 +408,8 @@ export default function OwnerRulesPage() {
             {filteredRules.map((rule, idx) => (
               <div
                 key={rule.id}
-                className={`bg-card rounded-[2rem] border p-6 space-y-4 transition-all shadow-lg ${
-                  rule.is_active === 1 ? 'border-border' : 'border-rose-500/20 opacity-60 bg-slate-950/40'
+                className={`bg-white rounded-[2rem] border p-6 space-y-4 transition-all shadow-xs ${
+                  rule.is_active === 1 ? 'border-slate-200 bg-white' : 'border-rose-200 opacity-60 bg-slate-50'
                 }`}
               >
                 <div className="flex justify-between items-start gap-3">
@@ -359,24 +420,24 @@ export default function OwnerRulesPage() {
                         {rule.category || 'ทั่วไป'}
                       </span>
                       {Number(rule.fine_amount) > 0 && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 bg-rose-500/15 text-rose-400 rounded-full border border-rose-500/20">
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-rose-50 text-rose-700 rounded-full border border-rose-200">
                           ค่าปรับ ฿{Number(rule.fine_amount).toLocaleString()}
                         </span>
                       )}
                       {rule.is_active === 0 && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 bg-rose-500/20 text-rose-300 rounded-full">
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-rose-100 text-rose-700 rounded-full">
                           ปิดใช้งาน
                         </span>
                       )}
                     </div>
-                    <h3 className="text-base sm:text-lg font-bold text-foreground pt-1">{rule.title}</h3>
+                    <h3 className="text-base sm:text-lg font-bold text-slate-900 pt-1">{rule.title}</h3>
                   </div>
 
                   {/* Toggle Active Button */}
                   <button
                     onClick={() => handleToggleActive(rule)}
                     className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold transition-all cursor-pointer shrink-0 ${
-                      rule.is_active === 1 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-white/5 text-muted-foreground border border-white/10'
+                      rule.is_active === 1 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
                     }`}
                     title={rule.is_active === 1 ? 'คลิกเพื่อปิดใช้งาน' : 'คลิกเพื่อเปิดใช้งาน'}
                   >
@@ -384,11 +445,11 @@ export default function OwnerRulesPage() {
                   </button>
                 </div>
 
-                <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
                   {rule.description}
                 </p>
 
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                   <button
                     onClick={() => {
                       setEditingRule(rule);
@@ -400,13 +461,13 @@ export default function OwnerRulesPage() {
                         is_active: rule.is_active === 1
                       });
                     }}
-                    className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-foreground text-xs font-bold rounded-xl transition-all cursor-pointer"
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition-all cursor-pointer shadow-xs"
                   >
                     ✏️ แก้ไข
                   </button>
                   <button
                     onClick={() => handleDeleteRule(rule.id)}
-                    className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                    className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold rounded-xl border border-rose-200 transition-all cursor-pointer shadow-xs"
                   >
                     🗑️ ลบ
                   </button>
@@ -418,23 +479,23 @@ export default function OwnerRulesPage() {
 
         {/* Modal: Add Rule */}
         {isAddModalOpen && (
-          <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
-            <div className="max-w-md w-full bg-slate-900 rounded-[2rem] p-6 sm:p-8 border border-primary/30 space-y-5 shadow-2xl my-auto">
-              <div className="flex justify-between items-start border-b border-border pb-3">
+          <div className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+            <div className="max-w-md w-full bg-white rounded-[2rem] p-6 sm:p-8 border border-slate-200 space-y-5 shadow-2xl my-auto">
+              <div className="flex justify-between items-start border-b border-slate-200 pb-3">
                 <div>
                   <span className="text-[10px] font-black uppercase tracking-widest text-primary">เพิ่มระเบียบหอพัก</span>
-                  <h3 className="text-xl font-black text-foreground">{selectedDormName}</h3>
+                  <h3 className="text-xl font-black text-slate-900">{selectedDormName}</h3>
                 </div>
-                <button onClick={() => setIsAddModalOpen(false)} className="text-muted-foreground hover:text-white text-2xl p-1">✕</button>
+                <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-700 text-2xl p-1 cursor-pointer">✕</button>
               </div>
 
               <form onSubmit={handleAddSubmit} className="space-y-4 text-xs">
                 <div className="space-y-1.5">
-                  <label className="text-white/80 font-bold uppercase">หมวดหมู่กฎระเบียบ</label>
+                  <label className="text-slate-700 font-bold uppercase">หมวดหมู่กฎระเบียบ</label>
                   <select
                     value={form.category}
                     onChange={(e) => setForm({ ...form, category: e.target.value })}
-                    className="w-full min-h-[44px] px-3.5 bg-slate-950 border border-border rounded-xl text-white font-bold"
+                    className="w-full min-h-[44px] px-3.5 bg-white border border-slate-300 rounded-xl text-slate-900 font-bold shadow-xs focus:outline-none focus:border-primary"
                   >
                     {CATEGORIES.filter(c => c !== 'ทั้งหมด').map(c => (
                       <option key={c} value={c}>{c}</option>
@@ -443,38 +504,38 @@ export default function OwnerRulesPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-white/80 font-bold uppercase">หัวข้อกฎระเบียบ</label>
+                  <label className="text-slate-700 font-bold uppercase">หัวข้อกฎระเบียบ</label>
                   <input
                     type="text"
                     required
                     placeholder="เช่น การนำสัตว์เลี้ยงเข้าพัก, งดส่งเสียงดัง"
                     value={form.title}
                     onChange={(e) => setForm({ ...form, title: e.target.value })}
-                    className="w-full min-h-[44px] px-3.5 bg-slate-950 border border-border rounded-xl text-white"
+                    className="w-full min-h-[44px] px-3.5 bg-white border border-slate-300 rounded-xl text-slate-900 shadow-xs focus:outline-none focus:border-primary"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-white/80 font-bold uppercase">รายละเอียดข้อบังคับ</label>
+                  <label className="text-slate-700 font-bold uppercase">รายละเอียดข้อบังคับ</label>
                   <textarea
                     rows={3}
                     required
                     placeholder="ระบุเงื่อนไขและข้อปฏิบัติต่างๆ..."
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    className="w-full p-3 bg-slate-950 border border-border rounded-xl text-white resize-none"
+                    className="w-full p-3 bg-white border border-slate-300 rounded-xl text-slate-900 resize-none shadow-xs focus:outline-none focus:border-primary"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-white/80 font-bold uppercase">อัตราค่าปรับเมื่อฝ่าฝืน (บาท) - หากไม่มีใส่ 0</label>
+                  <label className="text-slate-700 font-bold uppercase">อัตราค่าปรับเมื่อฝ่าฝืน (บาท) - หากไม่มีใส่ 0</label>
                   <input
                     type="number" {...NUMBER_INPUT_PROPS}
                     min="0"
                     step="50"
                     value={form.fine_amount}
                     onChange={(e) => setForm({ ...form, fine_amount: Number(e.target.value) })}
-                    className="w-full min-h-[44px] px-3.5 bg-slate-950 border border-border rounded-xl text-white font-mono"
+                    className="w-full min-h-[44px] px-3.5 bg-white border border-slate-300 rounded-xl text-slate-900 font-mono shadow-xs focus:outline-none focus:border-primary"
                   />
                 </div>
 
@@ -482,7 +543,7 @@ export default function OwnerRulesPage() {
                   <button
                     type="button"
                     onClick={() => setIsAddModalOpen(false)}
-                    className="flex-1 min-h-[44px] py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold"
+                    className="flex-1 min-h-[44px] py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold border border-slate-200 cursor-pointer"
                   >
                     ยกเลิก
                   </button>
@@ -501,23 +562,23 @@ export default function OwnerRulesPage() {
 
         {/* Modal: Edit Rule */}
         {editingRule && (
-          <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
-            <div className="max-w-md w-full bg-slate-900 rounded-[2rem] p-6 sm:p-8 border border-white/20 space-y-5 shadow-2xl my-auto">
-              <div className="flex justify-between items-start border-b border-border pb-3">
+          <div className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+            <div className="max-w-md w-full bg-white rounded-[2rem] p-6 sm:p-8 border border-slate-200 space-y-5 shadow-2xl my-auto">
+              <div className="flex justify-between items-start border-b border-slate-200 pb-3">
                 <div>
                   <span className="text-[10px] font-black uppercase tracking-widest text-primary">แก้ไขกฎระเบียบ</span>
-                  <h3 className="text-xl font-black text-foreground">#{editingRule.id}</h3>
+                  <h3 className="text-xl font-black text-slate-900">#{editingRule.id}</h3>
                 </div>
-                <button onClick={() => setEditingRule(null)} className="text-muted-foreground hover:text-white text-2xl p-1">✕</button>
+                <button onClick={() => setEditingRule(null)} className="text-slate-400 hover:text-slate-700 text-2xl p-1 cursor-pointer">✕</button>
               </div>
 
               <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
                 <div className="space-y-1.5">
-                  <label className="text-white/80 font-bold uppercase">หมวดหมู่</label>
+                  <label className="text-slate-700 font-bold uppercase">หมวดหมู่</label>
                   <select
                     value={form.category}
                     onChange={(e) => setForm({ ...form, category: e.target.value })}
-                    className="w-full min-h-[44px] px-3.5 bg-slate-950 border border-border rounded-xl text-white font-bold"
+                    className="w-full min-h-[44px] px-3.5 bg-white border border-slate-300 rounded-xl text-slate-900 font-bold shadow-xs focus:outline-none focus:border-primary"
                   >
                     {CATEGORIES.filter(c => c !== 'ทั้งหมด').map(c => (
                       <option key={c} value={c}>{c}</option>
@@ -526,36 +587,36 @@ export default function OwnerRulesPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-white/80 font-bold uppercase">หัวข้อ</label>
+                  <label className="text-slate-700 font-bold uppercase">หัวข้อ</label>
                   <input
                     type="text"
                     required
                     value={form.title}
                     onChange={(e) => setForm({ ...form, title: e.target.value })}
-                    className="w-full min-h-[44px] px-3.5 bg-slate-950 border border-border rounded-xl text-white"
+                    className="w-full min-h-[44px] px-3.5 bg-white border border-slate-300 rounded-xl text-slate-900 shadow-xs focus:outline-none focus:border-primary"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-white/80 font-bold uppercase">รายละเอียด</label>
+                  <label className="text-slate-700 font-bold uppercase">รายละเอียด</label>
                   <textarea
                     rows={3}
                     required
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    className="w-full p-3 bg-slate-950 border border-border rounded-xl text-white resize-none"
+                    className="w-full p-3 bg-white border border-slate-300 rounded-xl text-slate-900 resize-none shadow-xs focus:outline-none focus:border-primary"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-white/80 font-bold uppercase">อัตราค่าปรับ (บาท)</label>
+                  <label className="text-slate-700 font-bold uppercase">อัตราค่าปรับ (บาท)</label>
                   <input
                     type="number" {...NUMBER_INPUT_PROPS}
                     min="0"
                     step="50"
                     value={form.fine_amount}
                     onChange={(e) => setForm({ ...form, fine_amount: Number(e.target.value) })}
-                    className="w-full min-h-[44px] px-3.5 bg-slate-950 border border-border rounded-xl text-white font-mono"
+                    className="w-full min-h-[44px] px-3.5 bg-white border border-slate-300 rounded-xl text-slate-900 font-mono shadow-xs focus:outline-none focus:border-primary"
                   />
                 </div>
 
@@ -563,14 +624,14 @@ export default function OwnerRulesPage() {
                   <button
                     type="button"
                     onClick={() => setEditingRule(null)}
-                    className="flex-1 min-h-[44px] py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold"
+                    className="flex-1 min-h-[44px] py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold border border-slate-200 cursor-pointer"
                   >
                     ยกเลิก
                   </button>
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="flex-[2] min-h-[44px] py-2.5 bg-primary hover:brightness-110 text-white rounded-xl font-black shadow-lg disabled:opacity-50"
+                    className="flex-[2] min-h-[44px] py-2.5 bg-primary hover:brightness-110 text-white rounded-xl font-black shadow-lg disabled:opacity-50 cursor-pointer"
                   >
                     {submitting ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
                   </button>
@@ -582,23 +643,23 @@ export default function OwnerRulesPage() {
 
         {/* Modal: Clone from Another Dorm */}
         {isCloneModalOpen && (
-          <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
-            <div className="max-w-md w-full bg-slate-900 rounded-[2rem] p-6 sm:p-8 border border-primary/30 space-y-5 shadow-2xl my-auto">
-              <div className="flex justify-between items-start border-b border-border pb-3">
+          <div className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+            <div className="max-w-md w-full bg-white rounded-[2rem] p-6 sm:p-8 border border-slate-200 space-y-5 shadow-2xl my-auto">
+              <div className="flex justify-between items-start border-b border-slate-200 pb-3">
                 <div>
                   <span className="text-[10px] font-black uppercase tracking-widest text-primary">คัดลอกกฎระเบียบ (Template)</span>
-                  <h3 className="text-lg font-black text-foreground">คัดลอกไปยัง {selectedDormName}</h3>
+                  <h3 className="text-lg font-black text-slate-900">คัดลอกไปยัง {selectedDormName}</h3>
                 </div>
-                <button onClick={() => setIsCloneModalOpen(false)} className="text-muted-foreground hover:text-white text-2xl p-1">✕</button>
+                <button onClick={() => setIsCloneModalOpen(false)} className="text-slate-400 hover:text-slate-700 text-2xl p-1 cursor-pointer">✕</button>
               </div>
 
               <div className="space-y-4 text-xs">
                 <div className="space-y-1.5">
-                  <label className="text-white/80 font-bold uppercase">เลือกหอพักต้นทาง</label>
+                  <label className="text-slate-700 font-bold uppercase">เลือกหอพักต้นทาง</label>
                   <select
                     value={cloneSourceId || ''}
                     onChange={(e) => setCloneSourceId(Number(e.target.value))}
-                    className="w-full min-h-[44px] px-3.5 bg-slate-950 border border-border rounded-xl text-white font-bold"
+                    className="w-full min-h-[44px] px-3.5 bg-white border border-slate-300 rounded-xl text-slate-900 font-bold shadow-xs focus:outline-none focus:border-primary"
                   >
                     {dorms.filter(d => d.id !== selectedDormId).map(d => (
                       <option key={d.id} value={d.id}>{d.dorm_name}</option>
@@ -606,7 +667,7 @@ export default function OwnerRulesPage() {
                   </select>
                 </div>
 
-                <div className="p-3 bg-slate-950 rounded-xl border border-white/10 space-y-2">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
@@ -614,7 +675,7 @@ export default function OwnerRulesPage() {
                       onChange={(e) => setCloneReplace(e.target.checked)}
                       className="w-4 h-4 rounded accent-primary cursor-pointer"
                     />
-                    <span className="text-white font-bold">ลบกฎเดิมของ {selectedDormName} ออกทั้งหมดก่อนคัดลอก</span>
+                    <span className="text-slate-900 font-bold">ลบกฎเดิมของ {selectedDormName} ออกทั้งหมดก่อนคัดลอก</span>
                   </label>
                 </div>
 
@@ -622,7 +683,7 @@ export default function OwnerRulesPage() {
                   <button
                     type="button"
                     onClick={() => setIsCloneModalOpen(false)}
-                    className="flex-1 min-h-[44px] py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold"
+                    className="flex-1 min-h-[44px] py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold border border-slate-200 cursor-pointer"
                   >
                     ยกเลิก
                   </button>

@@ -18,6 +18,7 @@ import { MAX_OCCUPANTS, OCCUPANT_CHOICES } from '@/lib/occupants';
 import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 import { PAPER_CONFIRM_TEXT, signedPaperText, type SignedPaper } from '@/lib/signed-paper';
+import { useConfirm } from '@/components/ConfirmModalProvider';
 
 interface Contract {
   id: number;
@@ -55,6 +56,7 @@ interface Room {
 export default function OwnerContractsPage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
+  const { confirm, alert } = useConfirm();
 
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -186,11 +188,19 @@ export default function OwnerContractsPage() {
     e.preventDefault();
     const pc = checkParty(party);
     if (!pc.ok) {
-      alert(pc.message);
+      await alert({
+        title: 'ข้อมูลผู้เช่าไม่ถูกต้อง',
+        description: pc.message,
+        variant: 'warning',
+      });
       return;
     }
     if (!formData.room_id || !formData.tenant_email) {
-      alert('กรุณากรอกข้อมูลสำคัญให้ครบถ้วน');
+      await alert({
+        title: 'กรอกข้อมูลไม่ครบถ้วน',
+        description: 'กรุณากรอกข้อมูลสำคัญให้ครบถ้วนก่อนบันทึกสัญญา',
+        variant: 'warning',
+      });
       return;
     }
 
@@ -213,7 +223,11 @@ export default function OwnerContractsPage() {
         if (data.tempPassword) {
           setNewAccount({ email: formData.tenant_email.trim(), password: data.tempPassword });
         } else {
-          alert('🎉 บันทึกสัญญาเช่าเรียบร้อยแล้ว (ผู้เช่ามีบัญชีอยู่แล้ว ใช้รหัสผ่านเดิม) สามารถกดดาวน์โหลดสัญญา (PDF) ได้ทันที');
+          await alert({
+            title: 'บันทึกสัญญาเช่าเรียบร้อยแล้ว',
+            description: 'ผู้เช่ามีบัญชีอยู่แล้ว (ใช้รหัสผ่านเดิม) สามารถกดดาวน์โหลดสัญญา (PDF) ได้ทันที',
+            variant: 'success',
+          });
         }
         setIsCreateModalOpen(false);
         setParty(EMPTY_PARTY);
@@ -234,11 +248,19 @@ export default function OwnerContractsPage() {
         });
         if (ownerDormId) fetchData(ownerDormId);
       } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการบันทึกสัญญา');
+        await alert({
+          title: 'บันทึกสัญญาไม่สำเร็จ',
+          description: data.message || 'เกิดข้อผิดพลาดในการบันทึกสัญญา',
+          variant: 'danger',
+        });
       }
     } catch (err: any) {
       console.error(err);
-      alert('เกิดข้อผิดพลาด: ' + err.message);
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        description: err.message || 'ไม่สามารถดำเนินการได้',
+        variant: 'danger',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -278,7 +300,11 @@ export default function OwnerContractsPage() {
     if (!renewingContract) return;
 
     if (!renewData.new_end_date) {
-      alert('กรุณาระบุวันสิ้นสุดสัญญาฉบับใหม่');
+      await alert({
+        title: 'ข้อมูลไม่ครบถ้วน',
+        description: 'กรุณาระบุวันสิ้นสุดสัญญาฉบับใหม่',
+        variant: 'warning',
+      });
       return;
     }
 
@@ -295,15 +321,27 @@ export default function OwnerContractsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert('🎉 ต่ออายุสัญญาเช่าเรียบร้อยแล้ว!');
+        await alert({
+          title: 'ต่ออายุสัญญาเรียบร้อย',
+          description: 'ระบบได้ต่ออายุสัญญาเช่าฉบับใหม่เรียบร้อยแล้ว',
+          variant: 'success',
+        });
         setRenewingContract(null);
         if (ownerDormId) fetchData(ownerDormId);
       } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการต่ออายุสัญญา');
+        await alert({
+          title: 'ต่ออายุสัญญาไม่สำเร็จ',
+          description: data.message || 'เกิดข้อผิดพลาดในการต่ออายุสัญญา',
+          variant: 'danger',
+        });
       }
     } catch (err: any) {
       console.error(err);
-      alert('เกิดข้อผิดพลาด: ' + err.message);
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        description: err.message || 'ไม่สามารถดำเนินการได้',
+        variant: 'danger',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -325,16 +363,28 @@ export default function OwnerContractsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert('✓ ปฏิเสธคำขอต่อสัญญาเช่าเรียบร้อยแล้ว');
+        await alert({
+          title: 'ปฏิเสธคำขอเรียบร้อย',
+          description: 'ปฏิเสธคำขอต่อสัญญาเช่าเรียบร้อยแล้ว',
+          variant: 'info',
+        });
         setRejectingContract(null);
         setRejectReason('');
         if (ownerDormId) fetchData(ownerDormId);
       } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการปฏิเสธคำขอ');
+        await alert({
+          title: 'เกิดข้อผิดพลาด',
+          description: data.message || 'เกิดข้อผิดพลาดในการปฏิเสธคำขอ',
+          variant: 'danger',
+        });
       }
     } catch (err: any) {
       console.error(err);
-      alert('เกิดข้อผิดพลาด: ' + err.message);
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        description: err.message || 'ไม่สามารถดำเนินการได้',
+        variant: 'danger',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -369,10 +419,21 @@ export default function OwnerContractsPage() {
 
   const handleSaveSignedContract = async () => {
     if (!uploadingContract || !signedContractFile || !signedDate) {
-      alert('กรุณาเลือกหรือถ่ายภาพสัญญาเช่าที่ลงนามแล้ว และระบุวันที่เซ็นสัญญา');
+      await alert({
+        title: 'ข้อมูลไม่ครบถ้วน',
+        description: 'กรุณาเลือกหรือถ่ายภาพสัญญาเช่าที่ลงนามแล้ว และระบุวันที่เซ็นสัญญา',
+        variant: 'warning',
+      });
       return;
     }
-    if (!confirm(PAPER_CONFIRM_TEXT)) return;
+    const ok = await confirm({
+      title: 'ยืนยันการแนบสัญญาที่ลงนามแล้ว?',
+      description: PAPER_CONFIRM_TEXT,
+      confirmText: 'ยืนยันและบันทึก',
+      cancelText: 'ย้อนกลับ',
+      variant: 'info',
+    });
+    if (!ok) return;
     setIsUploadingSigned(true);
     try {
       const res = await fetch('/api/owner/contracts', {
@@ -387,16 +448,28 @@ export default function OwnerContractsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert(`🎉 ${data.message}`);
+        await alert({
+          title: 'บันทึกสำเร็จ',
+          description: data.message,
+          variant: 'success',
+        });
         setUploadingContract(null);
         setSignedContractFile(null);
         if (ownerDormId) fetchData(ownerDormId);
       } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการบันทึก');
+        await alert({
+          title: 'บันทึกไม่สำเร็จ',
+          description: data.message || 'เกิดข้อผิดพลาดในการบันทึก',
+          variant: 'danger',
+        });
       }
     } catch (e: any) {
       console.error(e);
-      alert('เกิดข้อผิดพลาด: ' + e.message);
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        description: e.message || 'ไม่สามารถดำเนินการได้',
+        variant: 'danger',
+      });
     } finally {
       setIsUploadingSigned(false);
     }
@@ -461,9 +534,7 @@ export default function OwnerContractsPage() {
                 สัญญาเช่า
               </h1>
             </div>
-            <p className="text-muted-foreground text-sm font-medium ml-4 mt-1">
-              ตรวจสอบสัญญาเช่า จัดการคำขอต่อสัญญา และพิมพ์สัญญา (คืนเงินประกันทำที่หน้าย้ายออก)
-            </p>
+            
           </div>
           <button
             type="button"
@@ -481,7 +552,7 @@ export default function OwnerContractsPage() {
             className={`p-6 rounded-3xl cursor-pointer transition-all border ${
               activeTab === 'Active' 
                 ? 'bg-emerald-500/10 border-emerald-500/40 shadow-lg shadow-emerald-950/20' 
-                : 'bg-card border-border hover:border-white/20'
+                : 'bg-card border-border hover:border-slate-300'
             }`}
           >
             <div className="flex justify-between items-start mb-2">
@@ -498,7 +569,7 @@ export default function OwnerContractsPage() {
                 ? 'bg-blue-500/20 border-blue-500/60 shadow-lg shadow-blue-950/30'
                 : renewalRequestedCount > 0 
                   ? 'bg-blue-500/15 border-blue-500/50 animate-pulse' 
-                  : 'bg-card border-border hover:border-white/20'
+                  : 'bg-card border-border hover:border-slate-300'
             }`}
           >
             <div className="flex justify-between items-start mb-2">
@@ -513,7 +584,7 @@ export default function OwnerContractsPage() {
             className={`p-6 rounded-3xl cursor-pointer transition-all border ${
               activeTab === 'MoveOut' 
                 ? 'bg-amber-500/15 border-amber-500/50 shadow-lg shadow-amber-950/20' 
-                : 'bg-card border-border hover:border-white/20'
+                : 'bg-card border-border hover:border-slate-300'
             }`}
           >
             <div className="flex justify-between items-start mb-2">
@@ -528,7 +599,7 @@ export default function OwnerContractsPage() {
             className={`p-6 rounded-3xl cursor-pointer transition-all border ${
               activeTab === 'History' 
                 ? 'bg-purple-500/10 border-purple-500/40 shadow-lg shadow-purple-950/20' 
-                : 'bg-card border-border hover:border-white/20'
+                : 'bg-card border-border hover:border-slate-300'
             }`}
           >
             <div className="flex justify-between items-start mb-2">
@@ -823,21 +894,16 @@ export default function OwnerContractsPage() {
 
         {/* Modal 1: Create Contract (name / address typed from the ID card — no OCR, commit 24c) */}
         {isCreateModalOpen && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-6 overflow-y-auto">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-6 overflow-y-auto">
             <div className="bg-card rounded-[36px] w-full max-w-2xl border border-border shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
-              <div className="bg-[#0B0F19] border-b border-border p-8 flex items-center justify-between shrink-0">
+              <div className="bg-slate-50 border-b border-border p-8 flex items-center justify-between shrink-0">
                 <div>
                   <h2 className="text-2xl font-black text-foreground">📝 บันทึกผู้เช่าเดิม (ก่อนใช้ระบบ)</h2>
-                  <p className="text-xs text-muted-foreground font-medium mt-1">
-                    ใช้กับผู้เช่าที่อยู่ก่อนใช้ระบบเท่านั้น — สัญญามีผลทันที · ผู้เช่าใหม่ให้ใช้ Walk-in ที่หน้าทะเบียนผู้เช่า แล้วทำตามขั้น 3–7
-                  </p>
-                  <p className="text-xs text-muted-foreground font-medium">
-                    กรอกชื่อและที่อยู่ตามบัตรประชาชนด้วยตนเอง (ระบบไม่เก็บเลขบัตรและรูปบัตร)
-                  </p>
+                  
                 </div>
                 <button 
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl text-muted-foreground hover:text-foreground flex items-center justify-center transition-all cursor-pointer"
+                  className="w-10 h-10 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-500 hover:text-slate-800 flex items-center justify-center transition-all cursor-pointer"
                 >
                   ✕
                 </button>
@@ -999,23 +1065,23 @@ export default function OwnerContractsPage() {
 
         {/* Modal 2: Contract Renewal */}
         {renewingContract && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-6 overflow-y-auto">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-6 overflow-y-auto">
             <div className="bg-card rounded-[36px] w-full max-w-xl border border-border shadow-2xl overflow-hidden">
-              <div className="bg-[#0B0F19] border-b border-border p-8 flex items-center justify-between">
+              <div className="bg-slate-50 border-b border-border p-8 flex items-center justify-between">
                 <div>
                   <h2 className="text-2xl font-black text-foreground">🔄 ต่ออายุสัญญาเช่า</h2>
                   <p className="text-xs text-muted-foreground font-medium mt-1">ห้อง {renewingContract.room_number} - {renewingContract.tenant_name}</p>
                 </div>
                 <button 
                   onClick={() => setRenewingContract(null)}
-                  className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl text-muted-foreground hover:text-foreground flex items-center justify-center transition-all cursor-pointer"
+                  className="w-10 h-10 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-500 hover:text-slate-800 flex items-center justify-center transition-all cursor-pointer"
                 >
                   ✕
                 </button>
               </div>
 
               <form onSubmit={handleRenewSubmit} className="p-8 space-y-6">
-                <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-amber-300 text-xs font-medium space-y-1">
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-xs font-medium space-y-1">
                   <p className="font-bold">สัญญาเดิม: {new Date(renewingContract.start_date).toLocaleDateString('th-TH')} - {new Date(renewingContract.end_date).toLocaleDateString('th-TH')}</p>
                   {renewingContract.renewal_requested === 1 && (
                     <p className="text-blue-300 mt-1 pt-1 border-t border-amber-500/20">
@@ -1063,25 +1129,25 @@ export default function OwnerContractsPage() {
 
         {/* Modal 2.1: Contract Renewal Rejection Modal */}
         {rejectingContract && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-6 overflow-y-auto">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-6 overflow-y-auto">
             <div className="bg-card rounded-[36px] w-full max-w-lg border border-border shadow-2xl overflow-hidden">
-              <div className="bg-[#0B0F19] border-b border-border p-6 flex items-center justify-between">
+              <div className="bg-slate-50 border-b border-border p-6 flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-black text-rose-400">✕ ปฏิเสธคำขอต่อสัญญาเช่า</h2>
+                  <h2 className="text-xl font-black text-rose-600">✕ ปฏิเสธคำขอต่อสัญญาเช่า</h2>
                   <p className="text-xs text-muted-foreground font-medium mt-0.5">ห้อง {rejectingContract.room_number} - {rejectingContract.tenant_name}</p>
                 </div>
                 <button 
                   onClick={() => setRejectingContract(null)}
-                  className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl text-muted-foreground hover:text-foreground flex items-center justify-center transition-all cursor-pointer"
+                  className="w-10 h-10 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-500 hover:text-slate-800 flex items-center justify-center transition-all cursor-pointer"
                 >
                   ✕
                 </button>
               </div>
 
               <form onSubmit={handleRejectRenewalSubmit} className="p-6 space-y-6">
-                <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-rose-300 text-xs space-y-1">
+                <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs space-y-1">
                   <p className="font-bold">สัญญาห้อง {rejectingContract.room_number} (สิ้นสุด {new Date(rejectingContract.end_date).toLocaleDateString('th-TH')})</p>
-                  <p className="text-white/80">🔔 <strong>คำขอเดิม:</strong> {rejectingContract.renewal_note || 'ขอต่อสัญญาเช่า'}</p>
+                  <p className="text-slate-700">🔔 <strong>คำขอเดิม:</strong> {rejectingContract.renewal_note || 'ขอต่อสัญญาเช่า'}</p>
                 </div>
 
                 <div className="space-y-2">
@@ -1122,9 +1188,9 @@ export default function OwnerContractsPage() {
 
         {/* Upload Signed Paper Contract Modal */}
         {uploadingContract && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
             <div className="bg-card rounded-[36px] w-full max-w-xl border border-border shadow-2xl overflow-hidden my-auto">
-              <div className="bg-[#0B0F19] border-b border-border p-6 flex items-center justify-between">
+              <div className="bg-slate-50 border-b border-border p-6 flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-black text-foreground flex items-center gap-2">
                     <span>📷</span> บันทึกรูปสัญญาเช่าฉบับลงนามจริง
@@ -1138,14 +1204,14 @@ export default function OwnerContractsPage() {
                     setUploadingContract(null);
                     setSignedContractFile(null);
                   }}
-                  className="w-9 h-9 bg-white/5 hover:bg-white/10 rounded-xl text-muted-foreground hover:text-foreground flex items-center justify-center transition-all cursor-pointer"
+                  className="w-9 h-9 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-500 hover:text-slate-800 flex items-center justify-center transition-all cursor-pointer"
                 >
                   ✕
                 </button>
               </div>
 
               <div className="p-6 space-y-5">
-                <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-2xl text-purple-300 text-xs leading-relaxed space-y-1">
+                <div className="p-4 bg-purple-50 border border-purple-200 rounded-2xl text-purple-800 text-xs leading-relaxed space-y-1">
                   <p className="font-bold">📝 ขั้นตอนบันทึกสัญญาฉบับจริง:</p>
                   <p>1. พิมพ์สัญญาเช่าฉบับสมบูรณ์ (A4) หรือบันทึกเป็น PDF จากระบบ</p>
                   <p>2. ผู้เช่าและเจ้าของหอพักลงลายมือชื่อจริงร่วมกันในวันเข้าหอพัก</p>
@@ -1160,7 +1226,7 @@ export default function OwnerContractsPage() {
 
                   {signedContractFile ? (
                     <div className="space-y-3">
-                      <div className="relative rounded-2xl overflow-hidden border border-border bg-black/40 flex items-center justify-center max-h-72">
+                      <div className="relative rounded-2xl overflow-hidden border border-border bg-slate-100 flex items-center justify-center max-h-72">
                         {signedContractFile.startsWith('data:application/pdf') ? (
                           <div className="p-8 text-sm font-bold text-foreground">📄 ไฟล์ PDF</div>
                         ) : (
@@ -1172,8 +1238,8 @@ export default function OwnerContractsPage() {
                         )}
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-xs font-bold text-emerald-400">✓ เลือกรูปภาพเรียบร้อยแล้ว</span>
-                        <label className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold cursor-pointer transition-all">
+                        <span className="text-xs font-bold text-emerald-600">✓ เลือกรูปภาพเรียบร้อยแล้ว</span>
+                        <label className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer transition-all border border-slate-200">
                           เปลี่ยนรูป
                           <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleSignedFileChange} />
                         </label>
@@ -1212,7 +1278,7 @@ export default function OwnerContractsPage() {
                       setUploadingContract(null);
                       setSignedContractFile(null);
                     }}
-                    className="flex-1 py-3.5 text-muted-foreground font-bold hover:bg-white/5 rounded-2xl transition-all cursor-pointer text-xs"
+                    className="flex-1 py-3.5 text-muted-foreground font-bold hover:bg-slate-100 rounded-2xl transition-all cursor-pointer text-xs"
                   >
                     ยกเลิก
                   </button>
@@ -1242,9 +1308,9 @@ export default function OwnerContractsPage() {
 
         {/* Preview Signed Contract Modal */}
         {previewingFileUrl && (
-          <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
             <div className="bg-card rounded-3xl w-full max-w-3xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] my-auto">
-              <div className="bg-[#0B0F19] border-b border-border p-4 flex items-center justify-between">
+              <div className="bg-slate-50 border-b border-border p-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-lg">📄</span>
                   <h3 className="text-sm font-black text-foreground">{previewingTitle || 'รูปภาพสัญญาเช่าฉบับลงนามจริง'}</h3>
@@ -1261,20 +1327,20 @@ export default function OwnerContractsPage() {
                   </a>
                   <button
                     onClick={() => setPreviewingFileUrl(null)}
-                    className="w-8 h-8 bg-white/5 hover:bg-white/10 rounded-xl text-muted-foreground hover:text-foreground flex items-center justify-center transition-all cursor-pointer"
+                    className="w-8 h-8 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-500 hover:text-slate-800 flex items-center justify-center transition-all cursor-pointer"
                   >
                     ✕
                   </button>
                 </div>
               </div>
 
-              <div className="p-4 overflow-y-auto flex items-center justify-center bg-black/50 flex-1 min-h-[500px]">
+              <div className="p-4 overflow-y-auto flex items-center justify-center bg-slate-100 flex-1 min-h-[500px]">
                 {previewingFileUrl.toLowerCase().endsWith('.pdf') || previewingFileUrl.startsWith('data:application/pdf')
                   || contracts.some((x) => x.contract_file_url === previewingFileUrl && x.contract_file_is_pdf) ? (
                   <iframe
                     src={previewingFileUrl}
                     title="PDF Contract Preview"
-                    className="w-full h-[75vh] rounded-xl border border-white/10 shadow-lg bg-white"
+                    className="w-full h-[75vh] rounded-xl border border-slate-200 shadow-lg bg-white"
                   />
                 ) : (
                   <img

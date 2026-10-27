@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import bcrypt from 'bcryptjs';
+import { joinName } from '@/lib/contract-party';
+import { phoneDigits } from '@/lib/phone';
 
 // ─── POST /api/auth/signup ─────────────────────────────────────────────────────
 export async function POST(request: Request) {
@@ -70,22 +72,43 @@ export async function POST(request: Request) {
       );
     }
 
-    // ── Check if email has been verified via OTP (Bypassed) ───────────────────
+    // ── Extract Tenant Profile Details ─────────────────────────────────────────
+    const rawParty = body.party || {
+      title: body.title || '',
+      firstName: body.firstName || '',
+      lastName: body.lastName || '',
+      houseNo: body.houseNo || '',
+      moo: body.moo || '',
+      soi: body.soi || '',
+      road: body.road || '',
+      subdistrict: body.subdistrict || '',
+      district: body.district || '',
+      province: body.province || '',
+      postcode: body.postcode || '',
+    };
+
+    const phoneVal = body.phone ? phoneDigits(body.phone) : null;
+    const parentPhoneVal = (body.parentPhone || body.parent_phone) ? phoneDigits(body.parentPhone || body.parent_phone) : null;
+    const displayName = (rawParty.firstName && rawParty.lastName) ? joinName(rawParty) : usernameClean;
+    const partyJson = (rawParty.firstName || rawParty.houseNo) ? JSON.stringify(rawParty) : null;
 
     // ── Hash password with BCrypt ─────────────────────────────────────────────
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // ── Insert user with role, primary_role, sub_role, is_active ──────────────
+    // ── Insert user with role, primary_role, phone, parent_phone, party_data ──
     const result = await sql`
-      INSERT INTO users (name, email, password, role, primary_role, sub_role, is_active)
+      INSERT INTO users (name, email, password, role, primary_role, sub_role, is_active, phone, parent_phone, party_data)
       VALUES (
-        ${usernameClean},
+        ${displayName},
         ${cleanEmail},
         ${hashedPassword},
         ${chosenRole},
         ${chosenRole},
         ${null},
-        1
+        1,
+        ${phoneVal},
+        ${parentPhoneVal},
+        ${partyJson}
       )
     `;
     
@@ -98,10 +121,13 @@ export async function POST(request: Request) {
         data: {
           id: insertId,
           username: usernameClean,
-          name: usernameClean,
+          name: displayName,
           email: cleanEmail,
           role: chosenRole,
           sub_role: null,
+          phone: phoneVal,
+          parentPhone: parentPhoneVal,
+          party: rawParty,
         },
       },
       { status: 201 }

@@ -112,6 +112,58 @@ function evaluateFleetLiveness(rooms: SmartMeterRoomNode[]): SmartMeterRoomNode[
   });
 }
 
+
+async function syncDbRoomsToFleet(fleet: SmartMeterRoomNode[]) {
+  try {
+    const sql = getDb();
+    const dbRooms = await sql`SELECT room_number, floor, price FROM rooms`;
+    for (const dbr of dbRooms) {
+      const exists = fleet.some((r) => String(r.roomNumber).trim().toLowerCase() === String(dbr.room_number).trim().toLowerCase());
+      if (!exists) {
+        fleet.push({
+          roomNumber: String(dbr.room_number),
+          floor: (Number(dbr.floor) || 1) as 1 | 2,
+          roomType: 'ห้องแอร์',
+          occupancyStatus: 'AVAILABLE',
+          tenantName: null,
+          rentPrice: Number(dbr.price) || 3000,
+          nodeMode: 'REAL_IOT_HYBRID',
+          deviceId: `ESP32-PZEM-${dbr.room_number}`,
+          loadProfile: 'STANDARD',
+          voltage: 228.6,
+          current: 0.85,
+          activePowerWatt: 194,
+          powerFactor: 0.96,
+          frequencyHz: 50.0,
+          previousMonthKwh: 120.0,
+          currentMeterKwh: 125.40,
+          monthlyUnitsKwh: 5.4,
+          waterPreviousM3: 10,
+          waterCurrentM3: 12,
+          waterUnitsUsed: 2,
+          relayState: 'ON',
+          appliances: { acOn: false, waterHeaterOn: false, pcLoadOn: false, faultOverload: false },
+          esp32Meta: {
+            macAddress: '24:6F:28:AA:FE:01',
+            ipAddress: '192.168.1.199',
+            wifiRssi: -55,
+            firmwareVersion: 'v2.7.0-PZEM004T',
+            samplingIntervalMs: 3000,
+            isHardwareConnected: true,
+            lastHardwarePacketAt: new Date().toISOString(),
+            lastUpdatedAt: new Date().toISOString(),
+            pendingCommand: null,
+            espStatus: 'ONLINE',
+            pzemStatus: 'CONNECTED',
+          },
+        });
+      }
+    }
+  } catch (dbe) {
+    console.warn('Sync DB rooms to IoT fleet warn:', dbe);
+  }
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const pollDeviceId = searchParams.get('deviceId');
@@ -136,6 +188,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  await syncDbRoomsToFleet(smartMeterFleet);
   smartMeterFleet = evaluateFleetLiveness(smartMeterFleet);
 
   return NextResponse.json({

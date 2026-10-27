@@ -369,16 +369,30 @@ export async function issueMonthlyBills(cycle: string | null | undefined, by: Ac
   };
 }
 
-/** Owner/manager, or a tenant who was billed for that room and cycle. */
+/** Owner/manager, or a tenant who was billed for that room and cycle (or initial move-in meter photo). */
 export async function canViewMeterPhoto(user: { id: number; email?: string | null; role: string }, readingId: number) {
   const sql = getDb();
   const rows = await sql`
-    SELECT m.id, m.photo_file, m.billing_cycle, r.room_number FROM meter_readings m JOIN rooms r ON r.id = m.room_id
+    SELECT m.id, m.photo_file, m.billing_cycle, m.kind, m.room_id, r.room_number FROM meter_readings m JOIN rooms r ON r.id = m.room_id
     WHERE m.id = ${readingId} LIMIT 1
   `;
   const m = rows[0];
   if (!m || !m.photo_file) return null;
   if (isStaff(user)) return m.photo_file as string;
+
+  // Allow tenant or guest who holds the contract for this room (e.g. for initial meter photo)
+  if (m.kind === 'start') {
+    const contract = await sql`
+      SELECT c.id FROM contracts c
+      LEFT JOIN tenants t ON t.id = c.tenant_id
+      LEFT JOIN users u ON u.id = t.user_id
+      WHERE c.room_id = ${m.room_id}
+        AND (u.id = ${user.id} OR LOWER(COALESCE(t.email, u.email, '')) = LOWER(${user.email || ''}))
+      LIMIT 1
+    `;
+    if (contract.length > 0) return m.photo_file as string;
+  }
+
   if (user.role !== 'tenant') return null;
   const mine = await sql`
     SELECT b.id FROM bills b JOIN tenants t ON t.id = b.tenant_id

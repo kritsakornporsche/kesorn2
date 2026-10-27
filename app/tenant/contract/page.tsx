@@ -7,6 +7,7 @@ import Image from 'next/image';
 import TenantInspectionCard from '@/components/TenantInspectionCard';
 import { statusText } from '@/lib/status-text';
 import { signedPaperText, type SignedPaper } from '@/lib/signed-paper';
+import { useConfirm } from '@/components/ConfirmModalProvider';
 
 interface Contract {
   /** commit 27 */
@@ -39,6 +40,7 @@ interface Contract {
 export default function TenantContractPage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
+  const { alert } = useConfirm();
 
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [activeContract, setActiveContract] = useState<Contract | null>(null);
@@ -103,15 +105,27 @@ export default function TenantContractPage() {
 
       const data = await res.json();
       if (data.success) {
-        alert('🎉 ส่งคำขอต่อสัญญาเช่าไปยังเจ้าของหอพักเรียบร้อยแล้ว!');
+        await alert({
+          title: 'ส่งคำขอต่อสัญญาสำเร็จ',
+          description: 'ส่งคำขอต่อสัญญาเช่าไปยังเจ้าของหอพักเรียบร้อยแล้ว',
+          variant: 'success',
+        });
         setIsRenewModalOpen(false);
         fetchTenantContracts();
       } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการส่งคำขอ');
+        await alert({
+          title: 'ส่งคำขอไม่สำเร็จ',
+          description: data.message || 'เกิดข้อผิดพลาดในการส่งคำขอ',
+          variant: 'danger',
+        });
       }
     } catch (err: any) {
       console.error(err);
-      alert('เกิดข้อผิดพลาด: ' + err.message);
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        description: err.message || 'ไม่สามารถดำเนินการได้',
+        variant: 'danger',
+      });
     } finally {
       setSubmitting(false);
     }

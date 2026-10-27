@@ -383,7 +383,18 @@ export async function defaultItemsFor(contractId: number, roomId: number, kind: 
 /** Starting items for a new inspection: the dorm's item list for the room's type (lib/room-items.ts). */
 export async function defaultItems(roomId: number): Promise<StartItem[]> {
   const sql = getDb();
-  const rows = await sql`SELECT room_type FROM rooms WHERE id = ${roomId} LIMIT 1`;
+  const rows = await sql`SELECT room_type, amenities FROM rooms WHERE id = ${roomId} LIMIT 1`;
+  if (rows[0]?.amenities) {
+    try {
+      const parsed = typeof rows[0].amenities === 'string' ? JSON.parse(rows[0].amenities) : rows[0].amenities;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((it: any) => {
+          const name = typeof it === 'string' ? it : it.name;
+          return { name, note: null, countable: isCountableName(name), quantity: null };
+        });
+      }
+    } catch {}
+  }
   return itemsForRoomType(rows[0]?.room_type).map((it) => ({ name: it.name, note: null, countable: it.countable, quantity: null }));
 }
 

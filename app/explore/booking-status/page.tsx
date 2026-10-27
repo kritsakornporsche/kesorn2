@@ -10,9 +10,11 @@ import { formatBaht } from '@/lib/format';
 import { BOOKING_REQUEST_NOTE } from '@/lib/booking-text';
 import { BECOME_TENANT_TEXT, NextStepLine, StepChecklist } from '@/components/BookingSteps';
 import type { BookingSteps } from '@/lib/booking-steps';
+import { useConfirm } from '@/components/ConfirmModalProvider';
 
 interface Booking {
   contract_id: number;
+  booking_bill_id?: number | null;
   status: string;
   start_date: string;
   end_date: string;
@@ -63,8 +65,9 @@ const statusConfig: Record<string, { label: string; color: string; bg: string; i
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
 export default function BookingStatusPage() {
-  const { status: sessionStatus } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
+  const { confirm } = useConfirm();
 
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,6 +82,16 @@ export default function BookingStatusPage() {
   const syncedAt = useRef<number>(0);
   const [, setTick] = useState(0);
   const [dynamicQrTarget, setDynamicQrTarget] = useState<Booking | null>(null);
+  const [dynamicQr, setDynamicQr] = useState<{
+    qrDataUrl: string;
+    expectedAmount: number;
+    sessionId: string;
+    status: string;
+    promptpayNumber: string;
+    promptpayName: string;
+  } | null>(null);
+  const [dynamicLoading, setDynamicLoading] = useState(false);
+  const [paymentMethodTab, setPaymentMethodTab] = useState<"auto" | "slip">("auto");
 
   const showToast = (message: string, type: ToastType) => {
     setToast({ message, type });
@@ -124,8 +137,85 @@ export default function BookingStatusPage() {
     return () => clearInterval(id);
   }, [open?.contract_id]);
 
+  // Alert on screen when status transitions to BookingApproved
+  const prevStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    if (prevStatusRef.current === 'BookingRequested' && open.status === 'BookingApproved') {
+      showToast('🎉 หอพักอนุมัติการจองแล้ว! กรุณาชำระค่าจองภายใน 10 นาที', 'success');
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        new Notification('🎉 หอพักอนุมัติการจองแล้ว!', {
+          body: `ห้อง ${open.room_number}: กรุณาชำระค่าจอง ฿${formatBaht(open.booking_fee)} ภายใน 10 นาที`,
+          icon: '/favicon.ico',
+        });
+      }
+    }
+    prevStatusRef.current = open.status;
+  }, [open?.status, open?.room_number, open?.booking_fee]);
+
   const left = (seconds: number | null) =>
     seconds === null ? null : Math.max(0, seconds - Math.floor((performance.now() - syncedAt.current) / 1000));
+
+  // Dynamic QR: Fetch auto QR and poll payment status
+  useEffect(() => {
+    if (!open || open.status !== 'BookingApproved') {
+      setDynamicQr(null);
+      return;
+    }
+    setDynamicLoading(true);
+    const qs = new URLSearchParams({
+      amount: String(open.booking_fee || 1000),
+      roomNumber: String(open.room_number || '104'),
+      tenantName: String(session?.user?.name || 'ผู้จองห้อง'),
+      billTitle: `ค่าจองห้อง ${open.room_number}`,
+      enableSatang: 'true',
+    });
+    if (open.booking_bill_id) qs.set('billId', String(open.booking_bill_id));
+
+    fetch(`/api/features/dynamic-qr?${qs.toString()}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.session) {
+          setDynamicQr({
+            qrDataUrl: data.qrDataUrl,
+            expectedAmount: data.session.expectedAmount,
+            sessionId: data.session.sessionId,
+            status: data.session.status,
+            promptpayNumber: data.session.promptpayNumber || '063-604-0550',
+            promptpayName: data.session.promptpayName || 'นาย กฤษกร บัวอินทร์',
+          });
+        }
+      })
+      .catch((e) => console.error('[Dynamic QR fetch error]', e))
+      .finally(() => setDynamicLoading(false));
+  }, [open?.contract_id, open?.status, open?.booking_fee, open?.room_number, open?.booking_bill_id, session?.user?.name]);
+
+  useEffect(() => {
+    if (!dynamicQr || dynamicQr.status === 'PAID' || paymentMethodTab !== 'auto') return;
+    const timer = setInterval(async () => {
+      try {
+        const qs = new URLSearchParams({
+          action: 'status',
+          sessionId: dynamicQr.sessionId,
+          checkImap: 'true',
+          amount: String(dynamicQr.expectedAmount),
+          roomNumber: open?.room_number || '104',
+        });
+        const res = await fetch(`/api/features/dynamic-qr?${qs.toString()}`);
+        const data = await res.json();
+        if (data.success && data.session) {
+          if (data.session.status === 'PAID') {
+            setDynamicQr((prev) => (prev ? { ...prev, status: 'PAID' } : null));
+            showToast('ชำระค่าจองห้องพักเรียบร้อยแล้ว!', 'success');
+            await fetchBookings();
+          }
+        }
+      } catch {
+        // ignore network error
+      }
+    }, 3500);
+    return () => clearInterval(timer);
+  }, [dynamicQr?.sessionId, dynamicQr?.status, paymentMethodTab, open?.room_number, fetchBookings]);
 
   // QR for the booking fee (amount from the server)
   useEffect(() => {
@@ -168,10 +258,16 @@ export default function BookingStatusPage() {
 
   const handleCancel = async (booking: Booking) => {
     const paid = PAID.includes(booking.status);
-    const message = paid
-      ? 'ยืนยันยกเลิกการจอง? ค่าจองที่ชำระแล้วจะไม่คืน (เป็นไปตามเงื่อนไขการจอง) และห้องจะเปิดให้ผู้อื่นจองทันที'
-      : 'ยืนยันยกเลิกคำขอจอง? ห้องจะเปิดให้ผู้อื่นจองทันที';
-    if (!confirm(message)) return;
+    const ok = await confirm({
+      title: paid ? 'ยืนยันยกเลิกการจองห้องพัก?' : 'ยืนยันยกเลิกคำขอจองห้องพัก?',
+      description: paid
+        ? 'ค่าจองที่ชำระแล้วจะไม่คืน (เป็นไปตามเงื่อนไขการจอง) และห้องพักจะเปิดให้ผู้อื่นจองทันที'
+        : 'คำขอจองจะถูกยกเลิก และห้องพักจะเปิดให้ผู้อื่นจองทันที',
+      confirmText: 'ยืนยันยกเลิก',
+      cancelText: 'ย้อนกลับ',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setCancelling(booking.contract_id);
     try {
       const res = await fetch('/api/booking/cancel', {
@@ -222,7 +318,7 @@ export default function BookingStatusPage() {
       <div className="max-w-3xl mx-auto px-6 pt-10 space-y-8">
         <div className="space-y-1">
           <h1 className="text-3xl font-black tracking-tight">📋 สถานะการจองของคุณ</h1>
-          <p className="text-sm text-muted-foreground">1 ขอจอง → 2 ชำระค่าจอง (10 นาที) → 3 หอพักยืนยันข้อมูลสัญญา → 4 ตรวจห้องและรับทราบ → 5 ลงนามสัญญา → 6 บิลค่าแรกเข้า → 7 ชำระ = เป็นลูกหอ</p>
+          
         </div>
 
         {bookings.length === 0 && (
@@ -251,79 +347,139 @@ export default function BookingStatusPage() {
               {booking.status === 'BookingRequested' && (
                 <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-xs text-amber-300 leading-relaxed">
                   ส่งคำขอจองแล้ว รอหอพักอนุมัติ
-                  <span className="block mt-1 text-amber-300/90">{BOOKING_REQUEST_NOTE}</span>
+                  
                 </div>
               )}
 
               {booking.status === 'BookingApproved' && !uploadOver && (
                 <div className="space-y-4">
-                  <div className={`p-5 rounded-2xl border text-center ${toPay !== null && toPay > 0 && toPay <= WARN_SECONDS ? 'bg-rose-500/10 border-rose-500/30' : 'bg-sky-500/10 border-sky-500/30'}`}>
+                  {/* Countdown Timer */}
+                  <div className={`p-4 rounded-2xl border text-center ${toPay !== null && toPay > 0 && toPay <= WARN_SECONDS ? 'bg-rose-500/10 border-rose-500/30' : 'bg-sky-500/10 border-sky-500/30'}`}>
                     {toPay !== null && toPay > 0 ? (
                       <>
                         <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">เหลือเวลาโอน</p>
-                        <p className="text-5xl font-black font-mono">{clock(toPay)}</p>
+                        <p className="text-4xl font-black font-mono">{clock(toPay)}</p>
                         {toPay <= WARN_SECONDS && (
-                          <p className="text-xs text-rose-400 font-bold mt-2">เหลือเวลาอีก 5 นาที — หากไม่ชำระภายในเวลา การจองจะหมดอายุและห้องจะเปิดให้ผู้อื่นจอง</p>
+                          <p className="text-xs text-rose-400 font-bold mt-1">เหลือเวลาอีก 5 นาที</p>
                         )}
                       </>
                     ) : (
-                      <p className="text-sm text-amber-300 font-bold">หมดเวลาโอนแล้ว — หากโอนภายในเวลาแล้ว กรุณาอัปโหลดสลิปภายใน {Math.ceil((toUpload || 0) / 60)} นาที</p>
+                      <p className="text-sm text-amber-300 font-bold">หมดเวลาโอน — กรุณาแนบสลิปภายใน {Math.ceil((toUpload || 0) / 60)} นาที</p>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    หอพักอนุมัติการจองแล้ว กรุณาโอนค่าจอง ฿{formatBaht(booking.booking_fee)} และอัปโหลดสลิปภายในเวลา · โอนหลังเวลาอนุมัติเท่านั้น · ค่าจองเป็นส่วนหนึ่งของเงินประกัน ไม่คืนหากยกเลิกการจองหรือไม่มาตามนัด
-                  </p>
-                  {qr && toPay !== null && toPay > 0 && (
-                    <div className="flex flex-col items-center text-center">
-                      <img src={qr.qrImage} alt="PromptPay QR" className="w-52 h-52 object-contain bg-white p-2 rounded-xl shadow-md" />
-                      <p className="text-xs text-muted-foreground mt-3 font-bold tracking-wider">พร้อมเพย์: {qr.promptpayNumber}</p>
-                      {qr.promptpayName && <p className="text-xs text-muted-foreground">{qr.promptpayName}</p>}
-                    </div>
-                  )}
-                  {qrFailed && toPay !== null && toPay > 0 && (
-                    <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-xs text-red-400 font-bold text-center">
-                      หอพักยังไม่ได้ตั้งเลขพร้อมเพย์ กรุณาติดต่อหอพัก{phoneOf(booking) ? ` โทร ${phoneOf(booking)}` : ''}
-                    </div>
-                  )}
+
+                  {/* Payment Method Switcher Tabs */}
                   {toPay !== null && toPay > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setDynamicQrTarget(booking)}
-                      className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs shadow-lg shadow-emerald-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <span>⚡</span>
-                      <span>ชำระค่าจองด่วน (ตรวจเงินเข้าอัตโนมัติ ไม่ต้องส่งสลิป)</span>
-                    </button>
+                    <div className="flex p-1 bg-secondary/60 rounded-2xl border border-border gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethodTab('auto')}
+                        className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          paymentMethodTab === 'auto'
+                            ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        <span>⚡</span>
+                        <span>สแกนจ่ายอัตโนมัติ</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethodTab('slip')}
+                        className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          paymentMethodTab === 'slip'
+                            ? 'bg-primary text-white shadow-md'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        <span>📎</span>
+                        <span>แนบสลิป (สำรอง)</span>
+                      </button>
+                    </div>
                   )}
-                  {qr && toPay !== null && toPay > 0 && (
-                    <PromptPayBankSelector
-                      qrImage={qr.qrImage}
-                      promptpayNumber={qr.promptpayNumber}
-                      promptpayName={qr.promptpayName}
-                      amount={booking.booking_fee}
-                      fileName={`booking-${booking.contract_id}.png`}
-                    />
+
+                  {/* TAB 1: Auto Detection (QR displayed directly!) */}
+                  {paymentMethodTab === 'auto' && toPay !== null && toPay > 0 && (
+                    <div className="p-5 rounded-2xl bg-secondary/30 border border-border space-y-4 text-center">
+                      {dynamicLoading && !dynamicQr ? (
+                        <div className="w-52 h-52 mx-auto bg-card rounded-2xl border border-border flex flex-col items-center justify-center gap-2">
+                          <div className="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                          <span className="text-xs text-muted-foreground font-bold">กำลังสร้าง QR...</span>
+                        </div>
+                      ) : dynamicQr?.qrDataUrl ? (
+                        <div className="space-y-3">
+                          <img
+                            src={dynamicQr.qrDataUrl}
+                            alt="PromptPay QR"
+                            className="w-52 h-52 mx-auto object-contain bg-white p-2 rounded-2xl shadow-md border border-border"
+                          />
+                          <div className="space-y-1">
+                            <div className="text-2xl font-black text-emerald-500 font-mono">
+                              ฿{dynamicQr.expectedAmount.toFixed(2)}
+                            </div>
+                            <div className="text-xs text-muted-foreground font-bold">
+                              พร้อมเพย์: {dynamicQr.promptpayNumber} ({dynamicQr.promptpayName})
+                            </div>
+                          </div>
+                          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            <span>รอเงินเข้า... (ตรวจจับอัตโนมัติ)</span>
+                          </div>
+                          <PromptPayBankSelector
+                            qrImage={dynamicQr.qrDataUrl}
+                            promptpayNumber={dynamicQr.promptpayNumber}
+                            promptpayName={dynamicQr.promptpayName}
+                            amount={dynamicQr.expectedAmount}
+                            fileName={`booking-qr-${booking.contract_id}.png`}
+                          />
+                        </div>
+                      ) : (
+                        <div className="p-4 text-xs text-muted-foreground font-bold">
+                          ไม่สามารถสร้าง QR ได้ กรุณาสลับไปใช้แบบแนบสลิป
+                        </div>
+                      )}
+                    </div>
                   )}
-                  <div className="space-y-3">
-                    {slipData ? (
-                      <div className="flex items-center gap-3">
-                        <img src={slipData} alt="สลิป" className="w-20 h-28 object-cover rounded-xl border border-border" />
-                        <button onClick={() => setSlipData(null)} className="text-xs text-rose-400 font-bold cursor-pointer">ลบ / เลือกใหม่</button>
+
+                  {/* TAB 2: Fallback - Manual Slip Upload */}
+                  {(paymentMethodTab === 'slip' || toPay === 0) && (
+                    <div className="p-5 rounded-2xl bg-secondary/30 border border-border space-y-4">
+                      {qr && toPay !== null && toPay > 0 && (
+                        <div className="flex flex-col items-center text-center space-y-2">
+                          <img src={qr.qrImage} alt="PromptPay QR" className="w-52 h-52 object-contain bg-white p-2 rounded-2xl shadow-md border border-border" />
+                          <div className="text-2xl font-black text-foreground font-mono">฿{formatBaht(booking.booking_fee)}</div>
+                          <p className="text-xs text-muted-foreground font-bold">พร้อมเพย์: {qr.promptpayNumber} {qr.promptpayName ? `(${qr.promptpayName})` : ''}</p>
+                          <PromptPayBankSelector
+                            qrImage={qr.qrImage}
+                            promptpayNumber={qr.promptpayNumber}
+                            promptpayName={qr.promptpayName}
+                            amount={booking.booking_fee}
+                            fileName={`booking-${booking.contract_id}.png`}
+                          />
+                        </div>
+                      )}
+                      <div className="space-y-3">
+                        {slipData ? (
+                          <div className="flex items-center gap-3">
+                            <img src={slipData} alt="สลิป" className="w-20 h-28 object-cover rounded-xl border border-border" />
+                            <button onClick={() => setSlipData(null)} className="text-xs text-rose-400 font-bold cursor-pointer">ลบ / เลือกใหม่</button>
+                          </div>
+                        ) : (
+                          <label className="block p-6 border-2 border-dashed border-border rounded-2xl text-center text-xs font-bold text-muted-foreground cursor-pointer hover:border-primary">
+                            📎 แนบรูปสลิปการโอนเงิน
+                            <input type="file" accept="image/*" className="hidden" onChange={handleSlip} />
+                          </label>
+                        )}
+                        <button
+                          onClick={() => handlePay(booking)}
+                          disabled={!slipData || paying}
+                          className="w-full py-4 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-sm shadow-xl disabled:opacity-40 cursor-pointer"
+                        >
+                          {paying ? 'กำลังตรวจสอบสลิป...' : '✓ ยืนยันการชำระค่าจอง'}
+                        </button>
                       </div>
-                    ) : (
-                      <label className="block p-6 border-2 border-dashed border-border rounded-2xl text-center text-xs font-bold text-muted-foreground cursor-pointer hover:border-primary">
-                        📎 แนบรูปสลิปการโอนเงิน
-                        <input type="file" accept="image/*" className="hidden" onChange={handleSlip} />
-                      </label>
-                    )}
-                    <button
-                      onClick={() => handlePay(booking)}
-                      disabled={!slipData || paying}
-                      className="w-full py-4 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-sm shadow-xl disabled:opacity-40 cursor-pointer"
-                    >
-                      {paying ? 'กำลังตรวจสอบสลิป...' : '✓ ยืนยันการชำระค่าจอง'}
-                    </button>
-                  </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -338,7 +494,7 @@ export default function BookingStatusPage() {
                 <div className="space-y-2">
                   <StepChecklist steps={booking.steps} viewer="booker" tone="theme" />
                   <NextStepLine steps={booking.steps} viewer="booker" tone="theme" />
-                  <p className="text-xs text-muted-foreground">{BECOME_TENANT_TEXT}</p>
+                  
                 </div>
               )}
 
@@ -428,12 +584,16 @@ export default function BookingStatusPage() {
             setDynamicQrTarget(null);
             fetchBookings();
           }}
-          billId={null}
+          billId={dynamicQrTarget.booking_bill_id || null}
           roomNumber={dynamicQrTarget.room_number || '104'}
           tenantName={session?.user?.name || 'ผู้จองห้อง'}
           billTitle={`ค่าจองห้อง ${dynamicQrTarget.room_number}`}
           amount={Number(dynamicQrTarget.booking_fee || 1000)}
           enableSatang={true}
+          onSwitchToSlip={() => {
+            setDynamicQrTarget(null);
+            setPaymentMethodTab('slip');
+          }}
           onPaid={async () => {
             showToast('ชำระค่าจองห้องพักเรียบร้อยแล้ว!', 'success');
             setDynamicQrTarget(null);

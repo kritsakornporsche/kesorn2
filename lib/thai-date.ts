@@ -44,3 +44,15 @@ export function thaiDate(v: string | null | undefined, long = false): string {
   const d = fromYmd(v);
   return `${d.getUTCDate()} ${(long ? TH_MONTHS : TH_MONTHS_SHORT)[d.getUTCMonth()]} ${d.getUTCFullYear() + 543}`;
 }
+
+/** Detect lease duration in months (3 to 12) between start and end dates */
+export function detectLeaseMonths(start: string, end: string): number {
+  if (!isYmd(start) || !isYmd(end)) return 12;
+  for (let m = 3; m <= 12; m++) {
+    if (leaseEnd(start, m) === end) return m;
+  }
+  const s = fromYmd(start);
+  const e = fromYmd(end);
+  const diff = (e.getUTCFullYear() - s.getUTCFullYear()) * 12 + (e.getUTCMonth() - s.getUTCMonth());
+  return Math.min(12, Math.max(3, diff || 12));
+}

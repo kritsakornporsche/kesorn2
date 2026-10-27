@@ -66,18 +66,16 @@ export async function POST(req: Request) {
         LIMIT 1
       `;
       if (rows[0]?.user_id) {
-        await sql`
-          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-          VALUES (
-            ${rows[0].user_id},
-            'บันทึกการรับชำระเงินแล้ว',
-            ${`บิล ${rows[0].title || ''} รับชำระ ฿${formatBaht(amount)}` + (result.status === 'Paid' ? ' (ชำระครบ)' : ` · คงเหลือ ฿${formatBaht(result.outstanding)}`)},
-            'payment_approved',
-            0,
-            '/tenant/billing',
-            NOW()
-          )
-        `;
+        const { createUserNotification } = await import('@/lib/notifications');
+        const notifTitle = result.status === 'Paid' ? '💰 หอพักบันทึกการรับชำระเงินแล้ว (ชำระครบ)' : '💰 หอพักบันทึกการรับชำระเงินแล้ว';
+        const notifMsg = `บิล ${rows[0].title || ''} รับชำระ ฿${formatBaht(amount)}` + (result.status === 'Paid' ? ' (ชำระครบแล้ว)' : ` · คงเหลือ ฿${formatBaht(result.outstanding)}`);
+        await createUserNotification({
+          userId: rows[0].user_id,
+          title: notifTitle,
+          message: notifMsg,
+          type: 'payment_approved',
+          link: '/tenant/billing',
+        });
       }
     } catch (e) {
       console.warn('[Billing receive notify]', e);

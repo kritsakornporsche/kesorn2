@@ -9,6 +9,7 @@ import Image from 'next/image';
 import { formatBaht, formatThaiDateTime, PAYMENT_METHOD_LABEL } from '@/lib/format';
 import { isPaidStatus, statusText } from '@/lib/status-text';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
+import { useConfirm } from '@/components/ConfirmModalProvider';
 
 // One-line label of a bill that is not split into rent / utilities (same rule as the receipt: lines only when they add up)
 const BILL_TYPE_LINE: Record<string, string> = {
@@ -18,6 +19,7 @@ const BILL_TYPE_LINE: Record<string, string> = {
 
 interface Bill {
   id: number;
+  room_number?: string;
   title: string;
   bill_type?: string | null;
   is_first_bill?: number | boolean;
@@ -53,6 +55,7 @@ interface Bill {
 export default function TenantBillingPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { confirm, alert } = useConfirm();
   
   const [bills, setBills] = useState<Bill[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,12 +95,16 @@ export default function TenantBillingPage() {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedBill) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      alert('ขนาดไฟล์ต้องไม่เกิน 5MB');
+      await alert({
+        title: 'ไฟล์มีขนาดใหญ่เกินไป',
+        description: 'กรุณาอัปโหลดไฟล์ขนาดไม่เกิน 5MB',
+        variant: 'warning',
+      });
       return;
     }
 
@@ -114,15 +121,27 @@ export default function TenantBillingPage() {
         });
         const json = await res.json();
         if (json.success) {
-          alert('✓ ส่งสลิปชำระเงินเรียบร้อยแล้ว');
+          await alert({
+            title: 'ส่งสลิปเรียบร้อย',
+            description: 'ส่งสลิปชำระเงินเรียบร้อยแล้ว ระบบจะทำการตรวจสอบความถูกต้อง',
+            variant: 'success',
+          });
           setModalType(null);
           fetchBills();
         } else {
-          alert('เกิดข้อผิดพลาด: ' + json.message);
+          await alert({
+            title: 'เกิดข้อผิดพลาด',
+            description: json.message || 'ไม่สามารถส่งสลิปได้',
+            variant: 'danger',
+          });
         }
       } catch (err) {
         console.error(err);
-        alert('เกิดข้อผิดพลาดในการโหลดไฟล์');
+        await alert({
+          title: 'เกิดข้อผิดพลาด',
+          description: 'เกิดข้อผิดพลาดในการโหลดไฟล์สลิป',
+          variant: 'danger',
+        });
       } finally {
         setUploading(false);
       }
@@ -195,23 +214,42 @@ export default function TenantBillingPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert('✅ ส่งคำขอแก้ไขบิลเรียบร้อยแล้ว บิลถูกระงับชำระชั่วคราวเพื่อรอเจ้าของหอตรวจสอบ');
+        await alert({
+          title: 'ส่งคำขอแก้ไขบิลสำเร็จ',
+          description: 'ส่งคำขอแก้ไขบิลเรียบร้อยแล้ว บิลถูกระงับชำระชั่วคราวเพื่อรอเจ้าของหอตรวจสอบ',
+          variant: 'success',
+        });
         setModalType(null);
         fetchBills();
       } else {
-        alert(data.message || 'เกิดข้อผิดพลาดในการส่งคำขอ');
+        await alert({
+          title: 'ส่งคำขอไม่สำเร็จ',
+          description: data.message || 'เกิดข้อผิดพลาดในการส่งคำขอ',
+          variant: 'danger',
+        });
       }
     } catch (err: any) {
-      alert('เกิดข้อผิดพลาด: ' + err.message);
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        description: err.message || 'ไม่สามารถดำเนินการได้',
+        variant: 'danger',
+      });
     } finally {
       setSubmittingDispute(false);
     }
   };
 
   const handleResolveOwnerDispute = async (correctionId: number, action: 'approve' | 'reject') => {
-    if (!confirm(action === 'approve' ? 'ยืนยันการอนุมัติยอดบิลที่เจ้าของหอขอแก้ไขหรือไม่?' : 'ยืนยันการปฏิเสธคำขอแก้ไขบิลของเจ้าของหอหรือไม่?')) {
-      return;
-    }
+    const ok = await confirm({
+      title: action === 'approve' ? 'อนุมัติยอดบิลที่แก้ไข?' : 'ปฏิเสธคำขอแก้ไขบิล?',
+      description: action === 'approve'
+        ? 'ยืนยันการอนุมัติยอดบิลที่เจ้าของหอขอแก้ไข ยอดบิลจะถูกปรับตามที่ระบุ'
+        : 'ยืนยันการปฏิเสธคำขอแก้ไขบิลของเจ้าของหอ บิลจะกลับสู่ยอดเดิม',
+      confirmText: action === 'approve' ? 'อนุมัติยอดบิล' : 'ปฏิเสธคำขอ',
+      cancelText: 'ย้อนกลับ',
+      variant: action === 'approve' ? 'info' : 'danger',
+    });
+    if (!ok) return;
     try {
       const res = await fetch('/api/owner/billing/dispute', {
         method: 'PUT',
@@ -220,13 +258,25 @@ export default function TenantBillingPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert(data.message);
+        await alert({
+          title: 'สำเร็จ',
+          description: data.message,
+          variant: 'success',
+        });
         fetchBills();
       } else {
-        alert(data.message || 'เกิดข้อผิดพลาด');
+        await alert({
+          title: 'ทำรายการไม่สำเร็จ',
+          description: data.message || 'เกิดข้อผิดพลาด',
+          variant: 'danger',
+        });
       }
     } catch (err: any) {
-      alert('เกิดข้อผิดพลาด: ' + err.message);
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        description: err.message || 'ไม่สามารถดำเนินการได้',
+        variant: 'danger',
+      });
     }
   };
 
@@ -504,24 +554,16 @@ export default function TenantBillingPage() {
                             onClick={() => { setSelectedBill(bill); setShowDynamicQr(true); }}
                             className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black py-3 px-3 rounded-2xl transition-all shadow-md shadow-emerald-600/20 active:scale-[0.98] flex items-center justify-center gap-2 text-xs disabled:opacity-50 cursor-pointer"
                           >
-                            <span>⚡</span>
-                            <span>ชำระเงินด่วน (ตรวจเงินเข้าทันที)</span>
-                          </button>
-                          <button 
-                            disabled={isPendingCorrection}
-                            onClick={() => handleOpenQR(bill)}
-                            className="w-full bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 font-bold py-2 px-3 rounded-2xl transition-all active:scale-[0.98] text-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-                          >
                             <span>💳</span>
-                            <span>QR โค้ดมาตรฐาน</span>
+                            <span>ชำระเงิน</span>
                           </button>
                           <button 
                             disabled={isPendingCorrection}
                             onClick={() => { setSelectedBill(bill); setModalType('upload'); }}
-                            className="w-full bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground border border-border font-bold py-2 px-3 rounded-2xl transition-all active:scale-[0.98] text-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                            className="w-full bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground border border-border font-bold py-2.5 px-3 rounded-2xl transition-all active:scale-[0.98] text-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                           >
                             <span>📎</span>
-                            <span>แจ้งโอนเงิน / แนบสลิป</span>
+                            <span>แนบสลิป</span>
                           </button>
                         </>
                       ) : isPendingCorrection ? (
@@ -556,25 +598,25 @@ export default function TenantBillingPage() {
 
       {/* Meter Evidence Photo Modal */}
       {modalType === 'meter_photo' && selectedBill && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in">
-          <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl p-6 sm:p-8 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-white/10">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl p-6 sm:p-8 space-y-4">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-200">
               <div>
-                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
                   <span>📸 รูปหลักฐานมิเตอร์ไฟฟ้า</span>
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">รอบบิล {selectedBill.billing_cycle || '-'}</p>
+                <p className="text-xs text-slate-500 mt-0.5">รอบบิล {selectedBill.billing_cycle || '-'}</p>
               </div>
               <button
                 onClick={() => setModalType(null)}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 flex items-center justify-center cursor-pointer"
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center cursor-pointer transition-colors"
               >
                 ✕
               </button>
             </div>
 
             {selectedBill.meter_photo_url ? (
-              <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-black/60 border border-white/10">
+              <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-slate-100 border border-slate-200">
                 <Image
                   src={selectedBill.meter_photo_url}
                   alt="Meter Reading Evidence"
@@ -584,18 +626,18 @@ export default function TenantBillingPage() {
                 />
               </div>
             ) : (
-              <div className="p-12 text-center text-slate-400 font-bold bg-slate-950 rounded-2xl">
+              <div className="p-12 text-center text-slate-500 font-bold bg-slate-50 border border-slate-200 rounded-2xl">
                 ไม่มีรูปภาพมิเตอร์ในรอบบิลนี้
               </div>
             )}
 
-            <div className="bg-slate-950 p-4 rounded-2xl border border-white/5 grid grid-cols-2 gap-3 text-xs">
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 grid grid-cols-2 gap-3 text-xs">
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">หน่วยที่คำนวณในบิล</span>
-                <span className="text-white font-black text-base">{selectedBill.electric_units || 0} หน่วย</span>
+                <span className="text-slate-500 block text-[10px] uppercase font-bold">หน่วยที่คำนวณในบิล</span>
+                <span className="text-slate-900 font-black text-base">{selectedBill.electric_units || 0} หน่วย</span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">
+                <span className="text-slate-500 block text-[10px] uppercase font-bold">
                   ค่าไฟฟ้า{Number(selectedBill.electric_units) > 0 ? ` (@${Number((Number(selectedBill.electric_amount || 0) / Number(selectedBill.electric_units)).toFixed(2))} บ.)` : ''}
                 </span>
                 <span className="text-primary font-black text-base">฿{formatBaht(selectedBill.electric_amount || 0)}</span>
@@ -604,7 +646,7 @@ export default function TenantBillingPage() {
 
             <button
               onClick={() => setModalType(null)}
-              className="w-full py-3 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer"
+              className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer border border-slate-200"
             >
               ปิดหน้าต่าง
             </button>
@@ -614,33 +656,33 @@ export default function TenantBillingPage() {
 
       {/* Dispute Modal */}
       {modalType === 'dispute' && selectedBill && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in">
-          <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl p-6 sm:p-8 space-y-5">
-            <div className="flex justify-between items-center pb-3 border-b border-white/10">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl p-6 sm:p-8 space-y-5">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-200">
               <div>
-                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
                   <span>📝 ขอแก้ไขบิลค่าใช้จ่าย</span>
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">{selectedBill.title} (รอบบิล {selectedBill.billing_cycle})</p>
+                <p className="text-xs text-slate-500 mt-0.5">{selectedBill.title} (รอบบิล {selectedBill.billing_cycle})</p>
               </div>
               <button
                 onClick={() => setModalType(null)}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 flex items-center justify-center cursor-pointer"
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center cursor-pointer transition-colors"
               >
                 ✕
               </button>
             </div>
 
             <form onSubmit={handleSubmitDispute} className="space-y-4 text-xs">
-              <div className="bg-amber-500/10 border border-amber-500/20 p-3.5 rounded-2xl text-amber-200">
+              <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-2xl text-amber-800">
                 <p className="font-bold">⚠️ หมายเหตุการขอแก้ไขบิล:</p>
-                <p className="mt-1 text-[11px] text-white/80 leading-relaxed">
+                <p className="mt-1 text-[11px] text-slate-700 leading-relaxed">
                   เมื่อกดส่งคำขอ บิลจะถูกระงับการชำระชั่วคราวและส่งแจ้งเตือนไปยังเจ้าของหอพักทันที เมื่อเจ้าของหอพักตรวจสอบและอนุมัติ ระบบจะปรับปรุงยอดและขยายเวลากำหนดชำระให้อีก 5 วัน
                 </p>
               </div>
 
               <div>
-                <label className="block text-slate-300 font-bold mb-1.5">
+                <label className="block text-slate-700 font-bold mb-1.5">
                   หน่วยไฟฟ้าที่ถูกต้อง (หน่วย) *
                 </label>
                 <input
@@ -650,15 +692,15 @@ export default function TenantBillingPage() {
                   value={disputeReading}
                   onChange={(e) => setDisputeReading(e.target.value)}
                   placeholder="ระบุจำนวนหน่วยไฟฟ้าที่ถูกต้องตามมิเตอร์จริง"
-                  className="w-full px-4 py-3 bg-slate-950 border border-white/10 rounded-xl text-white font-bold focus:outline-none focus:border-amber-400"
+                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-slate-900 font-bold focus:outline-none focus:border-primary shadow-xs"
                 />
-                <span className="text-[10px] text-slate-400 mt-1 block">
+                <span className="text-[10px] text-slate-500 mt-1 block">
                   หน่วยเดิมในบิล: {selectedBill.electric_units || 0} หน่วย
                 </span>
               </div>
 
               <div>
-                <label className="block text-slate-300 font-bold mb-1.5">
+                <label className="block text-slate-700 font-bold mb-1.5">
                   เหตุผล / รายละเอียดที่ขอแก้ไข *
                 </label>
                 <textarea
@@ -667,22 +709,22 @@ export default function TenantBillingPage() {
                   value={disputeReason}
                   onChange={(e) => setDisputeReason(e.target.value)}
                   placeholder="เช่น จดเลขมิเตอร์สลับกับห้องข้างเคียง, เลขมิเตอร์จริงบนหน้าปัดคือ 1234..."
-                  className="w-full px-4 py-3 bg-slate-950 border border-white/10 rounded-xl text-white focus:outline-none focus:border-amber-400"
+                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-slate-900 focus:outline-none focus:border-primary shadow-xs"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-300 font-bold mb-1.5">
+                <label className="block text-slate-700 font-bold mb-1.5">
                   แนบรูปถ่ายมิเตอร์เป็นหลักฐาน (ถ้ามี)
                 </label>
                 <input
                   type="file"
                   accept="image/*"
                   onChange={handleDisputeEvidenceUpload}
-                  className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-slate-400 text-xs"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-700 text-xs shadow-xs"
                 />
                 {disputeEvidence && (
-                  <div className="mt-2 w-24 h-24 relative rounded-lg overflow-hidden border border-white/20">
+                  <div className="mt-2 w-24 h-24 relative rounded-lg overflow-hidden border border-slate-200">
                     <img src={disputeEvidence} alt="Evidence Preview" className="w-full h-full object-cover" />
                   </div>
                 )}
@@ -692,14 +734,14 @@ export default function TenantBillingPage() {
                 <button
                   type="button"
                   onClick={() => setModalType(null)}
-                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-colors cursor-pointer"
+                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors cursor-pointer border border-slate-200"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
                   disabled={submittingDispute}
-                  className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                  className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-black rounded-xl shadow-xs transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                 >
                   {submittingDispute ? 'กำลังส่งเรื่อง...' : '✓ ยืนยันส่งคำขอแก้ไข'}
                 </button>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
+import { useConfirm } from '@/components/ConfirmModalProvider';
 
 interface Conversation {
   id: number;
@@ -23,6 +24,7 @@ interface Message {
 
 export default function OwnerChatPage() {
   const { data: session } = useSession();
+  const { alert } = useConfirm();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -94,17 +96,25 @@ export default function OwnerChatPage() {
     }
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert('กรุณาเลือกไฟล์รูปภาพเท่านั้น (JPG, PNG, WebP)');
+      await alert({
+        title: 'ชนิดไฟล์ไม่ถูกต้อง',
+        description: 'กรุณาเลือกไฟล์รูปภาพเท่านั้น (JPG, PNG, WebP)',
+        variant: 'warning',
+      });
       return;
     }
 
     if (file.size > 10 * 1024 * 1024) {
-      alert('ขนาดรูปภาพต้องไม่เกิน 10MB');
+      await alert({
+        title: 'รูปภาพมีขนาดใหญ่เกินไป',
+        description: 'ขนาดรูปภาพต้องไม่เกิน 10MB',
+        variant: 'warning',
+      });
       return;
     }
 

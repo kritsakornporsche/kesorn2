@@ -199,6 +199,24 @@ export async function POST(req: Request) {
           )
         `;
       }
+
+      try {
+        const { sendWebPushToRole, sendWebPushToEmail } = await import('@/lib/features/web-push-server');
+        if (session?.user?.email) {
+          await sendWebPushToEmail(session.user.email, {
+            title: '✅ การชำระเงินได้รับการอนุมัติแล้ว',
+            body: 'บิล ' + billTitle + ' จำนวน ฿' + amountNum.toLocaleString('th-TH') + ' ยืนยันยอดชำระสำเร็จ',
+            url: '/tenant/billing',
+            tag: 'payment-approved-' + Date.now(),
+          }).catch(() => null);
+        }
+        await sendWebPushToRole('owner', {
+          title: '💰 ผู้เช่าห้อง ' + roomNumber + ' ชำระเงินสำเร็จ',
+          body: 'ชำระบิล ' + billTitle + ' จำนวน ฿' + amountNum.toLocaleString('th-TH'),
+          url: '/owner/billing',
+          tag: 'payment-received-' + Date.now(),
+        }).catch(() => null);
+      } catch {}
     } catch (notifErr) {
       console.error('[POST /api/tenant/billing/payment] Notification Error:', notifErr);
     }

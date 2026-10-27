@@ -16,8 +16,9 @@ import { Refused, contractMessage, signContractTx } from '@/lib/contracts';
 import { releaseRoom, withRetry } from '@/lib/bookings';
 import { forfeitBookingFee } from '@/lib/deposits';
 import { deletePaper, isPaper, parsePaperUpload, savePaper, signedPaperOf } from '@/lib/contract-files';
+import { parseMeterPhoto, saveMeterPhoto } from '@/lib/meter-files';
 import { MISSING_TEXT as STEP_MISSING, missingForMoveIn, type InspectionState } from '@/lib/booking-steps';
-import { formatBaht } from '@/lib/format';
+import { formatBaht, formatThaiDate } from '@/lib/format';
 import { OCCUPANTS_MESSAGE } from '@/lib/occupants';
 
 // Booking fee paid, contract and move-in bill not done yet
@@ -111,7 +112,10 @@ export interface IssueMoveInInput {
   /** Electricity meter when the room is handed over (required) */
   startMeter: unknown;
   by: number | null;
-  // Name, address, occupants and dates are confirmed in step 3 (lib/contract-data.ts) — not taken here (commit 28-3)
+  /** Photo data URL of mechanical meter dial (manual proof) */
+  meterPhoto?: unknown;
+  /** IoT telemetry note / device snapshot (IoT proof) */
+  meterNote?: string | null;
 }
 
 /**
@@ -137,31 +141,47 @@ export function issueMoveInBill(contractId: number, input: IssueMoveInInput, now
     const raw = input.startMeter;
     const meter = Number(raw);
     if (raw === null || raw === undefined || String(raw).trim() === '' || !Number.isFinite(meter) || meter < 0) refuse('meter_required');
-    if (!c.start_date || bangkokDate(now) > bangkokDate(c.start_date)) refuse('start_passed');
+    if (!c.start_date) refuse('start_passed');
+
+    const isLateMoveIn = Boolean(c.start_date && bangkokDate(now) > bangkokDate(c.start_date));
 
     const amounts = moveInAmounts({ room_number: c.room_number, price: c.room_price, deposit_amount: c.room_deposit });
     const cap = capCheck(amounts.rent, amounts.deposit);
     if (!cap.ok) refuse('over_cap', cap.message);
 
-    const dueDate = bangkokDate(c.start_date);
+    const dueDate = isLateMoveIn ? bangkokDate(now) : bangkokDate(c.start_date);
+    const lateNote = isLateMoveIn ? ` (เข้าพักล่าช้ากว่าวันเริ่มสัญญา ${formatThaiDate(c.start_date)})` : '';
+    const billTitle = `บิลค่าแรกเข้า (ค่าห้องเดือนแรก ฿${formatBaht(amounts.rent)} + เงินประกันส่วนที่เหลือ ฿${formatBaht(amounts.depositAtMoveIn)})${lateNote}`;
+
     const billId = Number((await client.query(
       // common_fee 0: the move-in bill charges rent + deposit only (the column defaults to 150)
       `INSERT INTO bills (tenant_id, dorm_id, room_number, title, amount, room_amount, water_amount, electric_amount, water_units, electric_units,
          common_fee, billing_cycle, due_date, status, is_first_bill, bill_type, slip_verified)
        VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 'ค่าแรกเข้า (ค่าเช่าเดือนแรก + เงินประกันส่วนที่เหลือ)', ?, 'Unpaid', 1, 'booking', 0)`,
-      [c.tenant_id, c.dorm_id, c.room_number,
-        `บิลค่าแรกเข้า (ค่าห้องเดือนแรก ฿${formatBaht(amounts.rent)} + เงินประกันส่วนที่เหลือ ฿${formatBaht(amounts.depositAtMoveIn)})`,
-        amounts.dueAtMoveIn, amounts.rent, dueDate]
+      [c.tenant_id, c.dorm_id, c.room_number, billTitle, amounts.dueAtMoveIn, amounts.rent, dueDate]
     )).rows.insertId);
 
     // Starting meter as its own row (kind 'start'): the room's latest reading, so the next monthly reading counts from it
     // (lib/meters.ts). Other readings of the month are never overwritten.
+    let photoFileName: string | null = null;
+    if (input.meterPhoto) {
+      const parsed = parseMeterPhoto(input.meterPhoto);
+      if (parsed.ok) {
+        photoFileName = saveMeterPhoto(parsed);
+      }
+    }
+
+    let eventNote = input.meterNote || (photoFileName ? 'ภาพถ่ายหน้าปัดมิเตอร์เริ่มต้น' : null);
+    if (isLateMoveIn) {
+      eventNote = eventNote ? `${eventNote} · เข้าพักล่าช้า` : 'บันทึกมิเตอร์เริ่มต้น (เข้าพักล่าช้า)';
+    }
+
     const cycle = bangkokDate(now).slice(0, 7);
     await client.query(
       `INSERT INTO meter_readings (dorm_id, room_id, type, previous_reading, current_reading, units_used, billing_cycle, kind,
-         recorded_by, recorded_at, confirmed_by, confirmed_at, created_at)
-       VALUES (?, ?, 'Electricity', ?, ?, 0, ?, 'start', ?, ?, ?, ?, ?)`,
-      [c.dorm_id, c.room_id, meter, meter, cycle, input.by ?? null, now, input.by ?? null, now, now]
+         photo_file, event_note, recorded_by, recorded_at, confirmed_by, confirmed_at, created_at)
+       VALUES (?, ?, 'Electricity', ?, ?, 0, ?, 'start', ?, ?, ?, ?, ?, ?, ?)`,
+      [c.dorm_id, c.room_id, meter, meter, cycle, photoFileName, eventNote, input.by ?? null, now, input.by ?? null, now, now]
     );
     const meterRecorded = true;
 
@@ -170,7 +190,7 @@ export function issueMoveInBill(contractId: number, input: IssueMoveInInput, now
       [billId, round2(meter), contractId]
     );
     return {
-      contractId, billId, ...amounts, dueDate, meterRecorded,
+      contractId, billId, ...amounts, dueDate, meterRecorded, isLateMoveIn,
       tenantUserId: (c.tenant_user_id as number) || null, roomNumber: c.room_number as string,
     };
   });
@@ -204,7 +224,7 @@ async function activateLocked(client: Client, c: any) {
 export function activateIfReady(contractId: number) {
   return run(async (client) => {
     const c = await lockContract(client, contractId);
-    if (c.status === 'Active') return { activated: false, alreadyActive: true, missing: [] as Missing[], tenantUserId: (c.tenant_user_id as number) || null };
+    if (c.status === 'Active') return { activated: false, alreadyActive: true, missing: [] as Missing[], tenantUserId: (c.tenant_user_id as number) || null, roomNumber: c.room_number as string };
     if (isLegacy(c)) refuse('legacy');
     if (!WAITING.includes(c.status)) refuse('invalid_status');
     const result = await activateLocked(client, c);
@@ -221,6 +241,28 @@ export async function afterMoveInPayment(sql: any, billId: number) {
     const rows = await sql`SELECT id FROM contracts WHERE move_in_bill_id = ${billId} LIMIT 1`;
     if (rows.length === 0) return null;
     const result = await activateIfReady(Number(rows[0].id));
+    if (result.ok && result.activated) {
+      try {
+        const { createUserNotification, createRoleNotification } = await import('@/lib/notifications');
+        if (result.tenantUserId) {
+          await createUserNotification({
+            userId: result.tenantUserId,
+            title: '🎉 สัญญาเช่ามีผลสมบูรณ์แล้ว ยินดีต้อนรับสู่หอพัก!',
+            message: `ยินดีต้อนรับเข้าพักห้อง ${result.roomNumber} คุณสามารถเริ่มใช้งานฟังก์ชันผู้เช่าได้ทันที`,
+            type: 'contract_active',
+            link: '/tenant',
+          });
+        }
+        await createRoleNotification({
+          role: 'owner',
+          title: `🎉 ห้อง ${result.roomNumber} เปิดใช้งานสัญญาแล้ว`,
+          message: `ผู้เช่าห้อง ${result.roomNumber} ชำระค่าแรกเข้าครบและสัญญาเริ่มมีผลเรียบร้อยแล้ว`,
+          link: '/owner/bookings',
+        });
+      } catch (ne) {
+        console.warn('[Activation push notification error]:', ne);
+      }
+    }
     return result.ok ? { contractId: Number(rows[0].id), activated: result.activated, missing: result.missing } : null;
   } catch (error) {
     console.error('[Move-in activation after payment]', billId, error);
@@ -303,8 +345,11 @@ export async function expireMoveIns(client: Client, now: Date): Promise<number[]
   const today = bangkokDate(now);
   const due = (await client.query(
     `SELECT c.id, c.room_id, c.tenant_id, c.move_in_bill_id, c.start_date, r.room_number, t.user_id AS tenant_user_id
-     FROM contracts c JOIN rooms r ON r.id = c.room_id LEFT JOIN tenants t ON t.id = c.tenant_id
-     WHERE c.status = 'PendingFirstBill' AND c.move_in_bill_id IS NOT NULL AND DATE(c.start_date) < ?
+     FROM contracts c
+     JOIN rooms r ON r.id = c.room_id
+     JOIN bills b ON b.id = c.move_in_bill_id
+     LEFT JOIN tenants t ON t.id = c.tenant_id
+     WHERE c.status = 'PendingFirstBill' AND c.move_in_bill_id IS NOT NULL AND DATE(COALESCE(b.due_date, c.start_date)) < ?
      FOR UPDATE`,
     [today]
   )).rows;

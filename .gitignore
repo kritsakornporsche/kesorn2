@@ -67,3 +67,9 @@ storage/
 
 # Signed-off contract text from the dorm (has real bank account numbers) — never commit
 docs/review/contract-final.docx
+
+# runtime data
+data/
+
+/storage/
+

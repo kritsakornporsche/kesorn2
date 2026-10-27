@@ -1,7 +1,7 @@
 'use client';
 
-import ThaiDatePicker, { LeaseShortcuts } from '@/components/ThaiDatePicker';
-import { addDays, leaseEnd, todayTh } from '@/lib/thai-date';
+import ThaiDatePicker, { LeaseShortcuts, LeaseMonthBar } from '@/components/ThaiDatePicker';
+import { addDays, leaseEnd, todayTh, detectLeaseMonths } from '@/lib/thai-date';
 import { useState, useEffect, use } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -21,11 +21,13 @@ import { mapDirectUrl, mapEmbedUrl } from '@/lib/maps';
 import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
 import PartyFields from '@/components/PartyFields';
 import { ADDRESS_FIELDS, EMPTY_PARTY, checkParty, joinAddress, joinName, partyFromText, type PartyValue } from '@/lib/contract-party';
+import { useConfirm } from '@/components/ConfirmModalProvider';
 
 export default function RoomBookingPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const roomId = resolvedParams.id;
   const { data: session, status: sessionStatus } = useSession();
+  const { confirm, alert } = useConfirm();
   
   const [room, setRoom] = useState<any>(null);
   // Rates, deposit and booking fee for this room from the server (lib/billing moveInCosts) — no amounts in the page
@@ -123,12 +125,32 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
   useEffect(() => {
     if (sessionStatus === 'authenticated' && session?.user) {
-      setBookingData((prev) => {
-        const name = prev.name && prev.name !== 'guest' ? prev.name : ((session.user?.name && session.user?.name !== 'guest') ? session.user.name : '');
-        // the account's name as a start for the separate fields (the booker checks them)
-        const p = prev.firstName ? {} : (({ title, firstName, lastName }) => ({ title, firstName, lastName }))(partyFromText(name));
-        return { ...prev, ...p, name, email: prev.email || session.user?.email || '' };
-      });
+      fetch('/api/user/profile')
+        .then((res) => res.json())
+        .then((json) => {
+          if (json.success && json.data) {
+            const u = json.data;
+            const p = u.party || (u.name ? partyFromText(u.name) : {});
+            setBookingData((prev) => ({
+              ...prev,
+              ...p,
+              name: u.name || joinName(p) || prev.name,
+              phone: u.phone || prev.phone || '',
+              parent_phone: u.parentPhone || u.parent_phone || prev.parent_phone || '',
+              email: u.email || prev.email || session.user?.email || '',
+              id_card_address: joinAddress(p) || prev.id_card_address || '',
+              village: p.moo || prev.village || '',
+            }));
+          }
+        })
+        .catch((err) => {
+          console.error('[Fetch profile error]', err);
+          setBookingData((prev) => {
+            const name = prev.name && prev.name !== 'guest' ? prev.name : ((session.user?.name && session.user?.name !== 'guest') ? session.user.name : '');
+            const p = prev.firstName ? {} : (({ title, firstName, lastName }) => ({ title, firstName, lastName }))(partyFromText(name));
+            return { ...prev, ...p, name, email: prev.email || session.user?.email || '' };
+          });
+        });
     }
   }, [sessionStatus, session]);
 
@@ -151,7 +173,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
           const data = await res.json();
           if (data.success && data.data) {
             if (data.data.current_step > 2) {
-              setStep(Math.min(3, Number(data.data.current_step)));
+              setStep(Math.min(2, Number(data.data.current_step)));
             } else {
               setStep(1);
             }
@@ -195,7 +217,14 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
   // Cancel booking in progress and reset
   const handleCancelCurrentBooking = async () => {
-    if (!confirm('ต้องการยกเลิกการทำรายการจองห้องนี้หรือไม่?')) return;
+    const ok = await confirm({
+      title: 'ยกเลิกการทำรายการจอง?',
+      description: 'ข้อมูลที่คุณกรอกไว้ในขั้นตอนนี้จะถูกรีเซ็ต',
+      confirmText: 'ยกเลิกรายการ',
+      cancelText: 'ดำเนินการต่อ',
+      variant: 'warning',
+    });
+    if (!ok) return;
     try {
       if (sessionStatus === 'authenticated' && roomId) {
         await fetch('/api/booking/progress', {
@@ -236,7 +265,14 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
       const data = await res.json();
       if (!data.success) {
         if (data.reason === 'has_open_contract' && data.statusUrl) {
-          if (confirm(`${data.message}\n\nไปหน้าสถานะการจองตอนนี้?`)) router.push(data.statusUrl);
+          const ok = await confirm({
+            title: 'มีรายการจองค้างอยู่',
+            description: `${data.message}\n\nต้องการไปที่หน้าสถานะการจองทันทีหรือไม่?`,
+            confirmText: 'ไปหน้าสถานะการจอง',
+            cancelText: 'ปิด',
+            variant: 'info',
+          });
+          if (ok) router.push(data.statusUrl);
           return;
         }
         throw new Error(data.message);
@@ -259,7 +295,11 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
       setStep(5);
     } catch (e: any) {
       console.error(e);
-      alert(e.message || 'เกิดข้อผิดพลาดในการส่งคำขอจอง');
+      await alert({
+        title: 'ไม่สามารถส่งคำขอจองได้',
+        description: e.message || 'เกิดข้อผิดพลาดในการส่งคำขอจอง กรุณาลองใหม่อีกครั้ง',
+        variant: 'danger',
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -389,17 +429,35 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                 </div>
               </div>
 
-              {/* Room items (commit 26): the dorm's list for this room type (lib/room-items.ts) — same list as the inspection */}
-              <div className="space-y-3 pt-2">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">ของในห้อง ({roomTypeLabel(room.room_type)})</h3>
-                <div className="flex flex-wrap gap-2">
-                  {itemsForRoomType(room.room_type).map((it) => (
-                    <span key={it.name} className="px-3.5 py-1.5 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl border border-border/60">
-                      ✓ {it.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
+              {/* Room items: custom items if configured in amenities, else fallback to standard items for this room type */}
+              {(() => {
+                let displayItems: string[] = [];
+                if (room.amenities) {
+                  try {
+                    const a = typeof room.amenities === 'string' ? JSON.parse(room.amenities) : room.amenities;
+                    if (Array.isArray(a) && a.length > 0) {
+                      displayItems = a.map((x: any) => (typeof x === 'string' ? x : x.name)).filter(Boolean);
+                    }
+                  } catch {}
+                }
+                if (displayItems.length === 0) {
+                  displayItems = itemsForRoomType(room.room_type).map((it) => it.name);
+                }
+                return (
+                  <div className="space-y-3 pt-2">
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                      ของในห้อง ({roomTypeLabel(room.room_type)} · {displayItems.length} รายการ)
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {displayItems.map((name) => (
+                        <span key={name} className="px-3.5 py-1.5 bg-secondary text-secondary-foreground text-xs font-bold rounded-xl border border-border/60">
+                          ✓ {name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* 🏢 Dormitory Overview, Utility Rates, and Rules */}
@@ -593,7 +651,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
             {step === 1 && (
               <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-xl space-y-6 animate-in fade-in duration-300">
                 <div className="space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 1 จาก 3</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 1 จาก 2</span>
                   <h2 className="text-2xl font-black tracking-tight">สรุปค่าใช้จ่ายการจองห้องพัก</h2>
                 </div>
 
@@ -723,72 +781,120 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
               </div>
             )}
 
-            {/* Step 2: Tenant Contact Info & Lease Period */}
+            {/* Step 2: Confirmation & Lease Period (Auto-pulled Tenant Profile, No Form) */}
             {step === 2 && (
               <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-xl space-y-6 animate-in fade-in duration-300">
                 <div className="space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 2 จาก 3</span>
-                  <h2 className="text-2xl font-black tracking-tight">ข้อมูลผู้จองและระยะเวลาเข้าพัก</h2>
-                  <p className="text-xs text-muted-foreground">ข้อมูลจะถูกนำไปใช้กรอกลงในแบบฟอร์มสัญญาเช่าหอพักเกษร 2 อัตโนมัติ</p>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 2 จาก 2</span>
+                  <h2 className="text-2xl font-black tracking-tight">ยืนยันข้อมูลและระยะเวลาเข้าพัก</h2>
                 </div>
 
                 <div className="space-y-4">
-                  <div className="p-3.5 bg-primary/10 border border-primary/20 rounded-2xl text-xs text-primary flex items-center gap-2.5">
-                    <span className="text-base">🪪</span>
-                    <span><strong>ชื่อ-นามสกุลและที่อยู่:</strong> กรอกเองในขั้นตอนถัดไป · ระบบไม่จัดเก็บเลขบัตรและรูปบัตร</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
-                        เบอร์โทรศัพท์ผู้เช่า <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        className="w-full px-5 py-3.5 rounded-2xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
-                        placeholder="08X-XXX-XXXX"
-                        value={bookingData.phone ?? ''}
-                        {...PHONE_INPUT_PROPS}
-                        onChange={(e) => setBookingData({ ...bookingData, phone: phoneDigits(e.target.value) })}
-                      />
+                  {/* Auto-pulled Tenant Profile Summary Card */}
+                  <div className="p-5 bg-secondary/50 rounded-3xl border border-border space-y-3">
+                    <div className="flex items-center justify-between border-b border-border/50 pb-2.5">
+                      <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        <span>👤</span> ข้อมูลผู้เช่า (ดึงจากโปรไฟล์)
+                      </span>
+                      <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                        ✓ ข้อมูลพร้อมทำสัญญา
+                      </span>
                     </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
-                        เบอร์โทรผู้ปกครอง <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        className="w-full px-5 py-3.5 rounded-2xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
-                        placeholder="08X-XXX-XXXX (ผู้ปกครอง)"
-                        value={bookingData.parent_phone ?? ''}
-                        {...PHONE_INPUT_PROPS}
-                        onChange={(e) => setBookingData({ ...bookingData, parent_phone: phoneDigits(e.target.value) })}
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase block">ชื่อผู้เช่า</span>
+                        <span className="font-bold text-foreground">{bookingData.name || session?.user?.name || '-'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase block">อีเมล</span>
+                        <span className="font-bold text-foreground">{bookingData.email || session?.user?.email || '-'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase block">เบอร์โทรศัพท์</span>
+                        <span className="font-bold text-foreground">{bookingData.phone || '-'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase block">เบอร์โทรผู้ปกครอง</span>
+                        <span className="font-bold text-foreground">{bookingData.parent_phone || '-'}</span>
+                      </div>
                     </div>
+
+                    <div className="text-xs pt-1 border-t border-border/40">
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase block">ที่อยู่ตามบัตรประชาชน</span>
+                      <span className="font-bold text-foreground">
+                        {bookingData.id_card_address || joinAddress(partyOf(bookingData)) || '-'}
+                      </span>
+                    </div>
+
+                    {/* Quick input fallback if profile is missing contact info */}
+                    {(!bookingData.phone || !bookingData.parent_phone) && (
+                      <div className="pt-2 border-t border-border/50 space-y-2">
+                        <span className="text-[11px] font-bold text-amber-500 block">กรุณาระบุข้อมูลติดต่อเพิ่มเติม:</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {!bookingData.phone && (
+                            <input
+                              className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border text-xs font-bold"
+                              placeholder="เบอร์โทรศัพท์ผู้เช่า *"
+                              value={bookingData.phone}
+                              {...PHONE_INPUT_PROPS}
+                              onChange={(e) => setBookingData({ ...bookingData, phone: phoneDigits(e.target.value) })}
+                            />
+                          )}
+                          {!bookingData.parent_phone && (
+                            <input
+                              className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border text-xs font-bold"
+                              placeholder="เบอร์โทรผู้ปกครอง *"
+                              value={bookingData.parent_phone}
+                              {...PHONE_INPUT_PROPS}
+                              onChange={(e) => setBookingData({ ...bookingData, parent_phone: phoneDigits(e.target.value) })}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Lease Period (ระยะเวลาสัญญา) */}
-                  <div className="p-4 bg-secondary/50 rounded-2xl border border-border space-y-3">
+                  <div className="p-4 bg-secondary/50 rounded-2xl border border-border space-y-3.5">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
                         <span>📅</span> ระยะเวลาตามสัญญาเช่า
                       </label>
-                      {/* commit 28-9: 6 / 12 months end the day before the same date */}
-                      <LeaseShortcuts start={bookingData.start_date ?? ''} onEnd={(end) => setBookingData((prev) => ({ ...prev, end_date: end }))} />
+                      <span className="text-xs font-black text-primary bg-primary/10 px-2.5 py-1 rounded-full border border-primary/20">
+                        สัญญา {detectLeaseMonths(bookingData.start_date ?? '', bookingData.end_date ?? '')} เดือน
+                      </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    {/* Bar 3-12 เดือน (Interactive Slider & Segmented Bar) */}
+                    <LeaseMonthBar
+                      start={bookingData.start_date ?? ''}
+                      end={bookingData.end_date ?? ''}
+                      onEnd={(end) => setBookingData((prev) => ({ ...prev, end_date: end }))}
+                    />
+
+                    <div className="grid grid-cols-2 gap-3 pt-0.5">
                       <div className="space-y-1">
-                        <span className="text-[11px] font-semibold text-muted-foreground block">วัน/เดือน ที่เริ่มเข้าอยู่</span>
+                        <span className="text-[11px] font-semibold text-muted-foreground block">วันเริ่มเข้าอยู่</span>
                         <ThaiDatePicker
                           aria-label="วันเริ่มเข้าอยู่"
                           min={todayTh()}
                           className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border focus:border-primary outline-none font-bold text-xs"
                           value={bookingData.start_date ?? ''}
-                          onChange={(v) => setBookingData({ ...bookingData, start_date: v })}
+                          onChange={(v) => {
+                            setBookingData((prev) => {
+                              const next = { ...prev, start_date: v };
+                              if (v) {
+                                const months = detectLeaseMonths(prev.start_date ?? '', prev.end_date ?? '');
+                                next.end_date = leaseEnd(v, months);
+                              }
+                              return next;
+                            });
+                          }}
                         />
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[11px] font-semibold text-muted-foreground block">วัน/เดือน สิ้นสุดสัญญา</span>
+                        <span className="text-[11px] font-semibold text-muted-foreground block">วันสิ้นสุดสัญญา</span>
                         <ThaiDatePicker
                           aria-label="วันสิ้นสุดสัญญา"
                           min={bookingData.start_date ? addDays(bookingData.start_date, 1) : todayTh()}
@@ -799,133 +905,64 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                       </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="space-y-3 pt-2">
-                  <button
-                    onClick={() => setStep(3)}
-                    disabled={!bookingData.phone || !bookingData.parent_phone}
-                    className="w-full py-5 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-sm transition-all shadow-xl shadow-primary/25 hover:scale-[1.02] active:scale-95 disabled:opacity-40 cursor-pointer"
-                  >
-                    ถัดไป: ข้อมูลผู้เช่าและสัญญา →
-                  </button>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setStep(1)}
-                      className="flex-1 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground cursor-pointer"
-                    >
-                      ← ย้อนกลับ
-                    </button>
-                    <button
-                      onClick={handleCancelCurrentBooking}
-                      className="py-2.5 px-3 text-xs font-bold text-rose-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all cursor-pointer"
-                    >
-                      ยกเลิกการจอง
-                    </button>
-                  </div>
-
-                  <div className="pt-2 border-t border-border/50 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>มีข้อสงสัยก่อนทำสัญญา?</span>
-                    <button
-                      type="button"
-                      onClick={handleOpenChat}
-                      className="text-primary font-bold hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <span>💬</span>
-                      <span>แชทสอบถามหอพัก</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Step 3: Tenant name / address (typed by the booker) & Contract Review */}
-            {step === 3 && (
-              <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-xl space-y-6 animate-in fade-in duration-300">
-                <div className="space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">ขั้นตอนที่ 3 จาก 3</span>
-                  <h2 className="text-2xl font-black tracking-tight">ข้อมูลผู้เช่าและสัญญา</h2>
-                  <p className="text-xs text-muted-foreground">
-                    กรอกชื่อ-นามสกุลและที่อยู่ตามบัตรประชาชนเพื่อใช้ในสัญญาเช่า (หอพักตรวจกับบัตรจริงอีกครั้งตอนทำสัญญา)
-                  </p>
-                </div>
-
-                {/* commit 28-8b: name and address in the contract form's fields — step 3 of the dorm shows them as typed here */}
-                <div className="space-y-4">
-                  <PartyFields
-                    value={partyOf(bookingData)}
-                    onChange={setParty}
-                    inputClass="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-bold text-sm"
-                    labelClass="text-xs font-bold text-muted-foreground block"
-                    hintClass="text-[11px] font-bold text-muted-foreground block"
-                  />
-                  {!partyCheck.ok && partyOf(bookingData).houseNo && (
-                    <p className="text-[11px] font-bold text-rose-500" data-party-problem>{partyCheck.message}</p>
-                  )}
-                  <p className="text-[11px] text-muted-foreground">🔒 ระบบไม่เก็บเลขบัตรประชาชนและรูปบัตร (เลขบัตรกรอกด้วยมือในสัญญากระดาษตอนเซ็น)</p>
-
-                  {/* commit 27: occupants (water is charged per person); only the tenant's details are kept */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
-                      จำนวนผู้พัก (1–{MAX_OCCUPANTS} คน) <span className="text-rose-500">*</span>
+                  {/* Occupants */}
+                  <div className="p-4 bg-secondary/40 border border-border/80 rounded-2xl space-y-2">
+                    <label className="text-xs font-bold text-foreground flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <span>👥</span>
+                        <span>จำนวนผู้พัก (1–{MAX_OCCUPANTS} คน)</span>
+                        <span className="text-rose-500">*</span>
+                      </span>
                     </label>
                     <select
-                      className="w-full px-4 py-3 rounded-xl bg-secondary border border-border focus:border-primary outline-none font-bold text-xs"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border/80 focus:border-primary outline-none font-bold text-sm cursor-pointer"
                       value={bookingData.occupants ?? 1}
                       onChange={(e) => setBookingData({ ...bookingData, occupants: Number(e.target.value) })}
                     >
                       {OCCUPANT_CHOICES.map((n) => <option key={n} value={n}>{n} คน</option>)}
                     </select>
-                    <p className="text-[11px] text-muted-foreground">ค่าน้ำคิดต่อคน · สัญญามีผู้เช่าเป็นตัวแทนคนเดียว ไม่ต้องกรอกข้อมูลผู้พักร่วม</p>
+                  </div>
+
+                  {/* Contract Terms Preview */}
+                  <div className="p-4 bg-muted/30 border border-border rounded-2xl space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        <span>📜</span> ข้อตกลงสัญญาเช่าหอพักเกษร 2
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setIsPrintModalOpen(true)}
+                        className="px-3 py-1.5 bg-primary hover:bg-primary/90 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95"
+                      >
+                        <span>📄</span> ดูร่างสัญญา (TH Sarabun New)
+                      </button>
+                    </div>
+
+                    <div className="text-[11px] text-muted-foreground space-y-1 bg-background/50 p-3 rounded-xl border border-border max-h-28 overflow-y-auto leading-relaxed">
+                      <p>1. ค่าเช่าห้องพักเดือนละ ฿{Number(room.price).toLocaleString()} ชำระภายในวันที่ 5 ของทุกเดือน</p>
+                      <p>2. ค่าน้ำประปา {costs ? `฿${formatBaht(costs.rates.waterPerPerson)}` : '-'}/คน/เดือน • ค่าส่วนกลาง {costs ? `฿${formatBaht(costs.rates.commonFee)}` : '-'}/เดือน • ค่าไฟ {costs ? `฿${formatBaht(costs.rates.electricityPerUnit)}` : '-'}/ยูนิต</p>
+                      <p>3. ค่าจอง {costs ? `฿${formatBaht(costs.bookingFee)}` : '-'} ชำระหลังหอพักอนุมัติ (เป็นส่วนหนึ่งของเงินประกันรวม {costs ? `฿${formatBaht(costs.deposit)}` : '-'})</p>
+                      <p>4. สัญญาฉบับจริงจะลงนามร่วมกันในวันเข้าพัก</p>
+                    </div>
                   </div>
                 </div>
 
-                {/* Contract Summary & Terms Preview */}
-                <div className="p-4 bg-muted/30 border border-border rounded-2xl space-y-3">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                      <span>📜</span> ข้อตกลงสัญญาเช่าหอพักเกษร 2
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsPrintModalOpen(true)}
-                      className="px-3 py-1.5 bg-primary hover:bg-primary/90 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95"
-                    >
-                      <span>📄</span> ดูร่างสัญญาฉบับทางการ 3 หน้า (ฟอนต์ TH Sarabun New)
-                    </button>
-                  </div>
-
-                  <div className="text-[11px] text-muted-foreground space-y-1 bg-background/50 p-3 rounded-xl border border-border max-h-32 overflow-y-auto leading-relaxed">
-                    <p>1. ค่าเช่าห้องพักเดือนละ ฿{Number(room.price).toLocaleString()} กำหนดชำระภายในวันที่ 5 ของทุกเดือน</p>
-                    <p>2. ค่าน้ำประปาเหมาจ่าย {costs ? `฿${formatBaht(costs.rates.waterPerPerson)}` : '-'}/คน/เดือน • ค่าส่วนกลาง {costs ? `฿${formatBaht(costs.rates.commonFee)}` : '-'}/เดือน • ค่าไฟฟ้าหน่วยละ {costs ? `฿${formatBaht(costs.rates.electricityPerUnit)}` : '-'}/ยูนิต</p>
-                    <p>3. ค่าจอง {costs ? `฿${formatBaht(costs.bookingFee)}` : '-'} เป็นส่วนหนึ่งของเงินประกันรวม {costs ? `฿${formatBaht(costs.deposit)}` : '-'} · ชำระหลังหอพักอนุมัติคำขอ · ไม่คืนหากยกเลิกการจองหรือไม่มาเข้าพักตามวันนัด · วันเข้าอยู่ชำระค่าเช่าเดือนแรกเต็มเดือน + เงินประกันส่วนที่เหลือ · เงินประกันคืนตามเงื่อนไขในสัญญา</p>
-                    <p>4. ห้ามส่งเสียงดังรบกวนยามวิกาล, ห้ามเสพสิ่งเสพติด, รักษาความสะอาดห้องพักสม่ำเสมอ</p>
-                    <p>5. สัญญาเช่าฉบับจริงจะลงลายมือชื่อทั้งสองฝ่ายต่อหน้าในวันเข้าพักจริง</p>
-                  </div>
-
-                  <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-[11px] text-blue-400 leading-relaxed">
-                    ℹ️ <strong>วิธีลงนามสัญญา:</strong> เมื่อท่านชำระเงินจองสำเร็จ ระบบจะเตรียมสัญญาฉบับ PDF ที่พิมพ์ด้วยแบบฟอร์มทางการ <strong>TH Sarabun New</strong> ให้เจ้าของหอพัก เพื่อพิมพ์เอกสารให้ท่านและเจ้าของหอพักลงลายมือชื่อจริงร่วมกันในวันเข้าหอพัก
-                  </div>
-                </div>
-
-                {/* Next & Back Actions */}
+                {/* Submit Action */}
                 <div className="space-y-3 pt-2">
                   <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-400 leading-relaxed">
-                    ค่าจอง ฿{totalDeposit.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ชำระหลังหอพักอนุมัติคำขอ และเป็นส่วนหนึ่งของเงินประกันรวม ฿{fullDeposit.toLocaleString('th-TH', { minimumFractionDigits: 2 })} · ไม่คืนหากยกเลิกการจองหรือไม่มาเข้าพักตามวันนัด
-                  </div>
-                  <div className="p-3 bg-sky-500/10 border border-sky-500/20 rounded-xl text-[11px] text-sky-300 leading-relaxed">
-                    {BOOKING_REQUEST_NOTE}
+                    ค่าจอง ฿{totalDeposit.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ชำระหลังหอพักอนุมัติคำขอ (ภายใน 10 นาที)
                   </div>
                   <button
                     onClick={handleFinalSubmit}
-                    disabled={!partyCheck.ok || isProcessing || !costs}
+                    disabled={isProcessing || !costs || !bookingData.phone || !bookingData.parent_phone}
                     className="w-full py-5 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-sm transition-all shadow-xl shadow-primary/25 hover:scale-[1.02] active:scale-95 disabled:opacity-40 cursor-pointer"
                   >
-                    {isProcessing ? 'กำลังส่งคำขอจอง...' : 'ส่งคำขอจอง →'}
+                    {isProcessing ? 'กำลังส่งคำขอจอง...' : '✓ ยืนยันและส่งคำขอจองห้องพัก →'}
                   </button>
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => setStep(2)}
+                      onClick={() => setStep(1)}
                       className="flex-1 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground cursor-pointer"
                     >
                       ← ย้อนกลับ
@@ -950,9 +987,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                 <div className="space-y-2">
                   <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500">ส่งคำขอจองแล้ว</span>
                   <h3 className="text-2xl font-black tracking-tight">ส่งคำขอจองแล้ว รอหอพักอนุมัติ</h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    {BOOKING_REQUEST_NOTE} (ชำระที่หน้าสถานะการจอง)
-                  </p>
+                  
                 </div>
 
                 {/* Contract Download Box */}
@@ -960,9 +995,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   <span className="text-xs font-black text-foreground flex items-center gap-2">
                     <span>📄</span> เอกสารสัญญาเช่าของคุณ (PDF)
                   </span>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    คุณสามารถดาวน์โหลดเอกสารสัญญาเช่าที่กรอกข้อมูลครบถ้วนแล้วเก็บไว้เป็นหลักฐาน หรือเจ้าของหอจะพิมพ์ฉบับจริงให้เซ็นชื่อเมื่อเข้าหอพัก
-                  </p>
+                  
 
                   <div className="grid grid-cols-1 gap-3 pt-2">
                     {/* commit 28a: PDF only for guests / tenants — the print page of the saved contract (save as PDF) */}

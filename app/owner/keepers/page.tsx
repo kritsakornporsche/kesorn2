@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { PHONE_INPUT_PROPS, phoneDigits } from '@/lib/phone';
+import { useConfirm } from '@/components/ConfirmModalProvider';
 
 interface Keeper {
   id: number;
@@ -21,6 +22,7 @@ const POSITION_LABEL: Record<Keeper['position'], string> = {
 
 export default function KeepersManagement() {
   const router = useRouter();
+  const { confirm } = useConfirm();
   const [keepers, setKeepers] = useState<Keeper[]>([]);
   const [loading, setLoading] = useState(true);
   const [dormId, setDormId] = useState<number | null>(null);
@@ -141,7 +143,16 @@ export default function KeepersManagement() {
 
   const handleToggleActive = async (keeper: Keeper) => {
     const closing = !!keeper.is_active;
-    if (closing && !confirm(`ปิดบัญชีของ ${keeper.name}? คนนี้จะเข้าสู่ระบบไม่ได้ทันที`)) return;
+    if (closing) {
+      const ok = await confirm({
+        title: `ปิดบัญชีของ ${keeper.name}?`,
+        description: 'เจ้าหน้าที่จะไม่สามารถเข้าสู่ระบบและปฏิบัติงานได้ทันที จนกว่าจะเปิดใช้งานอีกครั้ง',
+        confirmText: 'ปิดการใช้งานบัญชี',
+        cancelText: 'ยกเลิก',
+        variant: 'danger',
+      });
+      if (!ok) return;
+    }
     try {
       const res = await fetch('/api/owner/staff', {
         method: 'PATCH',
@@ -155,12 +166,12 @@ export default function KeepersManagement() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-secondary/40 p-8 text-white">
+    <div className="flex-1 overflow-y-auto bg-slate-50 p-8 text-slate-900">
       <div className="max-w-6xl mx-auto">
         <header className="flex justify-between items-center mb-10">
           <div>
-            <h1 className="text-3xl font-black mb-2">พนักงาน</h1>
-            <p className="text-muted-foreground font-medium">สร้างบัญชีผู้จัดการ แม่บ้าน และช่างซ่อม · เปิด/ปิดบัญชีได้</p>
+            <h1 className="text-3xl font-black mb-2 text-slate-900">พนักงาน</h1>
+            <p className="text-slate-600 font-medium">สร้างบัญชีผู้จัดการ แม่บ้าน และช่างซ่อม · เปิด/ปิดบัญชีได้</p>
           </div>
           <div className="flex items-center gap-3">
             <button 
@@ -185,16 +196,16 @@ export default function KeepersManagement() {
 
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3].map(i => <div key={i} className="h-48 bg-card rounded-3xl animate-pulse" />)}
+            {[1, 2, 3].map(i => <div key={i} className="h-48 bg-white border border-slate-200 rounded-3xl animate-pulse" />)}
           </div>
         ) : keepers.length === 0 ? (
-          <div className="text-center py-20 bg-card rounded-[40px] border-2 border-dashed border-white/20/10">
-            <p className="text-muted-foreground font-bold">ยังไม่มีบัญชีพนักงาน</p>
+          <div className="text-center py-20 bg-white rounded-[40px] border-2 border-dashed border-slate-200">
+            <p className="text-slate-500 font-bold">ยังไม่มีบัญชีพนักงาน</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {keepers.map((keeper) => (
-              <div key={keeper.id} className={`bg-card rounded-[32px] p-6 shadow-sm border border-white/20/10 hover:shadow-xl hover:shadow-[#DCD3C6]/30 transition-all group ${keeper.is_active ? '' : 'opacity-60'}`}>
+              <div key={keeper.id} className={`bg-white rounded-[32px] p-6 shadow-xs border border-slate-200 hover:shadow-md transition-all group ${keeper.is_active ? '' : 'opacity-60'}`}>
                 <div className="flex justify-between items-start mb-6">
                   <div className={`p-3 rounded-2xl ${keeper.position === 'Maid' ? 'bg-rose-50 text-rose-600' : keeper.position === 'Manager' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
                     {keeper.position === 'Maid' ? (
@@ -209,14 +220,14 @@ export default function KeepersManagement() {
                     )}
                   </div>
                   <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => handleOpenModal(keeper)} className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-colors">
+                    <button onClick={() => handleOpenModal(keeper)} className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-colors cursor-pointer">
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
                     </button>
                     <button
                       onClick={() => handleToggleActive(keeper)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${keeper.is_active ? 'hover:bg-rose-50 text-rose-600' : 'hover:bg-emerald-50 text-emerald-600'}`}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${keeper.is_active ? 'hover:bg-rose-50 text-rose-600' : 'hover:bg-emerald-50 text-emerald-600'}`}
                     >
                       {keeper.is_active ? 'ปิดบัญชี' : 'เปิดบัญชี'}
                     </button>
@@ -225,22 +236,22 @@ export default function KeepersManagement() {
 
                 <div className="space-y-4">
                   <div>
-                    <h3 className="text-lg font-black">{keeper.name}</h3>
-                    <p className="text-xs font-bold text-foreground/50 uppercase tracking-wider">
+                    <h3 className="text-lg font-black text-slate-900">{keeper.name}</h3>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                       {POSITION_LABEL[keeper.position]}
-                      {!keeper.is_active && <span className="ml-2 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 normal-case">ปิดใช้งาน</span>}
+                      {!keeper.is_active && <span className="ml-2 px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 normal-case">ปิดใช้งาน</span>}
                     </p>
                   </div>
                   
                   <div className="space-y-2">
-                    <div className="flex items-center gap-3 text-sm text-white/80">
-                      <svg className="w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div className="flex items-center gap-3 text-sm text-slate-600">
+                      <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                       </svg>
                       {keeper.email || 'ไม่มีข้อมูลอีเมล'}
                     </div>
-                    <div className="flex items-center gap-3 text-sm text-white/80">
-                      <svg className="w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div className="flex items-center gap-3 text-sm text-slate-600">
+                      <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 .948.684V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                       </svg>
                       {keeper.phone || 'ไม่มีข้อมูลติดต่อ'}
@@ -255,41 +266,41 @@ export default function KeepersManagement() {
 
       {/* Modal Tooltip */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-[#3E342B]/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-card rounded-[40px] w-full max-w-lg shadow-2xl border border-white/20/10 overflow-hidden animate-in zoom-in duration-300">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-[40px] w-full max-w-lg shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in duration-300">
             <div className="p-10">
-              <h2 className="text-2xl font-black mb-6">{editingKeeper ? 'แก้ไขข้อมูลพนักงาน' : 'เพิ่มพนักงานใหม่'}</h2>
+              <h2 className="text-2xl font-black mb-6 text-slate-900">{editingKeeper ? 'แก้ไขข้อมูลพนักงาน' : 'เพิ่มพนักงานใหม่'}</h2>
               
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-muted-foreground">ชื่อ-นามสกุล</label>
+                  <label className="text-[10px] font-black uppercase text-slate-500">ชื่อ-นามสกุล</label>
                   <input 
                     required
                     value={formData.name}
                     onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    className="w-full px-6 py-4 bg-card border border-border rounded-2xl focus:bg-card focus:border-primary outline-none"
+                    className="w-full px-6 py-4 bg-white border border-slate-300 rounded-2xl focus:border-primary outline-none text-slate-900 shadow-xs"
                     placeholder="เช่น สมศรี รักสบาย"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-muted-foreground">เบอร์โทรศัพท์</label>
+                    <label className="text-[10px] font-black uppercase text-slate-500">เบอร์โทรศัพท์</label>
                     <input 
                       value={formData.phone}
                       {...PHONE_INPUT_PROPS}
                       onChange={(e) => setFormData({...formData, phone: phoneDigits(e.target.value)})}
-                      className="w-full px-6 py-4 bg-card border border-border rounded-2xl focus:bg-card focus:border-primary outline-none"
+                      className="w-full px-6 py-4 bg-white border border-slate-300 rounded-2xl focus:border-primary outline-none text-slate-900 shadow-xs"
                       placeholder="081-XXX-XXXX"
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-muted-foreground">ตำแหน่ง</label>
+                    <label className="text-[10px] font-black uppercase text-slate-500">ตำแหน่ง</label>
                     <select
                       value={formData.position}
                       disabled={!!editingKeeper}
                       onChange={(e) => setFormData({...formData, position: e.target.value})}
-                      className="w-full px-6 py-4 bg-card border border-border rounded-2xl focus:bg-card focus:border-primary outline-none disabled:opacity-60"
+                      className="w-full px-6 py-4 bg-white border border-slate-300 rounded-2xl focus:border-primary outline-none disabled:opacity-60 text-slate-900 shadow-xs"
                     >
                       <option value="Manager">ผู้จัดการ (Manager)</option>
                       <option value="Maid">แม่บ้าน (Maid)</option>
@@ -299,20 +310,20 @@ export default function KeepersManagement() {
                 </div>
 
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-muted-foreground">อีเมล (ใช้เป็น Username)</label>
+                    <label className="text-[10px] font-black uppercase text-slate-500">อีเมล (ใช้เป็น Username)</label>
                     <input 
                       type="email"
                       required
                       disabled={!!editingKeeper}
                       value={formData.email}
                       onChange={(e) => setFormData({...formData, email: e.target.value})}
-                      className="w-full px-6 py-4 bg-card border border-border rounded-2xl focus:bg-card focus:border-primary outline-none disabled:opacity-60"
+                      className="w-full px-6 py-4 bg-white border border-slate-300 rounded-2xl focus:border-primary outline-none disabled:opacity-60 text-slate-900 shadow-xs"
                       placeholder="email@example.com"
                     />
                   </div>
 
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-muted-foreground">
+                      <label className="text-[10px] font-black uppercase text-slate-500">
                         {editingKeeper ? 'ตั้งรหัสผ่านใหม่ (เว้นว่างถ้าไม่เปลี่ยน)' : 'รหัสผ่านสำหรับพนักงาน'}
                       </label>
                       <input
@@ -321,26 +332,26 @@ export default function KeepersManagement() {
                         minLength={6}
                         value={formData.password}
                         onChange={(e) => setFormData({...formData, password: e.target.value})}
-                        className="w-full px-6 py-4 bg-card border border-border rounded-2xl focus:bg-card focus:border-primary outline-none"
+                        className="w-full px-6 py-4 bg-white border border-slate-300 rounded-2xl focus:border-primary outline-none text-slate-900 shadow-xs"
                         placeholder="••••••••"
                       />
-                      <p className="text-[9px] text-muted-foreground ml-1">* พนักงานใช้อีเมลและรหัสผ่านนี้เข้าสู่ระบบ (อย่างน้อย 6 ตัวอักษร)</p>
+                      <p className="text-[9px] text-slate-500 ml-1">* พนักงานใช้อีเมลและรหัสผ่านนี้เข้าสู่ระบบ (อย่างน้อย 6 ตัวอักษร)</p>
                     </div>
 
-                {formError && <p className="text-sm font-bold text-rose-400">{formError}</p>}
+                {formError && <p className="text-sm font-bold text-rose-600">{formError}</p>}
 
 
                 <div className="flex gap-4 pt-4">
                   <button 
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="flex-1 py-4 bg-card text-muted-foreground rounded-2xl font-bold hover:bg-white/10 transition-all"
+                    className="flex-1 py-4 bg-slate-100 text-slate-700 rounded-2xl font-bold hover:bg-slate-200 transition-all border border-slate-200 cursor-pointer"
                   >
                     ยกเลิก
                   </button>
                   <button 
                     type="submit"
-                    className="flex-[2] py-4 bg-[#3E342B] text-white rounded-2xl font-bold shadow-lg hover:-translate-y-1 transition-all"
+                    className="flex-[2] py-4 bg-primary hover:bg-primary/90 text-white rounded-2xl font-bold shadow-lg transition-all cursor-pointer"
                   >
                     {editingKeeper ? 'บันทึกการแก้ไข' : 'สร้างบัญชี'}
                   </button>

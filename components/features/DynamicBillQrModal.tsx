@@ -164,7 +164,7 @@ export const DynamicBillQrModal: React.FC<DynamicBillQrModalProps> = ({
           <div className="flex items-center gap-2">
             <span className="text-xl">⚡</span>
             <div>
-              <h3 className="text-sm font-black text-foreground">ชำระเงินด่วน (Dynamic QR)</h3>
+              <h3 className="text-sm font-black text-foreground">ชำระเงิน</h3>
               <p className="text-[10px] text-muted-foreground font-semibold">ห้อง {roomNumber} • ยืนยันเงินเข้าอัตโนมัติ</p>
             </div>
           </div>
@@ -201,7 +201,7 @@ export const DynamicBillQrModal: React.FC<DynamicBillQrModalProps> = ({
                 {loading ? (
                   <div className="flex flex-col items-center gap-2">
                     <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" />
-                    <span className="text-xs font-bold text-slate-600">กำลังสร้าง Dynamic QR...</span>
+                    <span className="text-xs font-bold text-slate-600">กำลังสร้าง QR Code...</span>
                   </div>
                 ) : qrDataUrl ? (
                   <img src={qrDataUrl} alt="PromptPay Dynamic QR" className="w-full h-full object-contain" />
@@ -302,7 +302,7 @@ export const DynamicBillQrPaymentButton: React.FC<{
         className="px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs shadow-md flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
       >
         <span>📲</span>
-        <span>สแกนจ่าย Dynamic QR</span>
+        <span>สแกนจ่าย QR Code</span>
       </button>
 
       <DynamicBillQrModal

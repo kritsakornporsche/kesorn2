@@ -68,6 +68,26 @@ export async function POST(req: Request) {
       console.warn('[Booking pay] slip image not saved', e);
     }
 
+        try {
+      const { sendWebPushToRole, sendWebPushToEmail } = await import('@/lib/features/web-push-server');
+      await sendWebPushToRole('owner', {
+        title: '💰 มีการชำระค่าจองห้องพัก',
+        body: `ห้อง ${c.room_number}: ผู้จองชำระค่าจองเรียบร้อยแล้ว (รอทำสัญญา)`,
+        url: '/owner/bookings',
+        tag: `booking-paid-${contractId}`,
+      });
+      if (email) {
+        await sendWebPushToEmail(email, {
+          title: '✅ ชำระค่าจองสำเร็จ',
+          body: `ห้อง ${c.room_number}: ชำระค่าจองเรียบร้อยแล้ว เข้าสู่ขั้นตอนทำสัญญา`,
+          url: '/explore/booking-status',
+          tag: `guest-paid-${contractId}`,
+        });
+      }
+    } catch (pushErr) {
+      console.warn('[Booking pay push error]', pushErr);
+    }
+
     return NextResponse.json({ success: true, message: 'ชำระค่าจองเรียบร้อยแล้ว หอพักจะติดต่อเพื่อทำสัญญาและนัดวันเข้าพัก', contractId: result.contractId });
   } catch (error: any) {
     console.error('[Booking pay Error]', error);

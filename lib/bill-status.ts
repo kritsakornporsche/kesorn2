@@ -80,7 +80,21 @@ export async function sendBills(billIds: number[], sentBy: number | null) {
         WHERE t.id = ${bill.tenant_id}
         LIMIT 1
       `;
-      if (tenantUser.length > 0 && tenantUser[0].user_id) {
+            if (tenantUser.length > 0 && tenantUser[0].user_id) {
+        try {
+          const tenantId = tenantUser[0].user_id;
+          const emailRows = await sql`SELECT email FROM users WHERE id = ${tenantId} LIMIT 1`;
+          if (emailRows.length > 0 && emailRows[0].email) {
+            const { sendWebPushToEmail } = await import('@/lib/features/web-push-server');
+            await sendWebPushToEmail(emailRows[0].email, {
+              title: '📄 ใบแจ้งหนี้ใหม่ประจำรอบบิล',
+              body: 'มีใบแจ้งหนี้รอบบิล ' + (bill.billing_cycle || '-') + ' จำนวน ฿' + Number(bill.amount || 0).toLocaleString('th-TH'),
+              url: '/tenant/billing',
+              tag: 'bill-' + (bill.billing_cycle || 'current') + '-' + Date.now(),
+            }).catch(() => null);
+          }
+        } catch {}
+
         await sql`
           INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
           VALUES (

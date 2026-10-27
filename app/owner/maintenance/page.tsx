@@ -14,6 +14,7 @@ import {
   type ChargeReason, type Job, type Kind,
 } from '@/components/maintenance/shared';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
+import { useConfirm } from '@/components/ConfirmModalProvider';
 
 interface Keeper { id: number; name: string; phone: string | null }
 interface LegacyCleaning { id: number; status: string; job_type: string | null; notes: string | null; created_at: string; room_number: string | null }
@@ -25,7 +26,7 @@ const COLUMNS: { id: string; label: string; match: (j: Job) => boolean }[] = [
   { id: 'Done', label: 'รอตรวจสอบค่าใช้จ่าย', match: (j) => j.state === 'Done' },
 ];
 
-const inputClass = 'bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white';
+const inputClass = 'bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-primary shadow-xs';
 
 // useSearchParams needs a Suspense boundary
 export default function OwnerMaintenancePage() {
@@ -73,33 +74,33 @@ function Board() {
   const legacyCleaningOpen = legacyCleaning.filter((c) => String(c.status).toLowerCase() !== 'completed');
 
   return (
-    <div className="h-full w-full overflow-y-auto p-4 sm:p-8 max-w-7xl mx-auto space-y-6 pb-28 md:pb-12">
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/80 p-6 rounded-3xl border border-white/10">
+    <div className="h-full w-full overflow-y-auto p-4 sm:p-8 max-w-7xl mx-auto space-y-6 pb-28 md:pb-12 bg-slate-50 min-h-screen">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-6 rounded-3xl border border-slate-200 shadow-xs">
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-white">🛠️ บอร์ดงานซ่อม & ทำความสะอาด</h1>
-          <p className="text-xs text-slate-400">ผู้เช่าแจ้ง → ช่าง/แม่บ้านกดรับงาน (หรือมอบงานให้) → พนักงานปิดงาน → มีค่าใช้จ่ายเจ้าของหอตรวจสอบก่อนเสร็จสิ้น</p>
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900">🛠️ บอร์ดงานซ่อม & ทำความสะอาด</h1>
+          <p className="text-xs text-slate-500">ผู้เช่าแจ้ง → ช่าง/แม่บ้านกดรับงาน (หรือมอบงานให้) → พนักงานปิดงาน → มีค่าใช้จ่ายเจ้าของหอตรวจสอบก่อนเสร็จสิ้น</p>
         </div>
-        <button onClick={() => setShowCreate((v) => !v)} className="px-5 py-2.5 bg-primary text-white font-black text-xs rounded-xl">+ สร้างงาน</button>
+        <button onClick={() => setShowCreate((v) => !v)} className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-white font-black text-xs rounded-xl shadow-xs cursor-pointer">+ สร้างงาน</button>
       </div>
 
       {showCreate && <CreateForm rooms={rooms} initialKind={search.get('new') === 'cleaning' ? 'cleaning' : 'repair'} onDone={() => { setShowCreate(false); load(); }} />}
 
-      <div className="flex flex-wrap gap-1.5 bg-slate-900/60 p-2 rounded-2xl border border-white/5">
+      <div className="flex flex-wrap gap-1.5 bg-slate-100/80 p-2 rounded-2xl border border-slate-200">
         {([['board', 'งานที่เปิดอยู่'], ['closed', `เสร็จสิ้น/ยกเลิก (${closed.length})`], ['legacy', `งานแบบเดิม (${legacyOpen.length + legacyCleaningOpen.length})`]] as const).map(([id, label]) => (
-          <button key={id} onClick={() => setView(id)} className={`px-4 py-2 rounded-xl text-xs font-black ${view === id ? 'bg-primary text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>{label}</button>
+          <button key={id} onClick={() => setView(id)} className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${view === id ? 'bg-primary text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-white'}`}>{label}</button>
         ))}
       </div>
 
       {loading ? <p className="text-sm text-slate-400 text-center py-12">กำลังโหลด...</p>
-        : loadError ? <p className="text-sm text-rose-400 font-bold text-center py-12">✕ {loadError}</p>
+        : loadError ? <p className="text-sm text-rose-500 font-bold text-center py-12">✕ {loadError}</p>
         : view === 'board' ? (
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
             {COLUMNS.map((col) => {
               const list = current.filter(col.match);
               return (
-                <div key={col.id} className="bg-slate-900/60 rounded-2xl border border-white/5 p-3 space-y-3">
-                  <p className="text-xs font-black text-slate-300">{col.label} <span className="text-slate-500">({list.length})</span></p>
-                  {list.length === 0 && <p className="text-[11px] text-slate-500">ไม่มีงาน</p>}
+                <div key={col.id} className="bg-slate-100/70 rounded-2xl border border-slate-200 p-3 space-y-3">
+                  <p className="text-xs font-black text-slate-800">{col.label} <span className="text-slate-500">({list.length})</span></p>
+                  {list.length === 0 && <p className="text-[11px] text-slate-400">ไม่มีงาน</p>}
                   {list.map((j) => <JobCard key={j.id} job={j} keepers={j.kind ? keepers[j.kind] : []} isOwner={isOwner} onDone={load} />)}
                 </div>
               );
@@ -136,9 +137,9 @@ function CreateForm({ rooms, initialKind, onDone }: { rooms: { id: number; room_
     onDone();
   };
   return (
-    <div className="p-5 rounded-2xl border border-primary/30 bg-primary/5 space-y-3" onInput={() => error && setError(null)}>
-      <p className="text-sm font-black text-white">สร้างงานใหม่</p>
-      <p className="text-[11px] text-slate-400">งานของการย้ายออกให้สร้างจากหน้าย้ายออก เพื่อให้ค่าใช้จ่ายไปอยู่ในการหักเงินประกัน</p>
+    <div className="p-5 rounded-2xl border border-primary/20 bg-primary/5 space-y-3" onInput={() => error && setError(null)}>
+      <p className="text-sm font-black text-slate-900">สร้างงานใหม่</p>
+      <p className="text-[11px] text-slate-500">งานของการย้ายออกให้สร้างจากหน้าย้ายออก เพื่อให้ค่าใช้จ่ายไปอยู่ในการหักเงินประกัน</p>
       <div className="flex flex-wrap gap-2">
         <select value={kind} onChange={(e) => setKind(e.target.value as Kind)} className={inputClass}>
           <option value="repair">งานซ่อม</option>
@@ -152,13 +153,14 @@ function CreateForm({ rooms, initialKind, onDone }: { rooms: { id: number; room_
       </div>
       <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="รายละเอียดงาน" className={`${inputClass} w-full`} />
       <PhotoPicker value={photos} onChange={setPhotos} />
-      {error && <p className="text-xs text-rose-400 font-bold">✕ {error}</p>}
-      <button onClick={submit} disabled={busy} className="px-5 py-2.5 bg-primary text-white font-black text-xs rounded-xl disabled:opacity-50">{busy ? 'กำลังบันทึก...' : 'สร้างงาน'}</button>
+      {error && <p className="text-xs text-rose-500 font-bold">✕ {error}</p>}
+      <button onClick={submit} disabled={busy} className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-white font-black text-xs rounded-xl disabled:opacity-50 shadow-xs cursor-pointer">{busy ? 'กำลังบันทึก...' : 'สร้างงาน'}</button>
     </div>
   );
 }
 
 function JobCard({ job, keepers, isOwner, onDone }: { job: Job; keepers: Keeper[]; isOwner: boolean; onDone: () => void }) {
+  const { confirm } = useConfirm();
   const [keeperId, setKeeperId] = useState(job.assigned_to ? String(job.assigned_to) : '');
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState('');
@@ -169,7 +171,14 @@ function JobCard({ job, keepers, isOwner, onDone }: { job: Job; keepers: Keeper[
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const act = async (body: any, confirmText?: string) => {
-    if (confirmText && !confirm(confirmText)) return;
+    if (confirmText) {
+      const ok = await confirm({
+        title: 'ยืนยันการทำรายการ?',
+        description: confirmText,
+        variant: 'warning',
+      });
+      if (!ok) return;
+    }
     setBusy(true); setError(null); setNotice(null);
     const r = await postJson(`/api/owner/maintenance/${job.id}`, body);
     setBusy(false);
@@ -180,22 +189,22 @@ function JobCard({ job, keepers, isOwner, onDone }: { job: Job; keepers: Keeper[
   const canAssign = job.state === 'Requested' || job.state === 'Assigned';
 
   return (
-    <div className="bg-slate-950/70 border border-white/10 rounded-2xl p-3 space-y-2 text-xs" onInput={() => error && setError(null)}>
+    <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-2 text-xs shadow-xs" onInput={() => error && setError(null)}>
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="font-black text-white">#{job.id} · ห้อง {job.room_number || '-'}</p>
-          <p className="text-[11px] text-slate-400">{kindAndTopic(job.kind, job.issue_type)}</p>
+          <p className="font-black text-slate-900">#{job.id} · ห้อง {job.room_number || '-'}</p>
+          <p className="text-[11px] text-slate-500">{kindAndTopic(job.kind, job.issue_type)}</p>
         </div>
         <StateBadge job={job} />
       </div>
-      {job.move_out_settlement_id && <p className="text-[11px] text-amber-300 font-bold">งานของการย้ายออก (ค่าใช้จ่ายหักจากเงินประกัน)</p>}
-      <p className="text-slate-300">{job.description}</p>
+      {job.move_out_settlement_id && <p className="text-[11px] text-amber-700 font-bold">งานของการย้ายออก (ค่าใช้จ่ายหักจากเงินประกัน)</p>}
+      <p className="text-slate-600">{job.description}</p>
       <p className="text-[11px] text-slate-500">
         แจ้ง {thaiDateTime(job.requested_at)}{job.tenant_name ? ` · ${job.tenant_name}` : ''}{job.tenant_phone ? ` · ${job.tenant_phone}` : ''}
       </p>
-      {job.assignee_name && <p className="text-[11px] text-sky-300">ผู้รับงาน: {job.assignee_name}</p>}
-      {job.done_note && <p className="text-[11px] text-emerald-300">บันทึกปิดงาน: {job.done_note}</p>}
-      {job.closed_reason && <p className="text-[11px] text-rose-300">เหตุผล: {job.closed_reason}</p>}
+      {job.assignee_name && <p className="text-[11px] text-sky-700 font-medium">ผู้รับงาน: {job.assignee_name}</p>}
+      {job.done_note && <p className="text-[11px] text-emerald-700 font-medium">บันทึกปิดงาน: {job.done_note}</p>}
+      {job.closed_reason && <p className="text-[11px] text-rose-700 font-medium">เหตุผล: {job.closed_reason}</p>}
       <PhotoStrip photos={job.photos} />
 
       {canAssign && (
@@ -205,22 +214,22 @@ function JobCard({ job, keepers, isOwner, onDone }: { job: Job; keepers: Keeper[
             {keepers.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
           </select>
           <button onClick={() => (keeperId ? act({ action: 'assign', keeperUserId: Number(keeperId) }) : setError('กรุณาเลือกพนักงาน'))} disabled={busy}
-            className="px-3 py-2 bg-sky-500 text-white font-black rounded-xl disabled:opacity-50">{job.state === 'Assigned' ? 'เปลี่ยนผู้รับงาน' : 'มอบงาน'}</button>
-          <button onClick={() => setRejecting((v) => !v)} className="px-3 py-2 bg-rose-500/15 text-rose-300 border border-rose-500/40 font-black rounded-xl">ปฏิเสธ</button>
+            className="px-3 py-2 bg-sky-500 hover:bg-sky-600 text-white font-black rounded-xl disabled:opacity-50 cursor-pointer shadow-xs">{job.state === 'Assigned' ? 'เปลี่ยนผู้รับงาน' : 'มอบงาน'}</button>
+          <button onClick={() => setRejecting((v) => !v)} className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-black rounded-xl cursor-pointer">ปฏิเสธ</button>
         </div>
       )}
-      {canAssign && keepers.length === 0 && <p className="text-[11px] text-rose-400 font-bold">ยังไม่มี{job.kind === 'cleaning' ? 'แม่บ้าน' : 'ช่าง'}ที่ใช้งานอยู่ — เพิ่มที่หน้าพนักงาน</p>}
+      {canAssign && keepers.length === 0 && <p className="text-[11px] text-rose-600 font-bold">ยังไม่มี{job.kind === 'cleaning' ? 'แม่บ้าน' : 'ช่าง'}ที่ใช้งานอยู่ — เพิ่มที่หน้าพนักงาน</p>}
       {rejecting && (
         <div className="flex gap-1.5">
           <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="เหตุผล (บังคับ)" className={`${inputClass} flex-1`} />
-          <button onClick={() => (reason.trim() ? act({ action: 'reject', reason }) : setError('กรุณาระบุเหตุผล'))} disabled={busy} className="px-3 py-2 bg-rose-500 text-white font-black rounded-xl">ยืนยัน</button>
+          <button onClick={() => (reason.trim() ? act({ action: 'reject', reason }) : setError('กรุณาระบุเหตุผล'))} disabled={busy} className="px-3 py-2 bg-rose-500 hover:bg-rose-600 text-white font-black rounded-xl cursor-pointer">ยืนยัน</button>
         </div>
       )}
 
       {job.state === 'Done' && job.charge && !job.charge.decided && (
         // Waiting for the owner: deciding the charge closes the job
-        <div className="p-2 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-1.5">
-          <p className="text-amber-300 font-bold">
+        <div className="p-3 rounded-xl border border-amber-200 bg-amber-50 space-y-2">
+          <p className="text-amber-800 font-bold">
             พนักงานเสนอค่าใช้จ่าย {baht(job.charge.proposed)}{job.charge.proposed_note ? ` · ${job.charge.proposed_note}` : ''}
           </p>
           {isOwner ? (
@@ -242,24 +251,24 @@ function JobCard({ job, keepers, isOwner, onDone }: { job: Job; keepers: Keeper[
                     billed ? `ยืนยันเรียกเก็บ ${baht(Number(amount))}${job.move_out_settlement_id ? ' (เพิ่มเป็นค่าเสียหายของการย้ายออก)' : ' (ออกบิลให้ผู้เช่า)'}?` : 'ยืนยันไม่เก็บเงิน?');
                 }}
                 disabled={busy}
-                className="px-3 py-2 bg-amber-500 text-slate-950 font-black rounded-xl disabled:opacity-50"
+                className="px-3 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl disabled:opacity-50 shadow-xs cursor-pointer"
               >
                 ตัดสินค่าใช้จ่ายและปิดงาน
               </button>
             </>
           ) : (
-            <p className="text-[11px] text-slate-400">เจ้าของหอเป็นผู้ตัดสินค่าใช้จ่าย</p>
+            <p className="text-[11px] text-slate-500">เจ้าของหอเป็นผู้ตัดสินค่าใช้จ่าย</p>
           )}
         </div>
       )}
       {job.charge?.decided && (
-        <p className="text-[11px] text-slate-300">
+        <p className="text-[11px] text-slate-600">
           ค่าใช้จ่าย: {baht(job.charge.amount)} · {job.charge.reason_text}
           {job.charge.to_settlement ? ' · อยู่ในค่าเสียหายของการย้ายออก' : job.charge.bill_id ? ` · บิล #${job.charge.bill_id}` : ''}
         </p>
       )}
-      {error && <p className="text-xs text-rose-400 font-bold">✕ {error}</p>}
-      {notice && !error && <p className="text-xs text-emerald-400 font-bold">✓ {notice}</p>}
+      {error && <p className="text-xs text-rose-500 font-bold">✕ {error}</p>}
+      {notice && !error && <p className="text-xs text-emerald-600 font-bold">✓ {notice}</p>}
     </div>
   );
 }
@@ -267,7 +276,7 @@ function JobCard({ job, keepers, isOwner, onDone }: { job: Job; keepers: Keeper[
 function LegacyList({ jobs, cleaning, isOwner, onDone }: { jobs: Job[]; cleaning: LegacyCleaning[]; isOwner: boolean; onDone: () => void }) {
   return (
     <div className="space-y-3">
-      <p className="text-xs text-slate-400">งานที่แจ้งก่อนระบบบอร์ดใหม่ — จัดการด้วยมือแล้วปิดพร้อมบันทึก (ไม่มีการออกบิลจากที่นี่)</p>
+      <p className="text-xs text-slate-500">งานที่แจ้งก่อนระบบบอร์ดใหม่ — จัดการด้วยมือแล้วปิดพร้อมบันทึก (ไม่มีการออกบิลจากที่นี่)</p>
       {jobs.length + cleaning.length === 0 && <p className="text-sm text-slate-500">ไม่มีงานแบบเดิมที่ยังเปิดอยู่</p>}
       {jobs.map((j) => (
         <LegacyRow key={`m${j.id}`} id={j.id} title={`#${j.id} ห้อง ${j.room_number || '-'} · ${j.issue_type || '-'}`} detail={`${j.description || ''} · ${j.status_text}`} table="maintenance" isOwner={isOwner} onDone={onDone} photos={j.photos} />
@@ -292,20 +301,20 @@ function LegacyRow({ id, title, detail, table, isOwner, onDone, photos }: { id: 
     onDone();
   };
   return (
-    <div className="bg-slate-900/80 border border-slate-500/30 rounded-2xl p-4 space-y-2 text-xs" onInput={() => error && setError(null)}>
+    <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-2 text-xs shadow-xs" onInput={() => error && setError(null)}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="font-black text-white">{title}</p>
-        <span className="px-3 py-1 rounded-xl border border-slate-500/40 text-slate-300 text-[11px] font-black">งานแบบเดิม — จัดการด้วยมือ</span>
+        <p className="font-black text-slate-900">{title}</p>
+        <span className="px-3 py-1 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 text-[11px] font-black">งานแบบเดิม — จัดการด้วยมือ</span>
       </div>
-      <p className="text-slate-400">{detail}</p>
+      <p className="text-slate-500">{detail}</p>
       <PhotoStrip photos={photos} />
       {isOwner && (
         <div className="flex flex-wrap gap-1.5">
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="บันทึกการจัดการ (บังคับ)" className={`${inputClass} flex-1 min-w-[220px]`} />
-          <button onClick={close} disabled={busy} className="px-3 py-2 bg-slate-200 text-slate-900 font-black rounded-xl disabled:opacity-50">ปิดงาน</button>
+          <button onClick={close} disabled={busy} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-black rounded-xl border border-slate-200 disabled:opacity-50 cursor-pointer">ปิดงาน</button>
         </div>
       )}
-      {error && <p className="text-xs text-rose-400 font-bold">✕ {error}</p>}
+      {error && <p className="text-xs text-rose-500 font-bold">✕ {error}</p>}
     </div>
   );
 }

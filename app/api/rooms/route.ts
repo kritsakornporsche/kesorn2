@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
     if (isExplore) {
       query = sql`
         SELECT 
-          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at, r.ready_to_occupy_date,
+          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at, r.ready_to_occupy_date, r.amenities,
           COALESCE(r.deposit_amount, 3000) as deposit_amount,
           mor.move_out_date,
           mor.status as move_out_status,
@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
     } else {
       query = sql`
         SELECT 
-          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at,
+          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at, r.amenities,
           COALESCE(r.deposit_amount, 3000) as deposit_amount,
           mor.move_out_date,
           mor.status as move_out_status,
@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { room_number, room_type, price, status, floor, image_url, deposit_amount } = body;
+    const { room_number, room_type, price, status, floor, image_url, deposit_amount, amenities } = body;
     const dormId = parseInt(body.dorm_id || (session.user as any)?.dormId || '0', 10) || 1;
 
     if (!room_number || !room_type || price === undefined) {
@@ -157,9 +157,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: cap.message }, { status: 400 });
     }
 
+    let amenitiesStr: string | null = null;
+    if (amenities) {
+      amenitiesStr = typeof amenities === 'string' ? amenities : JSON.stringify(amenities);
+    }
+
     const result = await sql`
-      INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount)
-      VALUES (${room_number}, ${room_type}, ${price}, ${st.status}, ${floor || 1}, ${image_url || null}, ${dormId}, ${deposit})
+      INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount, amenities)
+      VALUES (${room_number}, ${room_type}, ${price}, ${st.status}, ${floor || 1}, ${image_url || null}, ${dormId}, ${deposit}, ${amenitiesStr})
     `;
     
     const newRoomId = (result as any).insertId;

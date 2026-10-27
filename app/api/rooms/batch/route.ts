@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     const errors: string[] = [];
 
     for (const room of rooms) {
-      const { room_number, room_type, price, status, floor, image_url, deposit_amount } = room;
+      const { room_number, room_type, price, status, floor, image_url, deposit_amount, amenities } = room;
 
       if (!room_number || !room_type || price === undefined) {
         skippedCount++;
@@ -66,9 +66,14 @@ export async function POST(req: NextRequest) {
 
       const deposit = deposit_amount !== undefined && deposit_amount !== null && deposit_amount !== '' ? parseFloat(deposit_amount) : 3000;
 
+      let amenitiesStr: string | null = null;
+      if (amenities) {
+        amenitiesStr = typeof amenities === 'string' ? amenities : JSON.stringify(amenities);
+      }
+
       await sql`
-        INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount)
-        VALUES (${room_number}, ${room_type}, ${price}, ${status || 'Available'}, ${floor || 1}, ${image_url || null}, ${targetDormId}, ${deposit})
+        INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount, amenities)
+        VALUES (${room_number}, ${room_type}, ${price}, ${status || 'Available'}, ${floor || 1}, ${image_url || null}, ${targetDormId}, ${deposit}, ${amenitiesStr})
       `;
       createdCount++;
     }

@@ -145,7 +145,7 @@ function clean(input: ContractDataInput, now: Date): ContractData {
   const startDate = String(input.startDate ?? '');
   const endDate = String(input.endDate ?? '');
   if (!isDate(startDate) || !isDate(endDate) || endDate <= startDate) refuse('bad_dates');
-  if (startDate < bangkokDate(now)) refuse('start_passed');
+  // Allow start date in the past to support delayed / late move-in bookings
   return { title, firstName, lastName, address, addressText, occupants: occ.value, startDate, endDate };
 }
 
@@ -229,7 +229,7 @@ export function confirmContractData(contractId: number, input: ContractDataInput
     await client.query('UPDATE contracts SET data_confirmed_at = ?, data_confirmed_by = ? WHERE id = ?', [now, by, contractId]);
     await notify(client, Number(c.tenant_user_id) || null, 'หอพักยืนยันข้อมูลสัญญาแล้ว',
       `ห้อง ${c.room_number}: ข้อมูลสัญญาถูกยืนยันแล้ว ขั้นถัดไปคือตรวจสภาพห้องในวันเข้าพัก`, now);
-    return { contractId, data, confirmedAt: now };
+    return { contractId, data, confirmedAt: now, tenantUserId: Number(c.tenant_user_id) || null, roomNumber: c.room_number as string };
   });
 }
 
@@ -253,7 +253,7 @@ export function changeContractData(contractId: number, input: ContractDataInput,
     );
     await notify(client, Number(c.tenant_user_id) || null, 'ข้อมูลสัญญาถูกแก้ไข',
       `ห้อง ${c.room_number}: แก้ ${changes.map((x) => x.label).join(', ')} — เหตุผล: ${why.slice(0, 200)}`, now);
-    return { contractId, data, changes };
+    return { contractId, data, changes, tenantUserId: Number(c.tenant_user_id) || null, roomNumber: c.room_number as string };
   });
 }
 

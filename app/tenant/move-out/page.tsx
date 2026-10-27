@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import TenantInspectionCard from '@/components/TenantInspectionCard';
 import ThaiDatePicker from '@/components/ThaiDatePicker';
+import { useConfirm } from '@/components/ConfirmModalProvider';
 
 interface Settlement {
   id: number;
@@ -109,6 +110,7 @@ export default function TenantMoveOutPage() {
 }
 
 function NoticeForm({ contract, onDone }: { contract: NonNullable<Data['contract']>; onDone: () => void }) {
+  const { confirm } = useConfirm();
   const [returnDate, setReturnDate] = useState('');
   const [reason, setReason] = useState('');
   const [promptpayTarget, setPromptpayTarget] = useState('');
@@ -129,7 +131,14 @@ function NoticeForm({ contract, onDone }: { contract: NonNullable<Data['contract
     setError(null);
     if (!returnDate) return setError('กรุณาเลือกวันคืนห้อง');
     if (!promptpayTarget.trim()) return setError('กรุณาระบุเบอร์พร้อมเพย์หรือเลขบัญชีสำหรับรับเงินประกันคืน');
-    if (!confirm(`แจ้งย้ายออก คืนห้องวันที่ ${thaiDate(returnDate)}?`)) return;
+    const ok = await confirm({
+      title: 'ยืนยันการแจ้งย้ายออก?',
+      description: `คืนห้องวันที่ ${thaiDate(returnDate)}\nระบบจะส่งคำขอแจ้งย้ายออกไปยังเจ้าของหอพัก`,
+      confirmText: 'ยืนยันแจ้งย้ายออก',
+      cancelText: 'ย้อนกลับ',
+      variant: 'warning',
+    });
+    if (!ok) return;
     setSending(true);
     try {
       const res = await fetch('/api/tenant/move-out', {
@@ -201,13 +210,21 @@ function NoticeForm({ contract, onDone }: { contract: NonNullable<Data['contract
 }
 
 function SettlementCard({ s, onChanged }: { s: Settlement; onChanged: () => void }) {
+  const { confirm } = useConfirm();
   const [error, setError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const m = s.money;
   const stepIndex = STEPS.findIndex((st) => st.state === s.state);
 
   const cancel = async () => {
-    if (!confirm('ยกเลิกการแจ้งย้ายออก?')) return;
+    const ok = await confirm({
+      title: 'ยกเลิกการแจ้งย้ายออก?',
+      description: 'คุณต้องการยกเลิกคำขอแจ้งย้ายออกใช่หรือไม่? สัญญาเช่าจะยังคงมีผลตามปกติ',
+      confirmText: 'ยืนยันยกเลิกคำขอ',
+      cancelText: 'ย้อนกลับ',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setCancelling(true);
     setError(null);
     try {

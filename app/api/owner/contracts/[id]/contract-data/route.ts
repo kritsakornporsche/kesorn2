@@ -39,11 +39,39 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (body.action === 'confirm') {
       const result = await confirmContractData(contractId, input, guard.user.id, now);
       if (!result.ok) return NextResponse.json({ success: false, message: result.message, reason: result.reason }, { status: contractDataStatus(result.reason) });
+      if (result.tenantUserId) {
+        try {
+          const { createUserNotification } = await import('@/lib/notifications');
+          await createUserNotification({
+            userId: result.tenantUserId,
+            title: '✅ หอพักยืนยันข้อมูลสัญญาแล้ว',
+            message: `ห้อง ${result.roomNumber || ''}: ข้อมูลสัญญาได้รับการยืนยันแล้ว ขั้นถัดไปคือตรวจสภาพห้องในวันเข้าพัก`,
+            type: 'contract_data',
+            link: '/guest',
+          });
+        } catch (ne) {
+          console.warn('[Confirm contract data push warn]', ne);
+        }
+      }
       return NextResponse.json({ success: true, message: 'ยืนยันข้อมูลสัญญาแล้ว — ข้อมูลถูกล็อก ขั้นถัดไป: ตรวจสภาพห้อง', data: result.data });
     }
     if (body.action === 'change') {
       const result = await changeContractData(contractId, input, body.reason, guard.user.id, now);
       if (!result.ok) return NextResponse.json({ success: false, message: result.message, reason: result.reason }, { status: contractDataStatus(result.reason) });
+      if (result.tenantUserId) {
+        try {
+          const { createUserNotification } = await import('@/lib/notifications');
+          await createUserNotification({
+            userId: result.tenantUserId,
+            title: '📝 ข้อมูลสัญญาเช่าถูกแก้ไข',
+            message: `ห้อง ${result.roomNumber || ''}: แก้ ${result.changes.map((c) => c.label).join(', ')} — เหตุผล: ${String(body.reason || '').slice(0, 150)}`,
+            type: 'contract_data',
+            link: '/guest',
+          });
+        } catch (ne) {
+          console.warn('[Change contract data push warn]', ne);
+        }
+      }
       return NextResponse.json({ success: true, message: `แก้ข้อมูลสัญญาแล้ว (${result.changes.map((c) => c.label).join(', ')}) และแจ้งผู้จองแล้ว`, changes: result.changes });
     }
     return NextResponse.json({ success: false, message: 'action ต้องเป็น confirm หรือ change' }, { status: 400 });

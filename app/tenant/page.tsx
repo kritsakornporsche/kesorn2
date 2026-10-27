@@ -118,25 +118,22 @@ export default async function TenantDashboard() {
         {/* 1. GUEST PENDING BOOKING STATUS BANNER (เมื่อจองแล้วและรอเจ้าของหออนุมัติ) */}
         {/* ========================================================================= */}
         {pendingContract && (
-          <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-amber-950/40 rounded-[3rem] border border-amber-500/30 p-8 sm:p-10 lg:p-12 shadow-2xl space-y-8 animate-in fade-in slide-in-from-top-4 duration-700">
-            {/* Background Glow */}
-            <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/10 rounded-full -mr-32 -mt-32 blur-3xl pointer-events-none" />
-
-            <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-border pb-8">
+          <section className="relative overflow-hidden bg-white rounded-[2.5rem] border border-amber-200 p-8 sm:p-10 lg:p-12 shadow-xs space-y-8 animate-in fade-in slide-in-from-top-4 duration-700">
+            <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-slate-200 pb-8">
               <div className="space-y-2">
-                <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full text-xs font-bold">
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-full text-xs font-bold">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
                   สถานะการจองห้องพัก
                 </div>
-                <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
+                <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
                   กำลังรอการตรวจสอบและอนุมัติสัญญา
                 </h1>
-                <p className="text-sm text-slate-300">
+                <p className="text-sm text-slate-600">
                   คุณได้ส่งคำขอจองและยืนยันสัญญาเช่าเรียบร้อยแล้ว เจ้าของหอพักกำลังดำเนินการตรวจสอบ
                 </p>
               </div>
 
-              <div className="px-5 py-3 bg-amber-500/15 border border-amber-500/30 rounded-2xl text-amber-300 text-xs font-bold flex items-center gap-2.5">
+              <div className="px-5 py-3 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-xs font-bold flex items-center gap-2.5">
                 <span className="text-xl">⏳</span>
                 <span>รอเจ้าของหอพักอนุมัติ</span>
               </div>
@@ -144,67 +141,67 @@ export default async function TenantDashboard() {
 
             {/* Stepper Progress */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="p-4 bg-white/5 border border-emerald-500/30 rounded-2xl flex items-center gap-3.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center font-bold text-sm shrink-0">
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-3.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center justify-center font-bold text-sm shrink-0">
                   ✓
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">ขั้นตอนที่ 1</p>
-                  <p className="text-xs font-bold text-white">ยืนยันสัญญาเช่าออนไลน์</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">ขั้นตอนที่ 1</p>
+                  <p className="text-xs font-bold text-slate-900">ยืนยันสัญญาเช่าออนไลน์</p>
                 </div>
               </div>
 
-              <div className="p-4 bg-amber-500/10 border border-amber-500/40 rounded-2xl flex items-center gap-3.5 shadow-lg shadow-amber-500/5">
-                <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-900 flex items-center justify-center font-bold text-sm shrink-0 animate-pulse">
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-3.5 shadow-xs">
+                <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-sm shrink-0 animate-pulse">
                   2
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-amber-300">ขั้นตอนที่ 2 (ปัจจุบัน)</p>
-                  <p className="text-xs font-bold text-white">เจ้าของหอพักตรวจสอบ & อนุมัติ</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800">ขั้นตอนที่ 2 (ปัจจุบัน)</p>
+                  <p className="text-xs font-bold text-slate-900">เจ้าของหอพักตรวจสอบ & อนุมัติ</p>
                 </div>
               </div>
 
-              <div className="p-4 bg-white/5 border border-border rounded-2xl flex items-center gap-3.5 opacity-60">
-                <div className="w-9 h-9 rounded-xl bg-white/10 text-white/60 flex items-center justify-center font-bold text-sm shrink-0">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-center gap-3.5 opacity-60">
+                <div className="w-9 h-9 rounded-xl bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-sm shrink-0">
                   3
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-white/50">ขั้นตอนที่ 3</p>
-                  <p className="text-xs font-bold text-white">ปลดล็อกสิทธิ์ผู้เช่า & เข้าอยู่</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">ขั้นตอนที่ 3</p>
+                  <p className="text-xs font-bold text-slate-900">ปลดล็อกสิทธิ์ผู้เช่า & เข้าอยู่</p>
                 </div>
               </div>
             </div>
 
             {/* Booked Room Details Card */}
-            <div className="bg-slate-950/60 rounded-[2.5rem] border border-border p-6 sm:p-8 grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="bg-slate-50 rounded-[2rem] border border-slate-200 p-6 sm:p-8 grid grid-cols-1 md:grid-cols-4 gap-6">
               <div className="space-y-1">
-                <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">หอพัก</span>
-                <p className="text-lg font-bold text-white truncate">{pendingContract.dorm_name || 'SmartDom Dormitory'}</p>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">หอพัก</span>
+                <p className="text-lg font-bold text-slate-900 truncate">{pendingContract.dorm_name || 'SmartDom Dormitory'}</p>
                 {pendingContract.dorm_address && (
-                  <p className="text-[11px] text-white/40 truncate">{pendingContract.dorm_address}</p>
+                  <p className="text-[11px] text-slate-500 truncate">{pendingContract.dorm_address}</p>
                 )}
               </div>
 
               <div className="space-y-1">
-                <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">ห้องพักที่จอง</span>
-                <p className="text-2xl font-black text-amber-300">
-                  ห้อง {pendingContract.room_number} <span className="text-xs font-normal text-white/60">({roomTypeLabel(pendingContract.room_type)})</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">ห้องพักที่จอง</span>
+                <p className="text-2xl font-black text-primary">
+                  ห้อง {pendingContract.room_number} <span className="text-xs font-normal text-slate-600">({roomTypeLabel(pendingContract.room_type)})</span>
                 </p>
-                <p className="text-[11px] text-white/40">ชั้น {pendingContract.floor || 1}</p>
+                <p className="text-[11px] text-slate-500">ชั้น {pendingContract.floor || 1}</p>
               </div>
 
               <div className="space-y-1">
-                <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">ค่าเช่า / ประกันสัญญา</span>
-                <p className="text-lg font-bold text-white">฿{Number(pendingContract.price || 0).toLocaleString()} <span className="text-xs font-normal text-white/50">/เดือน</span></p>
-                <p className="text-[11px] text-emerald-400 font-semibold">{contractDepositLabel(pendingContract.contract_status)}: ฿{Number(pendingContract.deposit_amount || 0).toLocaleString()}</p>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">ค่าเช่า / ประกันสัญญา</span>
+                <p className="text-lg font-bold text-slate-900">฿{Number(pendingContract.price || 0).toLocaleString()} <span className="text-xs font-normal text-slate-500">/เดือน</span></p>
+                <p className="text-[11px] text-emerald-700 font-semibold">{contractDepositLabel(pendingContract.contract_status)}: ฿{Number(pendingContract.deposit_amount || 0).toLocaleString()}</p>
               </div>
 
               <div className="space-y-1">
-                <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">วันที่ทำรายการ</span>
-                <p className="text-sm font-bold text-white">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">วันที่ทำรายการ</span>
+                <p className="text-sm font-bold text-slate-900">
                   {pendingContract.contract_created_at ? new Date(pendingContract.contract_created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}
                 </p>
-                <p className="text-[11px] text-white/40">
+                <p className="text-[11px] text-slate-500">
                   เริ่มสัญญา: {new Date(pendingContract.start_date).toLocaleDateString('th-TH')}
                 </p>
               </div>
@@ -212,9 +209,7 @@ export default async function TenantDashboard() {
 
             {/* Actions & Contact */}
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-2">
-              <p className="text-xs text-slate-300 text-center sm:text-left">
-                💡 เมื่อเจ้าของหอพักกดอนุมัติสัญญา ระบบจะเปิดการใช้งานแดชบอร์ดเต็มรูปแบบให้คุณโดยอัตโนมัติ
-              </p>
+              
               <div className="flex items-center gap-3 flex-wrap justify-center sm:justify-end">
                 <CancelBookingButton 
                   contractId={pendingContract.contract_id} 
@@ -222,14 +217,14 @@ export default async function TenantDashboard() {
                 />
                 <Link
                   href="/tenant/chat"
-                  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-2xl text-xs transition-all shadow-lg hover:scale-105 active:scale-95 flex items-center gap-2"
+                  className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-2xl text-xs transition-all shadow-xs flex items-center gap-2 cursor-pointer"
                 >
                   <span>💬</span>
                   <span>แชทสอบถามเจ้าของหอ</span>
                 </Link>
                 <Link
                   href="/explore"
-                  className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl text-xs transition-all border border-border hover:scale-105 active:scale-95"
+                  className="px-5 py-2.5 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-2xl text-xs transition-all border border-slate-300 shadow-xs"
                 >
                   สำรวจห้องอื่น
                 </Link>
@@ -338,11 +333,11 @@ export default async function TenantDashboard() {
             {/* Maintenance Status Quick View */}
             <section>
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-black text-white flex items-center gap-4">
+                <h2 className="text-2xl font-black text-slate-900 flex items-center gap-4">
                   <div className="w-3 h-8 bg-primary rounded-full" />
                   สถานะการดูแลแจ้งซ่อม & ทำความสะอาด
                 </h2>
-                <Link href="/tenant/maintenance" className="text-sm font-black text-muted-foreground hover:text-white/80 uppercase tracking-widest border-b-2 border-transparent hover:border-primary transition-all pb-1">ดูประวัติทั้งหมด</Link>
+                <Link href="/tenant/maintenance" className="text-sm font-black text-muted-foreground hover:text-slate-900 uppercase tracking-widest border-b-2 border-transparent hover:border-primary transition-all pb-1">ดูประวัติทั้งหมด</Link>
               </div>
               
               <div className="grid gap-6">
@@ -351,7 +346,7 @@ export default async function TenantDashboard() {
                       <div className="w-14 h-14 bg-card rounded-full flex items-center justify-center mx-auto mb-3">
                         <svg className="w-7 h-7 text-muted-foreground/60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
                       </div>
-                      <p className="text-white/50 font-bold text-sm">ยังไม่มีรายการแจ้งซ่อมหรือทำความสะอาดในขณะนี้</p>
+                      <p className="text-slate-500 font-bold text-sm">ยังไม่มีรายการแจ้งซ่อมหรือทำความสะอาดในขณะนี้</p>
                       <Link href="/tenant/maintenance" className="mt-3 inline-block text-primary font-bold text-xs">แจ้งซ่อม / ทำความสะอาด →</Link>
                     </div>
                 ) : recentMaintenance.map((maint: any) => {
@@ -373,8 +368,8 @@ export default async function TenantDashboard() {
                                 }`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg>
                             </div>
                             <div>
-                                <h4 className="font-bold text-white text-base">{maint.issue_type || 'รายการแจ้งซ่อม'}</h4>
-                                <p className="text-xs text-white/50 font-medium flex items-center gap-1.5 mt-0.5">
+                                <h4 className="font-bold text-slate-900 text-base">{maint.issue_type || 'รายการแจ้งซ่อม'}</h4>
+                                <p className="text-xs text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
                                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                     {new Date(maint.created_at).toLocaleDateString('th-TH')}
                                 </p>
@@ -388,7 +383,7 @@ export default async function TenantDashboard() {
                             {isPending ? (maint.state === 'Assigned' ? 'มอบงานแล้ว' : 'รอดำเนินการ') : isInProgress ? 'กำลังดำเนินการ' : closedText}
                         </span>
                       </div>
-                      <p className="text-white/80 leading-relaxed text-sm italic border-l-4 border-white/20 pl-4">"{maint.description}"</p>
+                      <p className="text-slate-700 leading-relaxed text-sm italic border-l-4 border-slate-300 pl-4">"{maint.description}"</p>
                     </div>
                   );
                 })}
@@ -398,7 +393,7 @@ export default async function TenantDashboard() {
             {/* Premium Tools Section */}
             <section>
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-black text-white flex items-center gap-4">
+                <h2 className="text-2xl font-black text-slate-900 flex items-center gap-4">
                   <div className="w-3 h-8 bg-primary rounded-full" />
                   เครื่องมือและบริการ
                 </h2>

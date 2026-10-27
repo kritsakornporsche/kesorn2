@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
+import { useConfirm } from '@/components/ConfirmModalProvider';
 
 interface CameraMeterModalProps {
   isOpen: boolean;
@@ -43,6 +44,7 @@ export default function CameraMeterModal({
   previousReading,
   onConfirmReading,
 }: CameraMeterModalProps) {
+  const { alert } = useConfirm();
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [detectedReading, setDetectedReading] = useState<string>('');
@@ -387,10 +389,14 @@ export default function CameraMeterModal({
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const num = parseFloat(detectedReading);
     if (isNaN(num)) {
-      alert('กรุณาระบุตัวเลขมิเตอร์ที่ถูกต้อง');
+      await alert({
+        title: 'ข้อมูลไม่ถูกต้อง',
+        description: 'กรุณาระบุตัวเลขมิเตอร์ที่ถูกต้อง',
+        variant: 'warning',
+      });
       return;
     }
     onConfirmReading(num, capturedImage || '');
@@ -452,26 +458,26 @@ export default function CameraMeterModal({
       />
 
       {/* Main Container: Guaranteed never to overflow viewport */}
-      <div className="flex flex-col w-full h-[100dvh] sm:h-[88vh] sm:max-h-[720px] sm:max-w-lg bg-[#0E071D] sm:border sm:border-purple-500/25 sm:rounded-3xl shadow-2xl overflow-hidden relative">
+      <div className="flex flex-col w-full h-[100dvh] sm:h-[88vh] sm:max-h-[720px] sm:max-w-lg bg-white sm:border sm:border-slate-200 sm:rounded-3xl shadow-2xl overflow-hidden relative">
         
         {/* 1. Clean, Compact Header Bar */}
-        <div className="h-14 px-4 bg-[#180D2F] border-b border-purple-500/20 flex items-center justify-between shrink-0 z-20">
+        <div className="h-14 px-4 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-20">
           <div className="flex items-center gap-2.5">
             <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold shadow-sm ${
               isWater 
-                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' 
-                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                ? 'bg-purple-50 text-purple-700 border border-purple-200' 
+                : 'bg-amber-50 text-amber-700 border border-amber-200'
             }`}>
               {isWater ? '💧' : '⚡'}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-black text-white">
-                  สแกน{typeLabel} <span className="text-amber-400 font-mono">ห้อง {roomNumber}</span>
+                <h3 className="text-sm font-black text-slate-900">
+                  สแกน{typeLabel} <span className="text-primary font-mono">ห้อง {roomNumber}</span>
                 </h3>
               </div>
-              <p className="text-[10px] text-purple-300/70 font-mono leading-none">
-                งวดก่อน: <span className="text-amber-300 font-bold">{previousReading}</span>
+              <p className="text-[10px] text-slate-500 font-mono leading-none">
+                งวดก่อน: <span className="text-slate-700 font-bold">{previousReading}</span>
               </p>
             </div>
           </div>
@@ -482,7 +488,7 @@ export default function CameraMeterModal({
               type="button"
               onClick={handleUploadGallery}
               title="อัพโหลดรูปภาพจากคลังรูปภาพหรือไฟล์ในเครื่อง"
-              className="px-2.5 py-1.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 hover:text-white border border-purple-400/40 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer active:scale-95 shadow-xs"
+              className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer active:scale-95 shadow-xs"
             >
               <span>🖼️</span>
               <span className="text-[11px]">อัพรูป</span>
@@ -497,7 +503,7 @@ export default function CameraMeterModal({
                 className={`p-2 rounded-xl text-xs flex items-center transition-all cursor-pointer ${
                   torchOn
                     ? 'bg-amber-400 text-slate-950 font-bold shadow-[0_0_12px_rgba(251,191,36,0.6)]'
-                    : 'bg-white/5 hover:bg-white/10 text-white/70'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
                 }`}
               >
                 🔦
@@ -510,7 +516,7 @@ export default function CameraMeterModal({
                 type="button"
                 onClick={toggleFacingMode}
                 title="สลับกล้องหน้า/หลัง"
-                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 text-xs transition-all cursor-pointer"
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs transition-all cursor-pointer"
               >
                 🔄
               </button>
@@ -523,7 +529,7 @@ export default function CameraMeterModal({
                 stopLiveStream();
                 onClose();
               }}
-              className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/15 text-white/70 hover:text-white flex items-center justify-center transition-colors cursor-pointer ml-1"
+              className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center transition-colors cursor-pointer ml-1"
             >
               ✕
             </button>
@@ -668,7 +674,7 @@ export default function CameraMeterModal({
         </div>
 
         {/* 3. Clean, Non-Overflowing Bottom Controls Panel */}
-        <div className="p-3 sm:p-4 bg-[#180D2F] border-t border-purple-500/20 shrink-0 z-20">
+        <div className="p-3 sm:p-4 bg-white border-t border-slate-200 shrink-0 z-20">
           
           {/* A. Live Stream Controls: 4 actions */}
           {liveStreamActive && !capturedImage && (
@@ -677,7 +683,7 @@ export default function CameraMeterModal({
               <button
                 type="button"
                 onClick={handleUploadGallery}
-                className="flex-1 py-2.5 px-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 hover:text-white font-bold text-xs border border-purple-400/40 flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-sm"
+                className="flex-1 py-2.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-200 flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-xs"
                 title="เลือกรูปภาพจากคลังรูปภาพหรือไฟล์ในเครื่อง"
               >
                 <span className="text-sm">🖼️</span>
@@ -689,9 +695,9 @@ export default function CameraMeterModal({
                 type="button"
                 onClick={captureLiveFrame}
                 title="กดถ่ายภาพและอ่านตัวเลข"
-                className="w-14 h-14 sm:w-15 sm:h-15 rounded-full border-3 border-white/90 flex items-center justify-center p-1 cursor-pointer transition-transform active:scale-90 shrink-0 shadow-[0_0_15px_rgba(168,85,247,0.4)]"
+                className="w-14 h-14 sm:w-15 sm:h-15 rounded-full border-3 border-slate-900 flex items-center justify-center p-1 cursor-pointer transition-transform active:scale-90 shrink-0 shadow-md"
               >
-                <div className="w-full h-full rounded-full bg-white hover:bg-purple-200 transition-colors flex items-center justify-center text-slate-950 text-lg">
+                <div className="w-full h-full rounded-full bg-slate-900 hover:bg-slate-800 transition-colors flex items-center justify-center text-white text-lg">
                   📸
                 </div>
               </button>
@@ -700,7 +706,7 @@ export default function CameraMeterModal({
               <button
                 type="button"
                 onClick={handleNativeCamera}
-                className="flex-1 py-2.5 px-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 font-bold text-xs border border-white/10 flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                className="flex-1 py-2.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-200 flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-xs"
                 title="เปิดกล้องมือถือถ่ายภาพ"
               >
                 <span className="text-sm">📷</span>
@@ -714,7 +720,7 @@ export default function CameraMeterModal({
                   stopLiveStream();
                   onClose();
                 }}
-                className="py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white font-bold text-xs border border-white/10 flex items-center justify-center cursor-pointer transition-all"
+                className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 font-bold text-xs border border-slate-200 flex items-center justify-center cursor-pointer transition-all"
                 title="ปิดหน้าต่าง"
               >
                 ✕
@@ -731,14 +737,14 @@ export default function CameraMeterModal({
                   <button
                     type="button"
                     onClick={handleRetake}
-                    className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-all shadow-sm active:scale-95"
+                    className="px-2.5 py-1 rounded-lg bg-primary hover:bg-primary/90 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-all shadow-xs active:scale-95"
                   >
                     <span>🔄 ถ่ายใหม่</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleRetakeGallery}
-                    className="px-2.5 py-1 rounded-lg bg-indigo-600/40 hover:bg-indigo-600/60 text-indigo-200 hover:text-white font-bold text-xs flex items-center gap-1 cursor-pointer border border-indigo-400/40 transition-all active:scale-95 shadow-sm"
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1 cursor-pointer border border-slate-200 transition-all active:scale-95 shadow-xs"
                     title="เลือกรูปภาพอื่นจากเครื่อง"
                   >
                     <span>🖼️ อัพรูปใหม่</span>
@@ -746,33 +752,33 @@ export default function CameraMeterModal({
                   <button
                     type="button"
                     onClick={handleRetakeNative}
-                    className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 font-bold text-xs flex items-center gap-1 cursor-pointer border border-white/10 transition-all active:scale-95"
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1 cursor-pointer border border-slate-200 transition-all active:scale-95"
                   >
                     <span>📷 กล้องมือถือ</span>
                   </button>
                 </div>
 
-                <span className="text-xs text-purple-300/80 font-mono shrink-0">
-                  งวดก่อน: <strong className="text-amber-400 font-black">{previousReading}</strong>
+                <span className="text-xs text-slate-500 font-mono shrink-0">
+                  งวดก่อน: <strong className="text-slate-900 font-black">{previousReading}</strong>
                 </span>
               </div>
 
               {/* OCR Engine Indicator Badge */}
               {engineUsed && (
-                <div className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-purple-950/40 border border-purple-500/20 text-[10px]">
-                  <span className="text-purple-300/80 font-medium">ระบบอ่านค่า:</span>
+                <div className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-[10px]">
+                  <span className="text-slate-600 font-medium">ระบบอ่านค่า:</span>
                   {engineUsed === 'gemini-custom-key' ? (
-                    <span className="text-emerald-300 font-bold flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span className="text-emerald-700 font-bold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                       ⚡ Google Gemini Vision (API Key ของคุณ)
                     </span>
                   ) : engineUsed === 'gemini-system-key' ? (
-                    <span className="text-indigo-300 font-bold flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                    <span className="text-primary font-bold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
                       ✨ Google Gemini Vision (ระบบกลาง)
                     </span>
                   ) : (
-                    <span className="text-amber-300 font-bold flex items-center gap-1">
+                    <span className="text-amber-700 font-bold flex items-center gap-1">
                       <span>⚙️</span>
                       Tesseract OCR (ออฟไลน์ในเครื่อง)
                     </span>
@@ -790,30 +796,30 @@ export default function CameraMeterModal({
                     value={detectedReading}
                     onChange={(e) => setDetectedReading(e.target.value)}
                     placeholder="กรอกเลขหน้าปัด"
-                    className="w-full px-3.5 py-2.5 bg-[#0E071D] border border-purple-400/50 focus:border-amber-400 rounded-xl text-xl font-black text-amber-300 font-mono outline-none shadow-inner"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 focus:border-primary rounded-xl text-xl font-black text-slate-900 font-mono outline-none shadow-xs"
                   />
                   {detectedReading && !warning && (
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold">
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200 font-bold">
                       พร้อมบันทึก
                     </span>
                   )}
                 </div>
 
-                <div className="shrink-0 bg-[#0E071D] px-3 py-2 rounded-xl border border-purple-500/20 text-right min-w-[80px]">
-                  <span className="text-[9px] text-purple-300/70 block font-bold">ใช้ไปงวดนี้</span>
+                <div className="shrink-0 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 text-right min-w-[80px]">
+                  <span className="text-[9px] text-slate-500 block font-bold">ใช้ไปงวดนี้</span>
                   <span className={`text-sm font-black font-mono ${
-                    unitsDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                    unitsDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'
                   }`}>
                     {unitsDelta >= 0 ? `+${unitsDelta.toFixed(1)}` : unitsDelta.toFixed(1)}
                   </span>
-                  <span className="text-[9px] text-purple-300/70 ml-0.5">หน.</span>
+                  <span className="text-[9px] text-slate-500 ml-0.5">หน.</span>
                 </div>
               </div>
 
               {/* AI Candidates Pills if multiple found */}
               {candidates.length > 1 && (
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] text-purple-300/70 font-medium">AI ตรวจพบ:</span>
+                  <span className="text-[10px] text-slate-500 font-medium">AI ตรวจพบ:</span>
                   {candidates.slice(0, 4).map((c, idx) => (
                     <button
                       key={idx}
@@ -821,8 +827,8 @@ export default function CameraMeterModal({
                       onClick={() => setDetectedReading(String(c))}
                       className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer border ${
                         detectedReading === String(c)
-                          ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-sm'
-                          : 'bg-purple-600/20 hover:bg-purple-600/40 text-purple-200 border-purple-400/30'
+                          ? 'bg-primary text-white border-primary shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
                       }`}
                     >
                       {c}
@@ -836,7 +842,7 @@ export default function CameraMeterModal({
                 <button
                   type="button"
                   onClick={() => setDetectedReading(String(previousReading))}
-                  className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-purple-200 hover:text-white text-[10px] sm:text-[11px] font-bold border border-purple-500/20 transition-all cursor-pointer flex items-center gap-1"
+                  className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] sm:text-[11px] font-bold border border-slate-200 transition-all cursor-pointer flex items-center gap-1"
                 >
                   <span>📌</span>
                   <span>ใช้เลขเดิม ({previousReading})</span>
@@ -850,7 +856,7 @@ export default function CameraMeterModal({
                       const next = (base + add).toFixed(2).replace(/\.00$/, '');
                       setDetectedReading(next);
                     }}
-                    className="px-2 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/25 text-amber-300 text-[10px] sm:text-[11px] font-mono font-bold border border-amber-500/30 transition-all cursor-pointer"
+                    className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 text-[10px] sm:text-[11px] font-mono font-bold border border-amber-200 transition-all cursor-pointer"
                   >
                     +{add}
                   </button>
@@ -859,18 +865,18 @@ export default function CameraMeterModal({
 
               {/* Warning if any */}
               {warning && (
-                <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-lg leading-tight">
+                <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg leading-tight">
                   ⚠️ {warning}
                 </p>
               )}
 
               {/* Evidence photo confirmation pill */}
-              <div className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-[#0E071D] border border-emerald-500/20 text-[10px] text-emerald-300">
+              <div className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[10px] text-emerald-800">
                 <span className="flex items-center gap-1">
                   <span>📸</span>
                   <span>บันทึกภาพถ่ายเป็นหลักฐานในระบบอัตโนมัติ</span>
                 </span>
-                <span className="font-mono text-white/50 font-bold">หลักฐานพร้อมแนบ</span>
+                <span className="font-mono text-emerald-700 font-bold">หลักฐานพร้อมแนบ</span>
               </div>
 
               {/* Big Confirm Save Button */}
@@ -878,7 +884,7 @@ export default function CameraMeterModal({
                 type="button"
                 onClick={handleSave}
                 disabled={analyzing || !detectedReading}
-                className="w-full py-3 bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 disabled:opacity-40 text-white font-black text-xs sm:text-sm rounded-xl shadow-lg shadow-emerald-600/30 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98"
+                className="w-full py-3 bg-primary hover:bg-primary/90 disabled:opacity-40 text-white font-black text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98"
               >
                 <span>💾</span>
                 <span>กรอกค่า {detectedReading ? `[ ${detectedReading} ]` : ''} ลงในช่องห้อง {roomNumber}</span>

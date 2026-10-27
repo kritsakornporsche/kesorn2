@@ -56,21 +56,71 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'ไม่พบรายการจองที่สามารถยกเลิกได้' }, { status: 404 });
     }
 
-    // Not paid yet (waiting for approval / for the booking fee): cancel without forfeiting anything
+    // Get room & user details for notifications before cancel
+    const roomInfo = (await sql`
+      SELECT r.room_number, COALESCE(t.name, u.name, 'ผู้จอง') as guest_name
+      FROM contracts c
+      JOIN rooms r ON c.room_id = r.id
+      LEFT JOIN tenants t ON c.tenant_id = t.id
+      LEFT JOIN users u ON t.user_id = u.id OR t.email = u.email
+      WHERE c.id = ${targetContractId}
+    `)[0] || { room_number: '-', guest_name: 'ผู้จอง' };
+
+    const sendCancellationNotifications = async () => {
+      try {
+        const staff = await sql`SELECT id FROM users WHERE role IN ('owner', 'manager') AND COALESCE(is_active, 1) = 1`;
+        for (const u of staff) {
+          await sql`
+            INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+            VALUES (
+              ${u.id},
+              '❌ มีการยกเลิกการจองห้องพัก',
+              ${`คุณ ${roomInfo.guest_name} ได้ยกเลิกการจองห้อง ${roomInfo.room_number} (ห้องกลับสู่สถานะว่าง)`},
+              'booking_cancelled',
+              0,
+              '/owner/bookings',
+              NOW()
+            )
+          `.catch((e: any) => console.warn('[Cancel in-app notif error]', e));
+        }
+
+        const { sendWebPushToRole, sendWebPushToEmail } = await import('@/lib/features/web-push-server');
+        await sendWebPushToRole('owner', {
+          title: '❌ มีการยกเลิกการจองห้องพัก',
+          body: `คุณ ${roomInfo.guest_name} ได้ยกเลิกการจองห้อง ${roomInfo.room_number} (ห้องกลับสู่สถานะว่าง)`,
+          url: '/owner/bookings',
+          tag: `booking-cancelled-${targetContractId}`,
+        });
+
+        if (session?.user?.email) {
+          await sendWebPushToEmail(session.user.email, {
+            title: '❌ ยกเลิกการจองห้องพักเรียบร้อย',
+            body: `การจองห้อง ${roomInfo.room_number} ถูกยกเลิกเรียบร้อยแล้ว`,
+            url: '/explore',
+            tag: `guest-cancelled-${targetContractId}`,
+          });
+        }
+      } catch (err) {
+        console.warn('[Cancellation notifications error]', err);
+      }
+    };
+
+    // Not paid yet: cancel without forfeiting anything
     if (currentStatus === 'BookingRequested' || currentStatus === 'BookingApproved') {
       const cancelled = await cancelUnpaidBooking(Number(targetContractId), Number((session.user as any).id) || null, new Date());
       if (!cancelled.ok) {
         return NextResponse.json({ success: false, message: cancelled.message }, { status: 400 });
       }
+      await sendCancellationNotifications();
       return NextResponse.json({ success: true, message: 'ยกเลิกคำขอจองแล้ว ห้องเปิดให้ผู้อื่นจองแล้ว' });
     }
 
-    // Paid booking (commit 28-7): through lib/bookings — row locked, this booking's own bill only, the room released
-    // only if nothing else holds it, the booking fee forfeited
+    // Paid booking: through lib/bookings
     const paid = await cancelPaidBooking(Number(targetContractId), { id: Number((session.user as any).id) || null, email: session.user.email }, new Date());
     if (!paid.ok) {
       return NextResponse.json({ success: false, message: paid.message }, { status: paid.reason === 'not_found' ? 404 : 400 });
     }
+    await sendCancellationNotifications();
     return NextResponse.json({
       success: true,
       message: 'ยกเลิกการจองเรียบร้อยแล้ว ห้องพักกลับสู่สถานะว่าง',

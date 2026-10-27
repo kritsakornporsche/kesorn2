@@ -45,48 +45,52 @@ export default function OccupantsEditor({ contractId, onChanged }: { contractId:
 
   if (!info) return null;
   return (
-    <div className="bg-slate-900/60 p-6 rounded-3xl border border-white/10 space-y-3">
+    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider block mb-1">จำนวนผู้พักอาศัย (สูงสุด {MAX_OCCUPANTS} คน)</span>
-          <span className="text-2xl font-black text-white">{info.occupants} คน</span>
-          <span className="text-[11px] text-white/50 block mt-1">ค่าน้ำคิดต่อคน · มีผลกับบิลที่ออกหลังแก้เท่านั้น</span>
+          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">จำนวนผู้พักอาศัย (สูงสุด {MAX_OCCUPANTS} คน)</span>
+          <span className="text-2xl font-black text-slate-900">{info.occupants} คน</span>
+          <span className="text-[11px] text-slate-500 block mt-1">ค่าน้ำคิดต่อคน · มีผลกับบิลที่ออกหลังแก้เท่านั้น</span>
         </div>
         {info.editable && !open && (
-          <button onClick={() => { setOpen(true); setError(null); setDone(null); }} className="px-4 py-2.5 bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 border border-sky-500/40 font-black text-xs rounded-xl">
+          <button onClick={() => { setOpen(true); setError(null); setDone(null); }} className="px-4 py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer">
             ✏️ แก้จำนวนผู้พัก
           </button>
         )}
       </div>
 
       {info.warning && (
-        <p className="text-xs font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">⚠️ มีบิลร่าง {info.draftBills} ใบ — {info.warning}</p>
+        <p className="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">⚠️ มีบิลร่าง {info.draftBills} ใบ — {info.warning}</p>
       )}
 
       {open && (
-        <div className="space-y-2 bg-slate-950/60 p-4 rounded-2xl border border-white/10">
-          <label className="block text-xs font-bold text-slate-300">จำนวนผู้พักใหม่</label>
-          <select value={value} onChange={(e) => setValue(Number(e.target.value))} className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-white">
-            {OCCUPANT_CHOICES.map((n) => <option key={n} value={n}>{n} คน</option>)}
-          </select>
-          <label className="block text-xs font-bold text-slate-300">เหตุผล (ถ้ามี)</label>
-          <input value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} placeholder="เช่น ผู้พักร่วมย้ายเข้า" className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white" />
-          {error && <p className="text-xs font-bold text-rose-400">✕ {error}</p>}
-          <div className="flex gap-2">
-            <button onClick={() => setOpen(false)} className="flex-1 py-2.5 bg-white/10 text-white rounded-xl text-xs font-bold">ยกเลิก</button>
-            <button onClick={save} disabled={saving || value === info.occupants} className="flex-1 py-2.5 bg-emerald-500 text-slate-950 rounded-xl text-xs font-black disabled:opacity-50">
+        <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">จำนวนผู้พักใหม่</label>
+            <select value={value} onChange={(e) => setValue(Number(e.target.value))} className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-900 shadow-xs focus:outline-none focus:border-primary">
+              {OCCUPANT_CHOICES.map((n) => <option key={n} value={n}>{n} คน</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">เหตุผล (ถ้ามี)</label>
+            <input value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} placeholder="เช่น ผู้พักร่วมย้ายเข้า" className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-900 shadow-xs focus:outline-none focus:border-primary" />
+          </div>
+          {error && <p className="text-xs font-bold text-rose-600">✕ {error}</p>}
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => setOpen(false)} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer">ยกเลิก</button>
+            <button onClick={save} disabled={saving || value === info.occupants} className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs disabled:opacity-50 transition-colors cursor-pointer">
               {saving ? 'กำลังบันทึก...' : 'บันทึก'}
             </button>
           </div>
         </div>
       )}
-      {done && <p className="text-xs font-bold text-emerald-400">✓ {done}</p>}
+      {done && <p className="text-xs font-bold text-emerald-700">✓ {done}</p>}
 
       {info.history.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">ประวัติการแก้</p>
+        <div className="space-y-1 pt-2 border-t border-slate-100">
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">ประวัติการแก้</p>
           {info.history.map((h) => (
-            <p key={h.id} className="text-xs text-white/70">
+            <p key={h.id} className="text-xs text-slate-600">
               {new Date(h.changed_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })} · {h.old_occupants} → {h.new_occupants} คน · โดย {h.changed_by_name || '-'}{h.reason ? ` · ${h.reason}` : ''}
             </p>
           ))}

@@ -112,39 +112,39 @@
 }
 
 .dark {
-  /* Dark Modern Obsidian Slate Theme */
-  --background: #0B0F19; /* Deep Obsidian Slate */
-  --foreground: #F8FAFC;
+  /* Aligned Clean Light Theme */
+  --background: #F8FAFC;
+  --foreground: #0F172A;
   
-  --card: #111827; /* Rich Dark Slate Card */
-  --card-foreground: #F8FAFC;
+  --card: #FFFFFF;
+  --card-foreground: #0F172A;
   
-  --popover: #111827;
-  --popover-foreground: #F8FAFC;
+  --popover: #FFFFFF;
+  --popover-foreground: #0F172A;
   
-  --primary: #3B82F6; /* Modern Vibrant Blue */
+  --primary: #2563EB;
   --primary-foreground: #FFFFFF;
   
-  --secondary: #1E293B; /* Deep Slate Surface */
-  --secondary-foreground: #F8FAFC;
+  --secondary: #F1F5F9;
+  --secondary-foreground: #1E293B;
   
-  --muted: #131C2E;
-  --muted-foreground: #94A3B8;
+  --muted: #F1F5F9;
+  --muted-foreground: #475569;
   
-  --accent: #1E293B;
-  --accent-foreground: #F8FAFC;
+  --accent: #E2E8F0;
+  --accent-foreground: #0F172A;
   
   --gold: #F59E0B;
   
-  --destructive: #F87171;
+  --destructive: #EF4444;
   --destructive-foreground: #FFFFFF;
   
-  --border: #1E293B;
-  --input: #1E293B;
-  --ring: #3B82F6;
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --ring: #2563EB;
   
-  --selection-bg: #1D4ED8;
-  --selection-text: #F8FAFC;
+  --selection-bg: #DBEAFE;
+  --selection-text: #1E40AF;
 }
 
 @theme {

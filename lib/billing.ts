@@ -29,7 +29,7 @@ const DEMO_ROOM_RATES = { electricityPerUnit: 1, waterPerPerson: 5, commonFee: 5
 
 const BOOKING_FEE = 1000;
 const DEMO_BOOKING_FEE = 1;
-const DEMO_DEPOSIT = 20;
+const DEMO_DEPOSIT = 2;
 const DEFAULT_DEPOSIT = 3000;
 
 // Late fees accrue only while the bill is payable (compared in lower case; older code wrote mixed case).

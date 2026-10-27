@@ -9,6 +9,7 @@ import { formDeposit, withPaperLink } from '@/lib/contract-files';
 import { formatBaht, formatThaiDate } from '@/lib/format';
 import { parseOccupants } from '@/lib/occupants';
 import { parsePhone } from '@/lib/phone';
+import { createUserNotification } from '@/lib/notifications';
 
 export async function GET(req: Request) {
   try {
@@ -203,20 +204,15 @@ export async function POST(req: Request) {
     }
     const { contractId, tenantId, userId, createdUser } = created;
 
-    // 6. Send welcome notification to tenant
+    // 6. Send welcome notification to tenant (In-app + Web Push)
     try {
-      await sql`
-        INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-        VALUES (
-          ${userId},
-          'สัญญาเช่าของคุณพร้อมใช้งานแล้ว',
-          ${'ยินดีต้อนรับสู่หอพัก สัญญาเช่าห้องพักของคุณได้รับการบันทึกเรียบร้อยแล้ว'},
-          'contract_created',
-          0,
-          '/tenant/contract',
-          NOW()
-        )
-      `;
+      await createUserNotification({
+        userId,
+        title: '🎉 สัญญาเช่าของคุณพร้อมใช้งานแล้ว',
+        message: 'ยินดีต้อนรับสู่หอพัก สัญญาเช่าห้องพักของคุณได้รับการบันทึกเรียบร้อยแล้ว',
+        type: 'contract_created',
+        link: '/tenant/contract',
+      });
     } catch (ne) {
       console.warn('Welcome contract notify warn:', ne);
     }
@@ -255,17 +251,16 @@ export async function PATCH(req: Request) {
     }
 
     if (result.tenantUserId) {
-      const sql = getDb();
       try {
-        await sql`
-          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-          VALUES (
-            ${result.tenantUserId},
-            ${result.activated ? 'สัญญาเช่ามีผลแล้ว' : 'บันทึกสัญญาเช่าฉบับลงนามแล้ว'},
-            ${result.activated ? 'หอพักบันทึกสัญญาที่เซ็นแล้ว และบิลเข้าอยู่ชำระครบ สัญญาของคุณมีผลแล้ว' : 'หอพักบันทึกสัญญาเช่าฉบับลงนามเก็บไว้ในระบบแล้ว'},
-            'contract_signed', 0, ${result.activated ? '/tenant' : '/guest'}, ${new Date()}
-          )
-        `;
+        await createUserNotification({
+          userId: result.tenantUserId,
+          title: result.activated ? '🎉 สัญญาเช่ามีผลสมบูรณ์แล้ว' : '📝 บันทึกสัญญาเช่าฉบับลงนามแล้ว',
+          message: result.activated
+            ? 'หอพักบันทึกสัญญาที่เซ็นแล้วและบิลเข้าอยู่ชำระครบ สัญญาของคุณมีผลสมบูรณ์แล้ว'
+            : 'หอพักบันทึกสัญญาเช่าฉบับลงนามเก็บไว้ในระบบแล้ว',
+          type: 'contract_signed',
+          link: result.activated ? '/tenant' : '/guest',
+        });
       } catch (ne) {
         console.warn('Notify signed contract warn:', ne);
       }
@@ -293,40 +288,71 @@ export async function PUT(req: Request) {
     if ('response' in guard) return guard.response;
 
     const body = await req.json();
-    const contractId = Number(body.contract_id);
+    const contractId = Number(body.contract_id || body.contractId);
     if (!contractId) {
       return NextResponse.json({ success: false, message: 'Missing contract_id' }, { status: 400 });
     }
 
+    const rawMeter = body.initial_meter_reading;
+    const meter = Number(rawMeter);
+    if (rawMeter === null || rawMeter === undefined || String(rawMeter).trim() === '' || !Number.isFinite(meter) || meter < 0) {
+      return NextResponse.json({ success: false, message: 'กรุณากรอกเลขมิเตอร์ไฟฟ้าเริ่มต้น (บังคับตอนทำสัญญา)' }, { status: 400 });
+    }
+
+    const now = new Date();
+
+    // If signed paper file is provided in the combined step, record it first
+    if (body.file && body.signedDate) {
+      const paperRes = await recordSignedPaper(contractId, {
+        file: body.file,
+        signedDate: body.signedDate,
+        by: guard.user.id,
+        confirmed: body.confirm === true,
+      }, now);
+      if (!paperRes.ok) {
+        return NextResponse.json({ success: false, message: paperRes.message, reason: paperRes.reason }, { status: moveInStatus(paperRes.reason) });
+      }
+    }
+
     // Name, address and occupants are confirmed in step 3 (lib/contract-data.ts) — nothing else is taken here
-    const result = await issueMoveInBill(contractId, { startMeter: body.initial_meter_reading, by: guard.user.id }, new Date());
+    const result = await issueMoveInBill(contractId, {
+      startMeter: body.initial_meter_reading,
+      by: guard.user.id,
+      meterPhoto: body.meter_photo,
+      meterNote: body.meter_note,
+    }, now);
     if (!result.ok) {
       return NextResponse.json({ success: false, message: result.message, reason: result.reason }, { status: moveInStatus(result.reason) });
     }
 
     if (result.tenantUserId) {
-      const sql = getDb();
       try {
-        await sql`
-          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-          VALUES (
-            ${result.tenantUserId},
-            'ออกบิลค่าแรกเข้าแล้ว',
-            ${`กรุณาชำระบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} ภายในวันเริ่มสัญญา ${formatThaiDate(result.dueDate)} — หากไม่ชำระ สัญญาจะถูกยกเลิกและค่าจองไม่คืน`},
-            'contract_ready', 0, '/guest', ${new Date()}
-          )
-        `;
+        const notifMsg = result.isLateMoveIn
+          ? `กรุณาชำระบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} (เข้าพักล่าช้า) เพื่อเปิดใช้งานสัญญาและรับกุญแจห้องพัก`
+          : `กรุณาชำระบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} ภายในวันเริ่มสัญญา ${formatThaiDate(result.dueDate)} — หากไม่ชำระ สัญญาจะถูกยกเลิกและค่าจองไม่คืน`;
+        await createUserNotification({
+          userId: result.tenantUserId,
+          title: '📄 หอพักออกบิลค่าแรกเข้าแล้ว',
+          message: notifMsg,
+          type: 'contract_ready',
+          link: '/guest',
+        });
       } catch (ne) {
         console.warn('Notify guest warn:', ne);
       }
     }
 
+    const message = result.isLateMoveIn
+      ? `บันทึกสัญญาและออกบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} เรียบร้อยแล้ว (หมายเหตุ: เข้าพักล่าช้ากว่าวันเริ่มสัญญา)`
+      : `บันทึกสัญญาและออกบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} เรียบร้อยแล้ว`;
+
     return NextResponse.json({
       success: true,
-      message: `ออกบิลค่าแรกเข้า ฿${formatBaht(result.dueAtMoveIn)} และบันทึกมิเตอร์เริ่มต้นแล้ว`,
+      message,
       billId: result.billId,
       amount: result.dueAtMoveIn,
       dueDate: result.dueDate,
+      isLateMoveIn: result.isLateMoveIn,
     });
   } catch (err: any) {
     console.error('[Contracts API PUT] Error:', err);

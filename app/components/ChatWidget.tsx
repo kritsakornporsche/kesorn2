@@ -7,6 +7,7 @@ interface Message {
   id: number;
   sender_id: number;
   message: string;
+  image_url?: string | null;
   created_at: string;
 }
 
@@ -27,8 +28,12 @@ export default function ChatWidget({ dormId: dormIdProp, ownerName, initialConve
   const [conversationId, setConversationId] = useState<number | null>(initialConversationId || null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen && conversationId) {
@@ -85,29 +90,63 @@ export default function ChatWidget({ dormId: dormIdProp, ownerName, initialConve
     return null;
   };
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setChatError(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setChatError('กรุณาเลือกไฟล์รูปภาพเท่านั้น (JPG, PNG, WebP)');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setChatError('ขนาดรูปภาพต้องไม่เกิน 10MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setSelectedImage(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+    if ((!newMessage.trim() && !selectedImage) || sending) return;
     setChatError(null);
     const id = conversationId || (await startConversation());
     if (!id) return;
+
+    const messageText = newMessage.trim();
+    const imageToSend = selectedImage;
+    setNewMessage('');
+    setSelectedImage(null);
+    setSending(true);
 
     try {
       const res = await fetch('/api/chat/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId: id, message: newMessage })
+        body: JSON.stringify({
+          conversationId: id,
+          message: messageText || (imageToSend ? '📷 รูปภาพ' : ''),
+          image: imageToSend,
+        })
       });
       const data = await res.json().catch(() => ({}));
       if (data.success) {
         setMessages((list) => [...list, data.data]);
-        setNewMessage('');
       } else {
         setChatError(res.status === 401 ? 'กรุณาเข้าสู่ระบบเพื่อแชต' : data.message || 'ส่งข้อความไม่สำเร็จ กรุณาลองใหม่');
       }
     } catch (e) {
       console.error('Send message error:', e);
       setChatError('ส่งข้อความไม่สำเร็จ กรุณาตรวจการเชื่อมต่อแล้วลองใหม่');
+    } finally {
+      setSending(false);
     }
   };
 
@@ -181,7 +220,19 @@ export default function ChatWidget({ dormId: dormIdProp, ownerName, initialConve
                       ? 'bg-gradient-to-br from-purple-700 via-purple-600 to-indigo-600 text-white rounded-tr-none shadow-md shadow-purple-600/15' 
                       : 'bg-card border border-border text-foreground rounded-tl-none shadow-sm'
                   }`}>
-                    <p className="break-words whitespace-pre-wrap leading-relaxed">{msg.message}</p>
+                    {msg.image_url && (
+                      <div className="mb-2">
+                        <img
+                          src={msg.image_url}
+                          alt="รูปภาพแชท"
+                          onClick={() => setPreviewModalUrl(msg.image_url!)}
+                          className="rounded-xl max-h-52 w-auto object-cover cursor-pointer hover:opacity-95 transition-all border border-white/10 shadow-sm"
+                        />
+                      </div>
+                    )}
+                    {msg.message && (!msg.image_url || msg.message !== '📷 รูปภาพ') && (
+                      <p className="break-words whitespace-pre-wrap leading-relaxed">{msg.message}</p>
+                    )}
                     <div className={`text-[9px] mt-1.5 font-medium flex items-center ${
                       isMe ? 'justify-end text-purple-200' : 'justify-start text-muted-foreground'
                     }`}>
@@ -192,6 +243,29 @@ export default function ChatWidget({ dormId: dormIdProp, ownerName, initialConve
               );
             })}
           </div>
+
+          {/* Selected Image Preview before sending */}
+          {selectedImage && (
+            <div className="px-3.5 py-2 bg-card border-t border-border flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="relative">
+                  <img
+                    src={selectedImage}
+                    alt="พรีวิวรูปภาพ"
+                    className="w-12 h-12 object-cover rounded-xl border border-primary shadow-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSelectedImage(null)}
+                    className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold hover:bg-red-700 shadow"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="text-[11px] font-bold text-foreground">แนบรูปภาพพร้อมส่ง</p>
+              </div>
+            </div>
+          )}
 
           {chatError && (
             <p role="alert" className="px-4 py-2 text-[11px] font-bold text-rose-500 bg-rose-500/10 border-t border-rose-500/20 shrink-0">✕ {chatError}</p>
@@ -208,18 +282,33 @@ export default function ChatWidget({ dormId: dormIdProp, ownerName, initialConve
               </a>
             </div>
           ) : (
-          <form onSubmit={sendMessage} className="p-3.5 bg-card border-t border-border shrink-0">
+          <form onSubmit={sendMessage} className="p-3 bg-card border-t border-border shrink-0">
             <div className="relative flex items-center gap-2">
               <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                onChange={handleImageSelect}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="p-2.5 bg-muted hover:bg-muted/80 text-foreground rounded-full border border-border transition-all active:scale-95 flex items-center justify-center shrink-0 cursor-pointer text-sm"
+                title="แนบรูปภาพ"
+              >
+                📷
+              </button>
+              <input
                 type="text"
-                placeholder="พิมพ์ข้อความ..."
+                placeholder={selectedImage ? "พิมพ์ข้อความเพิ่มเติม..." : "พิมพ์ข้อความ..."}
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 className="flex-1 py-2.5 pl-4 pr-12 bg-muted/60 text-foreground placeholder:text-muted-foreground rounded-full border border-border focus:border-primary focus:bg-background outline-none text-xs font-medium transition-all shadow-inner"
               />
               <button
                 type="submit"
-                disabled={!newMessage.trim()}
+                disabled={(!newMessage.trim() && !selectedImage) || sending}
                 className="absolute right-1 top-1 bottom-1 aspect-square bg-gradient-to-br from-purple-700 to-indigo-700 text-white rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-md shadow-purple-600/25 disabled:opacity-50 disabled:grayscale disabled:scale-100 disabled:shadow-none cursor-pointer"
               >
                 <svg className="w-4 h-4 rotate-45" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
@@ -227,6 +316,30 @@ export default function ChatWidget({ dormId: dormIdProp, ownerName, initialConve
             </div>
           </form>
           )}
+        </div>
+      )}
+
+      {/* Lightbox / Image Preview Modal */}
+      {previewModalUrl && (
+        <div
+          className="fixed inset-0 z-[120] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in cursor-pointer"
+          onClick={() => setPreviewModalUrl(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setPreviewModalUrl(null)}
+              className="absolute -top-12 right-0 w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center text-lg font-bold transition-colors cursor-pointer"
+              aria-label="ปิดภาพขยาย"
+            >
+              ✕
+            </button>
+            <img
+              src={previewModalUrl}
+              alt="ภาพขยาย"
+              className="max-h-[85vh] w-auto max-w-full rounded-2xl object-contain shadow-2xl border border-white/20"
+            />
+          </div>
         </div>
       )}
     </div>

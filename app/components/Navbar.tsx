@@ -10,7 +10,6 @@ import { useState, useEffect } from 'react';
 export default function Navbar() {
   const { data: session, status } = useSession();
   const [scrolled, setScrolled] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [mounted, setMounted] = useState(false);
@@ -23,25 +22,6 @@ export default function Navbar() {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
-
-  useEffect(() => {
-    // Sync theme on mount
-    const savedTheme = localStorage.getItem('theme');
-    const isDark = savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    setTheme(isDark ? 'dark' : 'light');
-  }, []);
-
-  const toggleTheme = () => {
-    if (theme === 'dark') {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-      setTheme('light');
-    } else {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-      setTheme('dark');
-    }
-  };
 
   return (
     <>
@@ -160,30 +140,10 @@ export default function Navbar() {
               </Link>
             </div>
           )}
-
-          {/* Vertical Divider */}
-          <div className="h-6 w-px bg-border/40" />
-
-          {/* Theme Toggler Button */}
-          <button
-            onClick={toggleTheme}
-            className="h-9 w-9 rounded-xl hidden md:flex items-center justify-center bg-secondary/50 text-foreground hover:bg-secondary transition-all active:scale-95 cursor-pointer text-sm shadow-sm"
-            title={theme === 'dark' ? 'เปลี่ยนเป็นโหมดสว่าง' : 'เปลี่ยนเป็นโหมดมืด'}
-          >
-            {theme === 'dark' ? '☀️' : '🌙'}
-          </button>
         </div>
 
         {/* Mobile Actions */}
         <div className="flex items-center gap-2 md:hidden">
-          <button
-            onClick={toggleTheme}
-            className="h-10 w-10 rounded-2xl flex items-center justify-center bg-secondary/50 text-foreground hover:bg-secondary transition-all active:scale-95 cursor-pointer text-sm shadow-sm"
-            title={theme === 'dark' ? 'เปลี่ยนเป็นโหมดสว่าง' : 'เปลี่ยนเป็นโหมดมืด'}
-          >
-            {theme === 'dark' ? '☀️' : '🌙'}
-          </button>
-          
           <button 
             type="button"
             onClick={() => setMobileMenuOpen(true)}

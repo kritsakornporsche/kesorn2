@@ -27,6 +27,7 @@ export async function GET() {
     const bookings = await sql`
       SELECT 
         c.id AS contract_id,
+        c.booking_bill_id,
         c.status,
         c.start_date,
         c.end_date,
@@ -59,6 +60,9 @@ export async function GET() {
         r.deposit_amount AS room_deposit_amount,
         dp.phone AS dorm_contact_phone,
         c.start_meter_reading AS initial_meter_reading,
+        (SELECT mr.id FROM meter_readings mr WHERE mr.room_id = c.room_id AND mr.kind = 'start' ORDER BY mr.id DESC LIMIT 1) AS start_meter_reading_id,
+        (SELECT mr.photo_file FROM meter_readings mr WHERE mr.room_id = c.room_id AND mr.kind = 'start' ORDER BY mr.id DESC LIMIT 1) AS start_meter_photo_file,
+        (SELECT mr.event_note FROM meter_readings mr WHERE mr.room_id = c.room_id AND mr.kind = 'start' ORDER BY mr.id DESC LIMIT 1) AS start_meter_event_note,
         (SELECT MAX(bp.id) FROM bill_payments bp WHERE bp.bill_id = c.booking_bill_id AND bp.voided_at IS NULL) AS booking_payment_id
       FROM contracts c
       LEFT JOIN tenants t ON c.tenant_id = t.id
@@ -85,6 +89,7 @@ export async function GET() {
       const inspectionStatus = inspections[Number(b.contract_id)] ?? 'none';
       return {
         ...withPaperLink(b, 'contract_id'),
+        booking_bill_id: b.booking_bill_id ? Number(b.booking_bill_id) : null,
         booking_fee: bookingFeeFor(b.room_number),
         // Move-in amounts from the room on the server; contracts waiting without move_in_bill_id are older ones
         move_in: moveInAmounts({ room_number: b.room_number, price: b.price, deposit_amount: b.room_deposit_amount }),
@@ -92,6 +97,9 @@ export async function GET() {
         move_in_bill_paid: String(b.first_bill_status || '').toLowerCase() === 'paid',
         paper_uploaded: paperUploaded,
         inspection_status: inspectionStatus,
+        initial_meter_reading: b.initial_meter_reading,
+        start_meter_photo_url: b.start_meter_photo_file && b.start_meter_reading_id ? `/api/meters/${b.start_meter_reading_id}/photo` : null,
+        start_meter_event_note: b.start_meter_event_note || null,
         // commit 28: steps 1–7 (lib/booking-steps.ts), the same as on the owner's bookings page
         steps: stepOf({
           status: b.status, data_confirmed_at: b.data_confirmed_at, move_in_bill_id: b.move_in_bill_id,

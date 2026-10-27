@@ -98,6 +98,38 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!result.ok) {
       return NextResponse.json({ success: false, message: result.message, item: result.item ?? null }, { status: refusalStatus(result.reason) });
     }
+    // Send WebPush & In-App Notification to tenant
+    try {
+      const sql = getDb();
+      const rows = await sql`
+        SELECT c.id, r.room_number, COALESCE(t.user_id, u.id) as tenant_user_id, COALESCE(u.email, t.email) as tenant_email
+        FROM contracts c
+        LEFT JOIN rooms r ON r.id = c.room_id
+        LEFT JOIN tenants t ON t.id = c.tenant_id
+        LEFT JOIN users u ON LOWER(t.email) = LOWER(u.email)
+        WHERE c.id = ${Number(id)}
+        LIMIT 1
+      `;
+      if (rows.length > 0 && rows[0].tenant_user_id) {
+        const { createUserNotification } = await import('@/lib/notifications');
+        const k = kindParam(body?.kind);
+        const title = k === 'move_out' ? '📋 หอพักบันทึกผลตรวจห้องย้ายออกแล้ว' : '📋 หอพักบันทึกผลตรวจสภาพห้องแล้ว';
+        const msg = k === 'move_out'
+          ? `ห้อง ${rows[0].room_number}: ผลตรวจสภาพห้องก่อนย้ายออกพร้อมให้ตรวจสอบแล้ว`
+          : `ห้อง ${rows[0].room_number}: กรุณาตรวจสอบสภาพห้องพักและกดยืนยันรับทราบในระบบ`;
+        await createUserNotification({
+          userId: rows[0].tenant_user_id,
+          userEmail: rows[0].tenant_email,
+          title,
+          message: msg,
+          type: 'inspection',
+          link: '/guest',
+        });
+      }
+    } catch (ne) {
+      console.warn('[Inspection save notify warn]:', ne);
+    }
+
     return NextResponse.json({ success: true, message: 'บันทึกผลตรวจห้องแล้ว รอผู้เช่ารับทราบ', inspection: await getInspection(Number(id), kindParam(body?.kind)) });
   } catch (error: any) {
     console.error('[Inspection POST Error]', error);

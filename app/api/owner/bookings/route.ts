@@ -2,7 +2,7 @@ import { auth } from '@/auth';
 import { requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
-import { approveBooking, bookingDeadlines, cancelNoShow, expireDueBookings, rejectBooking } from '@/lib/bookings';
+import { approveBooking, bookingDeadlines, cancelNoShow, expireDueBookings, rejectBooking, retroactiveApproveBooking } from '@/lib/bookings';
 import { bangkokDate, bookingFeeFor, capCheck, moveInAmounts } from '@/lib/billing';
 import { expireDueMoveIns } from '@/lib/moveIn';
 import { signedPaperOf, withPaperLink } from '@/lib/contract-files';
@@ -60,6 +60,9 @@ export async function GET(req: Request) {
         c.booking_bill_id,
         c.move_in_bill_id,
         c.start_meter_reading,
+        (SELECT mr.id FROM meter_readings mr WHERE mr.room_id = c.room_id AND mr.kind = 'start' ORDER BY mr.id DESC LIMIT 1) AS start_meter_reading_id,
+        (SELECT mr.photo_file FROM meter_readings mr WHERE mr.room_id = c.room_id AND mr.kind = 'start' ORDER BY mr.id DESC LIMIT 1) AS start_meter_photo_file,
+        (SELECT mr.event_note FROM meter_readings mr WHERE mr.room_id = c.room_id AND mr.kind = 'start' ORDER BY mr.id DESC LIMIT 1) AS start_meter_event_note,
         c.paper_signed_date,
         c.paper_uploaded_at,
         c.data_confirmed_at,
@@ -139,6 +142,8 @@ export async function GET(req: Request) {
         legacy: b.booking_status === 'PendingFirstBill' && !b.move_in_bill_id,
         move_in_bill_paid: firstBillPaid,
         paper_uploaded: paperUploaded,
+        start_meter_photo_url: b.start_meter_photo_file && b.start_meter_reading_id ? `/api/meters/${b.start_meter_reading_id}/photo` : null,
+        start_meter_event_note: b.start_meter_event_note || null,
         move_in_overdue_partial: b.booking_status === 'PendingFirstBill' && pastStart && !firstBillPaid && Number(b.first_bill_payments || 0) > 0,
         can_issue_move_in: ['PendingOwnerSignature', 'PendingContract'].includes(b.booking_status) && !b.move_in_bill_id && !pastStart,
         seconds_to_expire: b.expires_at ? secondsTo(new Date(b.expires_at)) : null,
@@ -185,10 +190,24 @@ export async function POST(req: Request) {
     const now = new Date();
     const notify = async (userId: number | null, title: string, message: string, type: string) => {
       if (!userId) return;
-      await sql`
-        INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-        VALUES (${userId}, ${title}, ${message}, ${type}, 0, '/explore/booking-status', NOW())
-      `.catch((e: any) => console.warn('[Owner bookings notify]', e));
+      try {
+        await sql`
+          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
+          VALUES (${userId}, ${title}, ${message}, ${type}, 0, '/explore/booking-status', NOW())
+        `;
+        const u = await sql`SELECT email FROM users WHERE id = ${userId} LIMIT 1`;
+        if (u.length > 0 && u[0].email) {
+          const { sendWebPushToEmail } = await import('@/lib/features/web-push-server');
+          await sendWebPushToEmail(u[0].email, {
+            title,
+            body: message,
+            url: '/explore/booking-status',
+            tag: `booking-${type}-${Date.now()}`,
+          });
+        }
+      } catch (e: any) {
+        console.warn('[Owner bookings notify error]', e);
+      }
     };
 
     if (action === 'approve') {
@@ -207,9 +226,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, message: 'ปฏิเสธคำขอจองแล้ว ห้องกลับเป็นว่าง' });
     }
 
+    if (action === 'retroactive_approve') {
+      const result = await retroactiveApproveBooking(contractId, guard.user.id, now);
+      if (!result.ok) return NextResponse.json({ success: false, message: result.message }, { status: 400 });
+      await notify(result.tenantUserId, '✅ หอพักอนุมัติการจองย้อนหลังแล้ว',
+        `ห้อง ${result.roomNumber}: ยืนยันการชำระค่าจองเรียบร้อยแล้ว สัญญาเข้าสู่ขั้นตอนทำสัญญา`, 'booking_approved');
+      return NextResponse.json({ success: true, message: 'อนุมัติย้อนหลังเรียบร้อยแล้ว สัญญาเข้าสู่ขั้นตอนทำสัญญา', data: result });
+    }
+
     if (action === 'cancel') {
       const result = await cancelNoShow(contractId, guard.user.id, now);
       if (!result.ok) return NextResponse.json({ success: false, message: result.message }, { status: 400 });
+      await notify(result.tenantUserId, '❌ ยกเลิกการจองห้องพัก (ไม่มาตามนัด)',
+        `ห้อง ${result.roomNumber}: ยกเลิกการจองเนื่องจากไม่มาเข้าพักตามวันนัด`, 'booking_cancelled');
       return NextResponse.json({
         success: true,
         message: `ยกเลิกการจอง (ไม่มาตามนัด) แล้ว ริบค่าจอง ฿${formatBaht(result.forfeited)} เป็นรายได้`,

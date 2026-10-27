@@ -7,6 +7,7 @@ import { handleSignOut } from '@/lib/auth-client';
 import { useState, useEffect } from 'react';
 import versionData from '@/lib/version.json';
 import { isMenuItemVisible } from '@/lib/owner-only-paths';
+import { recordRecentFeature } from '@/lib/recent-features';
 
 interface OwnerSidebarProps {
   isOpen?: boolean;
@@ -51,6 +52,13 @@ export default function OwnerSidebar({ isOpen, onClose }: OwnerSidebarProps) {
   const { data: session } = useSession();
   const [isCollapsed, setIsCollapsed] = useState(false);
 
+  // Auto-record visited feature for "recently used"
+  useEffect(() => {
+    if (pathname && pathname.startsWith('/owner/') && pathname !== '/owner') {
+      recordRecentFeature(pathname);
+    }
+  }, [pathname]);
+
   // Remember collapsed state in localStorage (UX Polish in Rule 11)
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -75,11 +83,11 @@ export default function OwnerSidebar({ isOpen, onClose }: OwnerSidebarProps) {
   };
 
   const NavContent = (
-    <div className="flex flex-col h-full bg-slate-900 text-slate-100 border-r border-white/10 transition-all duration-300 select-none">
+    <div className="flex flex-col h-full bg-white text-slate-800 border-r border-slate-200 transition-all duration-300 select-none shadow-xs">
       {/* Clean Sidebar Top & Collapse Toggle */}
-      <div className={`p-3 border-b border-white/10 flex items-center shrink-0 ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
+      <div className={`p-3 border-b border-slate-100 flex items-center shrink-0 ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
         {!isCollapsed && (
-          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 px-1">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 px-1">
             เมนูหลัก
           </span>
         )}
@@ -87,7 +95,7 @@ export default function OwnerSidebar({ isOpen, onClose }: OwnerSidebarProps) {
         {/* Desktop Collapse Toggle Button */}
         <button
           onClick={toggleCollapse}
-          className="hidden lg:flex w-7 h-7 rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white items-center justify-center text-xs transition-colors cursor-pointer"
+          className="hidden lg:flex w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 items-center justify-center text-xs transition-colors cursor-pointer"
           title={isCollapsed ? 'ขยายแถบเมนู (Expand)' : 'พับเก็บแถบเมนู (Collapse)'}
         >
           {isCollapsed ? '▶' : '◀'}
@@ -101,14 +109,14 @@ export default function OwnerSidebar({ isOpen, onClose }: OwnerSidebarProps) {
           onClick={onClose}
           className={`relative group flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-black transition-all ${
             isActive('/owner', true)
-              ? 'bg-primary text-white shadow-lg shadow-primary/20'
-              : 'text-slate-300 hover:bg-white/5 hover:text-white'
+              ? 'bg-primary text-white shadow-md shadow-primary/20'
+              : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
           }`}
         >
           <span className="text-base shrink-0">📊</span>
           {!isCollapsed && <span>ภาพรวม (Dashboard)</span>}
           {isCollapsed && (
-            <div className="absolute left-full ml-3 px-2.5 py-1 bg-slate-950 text-white text-[11px] font-bold rounded-lg whitespace-nowrap shadow-xl border border-white/10 opacity-0 group-hover:opacity-100 pointer-events-none z-50 transition-opacity">
+            <div className="absolute left-full ml-3 px-2.5 py-1 bg-white text-slate-800 text-[11px] font-bold rounded-lg whitespace-nowrap shadow-xl border border-slate-200 opacity-0 group-hover:opacity-100 pointer-events-none z-50 transition-opacity">
               ภาพรวม (Dashboard)
             </div>
           )}
@@ -116,15 +124,15 @@ export default function OwnerSidebar({ isOpen, onClose }: OwnerSidebarProps) {
       </div>
 
       {/* Nav Menu Groups */}
-      <div className="flex-1 overflow-y-auto px-2 py-1 space-y-4 scrollbar-thin scrollbar-thumb-white/10">
+      <div className="flex-1 overflow-y-auto px-2 py-1 space-y-4 scrollbar-thin scrollbar-thumb-slate-200">
         {navSections.map((section, idx) => (
           <div key={idx} className="space-y-1">
             {!isCollapsed && (
-              <p className="px-3 text-[10px] font-black uppercase tracking-wider text-slate-400">
+              <p className="px-3 text-[10px] font-black uppercase tracking-wider text-slate-500">
                 {section.group}
               </p>
             )}
-            {isCollapsed && <div className="h-px bg-white/5 my-2" />}
+            {isCollapsed && <div className="h-px bg-slate-100 my-2" />}
 
             <div className="space-y-0.5">
               {section.items.filter((item) => isMenuItemVisible(item.href, (session?.user as any)?.role)).map((item) => {
@@ -133,17 +141,20 @@ export default function OwnerSidebar({ isOpen, onClose }: OwnerSidebarProps) {
                   <Link
                     key={item.href}
                     href={item.href}
-                    onClick={onClose}
+                    onClick={() => {
+                      recordRecentFeature(item.href);
+                      onClose?.();
+                    }}
                     className={`relative group flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
                       active
-                        ? 'bg-primary/20 text-primary border border-primary/40 shadow-sm'
-                        : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                        ? 'bg-primary/10 text-primary font-black shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
                     <span className="text-base shrink-0">{item.icon}</span>
                     {!isCollapsed && <span className="truncate">{item.label}</span>}
                     {isCollapsed && (
-                      <div className="absolute left-full ml-3 px-2.5 py-1 bg-slate-950 text-white text-[11px] font-bold rounded-lg whitespace-nowrap shadow-xl border border-white/10 opacity-0 group-hover:opacity-100 pointer-events-none z-50 transition-opacity">
+                      <div className="absolute left-full ml-3 px-2.5 py-1 bg-white text-slate-800 text-[11px] font-bold rounded-lg whitespace-nowrap shadow-xl border border-slate-200 opacity-0 group-hover:opacity-100 pointer-events-none z-50 transition-opacity">
                         {item.label}
                       </div>
                     )}
@@ -156,25 +167,25 @@ export default function OwnerSidebar({ isOpen, onClose }: OwnerSidebarProps) {
       </div>
 
       {/* Bottom Footer & Logout */}
-      <div className="p-3 border-t border-white/10 shrink-0 space-y-2">
+      <div className="p-3 border-t border-slate-100 shrink-0 space-y-2">
         <button
           onClick={() => handleSignOut()}
-          className={`relative group w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white text-xs font-black border border-rose-500/20 transition-all ${
+          className={`relative group w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white text-xs font-black border border-rose-200 transition-all ${
             isCollapsed ? 'px-2' : 'px-4'
           }`}
         >
           <span>🚪</span>
           {!isCollapsed && <span>ออกจากระบบ</span>}
           {isCollapsed && (
-            <div className="absolute left-full ml-3 px-2.5 py-1 bg-slate-950 text-white text-[11px] font-bold rounded-lg whitespace-nowrap shadow-xl border border-white/10 opacity-0 group-hover:opacity-100 pointer-events-none z-50 transition-opacity">
+            <div className="absolute left-full ml-3 px-2.5 py-1 bg-white text-slate-800 text-[11px] font-bold rounded-lg whitespace-nowrap shadow-xl border border-slate-200 opacity-0 group-hover:opacity-100 pointer-events-none z-50 transition-opacity">
               ออกจากระบบ
             </div>
           )}
         </button>
 
         {!isCollapsed && (
-          <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono px-1">
-            <span>v{versionData.version}</span>
+          <div className="flex items-center justify-between text-[9px] text-slate-500 font-mono px-1">
+            <span>{versionData.shortDisplay || 'v2.7.0'}</span>
             <span>หอพักเกษร 2</span>
           </div>
         )}

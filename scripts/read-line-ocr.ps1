@@ -141,6 +141,8 @@ if (-not $ocrEngine) {
 }
 
 $allTexts = New-Object System.Collections.Generic.List[string]
+$primaryScreenshot = $null
+$windowEntries = New-Object System.Collections.Generic.List[object]
 
 foreach ($hWnd in $targetHwnds) {
     $rect = New-Object LineWin32+RECT
@@ -156,6 +158,23 @@ foreach ($hWnd in $targetHwnds) {
     [LineWin32]::PrintWindow($hWnd, $hdc, 2) | Out-Null
     $g.ReleaseHdc($hdc)
     $g.Dispose()
+
+    # Capture incoming money window screenshot as Base64 PNG data URL
+    $winScreenshot = $null
+    try {
+        $snapMs = New-Object System.IO.MemoryStream
+        $bmp.Save($snapMs, [System.Drawing.Imaging.ImageFormat]::Png)
+        $winScreenshot = "data:image/png;base64," + [Convert]::ToBase64String($snapMs.ToArray())
+        $snapMs.Dispose()
+    } catch {
+        $winScreenshot = $null
+    }
+
+    if (-not $primaryScreenshot -and $winScreenshot) {
+        $primaryScreenshot = $winScreenshot
+    }
+
+    $winTexts = New-Object System.Collections.Generic.List[string]
 
     # Run OCR on 1x and 2x to guarantee 100% decimal recognition
     foreach ($scale in @(1, 2)) {
@@ -181,12 +200,18 @@ foreach ($hWnd in $targetHwnds) {
         $ocrResult = Await-WinRtTask ($ocrEngine.RecognizeAsync($softwareBmp)) ([Windows.Media.Ocr.OcrResult])
 
         if ($ocrResult -and $ocrResult.Text) {
+            $winTexts.Add($ocrResult.Text)
             $allTexts.Add($ocrResult.Text)
         }
         $ms.Dispose()
     }
 
     $bmp.Dispose()
+
+    $windowEntries.Add(@{
+        text = ($winTexts -join " `n ")
+        screenshotDataUrl = $winScreenshot
+    })
 }
 
 $combinedText = ($allTexts -join " `n ")
@@ -195,5 +220,7 @@ $resultObj = @{
     windowCount = $targetHwnds.Count
     windows = ($debugWindows -join ", ")
     text = $combinedText
+    screenshotDataUrl = $primaryScreenshot
+    windowEntries = $windowEntries
 }
 $resultObj | ConvertTo-Json -Compress

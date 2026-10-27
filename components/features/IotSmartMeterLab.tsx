@@ -761,7 +761,7 @@ export function IotSmartMeterLab() {
                         <div className="bg-slate-900/60 p-2.5 rounded-xl border border-white/5">
                           <span className="text-slate-400 block text-[10px]">POWER FACTOR / FREQ</span>
                           <span className="text-cyan-300 font-black text-base">
-                            {inspectingRoom.esp32Meta?.powerFactor || 0.95} / 50Hz
+                            {(inspectingRoom.esp32Meta as any)?.powerFactor || 0.95} / 50Hz
                           </span>
                         </div>
                       </div>
@@ -1616,12 +1616,11 @@ export function IotSmartMeterLab() {
                         </td>
                         <td className="py-3 px-3 text-right">
                           <DynamicBillQrPaymentButton
-                            billId={bill.billRef}
+                            billId={parseInt(bill.billRef.replace(/\D/g, '') || '0', 10) || null}
                             roomNumber={bill.roomNumber}
                             tenantName={bill.tenantName}
-                            billingCycle={bill.billingCycle}
+                            billTitle={`บิลค่าไฟ รอบ ${bill.billingCycle}`}
                             amount={bill.totalAmount}
-                            buttonLabel="📲 สแกน QR ชำระบิล"
                           />
                         </td>
                       </tr>

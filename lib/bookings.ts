@@ -93,7 +93,7 @@ async function cancelUnpaidBookingBill(client: Client, billId: number | null) {
 /** Tell the booker their booking ran out of time (key booking_expired:<contract>, migration 016). */
 async function notifyExpired(client: Client, c: { id: number; status: string }, now: Date) {
   const who = (await client.query(
-    `SELECT r.room_number, COALESCE(t.user_id, u.id) AS user_id
+    `SELECT r.room_number, COALESCE(t.user_id, u.id) AS user_id, COALESCE(t.email, u.email) AS email
      FROM contracts c
      LEFT JOIN rooms r ON r.id = c.room_id
      LEFT JOIN tenants t ON t.id = c.tenant_id
@@ -109,6 +109,27 @@ async function notifyExpired(client: Client, c: { id: number; status: string }, 
      VALUES (?, 'การจองหมดเวลา', ?, 'booking', 0, '/explore/booking-status', ?, ?)`,
     [who.user_id, message, now, `booking_expired:${c.id}`]
   ).catch((e) => console.warn('[booking expired notify]', e));
+
+  // Dispatch Web Push to guest and owner
+  try {
+    const { sendWebPushToEmail, sendWebPushToRole } = await import('@/lib/features/web-push-server');
+    if (who.email) {
+      await sendWebPushToEmail(who.email, {
+        title: '⌛ การจองห้องพักหมดเวลา',
+        body: message,
+        url: '/explore/booking-status',
+        tag: `booking-expired-${c.id}`,
+      });
+    }
+    await sendWebPushToRole('owner', {
+      title: '⌛ รายการจองหมดเวลา (ปล่อยห้องว่าง)',
+      body: `ห้อง ${room}: ผู้จองไม่ได้ชำระค่าจองภายในเวลา — ห้องถูกปล่อยว่างให้ผู้อื่นจองแล้ว`,
+      url: '/owner/bookings',
+      tag: `owner-expired-${c.id}`,
+    });
+  } catch (err) {
+    console.warn('[booking expired webpush error]', err);
+  }
 }
 
 /**
@@ -349,7 +370,7 @@ export async function cancelPaidBooking(contractId: number, user: { id: number |
     );
     await cancelUnpaidBookingBill(client, c.booking_bill_id);
     await releaseRoom(client, c.room_id);
-    return { contractId, tenantId: c.tenant_id as number, roomNumber: c.room_number as string };
+    return { contractId, tenantId: c.tenant_id as number, tenantUserId: c.tenant_user_id as number | null, roomNumber: c.room_number as string };
   });
   if (!result.ok) return result;
   const forfeited = await forfeitBookingFee(result.tenantId);
@@ -383,7 +404,7 @@ export async function cancelNoShow(contractId: number, by: number, now: Date) {
       [now, by, contractId]
     );
     await releaseRoom(client, c.room_id);
-    return { contractId, tenantId: c.tenant_id as number, roomNumber: c.room_number as string };
+    return { contractId, tenantId: c.tenant_id as number, tenantUserId: c.tenant_user_id as number | null, roomNumber: c.room_number as string };
   });
   if (!result.ok) return result;
   // Same as a booker cancelling: what is held as deposit from the booking fee becomes income
@@ -414,4 +435,77 @@ export async function bookingSlipReceiver(sql: any) {
     isBooking: true,
     checkPromptPayOnly: true,
   };
+}
+
+
+/**
+ * Retroactive approval for a booking that was Expired or Cancelled (e.g. guest transferred money but missed slip deadline).
+ * Verifies room is still free, re-reserves room, ensures booking bill is marked paid, and sets contract to PendingOwnerSignature.
+ */
+export function retroactiveApproveBooking(contractId: number, by: number, now: Date) {
+  return run(async (client) => {
+    const c = await lockBooking(client, contractId);
+    if (!['Expired', 'Cancelled', 'Rejected'].includes(c.status)) {
+      refuse('invalid_status', 'สัญญาไม่ได้อยู่ในสถานะหมดเวลาหรือยกเลิก');
+    }
+
+    // Check if the room is still available
+    const room = (await client.query('SELECT id, status, room_number FROM rooms WHERE id = ? FOR UPDATE', [c.room_id])).rows[0];
+    if (!room) refuse('room_not_found', 'ไม่พบห้องพัก');
+    if (['occupied', 'maintenance'].includes(room.status)) {
+      refuse('room_unavailable', `ห้อง ${room.room_number} ไม่ว่างในขณะนี้ (มีผู้เช่าหรือปิดปรับปรุง)`);
+    }
+
+    // Re-reserve room
+    await client.query("UPDATE rooms SET status = 'reserved' WHERE id = ?", [c.room_id]);
+
+    const fee = bookingFeeFor(room.room_number);
+    let billId = c.booking_bill_id;
+
+    if (!billId) {
+      // Create booking bill if absent
+      billId = (await client.query(
+        `INSERT INTO bills (tenant_id, dorm_id, room_number, title, amount, room_amount, water_amount, electric_amount, water_units, electric_units,
+           billing_cycle, due_date, status, bill_type, slip_verified, slip_verified_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 'ค่าจองห้องพักเพื่อยืนยันสิทธิ์', ?, 'Paid', 'booking', 1, ?)`,
+        [c.tenant_id, c.dorm_id, c.room_number, `ค่าจองห้องพัก (ห้อง ${c.room_number})`, fee, fee, bangkokDate(now), now]
+      )).rows.insertId;
+    } else {
+      // Reactivate existing bill and mark Paid
+      await client.query(
+        "UPDATE bills SET status = 'Paid', slip_verified = 1, slip_verified_at = ? WHERE id = ?",
+        [now, billId]
+      );
+    }
+
+    // Record payment in bill_payments
+    await client.query(
+      `INSERT INTO bill_payments (bill_id, amount, payment_method, paid_at, note, recorded_by, created_at)
+       VALUES (?, ?, 'transfer', ?, 'อนุมัติย้อนหลังโดยเจ้าของหอ (ยืนยันรับเงินโอนแล้ว)', ?, ?)`,
+      [billId, fee, now, by, now]
+    );
+
+    // Advance contract to PendingOwnerSignature
+    await client.query(
+      `UPDATE contracts 
+       SET status = 'PendingOwnerSignature', 
+           booking_bill_id = ?, 
+           signed_at = ?, 
+           approved_at = ?, 
+           approved_by = ?, 
+           cancelled_at = NULL, 
+           cancel_reason = NULL,
+           expires_at = NULL 
+       WHERE id = ?`,
+      [billId, now, now, by, contractId]
+    );
+
+    return {
+      contractId,
+      billId: Number(billId),
+      tenantUserId: c.tenant_user_id as number | null,
+      roomNumber: c.room_number as string,
+      fee,
+    };
+  });
 }

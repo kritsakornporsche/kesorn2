@@ -68,15 +68,15 @@ export default function TenantsManagement() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 lg:p-10 space-y-8">
+    <div className="min-h-screen bg-slate-50 text-slate-900 p-4 sm:p-8 lg:p-10 space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/10">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-3">
             <span className="text-3xl">👥</span>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">ทะเบียนผู้เช่า (Tenant Directory)</h1>
-              <p className="text-xs sm:text-sm text-slate-400 mt-0.5">รายชื่อ ข้อมูลติดต่อ และสถานะสัญญาของผู้เช่าทั้งหมด</p>
+              <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">ทะเบียนผู้เช่า (Tenant Directory)</h1>
+              <p className="text-xs sm:text-sm text-slate-500 mt-0.5">รายชื่อ ข้อมูลติดต่อ และสถานะสัญญาของผู้เช่าทั้งหมด</p>
             </div>
           </div>
         </div>
@@ -84,7 +84,7 @@ export default function TenantsManagement() {
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <button
             onClick={() => setIsWalkInOpen(true)}
-            className="px-4 py-2.5 bg-primary hover:bg-primary/90 text-white font-black text-xs rounded-xl shadow-lg transition-all flex items-center gap-2 hover:scale-105 active:scale-95 cursor-pointer"
+            className="px-4 py-2.5 bg-primary hover:bg-primary/90 text-white font-black text-xs rounded-xl shadow-xs transition-all flex items-center gap-2 hover:scale-105 active:scale-95 cursor-pointer"
           >
             <span>🚶</span>
             <span>+ เพิ่มผู้เช่าแบบ Walk-in</span>
@@ -92,7 +92,7 @@ export default function TenantsManagement() {
 
           <button
             onClick={fetchTenants}
-            className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white font-bold text-xs rounded-xl border border-white/10 transition-all flex items-center gap-2"
+            className="px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 shadow-xs transition-all flex items-center gap-2 cursor-pointer"
           >
             <span>🔄</span>
             <span>รีเฟรช</span>
@@ -101,20 +101,20 @@ export default function TenantsManagement() {
       </div>
 
       {/* Search & Filter Controls (Rule 12) */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-stretch sm:items-center bg-slate-900/80 p-4 rounded-2xl border border-white/10 shadow-xl">
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-stretch sm:items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div className="flex items-center gap-2 overflow-x-auto">
           <button
             onClick={() => setStatusFilter('ALL')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${
-              statusFilter === 'ALL' ? 'bg-primary text-white shadow-md' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              statusFilter === 'ALL' ? 'bg-primary text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:text-slate-900 border border-slate-200'
             }`}
           >
             ทั้งหมด ({tenants.length})
           </button>
           <button
             onClick={() => setStatusFilter('active')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${
-              statusFilter === 'active' ? 'bg-emerald-500 text-white shadow-md' : 'bg-slate-950 text-slate-400 hover:text-white border border-white/5'
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              statusFilter === 'active' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:text-slate-900 border border-slate-200'
             }`}
           >
             กำลังพักอยู่ ({tenants.filter(t => t.status?.toLowerCase() === 'active').length})
@@ -127,12 +127,12 @@ export default function TenantsManagement() {
             placeholder="ค้นหาเลขห้อง, ชื่อ, เบอร์โทร, อีเมล..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-primary"
+            className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-primary shadow-xs"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-2.5 text-xs text-slate-400 hover:text-white"
+              className="absolute right-3 top-2.5 text-xs text-slate-400 hover:text-slate-700 cursor-pointer"
             >
               ✕
             </button>
@@ -141,48 +141,48 @@ export default function TenantsManagement() {
       </div>
 
       {/* Tenants Table */}
-      <div className="bg-slate-900/80 rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
+      <div className="bg-white rounded-3xl overflow-hidden border border-slate-200 shadow-xs">
         {loading ? (
           <div className="p-16 text-center text-slate-400 font-bold animate-pulse">กำลังโหลดข้อมูลผู้เช่า...</div>
         ) : filteredTenants.length === 0 ? (
           <div className="p-16 text-center text-slate-400 font-bold space-y-2">
             <span className="text-4xl block">🔍</span>
-            <p className="text-white">ไม่พบข้อมูลผู้เช่าตามเงื่อนไข</p>
+            <p className="text-slate-700">ไม่พบข้อมูลผู้เช่าตามเงื่อนไข</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[700px]">
-              <thead className="bg-slate-950/60 border-b border-white/10">
+              <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">ห้อง</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">ชื่อ-นามสกุล</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">เบอร์โทรศัพท์</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">อีเมล</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">สถานะ</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-right">จัดการ</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-500">ห้อง</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-500">ชื่อ-นามสกุล</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-500">เบอร์โทรศัพท์</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-500">อีเมล</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-500">สถานะ</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-500 text-right">จัดการ</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-slate-100">
                 {filteredTenants.map((tenant) => (
-                  <tr key={tenant.id} className="hover:bg-white/5 transition-colors">
+                  <tr key={tenant.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="px-6 py-4 font-black text-primary text-base font-mono">
                       ห้อง {tenant.room_number || '-'}<TestRoomBadge roomNumber={tenant.room_number} />
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-primary/20 text-primary font-bold text-xs flex items-center justify-center">
+                        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-xs flex items-center justify-center">
                           {tenant.name?.charAt(0) || 'U'}
                         </div>
-                        <span className="font-bold text-white text-sm">{tenant.name || 'ไม่ระบุชื่อ'}</span>
+                        <span className="font-bold text-slate-900 text-sm">{tenant.name || 'ไม่ระบุชื่อ'}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-xs font-mono text-slate-300">
+                    <td className="px-6 py-4 text-xs font-mono text-slate-600">
                       {tenant.phone ? (
                         <div className="flex items-center gap-2">
                           <span>{tenant.phone}</span>
                           <a
                             href={`tel:${tenant.phone}`}
-                            className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-[10px] font-bold hover:bg-emerald-500 hover:text-white transition-colors"
+                            className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[10px] font-bold hover:bg-emerald-100 transition-colors"
                           >
                             โทร
                           </a>
@@ -191,16 +191,16 @@ export default function TenantsManagement() {
                         '-'
                       )}
                     </td>
-                    <td className="px-6 py-4 text-xs text-slate-400 truncate max-w-[200px]">{tenant.email || '-'}</td>
+                    <td className="px-6 py-4 text-xs text-slate-500 truncate max-w-[200px]">{tenant.email || '-'}</td>
                     <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border ${String(tenant.status).toLowerCase() === 'active' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-500/10 border-slate-500/30 text-slate-400'}`}>
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border ${String(tenant.status).toLowerCase() === 'active' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-100 border-slate-200 text-slate-600'}`}>
                         {String(tenant.status).toLowerCase() === 'active' ? '🟢 ' : ''}{statusText('tenant', tenant.status)}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <a
                         href={`/owner/chat?user=${tenant.email}`}
-                        className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white text-xs font-bold rounded-lg border border-white/10 transition-colors inline-flex items-center gap-1"
+                        className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg border border-slate-200 shadow-xs transition-colors inline-flex items-center gap-1"
                       >
                         <span>💬</span>
                         <span>แชท</span>

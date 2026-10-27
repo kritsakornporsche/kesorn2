@@ -88,7 +88,7 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
   };
 
   return (
-    <div className="contract-modal fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-2 sm:p-6">
+    <div className="contract-modal fixed inset-0 z-[100] bg-black/50 backdrop-blur-xs flex items-start justify-center overflow-y-auto p-2 sm:p-6">
       <style>{CONTRACT_PRINT_CSS + `
         @media print {
           body * { visibility: hidden !important; }
@@ -96,16 +96,16 @@ export default function PrintableContractModal({ isOpen, onClose, contract, rate
           .contract-modal { position: absolute !important; inset: 0 !important; background: #fff !important; padding: 0 !important; overflow: visible !important; }
         }`}</style>
       <div className="w-full max-w-[230mm] space-y-3">
-        <div className="no-print sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 bg-slate-900/95 border border-white/10 rounded-2xl px-4 py-3">
+        <div className="no-print sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 bg-white/95 border border-slate-200 shadow-md rounded-2xl px-4 py-3">
           <div className="min-w-0">
-            <p className="text-sm font-black text-white">สัญญาเช่าห้องพัก {id ? `เลขที่ ${id}` : '(ร่าง)'}</p>
-            <p className="text-[11px] text-slate-400 truncate">ห้อง {contract.room_number} · ผู้เช่า {contract.tenant_name || '-'}</p>
+            <p className="text-sm font-black text-slate-900">สัญญาเช่าห้องพัก {id ? `เลขที่ ${id}` : '(ร่าง)'}</p>
+            <p className="text-[11px] text-slate-500 truncate">ห้อง {contract.room_number} · ผู้เช่า {contract.tenant_name || '-'}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button onClick={handlePdf} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black">
+            <button onClick={handlePdf} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-xs cursor-pointer">
               📥 ดาวน์โหลดสัญญา (PDF)
             </button>
-            <button onClick={onClose} className="px-3 py-2 text-white/70 hover:text-white rounded-xl bg-white/5 hover:bg-white/10 text-xs" title="ปิด">✕</button>
+            <button onClick={onClose} className="px-3 py-2 text-slate-600 hover:text-slate-900 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-bold cursor-pointer" title="ปิด">✕</button>
           </div>
         </div>
         <div className="contract-sheet">

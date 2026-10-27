@@ -12,6 +12,7 @@ import { ADDRESS_FIELDS, type AddressParts, type PartyValue } from '@/lib/contra
 import PartyFields from '@/components/PartyFields';
 import ThaiDatePicker, { LeaseShortcuts } from '@/components/ThaiDatePicker';
 import { addDays, todayTh } from '@/lib/thai-date';
+import { useConfirm } from '@/components/ConfirmModalProvider';
 
 interface DataChange { field: string; label: string; from: string | number; to: string | number }
 interface View {
@@ -43,7 +44,20 @@ export function ContractDataButton({ contractId, label = '📝 ข้อมู�
 const thaiDate = (v: string) => (v ? new Date(`${v}T00:00:00+07:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '-');
 const shown = (field: string, v: string | number) => (field === 'startDate' || field === 'endDate' ? thaiDate(String(v)) : field === 'occupants' ? `${v} คน` : String(v || '-'));
 
-export default function ContractDataModal({ contractId, onClose, onSaved }: { contractId: number; onClose: () => void; onSaved?: () => void }) {
+export function ContractDataPanel({
+  contractId,
+  onClose,
+  onSaved,
+  showHeader = true,
+  onLoaded,
+}: {
+  contractId: number;
+  onClose?: () => void;
+  onSaved?: () => void;
+  showHeader?: boolean;
+  onLoaded?: (data: { confirmed: boolean; roomNumber?: string; tenantName?: string }) => void;
+}) {
+  const { confirm } = useConfirm();
   const [view, setView] = useState<View | null>(null);
   const [form, setForm] = useState<View['data'] | null>(null);
   const [reason, setReason] = useState('');
@@ -63,6 +77,11 @@ export default function ContractDataModal({ contractId, onClose, onSaved }: { co
       setForm(data.data);
       setEditing(false);
       setReason('');
+      onLoaded?.({
+        confirmed: Boolean(data.confirmedAt),
+        roomNumber: data.roomNumber,
+        tenantName: data.data?.tenantName,
+      });
     } catch (e: any) {
       setLoadError(`โหลดข้อมูลสัญญาไม่สำเร็จ: เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ (${e?.message || 'network'})`);
     }
@@ -70,19 +89,26 @@ export default function ContractDataModal({ contractId, onClose, onSaved }: { co
   useEffect(() => { load(); }, [contractId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (k: keyof View['data'], v: string | number) => setForm((f) => (f ? { ...f, [k]: v } : f));
-  const locked = !!view && !view.canConfirm && !(view.canChange && editing);
 
   const save = async (action: 'confirm' | 'change') => {
     if (!form) return;
     setError(null);
     setNotice(null);
-    if (action === 'confirm' && !confirm('ยืนยันข้อมูลสัญญา? หลังยืนยันแล้ว การแก้ไขต้องระบุเหตุผลและจะถูกบันทึกประวัติ')) return;
+    if (action === 'confirm') {
+      const ok = await confirm({
+        title: 'ยืนยันข้อมูลสัญญา?',
+        description: 'หลังยืนยันแล้ว การแก้ไขข้อมูลจะต้องระบุเหตุผลและระบบจะบันทึกประวัติการเปลี่ยนแปลงไว้',
+        confirmText: 'ยืนยันข้อมูล',
+        cancelText: 'ย้อนกลับ',
+        variant: 'info',
+      });
+      if (!ok) return;
+    }
     setSaving(true);
     try {
       const res = await fetch(`/api/owner/contracts/${contractId}/contract-data`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // separate fields only (the one-field tenantName / tenantAddress are for display)
         body: JSON.stringify({
           action, reason, title: form.title, firstName: form.firstName, lastName: form.lastName, ...form.address,
           occupants: form.occupants, startDate: form.startDate, endDate: form.endDate,
@@ -100,126 +126,177 @@ export default function ContractDataModal({ contractId, onClose, onSaved }: { co
     }
   };
 
-  const input = 'w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-white focus:outline-none focus:border-primary disabled:opacity-60';
+  const input = 'w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-900 focus:outline-none focus:border-primary disabled:opacity-60 disabled:bg-slate-50';
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto overscroll-contain" onClick={onClose}>
-      <div className="max-w-2xl w-full bg-slate-900 rounded-3xl border border-white/20 max-h-[85dvh] flex flex-col overflow-hidden my-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="shrink-0 flex justify-between items-start gap-3 p-5 sm:p-6 border-b border-white/10 bg-slate-950/80">
+    <div className="flex flex-col h-full min-h-0 overflow-hidden bg-white text-slate-900">
+      {showHeader && (
+        <div className="shrink-0 flex justify-between items-start gap-3 p-5 sm:p-6 border-b border-slate-200 bg-slate-50/80">
           <div>
-            <p className="font-black text-white text-base">📝 ขั้น 3 · ข้อมูลสัญญา {view ? `· ห้อง ${view.roomNumber}` : ''}</p>
-            <p className="text-xs text-slate-400">ตรวจกับบัตรประชาชนของผู้เช่า แล้วกดยืนยัน — ข้อมูลนี้พิมพ์ลงสัญญา</p>
+            <p className="font-black text-slate-900 text-base">📝 ข้อมูลสัญญา {view ? `· ห้อง ${view.roomNumber}` : ''}</p>
+            <p className="text-xs text-slate-500">ตรวจกับบัตรประชาชนของผู้เช่า แล้วกดยืนยัน — ข้อมูลนี้พิมพ์ลงสัญญา</p>
           </div>
-          <button type="button" onClick={onClose} className="text-white/50 hover:text-white text-lg font-bold" aria-label="ปิด">✕</button>
+          {onClose && (
+            <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700 text-lg font-bold" aria-label="ปิด">✕</button>
+          )}
         </div>
+      )}
 
-        <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-4">
-          {loadError ? (
-            <p className="text-sm text-rose-400 font-bold py-6 text-center">✕ {loadError}</p>
-          ) : !view || !form ? (
-            <p className="text-sm text-slate-400 py-6 text-center">กำลังโหลด...</p>
-          ) : (
-            <>
-              {view.confirmedAt ? (
-                <p className="text-xs font-bold text-emerald-400">
-                  ✓ ยืนยันข้อมูลแล้ว {new Date(view.confirmedAt).toLocaleString('th-TH')}{view.confirmedByName ? ` โดย ${view.confirmedByName}` : ''}
-                </p>
-              ) : (
-                <p className="text-xs font-bold text-amber-400">ยังไม่ยืนยัน — สัญญาที่พิมพ์ตอนนี้มีคำว่า "ร่าง"</p>
-              )}
-              {view.lockedReason && <p className="text-xs font-bold text-rose-400">🔒 {view.lockedReason}</p>}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-4">
+        {loadError ? (
+          <p className="text-sm text-rose-600 font-bold py-6 text-center">✕ {loadError}</p>
+        ) : !view || !form ? (
+          <p className="text-sm text-slate-500 py-6 text-center">กำลังโหลด...</p>
+        ) : (
+          <>
+            {view.confirmedAt ? (
+              <p className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 inline-block">
+                ✓ ยืนยันข้อมูลแล้ว {new Date(view.confirmedAt).toLocaleString('th-TH')}{view.confirmedByName ? ` โดย ${view.confirmedByName}` : ''}
+              </p>
+            ) : (
+              <p className="text-xs font-bold text-amber-800 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 inline-block">
+                ยังไม่ยืนยัน — สัญญาที่พิมพ์ตอนนี้มีคำว่า &quot;ร่าง&quot;
+              </p>
+            )}
 
-              {!view.fieldsSaved && (
-                <p className="text-[11px] font-bold text-amber-300">ข้อมูลเดิมเก็บเป็นช่องเดียว — ระบบแยกให้แล้ว กรุณาตรวจทุกช่องกับบัตรประชาชนก่อนยืนยัน</p>
-              )}
-              {/* commit 28-8b: the same fields as the forms that start a contract (components/PartyFields) */}
+            <div className="space-y-3">
               <PartyFields
-                value={{ title: form.title, firstName: form.firstName, lastName: form.lastName, ...form.address }}
-                onChange={(p: PartyValue) => setForm((f) => (f ? {
-                  ...f, title: p.title, firstName: p.firstName, lastName: p.lastName,
-                  address: Object.fromEntries(ADDRESS_FIELDS.map((x) => [x.key, p[x.key]])) as unknown as AddressParts,
-                } : f))}
-                disabled={locked}
                 inputClass={input}
-                labelClass="text-[11px] font-bold text-slate-300"
-                hintClass="text-[11px] text-slate-400"
+                value={{
+                  title: form.title,
+                  firstName: form.firstName,
+                  lastName: form.lastName,
+                  ...form.address,
+                }}
+                disabled={!editing && !view.canConfirm}
+                onChange={(p: PartyValue) => {
+                  setForm((prev) => (prev ? {
+                    ...prev,
+                    title: p.title,
+                    firstName: p.firstName,
+                    lastName: p.lastName,
+                    address: {
+                      houseNo: p.houseNo,
+                      moo: p.moo,
+                      soi: p.soi,
+                      road: p.road,
+                      subdistrict: p.subdistrict,
+                      district: p.district,
+                      province: p.province,
+                      postcode: p.postcode,
+                    },
+                  } : prev));
+                }}
               />
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <label className="block space-y-1">
-                  <span className="text-[11px] font-bold text-slate-300">จำนวนผู้พัก (1–{MAX_OCCUPANTS} คน)</span>
-                  <select className={input} value={form.occupants} disabled={locked} onChange={(e) => set('occupants', Number(e.target.value))}>
-                    {OCCUPANT_CHOICES.map((n) => <option key={n} value={n}>{n} คน</option>)}
-                  </select>
-                </label>
-                <label className="block space-y-1">
-                  <span className="text-[11px] font-bold text-slate-300">วันเริ่มสัญญา</span>
-                  <ThaiDatePicker aria-label="วันเริ่มสัญญา" className={input} min={todayTh()} value={form.startDate} disabled={locked} onChange={(v) => set('startDate', v)} />
-                </label>
-                <label className="block space-y-1">
-                  <span className="text-[11px] font-bold text-slate-300 flex items-center justify-between gap-1">วันสิ้นสุดสัญญา {!locked && <LeaseShortcuts start={form.startDate} onEnd={(v) => set('endDate', v)} />}</span>
-                  <ThaiDatePicker aria-label="วันสิ้นสุดสัญญา" className={input} min={form.startDate ? addDays(form.startDate, 1) : todayTh()} value={form.endDate} disabled={locked} onChange={(v) => set('endDate', v)} />
-                </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">วันเริ่มสัญญา</label>
+                  <ThaiDatePicker
+                    value={form.startDate}
+                    onChange={(d) => set('startDate', d)}
+                    disabled={!editing && !view.canConfirm}
+                    className={input}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">วันสิ้นสุดสัญญา</label>
+                  <ThaiDatePicker
+                    value={form.endDate}
+                    onChange={(d) => set('endDate', d)}
+                    disabled={!editing && !view.canConfirm}
+                    className={input}
+                  />
+                  {editing && (
+                    <LeaseShortcuts
+                      start={form.startDate}
+                      onEnd={(end: string) => set('endDate', end)}
+                    />
+                  )}
+                </div>
               </div>
-              <p className="text-[11px] text-slate-400">ระบบไม่เก็บเลขบัตรประชาชนและรูปบัตร</p>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">จำนวนผู้พักอาศัย</label>
+                <select
+                  value={form.occupants}
+                  disabled={!editing && !view.canConfirm}
+                  onChange={(e) => set('occupants', Number(e.target.value))}
+                  className={input}
+                >
+                  {OCCUPANT_CHOICES.map((n) => (
+                    <option key={n} value={n}>{n} คน</option>
+                  ))}
+                </select>
+              </div>
 
               {editing && (
-                <label className="block space-y-1">
-                  <span className="text-[11px] font-bold text-amber-300">เหตุผลที่แก้ (บังคับ · แจ้งผู้จองด้วย)</span>
-                  <input className={input} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="เช่น สะกดชื่อผิดตามบัตรประชาชน" />
-                </label>
-              )}
-
-              <a
-                href={`/contract-print/${contractId}`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-block px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold"
-              >
-                📄 ดูตัวอย่างสัญญา (PDF) ↗
-              </a>
-
-              {error && <p role="alert" className="text-xs font-bold text-rose-400">✕ {error}</p>}
-              {notice && <p className="text-xs font-bold text-emerald-400">✓ {notice}</p>}
-
-              {view.history.length > 0 && (
-                <div className="pt-2 border-t border-white/10 space-y-2">
-                  <p className="text-xs font-black text-white">ประวัติการแก้ข้อมูลสัญญา</p>
-                  {view.history.map((h) => (
-                    <div key={h.id} className="p-3 rounded-xl bg-slate-950/60 border border-white/5 text-[11px] text-slate-300 space-y-1">
-                      <p className="text-slate-400">{new Date(h.changed_at).toLocaleString('th-TH')}{h.changed_by_name ? ` · ${h.changed_by_name}` : ''}</p>
-                      {h.changes.map((c, i) => (
-                        <p key={i}>{c.label}: <span className="line-through text-slate-500">{shown(c.field, c.from)}</span> → <span className="font-bold text-white">{shown(c.field, c.to)}</span></p>
-                      ))}
-                      <p>เหตุผล: {h.reason}</p>
-                    </div>
-                  ))}
+                <div className="pt-2">
+                  <label className="block text-xs font-bold text-amber-800 mb-1">เหตุผลในการแก้ไขข้อมูลสัญญา (จำเป็น)</label>
+                  <input
+                    type="text"
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder="ระบุเหตุผล เช่น สะกดชื่อผิด, เปลี่ยนแปลงระยะเวลา..."
+                    className={input}
+                  />
                 </div>
               )}
-            </>
-          )}
-        </div>
+            </div>
 
-        <div className="shrink-0 p-4 sm:p-5 border-t border-white/10 bg-slate-950/80 flex flex-wrap items-center justify-end gap-3">
-          <button type="button" onClick={onClose} className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl">ปิด</button>
-          {view?.canConfirm && (
-            <button type="button" disabled={saving} onClick={() => save('confirm')} className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl disabled:opacity-50">
-              {saving ? 'กำลังบันทึก...' : '✓ ยืนยันข้อมูลสัญญา'}
+            {error && <p role="alert" className="text-xs font-bold text-rose-600">✕ {error}</p>}
+            {notice && <p className="text-xs font-bold text-emerald-700">✓ {notice}</p>}
+
+            {view.history.length > 0 && (
+              <div className="pt-2 border-t border-slate-200 space-y-2">
+                <p className="text-xs font-black text-slate-900">ประวัติการแก้ข้อมูลสัญญา</p>
+                {view.history.map((h) => (
+                  <div key={h.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-700 space-y-1">
+                    <p className="text-slate-500">{new Date(h.changed_at).toLocaleString('th-TH')}{h.changed_by_name ? ` · ${h.changed_by_name}` : ''}</p>
+                    {h.changes.map((c, i) => (
+                      <p key={i}>{c.label}: <span className="line-through text-slate-400">{shown(c.field, c.from)}</span> → <span className="font-bold text-slate-900">{shown(c.field, c.to)}</span></p>
+                    ))}
+                    <p>เหตุผล: {h.reason}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="shrink-0 p-4 sm:p-5 border-t border-slate-200 bg-slate-50/80 flex flex-wrap items-center justify-end gap-3">
+        {onClose && (
+          <button type="button" onClick={onClose} className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-xl">ปิด</button>
+        )}
+        {view?.canConfirm && (
+          <button type="button" disabled={saving} onClick={() => save('confirm')} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl disabled:opacity-50">
+            {saving ? 'กำลังบันทึก...' : '✓ ยืนยันข้อมูลสัญญา'}
+          </button>
+        )}
+        {view?.canChange && !editing && (
+          <button type="button" onClick={() => { setEditing(true); setNotice(null); }} className="px-6 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-black text-xs rounded-xl">
+            ✎ แก้ข้อมูลสัญญา
+          </button>
+        )}
+        {view?.canChange && editing && (
+          <>
+            <button type="button" onClick={() => { setEditing(false); setForm(view.data); setReason(''); setError(null); }} className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-xl">ยกเลิกการแก้</button>
+            <button type="button" disabled={saving || !reason.trim()} onClick={() => save('change')} className="px-6 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-black text-xs rounded-xl disabled:opacity-50">
+              {saving ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
             </button>
-          )}
-          {view?.canChange && !editing && (
-            <button type="button" onClick={() => { setEditing(true); setNotice(null); }} className="px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs rounded-xl">
-              ✎ แก้ข้อมูลสัญญา
-            </button>
-          )}
-          {view?.canChange && editing && (
-            <>
-              <button type="button" onClick={() => { setEditing(false); setForm(view.data); setReason(''); setError(null); }} className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl">ยกเลิกการแก้</button>
-              <button type="button" disabled={saving || !reason.trim()} onClick={() => save('change')} className="px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs rounded-xl disabled:opacity-50">
-                {saving ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
-              </button>
-            </>
-          )}
-        </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function ContractDataModal({ contractId, onClose, onSaved }: { contractId: number; onClose: () => void; onSaved?: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-sm flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto overscroll-contain" onClick={onClose}>
+      <div className="max-w-2xl w-full bg-white rounded-3xl border border-slate-200 shadow-2xl max-h-[85dvh] flex flex-col overflow-hidden my-auto" onClick={(e) => e.stopPropagation()}>
+        <ContractDataPanel contractId={contractId} onClose={onClose} onSaved={onSaved} showHeader={true} />
       </div>
     </div>
   );

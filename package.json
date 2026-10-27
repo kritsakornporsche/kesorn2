@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/web-push": "^3.6.4",
     "autoprefixer": "^10.4.27",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
@@ -28,7 +29,8 @@
     "ssh2": "^1.17.0",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

@@ -224,18 +224,14 @@ export async function POST(req: Request) {
         LIMIT 1
       `;
       if (tenantUser.length > 0 && tenantUser[0].user_id) {
-        await sql`
-          INSERT INTO notifications (user_id, title, message, type, is_read, link, created_at)
-          VALUES (
-            ${tenantUser[0].user_id},
-            'ใบแจ้งหนี้ใหม่ประจำรอบบิล',
-            ${'มีใบแจ้งหนี้รอบบิล ' + (normalizedCycle || '-') + ' จำนวน ฿' + Number(amount || 0).toLocaleString('th-TH') + ' กำหนดชำระภายใน ' + new Date(due_date).toLocaleDateString('th-TH')},
-            'billing',
-            0,
-            '/tenant/billing',
-            ${new Date()}
-          )
-        `;
+        const { createUserNotification } = await import('@/lib/notifications');
+        await createUserNotification({
+          userId: tenantUser[0].user_id,
+          title: '📄 ใบแจ้งหนี้ใหม่ประจำรอบบิล',
+          message: `มีใบแจ้งหนี้รอบบิล ${normalizedCycle || '-'} จำนวน ฿${Number(amount || 0).toLocaleString('th-TH')} กำหนดชำระภายใน ${new Date(due_date).toLocaleDateString('th-TH')}`,
+          type: 'billing',
+          link: '/tenant/billing',
+        });
       }
     } catch (ne) {
       console.warn('Bill create notify warn:', ne);

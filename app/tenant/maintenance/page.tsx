@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import { KIND_TEXT, PhotoPicker, PhotoStrip, StateBadge, baht, postJson, thaiDateTime, type Job, type Kind } from '@/components/maintenance/shared';
+import { useConfirm } from '@/components/ConfirmModalProvider';
 
 const ISSUE_TYPES: Record<Kind, string[]> = {
   repair: ['ระบบไฟฟ้า', 'ระบบประปา', 'เครื่องปรับอากาศ', 'เฟอร์นิเจอร์', 'ประตู/หน้าต่าง/กุญแจ', 'อื่นๆ'],
@@ -96,10 +97,18 @@ function ReportForm({ onDone }: { onDone: () => void }) {
 }
 
 function JobItem({ job, onChanged }: { job: Job; onChanged: () => void }) {
+  const { confirm } = useConfirm();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const cancel = async () => {
-    if (!confirm('ยกเลิกคำขอนี้?')) return;
+    const ok = await confirm({
+      title: 'ยกเลิกคำขอนี้?',
+      description: 'คุณต้องการยกเลิกคำขอนี้ใช่หรือไม่?',
+      confirmText: 'ยกเลิกคำขอ',
+      cancelText: 'ย้อนกลับ',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setBusy(true); setError(null);
     const r = await postJson('/api/tenant/maintenance', { id: job.id }, 'DELETE');
     setBusy(false);
