@@ -9,7 +9,7 @@ import NotificationsPopover from '@/components/NotificationsPopover';
 interface OwnerNavbarProps {
   onToggleMobileMenu?: () => void;
   /** Role read from the DB by the server layout. */
-  role: 'owner' | 'manager';
+  role: 'owner' | 'manager' | 'researcher';
 }
 
 export default function OwnerNavbar({ onToggleMobileMenu, role }: OwnerNavbarProps) {
