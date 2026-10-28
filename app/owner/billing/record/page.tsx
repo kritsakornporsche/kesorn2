@@ -139,10 +139,15 @@ export default function BillingRecordPage() {
   const currentRoom = rooms[currentIndex] || null;
   const isLastRoom = currentIndex === rooms.length - 1;
 
-  // Sync inputs when switching room
+  // Sync inputs when switching room (Auto-populate from ESP32 IoT if unrecorded)
   useEffect(() => {
     if (currentRoom) {
-      setInputReading(currentRoom.current_reading !== undefined ? String(currentRoom.current_reading) : '');
+      const initialReading = currentRoom.current_reading !== undefined 
+        ? String(currentRoom.current_reading) 
+        : (currentRoom.iot_kwh !== null && currentRoom.iot_kwh !== undefined)
+          ? String(currentRoom.iot_kwh)
+          : '';
+      setInputReading(initialReading);
       setCapturedPhoto(null);
       setInputPrevious('');
       setMeterEvent('normal');
@@ -501,9 +506,17 @@ export default function BillingRecordPage() {
               {/* Main Reading Input */}
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-black uppercase tracking-wider text-slate-500 mb-2">
-                    เลขมิเตอร์ครั้งนี้ (Current Reading)
-                  </label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-500">
+                      เลขมิเตอร์ครั้งนี้ (Current Reading)
+                    </label>
+                    {currentRoom.iot_kwh !== null && inputReading === String(currentRoom.iot_kwh) && (
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-300 flex items-center gap-1 animate-fade-in">
+                        <span>⚡</span>
+                        <span>ดึงค่าอัตโนมัติจาก ESP32 ({currentRoom.iot_kwh} kWh)</span>
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="number"
                     step="0.1"

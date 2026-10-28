@@ -19,7 +19,7 @@ export default async function OwnerLayout({
   }
 
   // SEC-02: Owner or manager only
-  if (user.role !== 'owner' && user.role !== 'manager') {
+  if (user.role !== 'owner' && user.role !== 'manager' && user.role !== 'researcher') {
     redirect('/signin?error=' + encodeURIComponent('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (เฉพาะเจ้าของหอพักและผู้จัดการ)'));
   }
 

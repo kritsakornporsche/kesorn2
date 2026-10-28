@@ -91,7 +91,7 @@ export default function Navbar() {
                       (session.user as any)?.role === 'owner' ? '/owner' :
                       (session.user as any)?.role === 'manager' ? '/owner' :
                       (session.user as any)?.role === 'keeper' ? '/keeper' :
-                      (session.user as any)?.role === 'researcher' ? '/explore' :
+                      (session.user as any)?.role === 'researcher' ? '/researcher' :
                       (session.user as any)?.role === 'guest' ? '/guest' :
                       '/tenant'
                     }
@@ -220,7 +220,7 @@ export default function Navbar() {
                     (session.user as any)?.role === 'owner' ? '/owner' :
                     (session.user as any)?.role === 'manager' ? '/owner' :
                     (session.user as any)?.role === 'keeper' ? '/keeper' :
-                    (session.user as any)?.role === 'researcher' ? '/explore' :
+                    (session.user as any)?.role === 'researcher' ? '/researcher' :
                     (session.user as any)?.role === 'guest' ? '/guest' :
                     '/tenant'
                   }
