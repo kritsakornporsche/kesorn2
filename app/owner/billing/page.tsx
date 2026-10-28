@@ -564,13 +564,25 @@ export default function OwnerMonthlyBillingPage() {
           <button
             onClick={() => setActiveTab('ready')}
             className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer ${
-              activeTab === 'ready' ? 'bg-amber-500 text-white shadow-xs' : 'bg-slate-50 text-slate-600 hover:text-slate-900 border border-slate-200'
+              activeTab === 'ready'
+                ? 'bg-amber-500 text-white shadow-xs'
+                : readyRooms.length > 0
+                ? 'bg-amber-50 text-amber-900 border border-amber-300'
+                : 'bg-slate-50 text-slate-600 hover:text-slate-900 border border-slate-200'
             }`}
           >
             <span>🟡 1. พร้อมออกบิล</span>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${activeTab === 'ready' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
-              {readyRooms.length}
-            </span>
+            {readyRooms.length > 0 ? (
+              <span className={`min-w-[20px] h-[20px] px-1.5 rounded-full text-[11px] font-black font-mono flex items-center justify-center shadow-xs animate-pulse ${
+                activeTab === 'ready' ? 'bg-white text-amber-600 ring-2 ring-white/50' : 'bg-amber-500 text-white ring-2 ring-amber-200'
+              }`}>
+                {readyRooms.length}
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-slate-100 text-slate-400">
+                0
+              </span>
+            )}
           </button>
 
           <button
@@ -588,13 +600,25 @@ export default function OwnerMonthlyBillingPage() {
           <button
             onClick={() => setActiveTab('unpaid')}
             className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer ${
-              activeTab === 'unpaid' ? 'bg-rose-600 text-white shadow-xs' : 'bg-slate-50 text-slate-600 hover:text-slate-900 border border-slate-200'
+              activeTab === 'unpaid'
+                ? 'bg-rose-600 text-white shadow-xs'
+                : unpaidBills.length > 0
+                ? 'bg-rose-50 text-rose-900 border border-rose-300'
+                : 'bg-slate-50 text-slate-600 hover:text-slate-900 border border-slate-200'
             }`}
           >
             <span>🔴 3. รอชำระ / ค้างชำระ</span>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${activeTab === 'unpaid' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
-              {unpaidBills.length}
-            </span>
+            {unpaidBills.length > 0 ? (
+              <span className={`min-w-[20px] h-[20px] px-1.5 rounded-full text-[11px] font-black font-mono flex items-center justify-center shadow-xs animate-pulse ${
+                activeTab === 'unpaid' ? 'bg-white text-rose-600 ring-2 ring-white/50' : 'bg-rose-600 text-white ring-2 ring-rose-200'
+              }`}>
+                {unpaidBills.length}
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-slate-100 text-slate-400">
+                0
+              </span>
+            )}
           </button>
 
           <button
@@ -612,13 +636,25 @@ export default function OwnerMonthlyBillingPage() {
           <button
             onClick={() => setActiveTab('dispute')}
             className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer ${
-              activeTab === 'dispute' ? 'bg-purple-600 text-white shadow-xs' : 'bg-slate-50 text-slate-600 hover:text-slate-900 border border-slate-200'
+              activeTab === 'dispute'
+                ? 'bg-purple-600 text-white shadow-xs'
+                : disputes.filter((d) => d.status === 'Pending').length > 0
+                ? 'bg-purple-50 text-purple-900 border border-purple-300'
+                : 'bg-slate-50 text-slate-600 hover:text-slate-900 border border-slate-200'
             }`}
           >
             <span>⚖️ ข้อพิพาทแก้ไขบิล</span>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${activeTab === 'dispute' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
-              {disputes.filter((d) => d.status === 'Pending').length}
-            </span>
+            {disputes.filter((d) => d.status === 'Pending').length > 0 ? (
+              <span className={`min-w-[20px] h-[20px] px-1.5 rounded-full text-[11px] font-black font-mono flex items-center justify-center shadow-xs animate-pulse ${
+                activeTab === 'dispute' ? 'bg-white text-purple-600 ring-2 ring-white/50' : 'bg-purple-600 text-white ring-2 ring-purple-200'
+              }`}>
+                {disputes.filter((d) => d.status === 'Pending').length}
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-slate-100 text-slate-400">
+                0
+              </span>
+            )}
           </button>
         </div>
 

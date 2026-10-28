@@ -8,4 +8,4 @@ projectPath = "d:\Works\thesiss\kesorn"
 
 ' Run node directly without showing any console window (0 = hide window)
 WshShell.CurrentDirectory = projectPath
-WshShell.Run "node node_modules\next\dist\bin\next start -p 3001 -H 0.0.0.0", 0, False
+WshShell.Run "node node_modules\next\dist\bin\next start -p 3000 -H 0.0.0.0", 0, False

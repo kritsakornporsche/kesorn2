@@ -33,6 +33,7 @@ const navSections = [
       { href: '/owner/billing', label: 'บิลค่าเช่ารายเดือน', icon: '💰' },
       { href: '/owner/accounting', label: 'บัญชีรายรับ-จ่าย', icon: '📈' },
       { href: '/owner/reports', label: 'รายงานหอพัก', icon: '📊' },
+      { href: '/owner/risk', label: 'วิเคราะห์ความเสี่ยง', icon: '🛡️' },
     ],
   },
   {
@@ -51,6 +52,28 @@ export default function OwnerSidebar({ isOpen, onClose }: OwnerSidebarProps) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [badgeCounts, setBadgeCounts] = useState<{ [key: string]: number }>({});
+
+  useEffect(() => {
+    const fetchBadges = () => {
+      fetch('/api/owner/stats')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.data) {
+            setBadgeCounts({
+              '/owner/bookings': data.data.pendingBookings || 0,
+              '/owner/billing': data.data.pendingSlips || 0,
+              '/owner/maintenance': data.data.pendingMaintenance || 0,
+              '/owner/contracts': data.data.expiringContracts || 0,
+            });
+          }
+        })
+        .catch(() => {});
+    };
+    fetchBadges();
+    const interval = setInterval(fetchBadges, 12000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Auto-record visited feature for "recently used"
   useEffect(() => {
@@ -151,11 +174,26 @@ export default function OwnerSidebar({ isOpen, onClose }: OwnerSidebarProps) {
                         : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
-                    <span className="text-base shrink-0">{item.icon}</span>
-                    {!isCollapsed && <span className="truncate">{item.label}</span>}
+                    <div className="relative shrink-0">
+                      <span className="text-base">{item.icon}</span>
+                      {isCollapsed && (badgeCounts[item.href] || 0) > 0 && (
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-600 ring-2 ring-white animate-pulse" />
+                      )}
+                    </div>
+                    {!isCollapsed && <span className="truncate flex-1">{item.label}</span>}
+                    {!isCollapsed && (badgeCounts[item.href] || 0) > 0 && (
+                      <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-rose-600 text-white font-black text-[10px] font-mono flex items-center justify-center shadow-xs animate-pulse shrink-0 ml-auto">
+                        {badgeCounts[item.href]}
+                      </span>
+                    )}
                     {isCollapsed && (
-                      <div className="absolute left-full ml-3 px-2.5 py-1 bg-white text-slate-800 text-[11px] font-bold rounded-lg whitespace-nowrap shadow-xl border border-slate-200 opacity-0 group-hover:opacity-100 pointer-events-none z-50 transition-opacity">
-                        {item.label}
+                      <div className="absolute left-full ml-3 px-2.5 py-1 bg-white text-slate-800 text-[11px] font-bold rounded-lg whitespace-nowrap shadow-xl border border-slate-200 opacity-0 group-hover:opacity-100 pointer-events-none z-50 transition-opacity flex items-center gap-2">
+                        <span>{item.label}</span>
+                        {(badgeCounts[item.href] || 0) > 0 && (
+                          <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-black">
+                            {badgeCounts[item.href]}
+                          </span>
+                        )}
                       </div>
                     )}
                   </Link>

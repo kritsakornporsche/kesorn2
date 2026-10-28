@@ -86,7 +86,7 @@ export default function SignInContent() {
         const isTenantPath = callbackUrl.startsWith('/tenant');
         const isKeeperPath = callbackUrl.startsWith('/keeper');
 
-        if (isOwnerPath && userRole !== 'owner' && userRole !== 'manager') {
+        if (isOwnerPath && userRole !== 'owner' && userRole !== 'manager' && userRole !== 'researcher') {
           targetPath = redirectUrl;
         } else if (isTenantPath && userRole !== 'tenant') {
           targetPath = redirectUrl;
@@ -247,7 +247,6 @@ export default function SignInContent() {
             </button>
           </form>
 
-          {process.env.NODE_ENV === 'development' && (
           <div className="mt-8 pt-6 border-t border-border">
             <div className="flex items-center justify-center gap-2 mb-3">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
@@ -286,7 +285,6 @@ export default function SignInContent() {
               ))}
             </div>
           </div>
-          )}
 
           <div className="mt-6 text-center">
              <Link 

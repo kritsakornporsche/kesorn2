@@ -3,7 +3,7 @@ import { createHash, timingSafeEqual } from 'crypto';
 import { runReminders } from '@/lib/reminders';
 
 // POST /api/cron/reminders — for a scheduler on the server (crontab / PM2), e.g. every hour:
-//   curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" http://localhost:3001/api/cron/reminders
+//   curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/reminders
 // Needs CRON_SECRET in the environment; without it (or with a wrong one) every call gets 401.
 // Reminders are sent once per event (lib/reminders.ts), so this and the check from page loads never send one twice.
 function authorized(req: Request) {

@@ -26,7 +26,11 @@ async function clearSessionAndRespond(req: Request) {
 
   if (!target) target = '/signin';
 
-  const redirectUrl = new URL(target, req.url);
+  const proto = req.headers.get('x-forwarded-proto') || (req.url.startsWith('https:') ? 'https' : 'http');
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
+  const baseUrl = host ? `${proto}://${host}` : req.url;
+  const redirectUrl = new URL(target, baseUrl);
+  const relativeTarget = target.startsWith('/') ? target : redirectUrl.pathname + redirectUrl.search;
 
   // NextAuth signOut() sends POST with X-Auth-Return-Redirect: 1 and expects JSON { url: "..." }
   const isJsonExpected = isReturnRedirect ||
@@ -36,8 +40,8 @@ async function clearSessionAndRespond(req: Request) {
 
   const response = isJsonExpected
     ? NextResponse.json({
-        url: redirectUrl.toString(),
-        redirectUrl: redirectUrl.toString(),
+        url: relativeTarget,
+        redirectUrl: relativeTarget,
         success: true
       }, { status: 200 })
     : NextResponse.redirect(redirectUrl);

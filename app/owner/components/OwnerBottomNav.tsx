@@ -152,7 +152,7 @@ export default function OwnerBottomNav() {
       label: 'การเงิน & สัญญา',
       icon: '💰',
       activeIcon: '💳',
-      matchPaths: ['/owner/meters', '/owner/billing', '/owner/contracts', '/owner/accounting', '/owner/reports'],
+      matchPaths: ['/owner/meters', '/owner/billing', '/owner/contracts', '/owner/accounting', '/owner/reports', '/owner/risk'],
       subActions: [
         {
           href: '/owner/meters',
@@ -184,6 +184,12 @@ export default function OwnerBottomNav() {
           label: 'รายงานหอพัก',
           sublabel: 'สรุปรายรับ-รายจ่ายรายเดือน อัตราการเข้าพัก บิลค้างชำระ ส่งออก CSV',
           icon: '📊',
+        },
+        {
+          href: '/owner/risk',
+          label: 'วิเคราะห์ความเสี่ยง',
+          sublabel: 'ตรวจจับหนี้สิน ไฟฟ้า และสัญญาเช่า',
+          icon: '🛡️',
         },
       ],
     },

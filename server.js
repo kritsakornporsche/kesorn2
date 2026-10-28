@@ -2,7 +2,7 @@ const path = require('path');
 const next = require('next');
 const http = require('http');
 
-const port = parseInt(process.env.PORT || '3001', 10);
+const port = parseInt(process.env.PORT || '3000', 10);
 const hostname = process.env.HOSTNAME || '0.0.0.0';
 const dev = false;
 const app = next({ dev, hostname, port, dir: __dirname });

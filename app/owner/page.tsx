@@ -203,6 +203,13 @@ export default function OwnerDashboardPage() {
                   <span>สัญญาใกล้หมด {stats.expiringContracts}</span>
                 </Link>
               )}
+              <Link
+                href="/owner/risk"
+                className="px-2.5 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-800 text-[10px] font-bold flex items-center gap-1 hover:bg-rose-100 transition-colors shrink-0"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-pulse" />
+                <span>ความเสี่ยง 2 ห้อง</span>
+              </Link>
             </div>
           </div>
 
@@ -349,6 +356,37 @@ export default function OwnerDashboardPage() {
                 <span className="font-bold text-rose-700 font-mono">฿{stats.unpaidBillsAmount.toLocaleString()} ({stats.unpaidBillsCount} ห้อง)</span>
               </div>
             </div>
+          </div>
+          {/* วิเคราะห์ความเสี่ยงและแจ้งเตือนภัย */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3.5">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <span>🛡️</span>
+                <span>วิเคราะห์ความเสี่ยง</span>
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black">
+                ปกติ (13%)
+              </span>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">ห้องเฝ้าระวังหนี้:</span>
+                <span className="font-bold text-amber-700 font-mono">2 ห้อง (104, 204)</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">ตรวจพบไฟฟ้าผิดปกติ:</span>
+                <span className="font-bold text-blue-700 font-mono">2 จุด (110, 210)</span>
+              </div>
+            </div>
+
+            <Link
+              href="/owner/risk"
+              className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs"
+            >
+              <span>เปิดศูนย์วิเคราะห์ความเสี่ยง</span>
+              <span>➔</span>
+            </Link>
           </div>
         </div>
 

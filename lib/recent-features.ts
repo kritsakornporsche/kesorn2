@@ -18,6 +18,7 @@ export const OWNER_FEATURES: OwnerFeature[] = [
   { id: 'move-out', name: 'คำร้องขอย้ายออก', href: '/owner/move-out', icon: '📦', category: 'การจัดการ' },
   { id: 'accounting', name: 'บัญชีรายรับ-จ่าย', href: '/owner/accounting', icon: '📈', category: 'การเงิน' },
   { id: 'reports', name: 'รายงานหอพัก', href: '/owner/reports', icon: '📊', category: 'การเงิน' },
+  { id: 'risk', name: 'วิเคราะห์ความเสี่ยง', href: '/owner/risk', icon: '🛡️', category: 'การเงิน' },
   { id: 'chat', name: 'แชทลูกหอ', href: '/owner/chat', icon: '💬', category: 'บริการ' },
   { id: 'rules', name: 'กฎและระเบียบหอ', href: '/owner/rules', icon: '⚖️', category: 'บริการ' },
   { id: 'keepers', name: 'พนักงาน', href: '/owner/keepers', icon: '🧹', category: 'บริการ' },

@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { verifyPassword } from '@/lib/password';
 import { findLoginAccount } from '@/lib/login-lookup';
+import {
+  getClientIp,
+  checkLoginRateLimit,
+  recordLoginFailure,
+  resetLoginRateLimit,
+} from '@/lib/rate-limiter';
 
 export async function POST(request: Request) {
   try {
@@ -11,6 +17,21 @@ export async function POST(request: Request) {
     }
 
     const inputNorm = email.toLowerCase().trim();
+    const clientIp = getClientIp(request);
+    const rateKey = `${clientIp}:${inputNorm}`;
+
+    // 1. Check Rate Limit (Anti-Brute Force)
+    const limitCheck = checkLoginRateLimit(rateKey);
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `คุณพยายามเข้าสู่ระบบผิดพลาดบ่อยเกินไป กรุณารอ ${limitCheck.retryAfterSeconds} วินาที ก่อนลองใหม่อีกครั้ง`,
+        },
+        { status: 429 }
+      );
+    }
+
     const sql = getDb();
 
     const lookup = await findLoginAccount(sql, inputNorm);
@@ -24,7 +45,9 @@ export async function POST(request: Request) {
       if (isMatch && !user.is_active) {
         return NextResponse.json({ success: false, message: 'บัญชีนี้ถูกปิดใช้งาน' }, { status: 403 });
       }
+
       if (isMatch && table === 'platform_admins') {
+        resetLoginRateLimit(rateKey);
         return NextResponse.json({
           success: true,
           message: 'เข้าสู่ระบบสำเร็จ (Platform Admin)',
@@ -32,7 +55,11 @@ export async function POST(request: Request) {
           user: { id: user.id, name: user.name, email: user.email, role: 'platform_admin', dormDbName: null },
         });
       }
+
       if (isMatch) {
+        // Reset counter upon successful login
+        resetLoginRateLimit(rateKey);
+
         const effectiveRole = user.role || 'guest';
         let redirectUrl = '/explore';
 
@@ -59,14 +86,32 @@ export async function POST(request: Request) {
           },
         });
       } else {
-        return NextResponse.json({ success: false, message: 'รหัสผ่านไม่ถูกต้อง' }, { status: 401 });
+        // Password mismatch: record failure attempt
+        const fail = recordLoginFailure(rateKey);
+        if (fail.blocked) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: 'รหัสผ่านไม่ถูกต้องเกิน 5 ครั้ง ระบบระงับการลองชั่วคราว กรุณารอ 5 นาที',
+            },
+            { status: 429 }
+          );
+        }
+        return NextResponse.json(
+          {
+            success: false,
+            message: `รหัสผ่านไม่ถูกต้อง (เหลือโอกาสลองอีก ${fail.remainingAttempts} ครั้ง)`,
+          },
+          { status: 401 }
+        );
       }
     }
 
+    // User not found
+    recordLoginFailure(rateKey);
     return NextResponse.json({ success: false, message: 'ไม่พบชื่อผู้ใช้งานหรืออีเมลนี้ในระบบ' }, { status: 404 });
   } catch (error: any) {
     console.error('[API Login Error]', error);
     return NextResponse.json({ success: false, message: 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์: ' + error.message }, { status: 500 });
   }
 }
-

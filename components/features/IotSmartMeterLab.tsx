@@ -56,7 +56,7 @@ export function IotSmartMeterLab() {
   // ESP32 Firmware Generator Config
   const [wifiSsid, setWifiSsid] = useState<string>('KesornDorm_WiFi_2.4G');
   const [wifiPass, setWifiPass] = useState<string>('12345678');
-  const [serverUrl, setServerUrl] = useState<string>('http://192.168.1.50:3001');
+  const [serverUrl, setServerUrl] = useState<string>('https://kesorn.phannext.com');
   const [scriptRoom, setScriptRoom] = useState<string>('101');
   const [pzemRxPin, setPzemRxPin] = useState<number>(16);
   const [pzemTxPin, setPzemTxPin] = useState<number>(17);
