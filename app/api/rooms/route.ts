@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
     } else {
       query = sql`
         SELECT 
-          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at, r.amenities,
+          r.id, r.room_number, r.room_type, r.price, r.status, r.floor, r.image_url, r.created_at, r.ready_to_occupy_date, r.amenities,
           COALESCE(r.deposit_amount, 3000) as deposit_amount,
           mor.move_out_date,
           mor.status as move_out_status,
@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { room_number, room_type, price, status, floor, image_url, deposit_amount, amenities } = body;
+    const { room_number, room_type, price, status, floor, image_url, deposit_amount, amenities, ready_to_occupy_date } = body;
     const dormId = parseInt(body.dorm_id || (session.user as any)?.dormId || '0', 10) || 1;
 
     if (!room_number || !room_type || price === undefined) {
@@ -162,9 +162,13 @@ export async function POST(req: NextRequest) {
       amenitiesStr = typeof amenities === 'string' ? amenities : JSON.stringify(amenities);
     }
 
+    const readyDate = ready_to_occupy_date && typeof ready_to_occupy_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ready_to_occupy_date)
+      ? ready_to_occupy_date
+      : null;
+
     const result = await sql`
-      INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount, amenities)
-      VALUES (${room_number}, ${room_type}, ${price}, ${st.status}, ${floor || 1}, ${image_url || null}, ${dormId}, ${deposit}, ${amenitiesStr})
+      INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount, amenities, ready_to_occupy_date)
+      VALUES (${room_number}, ${room_type}, ${price}, ${st.status}, ${floor || 1}, ${image_url || null}, ${dormId}, ${deposit}, ${amenitiesStr}, ${readyDate})
     `;
     
     const newRoomId = (result as any).insertId;
@@ -172,7 +176,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ 
       success: true, 
       message: 'Room created successfully', 
-      data: { id: newRoomId, room_number, room_type, price, status, floor, deposit_amount: deposit } 
+      data: { id: newRoomId, room_number, room_type, price, status, floor, deposit_amount: deposit, ready_to_occupy_date: readyDate } 
     }, { status: 201 });
 
   } catch (error: any) {
