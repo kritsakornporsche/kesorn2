@@ -11,7 +11,8 @@ import { ROOM_TYPES, roomTypeLabel } from '@/lib/room-types';
 import { itemsForRoomType } from '@/lib/room-items';
 import { isTestRoom } from '@/lib/test-rooms';
 import TestRoomBadge from '@/components/TestRoomBadge';
-import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
+import ThaiDatePicker from '@/components/ThaiDatePicker';
+import { thaiDate, ymdTh } from '@/lib/thai-date';
 import { useConfirm } from '@/components/ConfirmModalProvider';
 
 interface Room {
@@ -24,6 +25,7 @@ interface Room {
   image_url?: string | null;
   deposit_amount?: number;
   amenities?: string | null;
+  ready_to_occupy_date?: string | null;
 }
 
 export default function RoomsManagement() {
@@ -67,6 +69,7 @@ export default function RoomsManagement() {
     status: 'Available',
     images: [] as string[],
     amenities: itemsForRoomType('Standard').map((it) => it.name) as string[],
+    ready_to_occupy_date: '' as string,
   });
 
   const [ownerDormId, setOwnerDormId] = useState<number | null>(1);
@@ -239,6 +242,7 @@ export default function RoomsManagement() {
       ...formData,
       image_url: JSON.stringify(formData.images),
       amenities: JSON.stringify(formData.amenities),
+      ready_to_occupy_date: formData.ready_to_occupy_date ? formData.ready_to_occupy_date : null,
       dorm_id: ownerDormId
     };
 
@@ -257,11 +261,12 @@ export default function RoomsManagement() {
           room_number: '', 
           room_type: 'Standard', 
           price: 4500, 
-          deposit_amount: 3000,
+          deposit_amount: 3000, 
           floor: 1, 
           status: 'Available', 
           images: [],
-          amenities: itemsForRoomType('Standard').map((it) => it.name)
+          amenities: itemsForRoomType('Standard').map((it) => it.name),
+          ready_to_occupy_date: '',
         });
         if (ownerDormId) fetchRooms(ownerDormId);
       } else {
@@ -313,6 +318,7 @@ export default function RoomsManagement() {
       status: room.status,
       images: parsedImages,
       amenities: parsedAmenities,
+      ready_to_occupy_date: ymdTh(room.ready_to_occupy_date),
     });
     setFormError(null);
     setIsModalOpen(true);
@@ -550,77 +556,79 @@ export default function RoomsManagement() {
                 className="bg-card rounded-[40px] border border-border shadow-md shadow-[#DCD3C6]/10 overflow-hidden group hover:shadow-2xl hover:border-primary hover:-translate-y-2 transition-all duration-500 flex flex-col"
               >
                 {/* Image Placeholder / Real Image */}
-                <div className="relative h-56 w-full bg-card overflow-hidden">
+                <div className="relative h-40 w-full bg-card overflow-hidden">
                    {firstImage ? (
                      <>
                        <Image src={firstImage} alt={room.room_number} fill unoptimized className="object-cover group-hover:scale-110 transition-transform duration-700" />
                        {extraCount > 0 && (
-                         <div className="absolute bottom-4 right-4 bg-black/60 backdrop-blur-md text-white text-[10px] font-black px-2 py-1 rounded-lg">
+                         <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-black px-2 py-0.5 rounded-lg">
                             +{extraCount} รูป
                          </div>
                        )}
                      </>
                    ) : (
                      <div className="absolute inset-0 flex flex-col items-center justify-center opacity-30 group-hover:opacity-100 transition-opacity duration-500">
-                        <svg className="w-16 h-16 text-muted-foreground mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-12 h-12 text-muted-foreground mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                         </svg>
-                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">SMARTDOM UNIT</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">SMARTDOM UNIT</span>
                      </div>
                    )}
-                   <div className="absolute top-4 left-4 bg-card/90 border border-border backdrop-blur-md text-foreground px-4 py-2 rounded-2xl text-sm font-black shadow-lg z-10">
-                      ห้อง {room.room_number}<TestRoomBadge roomNumber={room.room_number} />
+                   <div className="absolute top-3 left-3 bg-card/90 border border-border backdrop-blur-md text-foreground px-3 py-1.5 rounded-xl text-xs font-black shadow-lg z-10 flex items-center gap-1">
+                      <span>ห้อง {room.room_number}</span><TestRoomBadge roomNumber={room.room_number} />
                    </div>
-                   <div className={`absolute top-4 right-4 px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest border backdrop-blur-md shadow-xl z-10 ${
-                     room.status === 'Available' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 
-                     room.status === 'Occupied' || room.status === 'มีผู้เช่า' ? 'bg-blue-500/10 text-blue-600 border-blue-500/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
-                   }`}>
-                      {room.status === 'มีผู้เช่า' ? 'มีผู้เช่า' : statusText('room', room.status)}
+                   <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+                     <a
+                        href={`/explore/room/${room.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="ดูหน้าที่ผู้เช่าเห็น"
+                        className="p-1.5 bg-card/90 hover:bg-card border border-border backdrop-blur-md text-muted-foreground hover:text-primary rounded-xl text-xs shadow-md transition-all active:scale-95"
+                     >
+                        👁️
+                     </a>
+                     <div className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border backdrop-blur-md shadow-md ${
+                       room.status === 'Available' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 
+                       room.status === 'Occupied' || room.status === 'มีผู้เช่า' ? 'bg-blue-500/10 text-blue-600 border-blue-500/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                     }`}>
+                        {room.status === 'มีผู้เช่า' ? 'มีผู้เช่า' : statusText('room', room.status)}
+                     </div>
                    </div>
                 </div>
 
-                <div className="p-8 flex flex-col flex-1">
-                   <div className="flex items-center justify-between mb-2">
+                <div className="p-6 flex flex-col flex-1">
+                   <div className="flex items-center justify-between mb-1.5">
                       <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">{roomTypeLabel(room.room_type)}</span>
                       <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">ชั้น {room.floor} (Floor)</span>
                    </div>
-                   <div className="flex items-end gap-1 mb-4">
-                      <span className="text-3xl font-black text-foreground">฿{Number(room.price).toLocaleString()}</span>
-                      <span className="text-xs font-bold text-muted-foreground mb-1.5 whitespace-nowrap">/ เดือน</span>
+                   <div className="flex items-end gap-1 mb-3">
+                      <span className="text-2xl font-black text-foreground">฿{Number(room.price).toLocaleString()}</span>
+                      <span className="text-xs font-bold text-muted-foreground mb-1 whitespace-nowrap">/ เดือน</span>
                    </div>
 
-                   {/* Fee Breakdown Badges */}
-                   <div className="flex flex-wrap gap-1.5 mb-6">
+                   {/* Ready Date & Fee Breakdown Badges */}
+                   <div className="flex flex-wrap gap-1.5 mb-4">
+                      {room.ready_to_occupy_date && (
+                        room.status === 'Maintenance' ? (
+                          <span className="px-2.5 py-1 bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-black rounded-lg border border-amber-500/30">
+                            🛠️ เสร็จซ่อม: {thaiDate(room.ready_to_occupy_date)}
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[10px] font-black rounded-lg border border-emerald-500/30">
+                            🟢 พร้อมอยู่: {thaiDate(room.ready_to_occupy_date)}
+                          </span>
+                        )
+                      )}
                       <span className="px-2.5 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded-lg border border-primary/20">
                         🛡️ ประกัน {room.deposit_amount ? `฿${formatBaht(room.deposit_amount)}` : '-'}
                       </span>
-                      <span className="px-2.5 py-1 bg-cyan-500/10 text-cyan-400 text-[10px] font-bold rounded-lg border border-cyan-500/20">
+                      <span className="px-2.5 py-1 bg-cyan-500/10 text-cyan-500 text-[10px] font-bold rounded-lg border border-cyan-500/20">
                         💧 น้ำ {billingRates ? `฿${formatBaht(billingRates.waterPerPerson)}/คน` : '-'}
                       </span>
-                      <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 text-[10px] font-bold rounded-lg border border-amber-500/20">
+                      <span className="px-2.5 py-1 bg-amber-500/10 text-amber-500 text-[10px] font-bold rounded-lg border border-amber-500/20">
                         🧹 ส่วนกลาง {billingRates ? `฿${formatBaht(billingRates.commonFee)}` : '-'}
                       </span>
                    </div>
-
-                   {/* Room items (commit 26): lib/room-items.ts by room type — the starting list of the room inspections */}
-                   <details className="mb-6 text-xs">
-                      <summary className="cursor-pointer font-bold text-muted-foreground">ของในห้อง ({itemsForRoomType(room.room_type).length} รายการ)</summary>
-                      <ul className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-foreground">
-                        {itemsForRoomType(room.room_type).map((it) => (
-                          <li key={it.name}>• {it.name}{it.countable ? ' (นับจำนวน)' : ''}</li>
-                        ))}
-                      </ul>
-                   </details>
-
-                   {/* commit 28-12: the room as a tenant sees it (new tab) */}
-                   <a
-                      href={`/explore/room/${room.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mb-4 inline-flex items-center justify-center gap-1.5 w-full py-2.5 rounded-2xl text-xs font-bold border border-border text-muted-foreground hover:text-primary hover:border-primary transition-colors"
-                   >
-                      👁 ดูหน้าที่ผู้เช่าเห็น ↗
-                   </a>
 
                    {canEdit && (<div className="mt-auto flex items-center gap-3 pt-6 border-t border-[#F3EFE9]">
                       <button 
@@ -766,7 +774,7 @@ export default function RoomsManagement() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
                     <div className="space-y-2">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">ชั้น (Floor)</label>
                         <input 
@@ -794,6 +802,28 @@ export default function RoomsManagement() {
                             <option value="Maintenance">ปิดปรับปรุง</option>
                         </select>
                         )}
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
+                          วันที่ห้องพร้อมเข้าอยู่
+                        </label>
+                        {formData.ready_to_occupy_date && (
+                          <button
+                            type="button"
+                            onClick={() => setFormData({ ...formData, ready_to_occupy_date: '' })}
+                            className="text-[10px] font-bold text-rose-500 hover:underline cursor-pointer"
+                          >
+                            ล้างวันที่
+                          </button>
+                        )}
+                      </div>
+                      <ThaiDatePicker
+                        aria-label="วันที่ห้องพร้อมเข้าอยู่"
+                        value={formData.ready_to_occupy_date}
+                        onChange={(v) => setFormData({ ...formData, ready_to_occupy_date: v })}
+                        className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-bold outline-none text-foreground focus:bg-card transition-all text-sm"
+                      />
                     </div>
                   </div>
 

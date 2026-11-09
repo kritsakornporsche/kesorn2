@@ -95,7 +95,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const resolvedParams = await params;
     const id = resolvedParams.id;
     const body = await request.json();
-    const { room_number, room_type, price, status, floor, image_url, deposit_amount, amenities } = body;
+    const { room_number, room_type, price, status, floor, image_url, deposit_amount, amenities, ready_to_occupy_date } = body;
 
     if (!id || !room_number || !room_type || price === undefined) {
       return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
@@ -135,6 +135,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       amenitiesStr = typeof amenities === 'string' ? amenities : JSON.stringify(amenities);
     }
 
+    const readyDate = ready_to_occupy_date && typeof ready_to_occupy_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ready_to_occupy_date)
+      ? ready_to_occupy_date
+      : null;
+
     await sql`
       UPDATE rooms 
       SET room_number = ${room_number}, 
@@ -144,7 +148,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
           floor = ${floor}, 
           image_url = ${image_url || null},
           deposit_amount = ${deposit},
-          amenities = ${amenitiesStr}
+          amenities = ${amenitiesStr},
+          ready_to_occupy_date = ${readyDate}
       WHERE id = ${id}
     `;
 
