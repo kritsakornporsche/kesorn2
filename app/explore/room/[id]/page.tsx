@@ -1,7 +1,7 @@
 'use client';
 
 import ThaiDatePicker, { LeaseShortcuts, LeaseMonthBar } from '@/components/ThaiDatePicker';
-import { addDays, leaseEnd, todayTh, detectLeaseMonths, ymdTh } from '@/lib/thai-date';
+import { addDays, leaseEnd, todayTh, detectLeaseMonths, ymdTh, thaiDate } from '@/lib/thai-date';
 import { useState, useEffect, use } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -123,33 +123,27 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
   const isMovingOut = room?.status === 'MovingOut' || room?.status === 'Moving Out' || room?.status === 'กำลังจะย้ายออก' || room?.display_status === 'MovingOut' || Boolean(room?.move_out_date);
   const isRoomAvailable = isAvailable || isMovingOut;
 
-  // Calculate minimum available date: ready_to_occupy_date -> move_out_date + 1 -> todayTh()
-  const availableDate = (() => {
-    if (room?.ready_to_occupy_date) {
-      return ymdTh(room.ready_to_occupy_date);
-    }
-    if (isMovingOut && room?.move_out_date) {
-      const moveOutYmd = ymdTh(room.move_out_date);
-      if (moveOutYmd) return addDays(moveOutYmd, 1);
-    }
-    return todayTh();
-  })();
+  // Calculate minimum available date (availableFromDate / minStartDate)
+  const rawReady = room?.ready_to_occupy_date ? String(room.ready_to_occupy_date).slice(0, 10) : '';
+  const rawMoveOut = room?.move_out_date ? addDays(String(room.move_out_date).slice(0, 10), 1) : '';
+  const today = todayTh();
+  const minStartDate = [today, rawReady, rawMoveOut].filter(Boolean).sort().pop() || today;
 
-  // Auto-adjust start_date if current start_date is before availableDate
+  // Auto-adjust start_date if current start_date is before minStartDate
   useEffect(() => {
-    if (!room || !availableDate) return;
+    if (!room || !minStartDate) return;
     setBookingData((prev) => {
-      if (!prev.start_date || prev.start_date < availableDate) {
-        const months = detectLeaseMonths(prev.start_date ?? availableDate, prev.end_date ?? '');
+      if (!prev.start_date || prev.start_date < minStartDate) {
+        const months = detectLeaseMonths(prev.start_date ?? minStartDate, prev.end_date ?? '');
         return {
           ...prev,
-          start_date: availableDate,
-          end_date: leaseEnd(availableDate, months),
+          start_date: minStartDate,
+          end_date: leaseEnd(minStartDate, months),
         };
       }
       return prev;
     });
-  }, [room, availableDate]);
+  }, [room, minStartDate]);
 
   useEffect(() => {
     if (sessionStatus === 'authenticated' && session?.user) {
@@ -273,10 +267,10 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
   // Handle Slip Upload
   const handleFinalSubmit = async () => {
-    if (availableDate && bookingData.start_date && bookingData.start_date < availableDate) {
+    if (minStartDate && bookingData.start_date && bookingData.start_date < minStartDate) {
       await alert({
         title: 'วันเริ่มเข้าอยู่ไม่ถูกต้อง',
-        description: `ห้องนี้พร้อมเข้าอยู่วันที่ ${thaiDate(availableDate, true)} เป็นต้นไป กรุณาเลือกวันเริ่มเข้าอยู่ใหม่`,
+        description: `ห้องนี้พร้อมเข้าอยู่วันที่ ${thaiDate(minStartDate, true)} เป็นต้นไป กรุณาเลือกวันเริ่มเข้าอยู่ใหม่`,
         variant: 'warning',
       });
       return;
@@ -393,7 +387,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
             
             {/* Image Gallery - Height 240px */}
             <div className="space-y-2">
-              <div className="relative h-[240px] w-full rounded-3xl overflow-hidden bg-muted border border-border shadow-md">
+              <div className="relative h-56 sm:h-64 w-full rounded-3xl overflow-hidden bg-muted border border-border shadow-md">
                 <Image
                   src={images[activeImageIndex] || '/images/kesorn/room-bed.jpg'}
                   alt={`Room ${room.room_number}`}
@@ -448,7 +442,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     {isMovingOut ? 'ว่างเร็วๆ นี้' : isAvailable ? 'ห้องว่าง' : 'ไม่ว่าง'}
                   </span>
                   <div className="text-[11px] font-semibold text-emerald-600 mt-1">
-                    พร้อมเข้าอยู่: {thaiDate(availableDate, true)}
+                    🟢 พร้อมเข้าอยู่: {thaiDate(minStartDate, true)}
                   </div>
                 </div>
               </div>
@@ -476,14 +470,41 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                 </div>
               </div>
 
+              {/* Room Amenities Chips */}
+              {(() => {
+                let parsed = [];
+                try {
+                  parsed = typeof room.amenities === 'string' ? JSON.parse(room.amenities) : (room.amenities || []);
+                } catch {
+                  parsed = [];
+                }
+                if (!Array.isArray(parsed) || parsed.length === 0) {
+                  parsed = itemsForRoomType(room.room_type).map((it) => it.name);
+                }
+                if (parsed.length === 0) return null;
+                return (
+                  <div className="flex flex-wrap gap-1.5">
+                    {parsed.map((item, idx) => (
+                      <span key={idx} className="px-2 py-0.5 bg-secondary text-foreground text-[10px] font-bold rounded-lg border border-border">
+                        ✓ {typeof item === 'string' ? item : item.name}
+                      </span>
+                    ))}
+                  </div>
+                );
+              })()}
+
               {/* Rules & Map - Compact 1-line icon bar & button */}
               <div className="flex items-center justify-between gap-2 pt-1 text-xs">
-                <div className="flex items-center gap-3 text-muted-foreground font-semibold text-[11px]">
-                  <span>{room.pet_friendly ? '🐾 เลี้ยงสัตว์ได้' : '🚫 ห้ามสัตว์เลี้ยง'}</span>
+                <div className="flex items-center gap-2 text-muted-foreground font-semibold text-[11px] flex-wrap">
+                  <span>{room.pet_friendly ? '🐾 เลี้ยงสัตว์ได้' : '🐾 ห้ามสัตว์เลี้ยง'}</span>
                   <span>•</span>
                   <span>{room.has_parking ? '🚗 มีที่จอดรถ' : '🛵 จอดมอเตอร์ไซค์'}</span>
                   <span>•</span>
-                  <span>🚭 ปลอดบุหรี่</span>
+                  <span>🚭 ห้ามสูบบุหรี่</span>
+                  <span>•</span>
+                  <span>🕒 เข้า-ออก 24 ชม.</span>
+                  <span>•</span>
+                  <span>📶 ฟรี Wi-Fi</span>
                 </div>
                 <a
                   href={mapDirectUrl(room.dorm_map_url, room.dorm_address, room.dorm_name)}
@@ -491,7 +512,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   rel="noopener noreferrer"
                   className="px-2.5 py-1 text-[11px] font-bold text-primary hover:underline rounded-lg border border-border hover:border-primary shrink-0 transition-colors"
                 >
-                  📍 ดูแผนที่ใน Google Maps ↗
+                  📍 เปิดแผนที่ Google Maps ↗
                 </a>
               </div>
             </div>
@@ -547,6 +568,11 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
 
                 {/* Lease Period & Compact Shortcuts (3, 6, 9, 12 months) */}
                 <div className="p-3.5 bg-secondary/40 rounded-2xl border border-border/70 space-y-2.5">
+                  {minStartDate > today && (
+                    <div className="text-[11px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-xl">
+                      📅 ห้องนี้พร้อมเข้าอยู่วันที่ {thaiDate(minStartDate, true)} เป็นต้นไป
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-foreground">ระยะเวลาสัญญา</span>
                     <div className="flex items-center gap-1">
@@ -580,7 +606,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                       <span className="text-[10px] font-bold text-muted-foreground block">วันเริ่มเข้าอยู่</span>
                       <ThaiDatePicker
                         aria-label="วันเริ่มเข้าอยู่"
-                        min={availableDate || todayTh()}
+                        min={minStartDate}
                         className="w-full px-3 py-2 rounded-xl bg-background border border-border focus:border-primary outline-none font-bold text-xs"
                         value={bookingData.start_date ?? ''}
                         onChange={(v) => {
@@ -676,7 +702,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                       disabled={isProcessing || !costs || !bookingData.phone || !bookingData.parent_phone}
                       className="w-full py-3.5 bg-primary hover:bg-primary/90 text-white font-black rounded-2xl text-sm transition-all shadow-lg shadow-primary/25 hover:scale-[1.01] active:scale-95 disabled:opacity-40 cursor-pointer"
                     >
-                      {isProcessing ? 'กำลังส่งคำขอจอง...' : '✓ ยืนยันและส่งคำขอจองห้องพัก'}
+                      {isProcessing ? 'กำลังส่งคำขอจอง...' : '✓ ยืนยันและส่งคำขอจองห้องพัก →'}
                     </button>
                   )}
                 </div>

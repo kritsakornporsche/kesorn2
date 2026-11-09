@@ -70,7 +70,7 @@ export default function OwnerRiskDashboardPage() {
       setPushStatus('กำลังลงทะเบียนอุปกรณ์...');
       const success = await subscribeDeviceToWebPush({
         role: 'owner',
-        userId: (session?.user as any)?.id || 'owner-admin',
+        // userId
       });
       if (success) {
         setPushStatus('✅ เปิดรับการแจ้งเตือนสำเร็จ');

@@ -7,8 +7,9 @@ import { badRoomNumber, roomStatusFor } from '@/lib/room-fields';
 export async function POST(req: NextRequest) {
   try {
     const session = await auth();
-    if (!session || (session.user as any).role !== 'owner') {
-      return NextResponse.json({ success: false, message: 'Unauthorized: Only owners can batch create rooms' }, { status: 401 });
+    const userRole = (session?.user as any)?.role;
+    if (!session || !['owner', 'manager', 'researcher'].includes(userRole)) {
+      return NextResponse.json({ success: false, message: 'Unauthorized: Only staff can batch create rooms' }, { status: 401 });
     }
 
     const body = await req.json();

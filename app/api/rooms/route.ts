@@ -121,8 +121,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const session = await auth();
-    if (!session || (session.user as any).role !== 'owner') {
-      return NextResponse.json({ success: false, message: 'Unauthorized: Only owners can create rooms' }, { status: 401 });
+    const userRole = (session?.user as any)?.role;
+    if (!session || !['owner', 'manager', 'researcher'].includes(userRole)) {
+      return NextResponse.json({ success: false, message: 'Unauthorized: Only staff can create rooms' }, { status: 401 });
     }
 
     const body = await req.json();
@@ -162,9 +163,10 @@ export async function POST(req: NextRequest) {
       amenitiesStr = typeof amenities === 'string' ? amenities : JSON.stringify(amenities);
     }
 
-    const readyDate = ready_to_occupy_date && typeof ready_to_occupy_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ready_to_occupy_date)
-      ? ready_to_occupy_date
-      : null;
+    const rawReady = ready_to_occupy_date ? String(ready_to_occupy_date).slice(0, 10) : null;
+    const readyDate = rawReady && /^\d{4}-\d{2}-\d{2}$/.test(rawReady) ? rawReady : null;
+
+
 
     const result = await sql`
       INSERT INTO rooms (room_number, room_type, price, status, floor, image_url, dorm_id, deposit_amount, amenities, ready_to_occupy_date)

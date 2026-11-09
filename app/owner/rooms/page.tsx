@@ -14,6 +14,7 @@ import TestRoomBadge from '@/components/TestRoomBadge';
 import ThaiDatePicker from '@/components/ThaiDatePicker';
 import { thaiDate, ymdTh } from '@/lib/thai-date';
 import { useConfirm } from '@/components/ConfirmModalProvider';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 interface Room {
   id: number;
@@ -26,6 +27,7 @@ interface Room {
   deposit_amount?: number;
   amenities?: string | null;
   ready_to_occupy_date?: string | null;
+  move_out_date?: string | null;
 }
 
 export default function RoomsManagement() {
@@ -74,9 +76,11 @@ export default function RoomsManagement() {
 
   const [ownerDormId, setOwnerDormId] = useState<number | null>(1);
   // The rates monthly bills actually use (dormitory_profile via /api/rates), not per-room columns
-  // commit 24b: managers see the rooms read-only (the rooms API saves for the owner only)
-  const canEdit = (session?.user as any)?.role === 'owner';
+  const userRole = (session?.user as any)?.role;
+  const canEdit = ['owner', 'manager', 'researcher'].includes(userRole);
   const [formError, setFormError] = useState<string | null>(null);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const NO_RIGHT = 'ไม่มีสิทธิ์แก้ไข หรือหมดเวลาเข้าระบบ กรุณาเข้าสู่ระบบใหม่';
   const [billingRates, setBillingRates] = useState<{ waterPerPerson: number; commonFee: number } | null>(null);
   useEffect(() => {
@@ -228,21 +232,27 @@ export default function RoomsManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (formNegative) return;
-    if (formData.deposit_amount + formData.price > formData.price * 3) {
-      setFormError(`เงินประกันรวมค่าเช่าล่วงหน้าต้องไม่เกิน 3 เท่าของค่าเช่า (สูงสุด ฿${(formData.price * 2).toLocaleString()})`);
+    if (isSubmitting || isCompressing || formNegative) return;
+    const depNum = Number(formData.deposit_amount) || 0;
+    const priceNum = Number(formData.price) || 0;
+    if (depNum + priceNum > priceNum * 3) {
+      setFormError(`เงินประกันรวมค่าเช่าล่วงหน้าต้องไม่เกิน 3 เท่าของค่าเช่า (สูงสุด ฿${(priceNum * 2).toLocaleString()})`);
       return;
     }
     setFormError(null);
+    setIsSubmitting(true);
     const url = editingRoom ? `/api/rooms/${editingRoom.id}` : '/api/rooms';
     const method = editingRoom ? 'PUT' : 'POST';
 
     // Stringify images array and amenities for storage in database
     const payload = {
       ...formData,
+      price: priceNum,
+      deposit_amount: depNum,
+      floor: Number(formData.floor) || 1,
       image_url: JSON.stringify(formData.images),
       amenities: JSON.stringify(formData.amenities),
-      ready_to_occupy_date: formData.ready_to_occupy_date ? formData.ready_to_occupy_date : null,
+      ready_to_occupy_date: formData.ready_to_occupy_date || null,
       dorm_id: ownerDormId
     };
 
@@ -252,8 +262,13 @@ export default function RoomsManagement() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      if (data.success) {
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        throw new Error(`การเชื่อมต่อเซิร์ฟเวอร์ล้มเหลว (HTTP ${res.status})`);
+      }
+      if (data && data.success) {
         setFormError(null);
         setIsModalOpen(false);
         setEditingRoom(null);
@@ -270,10 +285,14 @@ export default function RoomsManagement() {
         });
         if (ownerDormId) fetchRooms(ownerDormId);
       } else {
-        setFormError(res.status === 401 || res.status === 403 ? NO_RIGHT : `${data.message}${data.error ? `: ${data.error}` : ''}`);
+        const errorMsg = data?.message || 'ไม่สามารถบันทึกข้อมูลห้องได้';
+        setFormError(res.status === 401 || res.status === 403 ? NO_RIGHT : `${errorMsg}${data?.error ? `: ${data.error}` : ''}`);
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error('[Room Save Error]', err);
+      setFormError(err?.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -318,7 +337,7 @@ export default function RoomsManagement() {
       status: room.status,
       images: parsedImages,
       amenities: parsedAmenities,
-      ready_to_occupy_date: ymdTh(room.ready_to_occupy_date),
+      ready_to_occupy_date: room.ready_to_occupy_date ? String(room.ready_to_occupy_date).slice(0, 10) : '',
     });
     setFormError(null);
     setIsModalOpen(true);
@@ -341,20 +360,66 @@ export default function RoomsManagement() {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-
-    files.forEach(file => {
+  const compressImage = (file: File, maxDim = 1280, quality = 0.8): Promise<string> => {
+    return new Promise((resolve) => {
+      if (!file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string) || '');
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(file);
+        return;
+      }
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({
-          ...prev,
-          images: [...prev.images, reader.result as string]
-        }));
+      reader.onload = (ev) => {
+        const img = new window.Image();
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve((ev.target?.result as string) || '');
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => resolve((ev.target?.result as string) || '');
+        img.src = (ev.target?.result as string) || '';
       };
+      reader.onerror = () => resolve('');
       reader.readAsDataURL(file);
     });
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setIsCompressing(true);
+    try {
+      const compressedList = await Promise.all(files.map((file) => compressImage(file)));
+      const valid = compressedList.filter(Boolean);
+      setFormData(prev => ({
+        ...prev,
+        images: [...prev.images, ...valid]
+      }));
+    } catch (err) {
+      console.error('[Upload image error]', err);
+    } finally {
+      setIsCompressing(false);
+      e.target.value = '';
+    }
   };
 
   const removeImage = (index: number) => {
@@ -464,7 +529,8 @@ export default function RoomsManagement() {
                 floor: 1, 
                 status: 'Available', 
                 images: [],
-                amenities: []
+                amenities: [],
+                ready_to_occupy_date: ''
               });
               setFormError(null);
               setIsModalOpen(true);
@@ -549,6 +615,15 @@ export default function RoomsManagement() {
             {filteredRooms.map((room) => {
               const firstImage = getFirstImage(room.image_url);
               const extraCount = getImageCount(room.image_url) - 1;
+              const amenitiesCount = (() => {
+                if (!room.amenities) return 0;
+                try {
+                  const a = typeof room.amenities === 'string' ? JSON.parse(room.amenities) : room.amenities;
+                  return Array.isArray(a) ? a.length : 0;
+                } catch {
+                  return 0;
+                }
+              })();
 
               return (
               <div 
@@ -601,23 +676,28 @@ export default function RoomsManagement() {
                       <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">{roomTypeLabel(room.room_type)}</span>
                       <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">ชั้น {room.floor} (Floor)</span>
                    </div>
-                   <div className="flex items-end gap-1 mb-3">
-                      <span className="text-2xl font-black text-foreground">฿{Number(room.price).toLocaleString()}</span>
-                      <span className="text-xs font-bold text-muted-foreground mb-1 whitespace-nowrap">/ เดือน</span>
+                   <div className="flex items-end justify-between gap-2 mb-3">
+                      <div className="flex items-end gap-1">
+                         <span className="text-2xl font-black text-foreground">฿{Number(room.price).toLocaleString()}</span>
+                         <span className="text-xs font-bold text-muted-foreground mb-1 whitespace-nowrap">/ เดือน</span>
+                      </div>
+                      {room.ready_to_occupy_date && (
+                        <span className={`px-2.5 py-1 text-[10px] font-black rounded-lg border shrink-0 ${
+                          room.status === 'Maintenance'
+                            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                            : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                        }`}>
+                          📅 พร้อมอยู่: {thaiDate(room.ready_to_occupy_date)}
+                        </span>
+                      )}
                    </div>
 
                    {/* Ready Date & Fee Breakdown Badges */}
                    <div className="flex flex-wrap gap-1.5 mb-4">
-                      {room.ready_to_occupy_date && (
-                        room.status === 'Maintenance' ? (
-                          <span className="px-2.5 py-1 bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-black rounded-lg border border-amber-500/30">
-                            🛠️ เสร็จซ่อม: {thaiDate(room.ready_to_occupy_date)}
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-1 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[10px] font-black rounded-lg border border-emerald-500/30">
-                            🟢 พร้อมอยู่: {thaiDate(room.ready_to_occupy_date)}
-                          </span>
-                        )
+                      {amenitiesCount > 0 && (
+                        <span className="px-2.5 py-1 bg-secondary text-foreground text-[10px] font-bold rounded-lg border border-border">
+                          🛋️ ของในห้อง ({amenitiesCount})
+                        </span>
                       )}
                       <span className="px-2.5 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded-lg border border-primary/20">
                         🛡️ ประกัน {room.deposit_amount ? `฿${formatBaht(room.deposit_amount)}` : '-'}
@@ -806,7 +886,7 @@ export default function RoomsManagement() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
-                          วันที่ห้องพร้อมเข้าอยู่
+                          วันที่พร้อมเข้าอยู่
                         </label>
                         {formData.ready_to_occupy_date && (
                           <button
@@ -814,7 +894,7 @@ export default function RoomsManagement() {
                             onClick={() => setFormData({ ...formData, ready_to_occupy_date: '' })}
                             className="text-[10px] font-bold text-rose-500 hover:underline cursor-pointer"
                           >
-                            ล้างวันที่
+                            ล้างค่า
                           </button>
                         )}
                       </div>
@@ -872,7 +952,7 @@ export default function RoomsManagement() {
                             value={formData.deposit_amount}
                             onChange={(e) => setFormData({...formData, deposit_amount: parseFloat(e.target.value) || 0})}
                             className={`w-full pl-8 pr-3 py-3 bg-background border rounded-2xl font-bold text-foreground text-sm outline-none transition-all ${
-                              formData.deposit_amount + formData.price > formData.price * 3
+                              Number(formData.deposit_amount) + Number(formData.price) > Number(formData.price) * 3
                                 ? 'border-rose-500 focus:ring-2 focus:ring-rose-500/30'
                                 : 'border-border focus:ring-2 focus:ring-primary/30'
                             }`}
@@ -938,16 +1018,26 @@ export default function RoomsManagement() {
                         ))}
                         
                         <label className="aspect-square rounded-2xl border-2 border-dashed border-border bg-card flex flex-col items-center justify-center cursor-pointer hover:border-primary hover:bg-card transition-all group">
-                            <div className="w-10 h-10 bg-card rounded-xl shadow-sm mb-2 flex items-center justify-center group-hover:scale-110 transition-transform">
-                              <svg className="w-6 h-6 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                              </svg>
-                            </div>
-                            <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">เพิ่มรูป</span>
+                            {isCompressing ? (
+                              <div className="flex flex-col items-center justify-center gap-1.5 p-2 text-center">
+                                <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                                <span className="text-[9px] font-bold text-muted-foreground">กำลังย่อรูป...</span>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="w-10 h-10 bg-card rounded-xl shadow-sm mb-2 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                  <svg className="w-6 h-6 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                                  </svg>
+                                </div>
+                                <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">เพิ่มรูป</span>
+                              </>
+                            )}
                             <input 
                                 type="file" 
                                 accept="image/*" 
                                 multiple
+                                disabled={isCompressing}
                                 className="hidden" 
                                 onChange={handleFileUpload}
                             />
@@ -966,10 +1056,17 @@ export default function RoomsManagement() {
                     </button>
                     <button 
                       type="submit" 
-                      disabled={formNegative || formData.deposit_amount + formData.price > formData.price * 3}
-                      className="flex-[2] py-4 sm:py-5 bg-primary text-white font-black rounded-[24px] sm:rounded-[28px] shadow-xl hover:brightness-110 active:scale-95 transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={isSubmitting || isCompressing || formNegative || (Number(formData.deposit_amount) + Number(formData.price) > Number(formData.price) * 3)}
+                      className="flex-[2] py-4 sm:py-5 bg-primary text-white font-black rounded-[24px] sm:rounded-[28px] shadow-xl hover:brightness-110 active:scale-95 transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
-                        {editingRoom ? 'อัปเดตข้อมูล' : 'บันทึกลงฐานข้อมูล'}
+                        {isSubmitting ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            <span>กำลังบันทึก...</span>
+                          </>
+                        ) : (
+                          editingRoom ? 'อัปเดตข้อมูล' : 'บันทึกลงฐานข้อมูล'
+                        )}
                     </button>
                   </div>
                </form>

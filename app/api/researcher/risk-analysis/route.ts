@@ -128,17 +128,17 @@ export async function GET() {
     });
 
     // Sort by total risk score descending
-    assessedRooms.sort((a, b) => b.totalScore - a.totalScore);
+    assessedRooms.sort((a: any, b: any) => b.totalScore - a.totalScore);
 
     const subscriptions = loadPushSubscriptions();
-    const criticalCount = assessedRooms.filter((r) => r.riskLevel === 'CRITICAL').length;
-    const warningCount = assessedRooms.filter((r) => r.riskLevel === 'MEDIUM').length;
-    const normalCount = assessedRooms.filter((r) => r.riskLevel === 'LOW').length;
-    const totalExposure = assessedRooms.reduce((sum, r) => sum + r.totalOverdue, 0);
+    const criticalCount = assessedRooms.filter((r: any) => r.riskLevel === 'CRITICAL').length;
+    const warningCount = assessedRooms.filter((r: any) => r.riskLevel === 'MEDIUM').length;
+    const normalCount = assessedRooms.filter((r: any) => r.riskLevel === 'LOW').length;
+    const totalExposure = assessedRooms.reduce((sum: number, r: any) => sum + r.totalOverdue, 0);
 
     // Dormitory Weighted Risk Index
     const overallScore = Math.round(
-      assessedRooms.reduce((sum, r) => sum + r.totalScore, 0) / (assessedRooms.length || 1)
+      assessedRooms.reduce((sum: number, r: any) => sum + r.totalScore, 0) / (assessedRooms.length || 1)
     );
 
     return NextResponse.json({

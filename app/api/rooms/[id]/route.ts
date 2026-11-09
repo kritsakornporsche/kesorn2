@@ -88,7 +88,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
-    if (!session || (session.user as any).role !== 'owner') {
+    const userRole = (session?.user as any)?.role;
+    if (!session || !['owner', 'manager', 'researcher'].includes(userRole)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
@@ -135,9 +136,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       amenitiesStr = typeof amenities === 'string' ? amenities : JSON.stringify(amenities);
     }
 
-    const readyDate = ready_to_occupy_date && typeof ready_to_occupy_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ready_to_occupy_date)
-      ? ready_to_occupy_date
-      : null;
+    const rawReady = ready_to_occupy_date ? String(ready_to_occupy_date).trim().slice(0, 10) : null;
+    const readyDate = rawReady && /^\d{4}-\d{2}-\d{2}$/.test(rawReady) ? rawReady : null;
+
+
 
     await sql`
       UPDATE rooms 
@@ -168,7 +170,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
-    if (!session || (session.user as any).role !== 'owner') {
+    const userRole = (session?.user as any)?.role;
+    if (!session || !['owner', 'manager', 'researcher'].includes(userRole)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
