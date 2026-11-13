@@ -18,6 +18,18 @@ export function badRoomNumber(room: Record<string, unknown> | null | undefined):
   return null;
 }
 
+// ── Room form (commit 29b-3) ───────────────────────────────────────────────────────────────────────────────────────
+// The single add / edit form keeps save disabled while a field is blank or a number is negative, and says which.
+export const ROOM_FORM_FIELDS = { room_number: 'เลขห้อง', ...ROOM_NUMBER_FIELDS } as const;
+
+/** Why the room form cannot be saved yet (a blank field first, then badRoomNumber); null when it can. */
+export function roomFormProblem(room: Record<string, unknown> | null | undefined): { field: string; message: string } | null {
+  for (const [field, label] of Object.entries(ROOM_FORM_FIELDS)) {
+    if (String(room?.[field] ?? '').trim() === '') return { field, message: `กรุณากรอก${label}` };
+  }
+  return badRoomNumber(room);
+}
+
 // ── Room status (commit 28a) ────────────────────────────────────────────────────────────────────────────────────────
 // The owner sets only "ว่าง" (Available) or "ปิดปรับปรุง" (Maintenance). Occupied / Reserved / pending states come from
 // contracts only — a room set to "มีผู้เช่า" by hand had no contract, left the walk-in list and could not get a contract.

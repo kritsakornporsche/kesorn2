@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import { formatBaht } from '@/lib/format';
 import { statusText } from '@/lib/status-text';
-import { badRoomNumber, isManualRoomStatus, isNegative } from '@/lib/room-fields';
+import { isManualRoomStatus, isNegative, roomFormProblem } from '@/lib/room-fields';
 import { ROOM_TYPES, roomTypeLabel } from '@/lib/room-types';
 import { itemsForRoomType } from '@/lib/room-items';
 import { isTestRoom } from '@/lib/test-rooms';
@@ -65,9 +65,10 @@ export default function RoomsManagement() {
   const [formData, setFormData] = useState({
     room_number: '',
     room_type: 'Standard',
-    price: 4500,
-    deposit_amount: 3000,
-    floor: 1,
+    // 29b-3: a number box may be left blank ('') — save stays disabled until it is filled
+    price: 4500 as number | '',
+    deposit_amount: 3000 as number | '',
+    floor: 1 as number | '',
     status: 'Available',
     images: [] as string[],
     amenities: itemsForRoomType('Standard').map((it) => it.name) as string[],
@@ -161,7 +162,11 @@ export default function RoomsManagement() {
   };
 
   // commit 24 / 28a: number fields cannot go negative — "-" "e" "+" cannot be typed (lib/number-input); save stays disabled as a guard
-  const formNegative = !!badRoomNumber(formData);
+  // commit 29b-3: a blank field too, with the reason shown above the buttons
+  const formProblem = roomFormProblem(formData);
+  const priceVal = Number(formData.price) || 0;
+  const depositVal = Number(formData.deposit_amount) || 0;
+  const blankOr = (v: string, n: number) => (v.trim() === '' ? '' : n);
   const batchNegative = [batchForm.floor, batchForm.startRoom, batchForm.endRoom, batchForm.price, batchForm.deposit_amount].some(isNegative);
 
   const handleBatchSubmit = async (e: React.FormEvent) => {
@@ -233,7 +238,7 @@ export default function RoomsManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting || isCompressing || formNegative) return;
+    if (isSubmitting || isCompressing || formProblem) return;
     const depNum = Number(formData.deposit_amount) || 0;
     const priceNum = Number(formData.price) || 0;
     if (depNum + priceNum > priceNum * 3) {
@@ -861,7 +866,7 @@ export default function RoomsManagement() {
                         <input 
                             type="number" {...NUMBER_INPUT_PROPS} 
                             value={formData.floor}
-                            onChange={(e) => setFormData({...formData, floor: parseInt(e.target.value) || 1})}
+                            onChange={(e) => setFormData({...formData, floor: blankOr(e.target.value, parseInt(e.target.value) || 0)})}
                             className="w-full px-6 py-4 bg-background border border-border rounded-[24px] font-black outline-none text-foreground focus:bg-card transition-all"
                         />
                     </div>
@@ -925,10 +930,10 @@ export default function RoomsManagement() {
                             onChange={(e) => {
                               const p = parseFloat(e.target.value) || 0;
                               const maxDep = p * 2;
-                              const newDep = (!editingRoom && (!formData.deposit_amount || formData.deposit_amount === formData.price * 2 || formData.deposit_amount === 3000))
+                              const newDep = (!editingRoom && (!depositVal || depositVal === priceVal * 2 || depositVal === 3000))
                                 ? maxDep
-                                : Math.min(formData.deposit_amount, maxDep);
-                              setFormData({ ...formData, price: p, deposit_amount: newDep });
+                                : Math.min(depositVal, maxDep);
+                              setFormData({ ...formData, price: blankOr(e.target.value, p), deposit_amount: newDep });
                             }}
                             className="w-full pl-14 pr-6 py-4 bg-background border border-primary/40 rounded-[24px] font-black outline-none text-foreground text-2xl text-center focus:ring-4 focus:ring-primary/10 focus:bg-card transition-all"
                             placeholder="4500"
@@ -943,7 +948,7 @@ export default function RoomsManagement() {
                             🛡️ เงินประกัน (Deposit)
                           </label>
                           <span className="text-[10px] text-muted-foreground font-bold">
-                            สูงสุด ฿{(formData.price * 2).toLocaleString()} (รวมล่วงหน้าไม่เกิน 3 เท่า)
+                            สูงสุด ฿{(priceVal * 2).toLocaleString()} (รวมล่วงหน้าไม่เกิน 3 เท่า)
                           </span>
                         </div>
                         <div className="relative">
@@ -951,7 +956,7 @@ export default function RoomsManagement() {
                           <input 
                             type="number" {...NUMBER_INPUT_PROPS} 
                             value={formData.deposit_amount}
-                            onChange={(e) => setFormData({...formData, deposit_amount: parseFloat(e.target.value) || 0})}
+                            onChange={(e) => setFormData({...formData, deposit_amount: blankOr(e.target.value, parseFloat(e.target.value) || 0)})}
                             className={`w-full pl-8 pr-3 py-3 bg-background border rounded-2xl font-bold text-foreground text-sm outline-none transition-all ${
                               Number(formData.deposit_amount) + Number(formData.price) > Number(formData.price) * 3
                                 ? 'border-rose-500 focus:ring-2 focus:ring-rose-500/30'
@@ -965,27 +970,27 @@ export default function RoomsManagement() {
                         <div className="flex items-center gap-1.5 pt-1">
                           <button
                             type="button"
-                            onClick={() => setFormData({ ...formData, deposit_amount: formData.price })}
+                            onClick={() => setFormData({ ...formData, deposit_amount: priceVal })}
                             className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-secondary hover:bg-secondary/80 text-foreground transition-all cursor-pointer"
                           >
-                            1 เท่า (฿{formData.price.toLocaleString()})
+                            1 เท่า (฿{priceVal.toLocaleString()})
                           </button>
                           <button
                             type="button"
-                            onClick={() => setFormData({ ...formData, deposit_amount: formData.price * 2 })}
+                            onClick={() => setFormData({ ...formData, deposit_amount: priceVal * 2 })}
                             className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 transition-all cursor-pointer"
                           >
-                            2 เท่า (฿{(formData.price * 2).toLocaleString()}) [แนะนำ]
+                            2 เท่า (฿{(priceVal * 2).toLocaleString()}) [แนะนำ]
                           </button>
                         </div>
 
-                        {formData.deposit_amount + formData.price > formData.price * 3 ? (
+                        {depositVal + priceVal > priceVal * 3 ? (
                           <p className="text-[10px] text-rose-600 font-bold mt-1">
-                            ⚠️ เงินประกัน ฿{formData.deposit_amount.toLocaleString()} + ค่าเช่าล่วงหน้า ฿{formData.price.toLocaleString()} เกิน 3 เท่าของค่าเช่า (สูงสุดไม่เกิน ฿{(formData.price * 2).toLocaleString()})
+                            ⚠️ เงินประกัน ฿{depositVal.toLocaleString()} + ค่าเช่าล่วงหน้า ฿{priceVal.toLocaleString()} เกิน 3 เท่าของค่าเช่า (สูงสุดไม่เกิน ฿{(priceVal * 2).toLocaleString()})
                           </p>
                         ) : (
                           <p className="text-[10px] text-emerald-600 font-bold mt-1">
-                            ✓ ถูกต้องตามกฎหมาย สคบ. (รวมค่าเช่าล่วงหน้า 1 เดือน = ฿{(formData.deposit_amount + formData.price).toLocaleString()} ไม่เกิน 3 เท่า)
+                            ✓ ถูกต้องตามกฎหมาย สคบ. (รวมค่าเช่าล่วงหน้า 1 เดือน = ฿{(depositVal + priceVal).toLocaleString()} ไม่เกิน 3 เท่า)
                           </p>
                         )}
                       </div>
@@ -1047,6 +1052,7 @@ export default function RoomsManagement() {
                   </div>
 
                   {formError && <p role="alert" className="px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-500 text-sm font-bold text-center">{formError}</p>}
+                  {!formError && formProblem && <p data-form-problem className="px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-600 text-sm font-bold text-center">⚠️ {formProblem.message} — ยังบันทึกไม่ได้</p>}
                   <div className="flex gap-4 sm:gap-6 pt-4 sm:pt-6 sr-only-btn-container shrink-0">
                     <button 
                       type="button" 
@@ -1057,7 +1063,7 @@ export default function RoomsManagement() {
                     </button>
                     <button 
                       type="submit" 
-                      disabled={isSubmitting || isCompressing || formNegative || (Number(formData.deposit_amount) + Number(formData.price) > Number(formData.price) * 3)}
+                      disabled={isSubmitting || isCompressing || !!formProblem || (depositVal + priceVal > priceVal * 3)}
                       className="flex-[2] py-4 sm:py-5 bg-primary text-white font-black rounded-[24px] sm:rounded-[28px] shadow-xl hover:brightness-110 active:scale-95 transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                         {isSubmitting ? (
