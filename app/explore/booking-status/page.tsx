@@ -347,7 +347,7 @@ export default function BookingStatusPage() {
               {booking.status === 'BookingRequested' && (
                 <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-xs text-amber-300 leading-relaxed">
                   ส่งคำขอจองแล้ว รอหอพักอนุมัติ
-                  
+                  <span className="block mt-1 text-amber-300/90">{BOOKING_REQUEST_NOTE}</span>
                 </div>
               )}
 
