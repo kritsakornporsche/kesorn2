@@ -7,7 +7,7 @@ import Image from 'next/image';
 import { checkPaperFile } from '@/lib/paper-file-check';
 import InspectionModal, { type InspectionStatus } from '@/components/InspectionModal';
 import { NextStepLine, STEP_COLOR, StepBadge, StepChecklist } from '@/components/BookingSteps';
-import { STEP_SHORT, type StepNo } from '@/lib/booking-steps';
+import { MISSING_TEXT, STEP_SHORT, type StepNo } from '@/lib/booking-steps';
 import { roomTypeLabel } from '@/lib/room-types';
 import TestRoomBadge from '@/components/TestRoomBadge';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
@@ -76,6 +76,10 @@ interface Booking {
 }
 
 type TabKey = 's1' | 's2' | 's3' | 's4' | 'ACTIVE' | 'CLOSED' | 'LEGACY' | 'ALL';
+
+// commit 29b-3: the move-in bill needs data confirmed + inspection acknowledged + signed paper (the server's list,
+// steps.missingForMoveIn). The paper is attached in the sign & issue window, so the window opens once the other two are done.
+const missingBeforeSign = (b: { steps?: BookingSteps }) => (b.steps?.missingForMoveIn || []).filter((m) => m !== MISSING_TEXT.paper);
 
 /** The tab a booking belongs to, from its step */
 const tabOf = (b: { steps?: BookingSteps }): TabKey => {
@@ -235,6 +239,11 @@ export default function OwnerBookingsPage() {
   const handleCombinedSignAndIssueMoveIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!combinedSignIssueBooking) return;
+    const notYet = missingBeforeSign(combinedSignIssueBooking);
+    if (notYet.length) {
+      showToast(`ยังออกบิลแรกเข้าไม่ได้ — ขาด: ${notYet.join(' · ')}`, 'error');
+      return;
+    }
     if (initialMeterReading.trim() === '') {
       showToast('กรุณากรอกหรือดึงเลขมิเตอร์ไฟฟ้าเริ่มต้น', 'error');
       return;
@@ -786,12 +795,11 @@ export default function OwnerBookingsPage() {
                     )}
                     {step === 3 && (() => {
                       const isPendingAck = item.inspection_status === 'pending_ack';
-                      const sub1Done = Boolean(
-                        item.inspection_status === 'acknowledged' ||
-                        item.paper_uploaded ||
-                        item.steps?.canIssueMoveIn
-                      );
-                      const isReadyForBill = Boolean(item.steps?.canIssueMoveIn || item.paper_uploaded || sub1Done);
+                      // 29b-3: from the server's list — button 1 is done when data is confirmed and the tenant acknowledged;
+                      // button 3 opens only then (the signed paper is attached in its window)
+                      const missing = item.steps?.missingForMoveIn || [];
+                      const sub1Done = missingBeforeSign(item).length === 0;
+                      const isReadyForBill = sub1Done;
 
                       return (
                         <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
@@ -847,6 +855,8 @@ export default function OwnerBookingsPage() {
                           {/* 3. ลงนาม & ออกบิลแรกเข้า */}
                           <button
                             type="button"
+                            disabled={!isReadyForBill}
+                            title={isReadyForBill ? undefined : `ขาด: ${missingBeforeSign(item).join(' · ')}`}
                             onClick={() => {
                               setCombinedSignIssueBooking(item);
                               setPaperFile(null);
@@ -864,7 +874,7 @@ export default function OwnerBookingsPage() {
                             className={`px-5 py-2.5 rounded-xl font-black text-xs transition-all flex items-center gap-2 border shadow-xs ${
                               isReadyForBill
                                 ? 'bg-primary text-white border-primary hover:bg-primary/90 shadow-md hover:scale-105 active:scale-95'
-                                : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 hover:text-slate-800'
+                                : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
                             }`}
                           >
                             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
@@ -877,6 +887,11 @@ export default function OwnerBookingsPage() {
                               {item.paper_uploaded ? '📝 บันทึกมิเตอร์ & ออกบิลแรกเข้า' : '📝 ลงนาม & ออกบิลแรกเข้า'}
                             </span>
                           </button>
+                          {missing.length > 0 && (
+                            <p data-bill-missing className="basis-full text-[11px] font-bold text-amber-700">
+                              ยังออกบิลแรกเข้าไม่ได้ — ขาด: {missing.join(' · ')}{isReadyForBill ? ' (แนบสัญญาได้ที่ปุ่ม 3)' : ''}
+                            </p>
+                          )}
                         </div>
                       );
                     })()}
@@ -1480,6 +1495,10 @@ export default function OwnerBookingsPage() {
 
               {/* Sticky Footer */}
               <div className="shrink-0 p-4 sm:p-5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-end gap-3">
+                {(() => {
+                  const m = [...missingBeforeSign(combinedSignIssueBooking), ...(!combinedSignIssueBooking.paper_uploaded && !paperFile ? [MISSING_TEXT.paper] : [])];
+                  return m.length > 0 && <p data-bill-missing className="mr-auto text-[11px] font-bold text-amber-700">ขาด: {m.join(' · ')}</p>;
+                })()}
                 <button
                   type="button"
                   onClick={() => setCombinedSignIssueBooking(null)}
@@ -1491,6 +1510,7 @@ export default function OwnerBookingsPage() {
                   type="submit"
                   disabled={
                     uploading ||
+                    missingBeforeSign(combinedSignIssueBooking).length > 0 ||
                     initialMeterReading.trim() === '' ||
                     (!combinedSignIssueBooking.paper_uploaded && (!paperFile || !paperSignedDate)) ||
                     (meterSourceMode === 'manual' && !meterPhoto)
