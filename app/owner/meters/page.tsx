@@ -228,15 +228,16 @@ export default function MetersOverviewPage() {
     return filteredRooms.slice(startIndex, startIndex + pageSize);
   }, [filteredRooms, currentPage, pageSize]);
 
-  // Stats for Energy MIS
-  const totalRoomsCount = rooms.length;
-  const onlineCount = rooms.filter((r) => r.iotOnline).length;
+  // Stats for Energy MIS — owner figures leave test rooms out (lib/test-rooms); their rows are still listed with a badge
+  const realRooms = rooms.filter((r) => !isTestRoom(r.room_number));
+  const totalRoomsCount = realRooms.length;
+  const onlineCount = realRooms.filter((r) => r.iotOnline).length;
   const offlineCount = totalRoomsCount - onlineCount;
-  const relayOnCount = rooms.filter((r) => r.relayState === 'ON').length;
-  const totalBuildingWatt = rooms.reduce((sum, r) => sum + (r.activePowerWatt || 0), 0);
+  const relayOnCount = realRooms.filter((r) => r.relayState === 'ON').length;
+  const totalBuildingWatt = realRooms.reduce((sum, r) => sum + (r.activePowerWatt || 0), 0);
   const totalBuildingKw = (totalBuildingWatt / 1000).toFixed(2);
-  const vacantLoadCount = rooms.filter((r) => r.isVacantWithLoad).length;
-  const highLoadCount = rooms.filter((r) => r.isHighLoad).length;
+  const vacantLoadCount = realRooms.filter((r) => r.isVacantWithLoad).length;
+  const highLoadCount = realRooms.filter((r) => r.isHighLoad).length;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-4 sm:p-8 lg:p-10 space-y-6">
@@ -359,9 +360,9 @@ export default function MetersOverviewPage() {
         {/* Filter Tabs */}
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 md:pb-0">
           {[
-            { id: 'ALL', label: 'ทั้งหมด', count: rooms.length },
-            { id: 'Occupied', label: 'มีคนอยู่', count: rooms.filter((r) => r.room_status === 'Occupied').length },
-            { id: 'Available', label: 'ห้องว่าง', count: rooms.filter((r) => r.room_status === 'Available' || r.room_status === 'ว่าง').length },
+            { id: 'ALL', label: 'ทั้งหมด', count: totalRoomsCount },
+            { id: 'Occupied', label: 'มีคนอยู่', count: realRooms.filter((r) => r.room_status === 'Occupied').length },
+            { id: 'Available', label: 'ห้องว่าง', count: realRooms.filter((r) => r.room_status === 'Available' || r.room_status === 'ว่าง').length },
             { id: 'Online', label: '🟢 Online', count: onlineCount },
             { id: 'Offline', label: '🔴 Offline', count: offlineCount },
             ...(vacantLoadCount > 0 ? [{ id: 'VacantLoad', label: '🚨 ว่างแต่มีไฟ', count: vacantLoadCount }] : []),
