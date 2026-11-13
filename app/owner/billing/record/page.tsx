@@ -468,7 +468,7 @@ export default function BillingRecordPage() {
                     : 'bg-white text-slate-600 border border-slate-200'
                 }`}
               >
-                {r.recorded ? '✓ ' : ''}{r.room_number}
+                {r.recorded ? '✓ ' : ''}{r.room_number}{testRoomSuffix(r.room_number)}
               </button>
             ))}
           </div>
