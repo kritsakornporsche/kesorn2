@@ -7,6 +7,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { statusText } from '@/lib/status-text';
 import { roomTypeLabel } from '@/lib/room-types';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 interface HistoryItem {
   id: number;
@@ -475,7 +476,7 @@ export default function RoomMeterDetailPage() {
             </span>
             <div className="flex items-center gap-2">
               <input
-                type="number"
+                type="number" {...NUMBER_INPUT_PROPS}
                 value={overloadThreshold}
                 onChange={(e) => setOverloadThreshold(Number(e.target.value))}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-primary"

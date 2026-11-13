@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { DynamicBillQrPaymentButton } from '@/components/features/DynamicBillQrModal';
 import { subscribeDeviceToWebPush } from '@/lib/features/web-push-client';
+import { roomTypeLabel } from '@/lib/room-types';
 import type {
   DigitalTwinRoom,
   ResearcherPushLogItem,
@@ -776,7 +777,7 @@ export function DormDigitalTwinHeatmap() {
                     ห้องที่เลือกในผัง 2D (ชั้น {selectedRoom.floor})
                   </span>
                   <h3 className="text-xl font-black text-white">
-                    ห้อง {selectedRoom.roomNumber} • {selectedRoom.roomType}
+                    ห้อง {selectedRoom.roomNumber} • {roomTypeLabel(selectedRoom.roomType)}
                   </h3>
                 </div>
                 <button

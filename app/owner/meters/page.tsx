@@ -8,6 +8,7 @@ import { useRates } from '@/lib/use-rates';
 import { statusText } from '@/lib/status-text';
 import { isTestRoom } from '@/lib/test-rooms';
 import TestRoomBadge from '@/components/TestRoomBadge';
+import { roomTypeLabel } from '@/lib/room-types';
 
 interface RoomMeterSummary {
   room_id: number;
@@ -450,7 +451,7 @@ export default function MetersOverviewPage() {
                         <div className="font-black text-slate-900 text-base font-mono">
                           ห้อง {room.room_number}<TestRoomBadge roomNumber={room.room_number} />
                         </div>
-                        <span className="text-[11px] text-slate-400 font-medium">ชั้น {room.floor || 1} • {room.room_type}</span>
+                        <span className="text-[11px] text-slate-400 font-medium">ชั้น {room.floor || 1} • {roomTypeLabel(room.room_type)}</span>
                       </td>
 
                       {/* Room Status & Tenant */}

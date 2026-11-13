@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ResearcherLabNavBar } from '@/components/features/ResearcherLabNavBar';
 import { DynamicBillQrPaymentButton } from '@/components/features/DynamicBillQrModal';
 import type { DynamicPaymentSession } from '@/lib/features/dynamic-bill-qr';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 const QUICK_AMOUNTS = [1, 1.01, 2, 5, 10, 3500];
 
@@ -225,7 +226,7 @@ export default function Module2DynamicQrLabPage() {
                 <label className="text-xs font-bold text-slate-300 block mb-1">ยอดเงินทดสอบ (บาท)</label>
                 <div className="flex gap-2">
                   <input
-                    type="number"
+                    type="number" {...NUMBER_INPUT_PROPS}
                     step="0.01"
                     min="0.01"
                     value={amountInput}
