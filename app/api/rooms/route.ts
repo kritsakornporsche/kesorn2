@@ -122,8 +122,8 @@ export async function POST(req: NextRequest) {
   try {
     const session = await auth();
     const userRole = (session?.user as any)?.role;
-    if (!session || !['owner', 'manager', 'researcher'].includes(userRole)) {
-      return NextResponse.json({ success: false, message: 'Unauthorized: Only staff can create rooms' }, { status: 401 });
+    if (!session || userRole !== 'owner') { // commit 29b-2: owner only (24b); manager / researcher read only
+      return NextResponse.json({ success: false, message: 'Unauthorized: Only owners can create rooms' }, { status: 401 });
     }
 
     const body = await req.json();

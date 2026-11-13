@@ -77,7 +77,8 @@ export default function RoomsManagement() {
   const [ownerDormId, setOwnerDormId] = useState<number | null>(1);
   // The rates monthly bills actually use (dormitory_profile via /api/rates), not per-room columns
   const userRole = (session?.user as any)?.role;
-  const canEdit = ['owner', 'manager', 'researcher'].includes(userRole);
+  // commit 29b-2: add / edit / delete rooms is the owner's (24b); manager and researcher see the rooms read-only
+  const canEdit = userRole === 'owner';
   const [formError, setFormError] = useState<string | null>(null);
   const [isCompressing, setIsCompressing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
