@@ -227,7 +227,10 @@ export async function POST(req: Request) {
     }
 
     if (action === 'retroactive_approve') {
-      const result = await retroactiveApproveBooking(contractId, guard.user.id, now);
+      // commit 29b-2: the fee is recorded through recordPayment with the method the owner chose (cash / transfer)
+      const paidAt = body.paidAt ? new Date(body.paidAt) : null;
+      const result = await retroactiveApproveBooking(contractId, { id: guard.user.id, role: guard.user.role },
+        { method: body.method, paidAt, note: body.note ? String(body.note) : null }, now);
       if (!result.ok) return NextResponse.json({ success: false, message: result.message }, { status: 400 });
       await notify(result.tenantUserId, '✅ หอพักอนุมัติการจองย้อนหลังแล้ว',
         `ห้อง ${result.roomNumber}: ยืนยันการชำระค่าจองเรียบร้อยแล้ว สัญญาเข้าสู่ขั้นตอนทำสัญญา`, 'booking_approved');

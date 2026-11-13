@@ -419,7 +419,7 @@ export default function OwnerBookingsPage() {
   // Today in Thai time, for the latest allowed signing date
   const todayBangkok = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
 
-  const runAction = async (action: 'approve' | 'reject' | 'cancel' | 'retroactive_approve', item: Booking) => {
+  const runAction = async (action: 'approve' | 'reject' | 'cancel' | 'retroactive_approve', item: Booking, method?: 'cash' | 'transfer') => {
     let reason = '';
     if (action === 'approve') {
       const ok = await confirm({
@@ -457,7 +457,7 @@ export default function OwnerBookingsPage() {
     if (action === 'retroactive_approve') {
       const ok = await confirm({
         title: `อนุมัติย้อนหลังห้อง ${item.room_number}?`,
-        description: `ผู้จอง: ${item.guest_name}\n\nกรณีผู้จองโอนเงินแล้วแต่ไม่ได้ส่งสลิป ระบบจะบันทึกชำระค่าจองและเลื่อนไปขั้นตอนทำสัญญา`,
+        description: `ผู้จอง: ${item.guest_name}\n\nบันทึกรับค่าจองเป็น${method === 'cash' ? 'เงินสด' : 'เงินโอน'} (ลงบัญชีเหมือนการรับเงินปกติ) แล้วเลื่อนไปขั้นตอนทำสัญญา — ตรวจให้แน่ใจว่าได้รับเงินจริงแล้ว`,
         confirmText: 'ยืนยันอนุมัติย้อนหลัง',
         cancelText: 'ย้อนกลับ',
         variant: 'warning',
@@ -469,7 +469,7 @@ export default function OwnerBookingsPage() {
       const res = await fetch('/api/owner/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, contractId: item.contract_id, reason }),
+        body: JSON.stringify({ action, contractId: item.contract_id, reason, ...(method ? { method } : {}) }),
       });
       const data = await res.json();
       showToast(data.message || (data.success ? 'สำเร็จ' : 'ทำรายการไม่สำเร็จ'), data.success ? 'success' : 'error');
@@ -893,15 +893,19 @@ export default function OwnerBookingsPage() {
                         <span className="px-3.5 py-2 bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl">
                           {item.booking_status === 'Rejected' ? 'ปฏิเสธแล้ว' : item.booking_status === 'Expired' ? 'หมดเวลา' : 'ยกเลิกแล้ว'}{item.cancel_reason ? ` · ${item.cancel_reason}` : ''}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => runAction('retroactive_approve', item)}
-                          disabled={actingId === item.contract_id}
-                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                        >
-                          <span>🔄</span>
-                          <span>อนุมัติย้อนหลัง (รับเงินโอนแล้ว)</span>
-                        </button>
+                        {/* commit 29b-2: the owner says how the fee was received (recorded as a normal payment) */}
+                        {(['transfer', 'cash'] as const).map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => runAction('retroactive_approve', item, m)}
+                            disabled={actingId === item.contract_id}
+                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <span>🔄</span>
+                            <span>อนุมัติย้อนหลัง ({m === 'cash' ? 'รับเงินสดแล้ว' : 'รับเงินโอนแล้ว'})</span>
+                          </button>
+                        ))}
                       </div>
                     )}
                     {s?.phase === 'legacy' && (
@@ -950,7 +954,10 @@ export default function OwnerBookingsPage() {
                         <button onClick={() => runAction('cancel', item)} disabled={actingId === item.contract_id} className={`${menuItem} text-rose-600`}>ไม่มาตามนัด (ริบค่าจอง)</button>
                       )}
                       {s?.phase === 'closed' && (
-                        <button onClick={() => runAction('retroactive_approve', item)} disabled={actingId === item.contract_id} className={`${menuItem} text-emerald-700`}>🔄 อนุมัติย้อนหลัง (รับเงินแล้ว)</button>
+                        <>
+                          <button onClick={() => runAction('retroactive_approve', item, 'transfer')} disabled={actingId === item.contract_id} className={`${menuItem} text-emerald-700`}>🔄 อนุมัติย้อนหลัง (รับเงินโอนแล้ว)</button>
+                          <button onClick={() => runAction('retroactive_approve', item, 'cash')} disabled={actingId === item.contract_id} className={`${menuItem} text-emerald-700`}>🔄 อนุมัติย้อนหลัง (รับเงินสดแล้ว)</button>
+                        </>
                       )}
                     </div>
                   </details>
