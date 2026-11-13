@@ -11,15 +11,15 @@ interface AssessedRoom {
   floor: number;
   tenantName: string;
   roomStatus: string;
-  relayStatus: 'ON' | 'OFF';
-  activeWatt: number;
   financialScore: number;
   energyScore: number;
   contractScore: number;
   totalScore: number;
-  riskLevel: 'LOW' | 'MEDIUM' | 'CRITICAL';
+  riskLevel: 'LOW' | 'MEDIUM' | 'CRITICAL' | 'INSUFFICIENT';
   primaryFactor: string;
   totalOverdue: number;
+  /** commit 29: real meter history (lib/risk); null = ข้อมูลไม่พอ */
+  energy: { cycle: string; units: number; average3: number; ratio: number | null } | null;
 }
 
 interface RiskSummary {
@@ -70,10 +70,7 @@ export default function RiskAnalysisDashboardPage() {
     setSubscribing(true);
     try {
       const res = await subscribeDeviceToWebPush({
-        role: 'researcher',
-        subRole: 'researcher2',
-        userName: 'kritsakorn',
-        userEmail: 'kritsakorn@kesorn.com',
+        // commit 29: the server subscribes the signed-in account (no name / email in the code)
         sendConfirmationPush: true,
       });
       if (res.success) {
@@ -243,7 +240,7 @@ export default function RiskAnalysisDashboardPage() {
             </div>
             <div className="mt-2 flex items-baseline gap-1.5">
               <span className="text-2xl font-black text-amber-600 font-mono">
-                {summary ? summary.electricalAnomaliesCount : 2}
+                {summary ? summary.electricalAnomaliesCount : '-'}
               </span>
               <span className="text-xs text-slate-500 font-bold">จุด</span>
             </div>
@@ -386,7 +383,7 @@ export default function RiskAnalysisDashboardPage() {
                     <th className="py-2.5 px-3">ผู้เช่า</th>
                     <th className="py-2.5 px-3 text-center">คะแนนความเสี่ยง</th>
                     <th className="py-2.5 px-3">ปัจจัยเสี่ยงหลัก</th>
-                    <th className="py-2.5 px-3 text-center">รีเลย์</th>
+                    <th className="py-2.5 px-3 text-center">หน่วยไฟ ล่าสุด / เฉลี่ย 3 เดือน</th>
                     <th className="py-2.5 px-3 text-right">ดำเนินการ</th>
                   </tr>
                 </thead>
@@ -426,7 +423,7 @@ export default function RiskAnalysisDashboardPage() {
                           >
                             <span>{r.totalScore}</span>
                             <span className="text-[10px] font-sans">
-                              {r.riskLevel === 'CRITICAL' ? 'วิกฤต' : r.riskLevel === 'MEDIUM' ? 'เตือน' : 'ปกติ'}
+                              {r.riskLevel === 'CRITICAL' ? 'วิกฤต' : r.riskLevel === 'MEDIUM' ? 'เตือน' : r.riskLevel === 'INSUFFICIENT' ? 'ข้อมูลไม่พอ' : 'ปกติ'}
                             </span>
                           </span>
                         </td>
@@ -434,15 +431,13 @@ export default function RiskAnalysisDashboardPage() {
                           {r.primaryFactor}
                         </td>
                         <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-black ${
-                              r.relayStatus === 'ON'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-rose-50 text-rose-700 border border-rose-200'
-                            }`}
-                          >
-                            {r.relayStatus}
-                          </span>
+                          {r.energy ? (
+                            <span className="font-mono text-xs font-bold text-slate-700">
+                              {r.energy.units} / {r.energy.average3}{r.energy.ratio !== null ? ` (×${r.energy.ratio})` : ''}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-slate-400">ข้อมูลไม่พอ</span>
+                          )}
                         </td>
                         <td className="py-2.5 px-3 text-right whitespace-nowrap">
                           <button

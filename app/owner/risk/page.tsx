@@ -11,15 +11,16 @@ interface RoomRiskItem {
   floor: number;
   tenantName: string;
   roomStatus: string;
-  relayStatus: 'ON' | 'OFF';
-  activeWatt: number;
   financialScore: number;
   energyScore: number;
   contractScore: number;
   totalScore: number;
-  riskLevel: 'LOW' | 'MEDIUM' | 'CRITICAL';
+  riskLevel: 'LOW' | 'MEDIUM' | 'CRITICAL' | 'INSUFFICIENT';
   primaryFactor: string;
   totalOverdue: number;
+  /** commit 29: real meter history — latest cycle units vs the 3 cycles before; null = ข้อมูลไม่พอ */
+  energy: { cycle: string; units: number; average3: number; ratio: number | null } | null;
+  dataStatus: 'ok' | 'insufficient';
 }
 
 interface RiskSummary {
@@ -227,7 +228,7 @@ export default function OwnerRiskDashboardPage() {
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-3xl font-black font-mono text-blue-600">
-              {summary ? summary.electricalAnomaliesCount : 2}
+              {summary ? summary.electricalAnomaliesCount : '-'}
             </span>
             <span className="text-xs text-slate-400 font-bold">จุด</span>
           </div>
@@ -381,7 +382,7 @@ export default function OwnerRiskDashboardPage() {
                 <th className="py-3 px-4 text-center">คะแนน</th>
                 <th className="py-3 px-4">ระดับ</th>
                 <th className="py-3 px-4">สาเหตุหลัก</th>
-                <th className="py-3 px-4 text-center">กำลังไฟ / รีเลย์</th>
+                <th className="py-3 px-4 text-center">หน่วยไฟ ล่าสุด / เฉลี่ย 3 เดือน</th>
                 <th className="py-3 px-4 text-right">การจัดการ</th>
               </tr>
             </thead>
@@ -400,8 +401,9 @@ export default function OwnerRiskDashboardPage() {
                 </tr>
               ) : (
                 filteredRooms.map((r) => {
-                  const isWarning = r.riskLevel === 'MEDIUM';
+                  const isWarning = r.riskLevel === 'MEDIUM' || r.riskLevel === 'CRITICAL';
                   const isNormal = r.riskLevel === 'LOW';
+                  const levelText = r.riskLevel === 'CRITICAL' ? 'วิกฤต' : r.riskLevel === 'MEDIUM' ? 'เฝ้าระวัง' : r.riskLevel === 'INSUFFICIENT' ? 'ข้อมูลไม่พอ' : 'ปกติ';
 
                   return (
                     <tr
@@ -454,12 +456,16 @@ export default function OwnerRiskDashboardPage() {
                       <td className="py-3 px-4">
                         <span
                           className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                            isWarning
+                            r.riskLevel === 'CRITICAL'
+                              ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                              : isWarning
                               ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : isNormal
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-slate-100 text-slate-600 border border-slate-200'
                           }`}
                         >
-                          {isWarning ? 'เฝ้าระวัง' : 'ปกติ'}
+                          {levelText}
                         </span>
                       </td>
 
@@ -474,22 +480,16 @@ export default function OwnerRiskDashboardPage() {
                         </span>
                       </td>
 
-                      {/* Electrical Watt & Relay */}
+                      {/* Electricity units: latest cycle vs the 3-cycle average (commit 29, real meter readings) */}
                       <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <span className="font-mono text-xs text-slate-700 font-bold">
-                            {r.activeWatt}W
+                        {r.energy ? (
+                          <span className="font-mono text-xs text-slate-700 font-bold" title={`รอบ ${r.energy.cycle}`}>
+                            {r.energy.units} / {r.energy.average3}
+                            {r.energy.ratio !== null && <span className="text-slate-400 font-medium"> (×{r.energy.ratio})</span>}
                           </span>
-                          <span
-                            className={`px-1.5 py-0.2 rounded text-[9px] font-black ${
-                              r.relayStatus === 'ON'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-rose-100 text-rose-800'
-                            }`}
-                          >
-                            {r.relayStatus}
-                          </span>
-                        </div>
+                        ) : (
+                          <span className="text-[11px] font-bold text-slate-400">ข้อมูลไม่พอ</span>
+                        )}
                       </td>
 
                       {/* Actions */}
@@ -525,6 +525,7 @@ export default function OwnerRiskDashboardPage() {
                             </Link>
                           )}
 
+                          {r.riskLevel !== 'INSUFFICIENT' && (
                           <button
                             onClick={() =>
                               handleTriggerSimulation(
@@ -541,6 +542,7 @@ export default function OwnerRiskDashboardPage() {
                           >
                             🔔
                           </button>
+                          )}
                         </div>
                       </td>
                     </tr>
