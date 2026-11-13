@@ -497,9 +497,8 @@ export default function BookingStatusPage() {
                   
                 </div>
               )}
-
-              {/* Step 4: acknowledge the inspection on the guest page */}
-              {booking.steps?.current === 4 && booking.inspection_status === 'pending_ack' && (
+              {/* Step 3 (main's 4 steps: the inspection is inside step 3): acknowledge the inspection on the guest page — 29b-2 fix, it said step 4 */}
+              {booking.steps?.current === 3 && booking.inspection_status === 'pending_ack' && (
                 <Link href="/guest" className="block w-full py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-xs text-center">
                   🔍 ดูผลตรวจห้องและกดรับทราบ
                 </Link>
