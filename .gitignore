@@ -73,3 +73,5 @@ data/
 
 /storage/
 
+# DB backups / dumps taken before migrations (never commit — real data)
+docs/review/*.sql

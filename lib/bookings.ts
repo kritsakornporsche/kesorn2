@@ -5,7 +5,7 @@
 // Times are stored as Thai local time (the pool in lib/mysql-adapter.js uses timezone +07:00).
 
 import { bangkokDate, bookingFeeFor, getDormPromptPay } from '@/lib/billing';
-import { type Client } from '@/lib/bill-status';
+import { logStatus, type Client } from '@/lib/bill-status';
 import { ROOM_HOLDING_STATUSES, createContractTx, Refused, contractMessage, withRetry, type ContractRefusal } from '@/lib/contracts';
 import { recordPaymentInTransaction, slipPaidAt } from '@/lib/payments';
 import { forfeitBookingFee } from '@/lib/deposits';
@@ -439,70 +439,96 @@ export async function bookingSlipReceiver(sql: any) {
 
 
 /**
- * Retroactive approval for a booking that was Expired or Cancelled (e.g. guest transferred money but missed slip deadline).
- * Verifies room is still free, re-reserves room, ensures booking bill is marked paid, and sets contract to PendingOwnerSignature.
+ * Retroactive approval for a booking that was Expired / Cancelled / Rejected because the booker paid but the slip never
+ * reached the system (e.g. transferred money but missed the slip deadline). Owner / manager only (the route checks the
+ * role too). commit 29b-2: the booking fee is recorded through recordPaymentInTransaction (bill_payments + accounting,
+ * like every other payment) with the method the owner chose — never a direct INSERT or a bill set to Paid by hand —
+ * in the same transaction as the room and contract changes. A booking whose fee was already paid (e.g. forfeited on a
+ * no-show) is refused, so the money is never counted twice.
  */
-export function retroactiveApproveBooking(contractId: number, by: number, now: Date) {
+export function retroactiveApproveBooking(
+  contractId: number,
+  by: { id: number; role: string },
+  input: { method: 'cash' | 'transfer'; paidAt?: Date | null; note?: string | null },
+  now: Date
+) {
   return run(async (client) => {
+    if (by.role !== 'owner' && by.role !== 'manager') refuse('not_owner', 'อนุมัติย้อนหลังได้เฉพาะเจ้าของหอ/ผู้จัดการ');
+    if (input.method !== 'cash' && input.method !== 'transfer') refuse('payment_failed', 'กรุณาเลือกวิธีรับเงินค่าจอง (เงินสด หรือ เงินโอน)');
+    const paidAt = input.paidAt && !Number.isNaN(input.paidAt.getTime()) ? input.paidAt : now;
+    if (paidAt.getTime() > now.getTime()) refuse('payment_failed', 'วันเวลารับเงินต้องไม่เป็นเวลาในอนาคต');
+
     const c = await lockBooking(client, contractId);
     if (!['Expired', 'Cancelled', 'Rejected'].includes(c.status)) {
       refuse('invalid_status', 'สัญญาไม่ได้อยู่ในสถานะหมดเวลาหรือยกเลิก');
     }
 
-    // Check if the room is still available
+    // The room must still be free: not occupied / under maintenance, and no other booking or contract holding it
     const room = (await client.query('SELECT id, status, room_number FROM rooms WHERE id = ? FOR UPDATE', [c.room_id])).rows[0];
     if (!room) refuse('room_not_found', 'ไม่พบห้องพัก');
-    if (['occupied', 'maintenance'].includes(room.status)) {
+    if (['occupied', 'maintenance'].includes(String(room.status || '').toLowerCase())) {
       refuse('room_unavailable', `ห้อง ${room.room_number} ไม่ว่างในขณะนี้ (มีผู้เช่าหรือปิดปรับปรุง)`);
     }
-
-    // Re-reserve room
-    await client.query("UPDATE rooms SET status = 'reserved' WHERE id = ?", [c.room_id]);
+    const holder = (await client.query(
+      `SELECT id FROM contracts WHERE room_id = ? AND id <> ? AND status IN (${ROOM_HOLDING_STATUSES.map(() => '?').join(', ')}) LIMIT 1`,
+      [c.room_id, contractId, ...ROOM_HOLDING_STATUSES]
+    )).rows[0];
+    if (holder) refuse('room_unavailable', `ห้อง ${room.room_number} มีการจอง/สัญญาอื่นอยู่แล้ว`);
 
     const fee = bookingFeeFor(room.room_number);
-    let billId = c.booking_bill_id;
-
-    if (!billId) {
-      // Create booking bill if absent
-      billId = (await client.query(
-        `INSERT INTO bills (tenant_id, dorm_id, room_number, title, amount, room_amount, water_amount, electric_amount, water_units, electric_units,
-           billing_cycle, due_date, status, bill_type, slip_verified, slip_verified_at)
-         VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 'ค่าจองห้องพักเพื่อยืนยันสิทธิ์', ?, 'Paid', 'booking', 1, ?)`,
-        [c.tenant_id, c.dorm_id, c.room_number, `ค่าจองห้องพัก (ห้อง ${c.room_number})`, fee, fee, bangkokDate(now), now]
-      )).rows.insertId;
-    } else {
-      // Reactivate existing bill and mark Paid
-      await client.query(
-        "UPDATE bills SET status = 'Paid', slip_verified = 1, slip_verified_at = ? WHERE id = ?",
-        [now, billId]
-      );
+    let billId = c.booking_bill_id ? Number(c.booking_bill_id) : null;
+    const bill = billId ? (await client.query('SELECT id, status FROM bills WHERE id = ? FOR UPDATE', [billId])).rows[0] : null;
+    if (bill && String(bill.status).toLowerCase() === 'paid') {
+      refuse('payment_failed', 'ค่าจองของการจองนี้ชำระแล้ว (อาจถูกริบเป็นรายได้ไปแล้ว) — ให้ผู้จองจองใหม่ ไม่บันทึกรับเงินซ้ำ');
     }
 
-    // Record payment in bill_payments
-    await client.query(
-      `INSERT INTO bill_payments (bill_id, amount, payment_method, paid_at, note, recorded_by, created_at)
-       VALUES (?, ?, 'transfer', ?, 'อนุมัติย้อนหลังโดยเจ้าของหอ (ยืนยันรับเงินโอนแล้ว)', ?, ?)`,
-      [billId, fee, now, by, now]
-    );
+    if (!bill) {
+      // No booking bill (rejected before approval): create it as Unpaid, the payment below closes it
+      billId = Number((await client.query(
+        `INSERT INTO bills (tenant_id, dorm_id, room_number, title, amount, room_amount, water_amount, electric_amount, water_units, electric_units,
+           billing_cycle, due_date, status, bill_type, slip_verified)
+         VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 'ค่าจองห้องพักเพื่อยืนยันสิทธิ์', ?, 'Unpaid', 'booking', 0)`,
+        [c.tenant_id, c.dorm_id, c.room_number, `ค่าจองห้องพัก (ห้อง ${c.room_number})`, fee, fee, bangkokDate(now)]
+      )).rows.insertId);
+      await logStatus(client, billId, null, 'Unpaid', 'อนุมัติย้อนหลัง: สร้างบิลค่าจอง', by.id);
+    } else if (String(bill.status).toLowerCase() !== 'unpaid') {
+      // Expired / cancelled booking: its unpaid booking bill was cancelled — reopen it so the payment can close it
+      await client.query("UPDATE bills SET status = 'Unpaid' WHERE id = ?", [billId]);
+      await logStatus(client, billId as number, String(bill.status), 'Unpaid', 'อนุมัติย้อนหลัง: เปิดบิลค่าจองอีกครั้ง', by.id);
+    }
 
-    // Advance contract to PendingOwnerSignature
+    const payment = await recordPaymentInTransaction(client, billId as number, {
+      amount: fee,
+      method: input.method,
+      paidAt,
+      recordedBy: by.id,
+      note: `อนุมัติย้อนหลัง (${input.method === 'cash' ? 'รับเงินสด' : 'รับเงินโอน'})${input.note ? ` — ${String(input.note).slice(0, 200)}` : ''}`,
+    });
+    if (!payment.ok) {
+      refuse('payment_failed', payment.reason === 'insufficient'
+        ? `บันทึกรับค่าจองไม่สำเร็จ: ยอดที่ต้องชำระ ฿${formatBaht((payment as any).required)}`
+        : `บันทึกรับค่าจองไม่สำเร็จ (${payment.reason})`);
+    }
+
+    await client.query("UPDATE rooms SET status = 'Reserved' WHERE id = ?", [c.room_id]);
     await client.query(
-      `UPDATE contracts 
-       SET status = 'PendingOwnerSignature', 
-           booking_bill_id = ?, 
-           signed_at = ?, 
-           approved_at = ?, 
-           approved_by = ?, 
-           cancelled_at = NULL, 
+      `UPDATE contracts
+       SET status = 'PendingOwnerSignature',
+           booking_bill_id = ?,
+           signed_at = ?,
+           approved_at = COALESCE(approved_at, ?),
+           approved_by = COALESCE(approved_by, ?),
+           cancelled_at = NULL,
            cancel_reason = NULL,
-           expires_at = NULL 
+           expires_at = NULL
        WHERE id = ?`,
-      [billId, now, now, by, contractId]
+      [billId, now, now, by.id, contractId]
     );
 
     return {
       contractId,
-      billId: Number(billId),
+      billId: billId as number,
+      paymentId: payment.paymentId,
       tenantUserId: c.tenant_user_id as number | null,
       roomNumber: c.room_number as string,
       fee,

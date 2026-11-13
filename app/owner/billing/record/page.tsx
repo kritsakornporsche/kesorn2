@@ -10,6 +10,7 @@ import { ratesForRoom } from '@/lib/billing';
 import TestRoomBadge from '@/components/TestRoomBadge';
 import { testRoomSuffix, testRoomsLast } from '@/lib/test-rooms';
 import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
+import { roomTypeLabel } from '@/lib/room-types';
 
 interface RoomRecord {
   id: number;
@@ -467,7 +468,7 @@ export default function BillingRecordPage() {
                     : 'bg-white text-slate-600 border border-slate-200'
                 }`}
               >
-                {r.recorded ? '✓ ' : ''}{r.room_number}
+                {r.recorded ? '✓ ' : ''}{r.room_number}{testRoomSuffix(r.room_number)}
               </button>
             ))}
           </div>
@@ -482,7 +483,7 @@ export default function BillingRecordPage() {
                       ห้อง {currentRoom.room_number}
                     </h2>
                     <span className="text-xs font-bold text-slate-500">
-                      (ชั้น {currentRoom.floor} • {currentRoom.room_type})
+                      (ชั้น {currentRoom.floor} • {roomTypeLabel(currentRoom.room_type)})
                     </span>
                     <TestRoomBadge roomNumber={currentRoom.room_number} />
                   </div>
@@ -518,7 +519,7 @@ export default function BillingRecordPage() {
                     )}
                   </div>
                   <input
-                    type="number"
+                    type="number" {...NUMBER_INPUT_PROPS}
                     step="0.1"
                     value={inputReading}
                     onChange={(e) => setInputReading(e.target.value)}

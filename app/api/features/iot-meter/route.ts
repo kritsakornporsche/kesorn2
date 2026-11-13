@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { timingSafeEqual } from 'crypto';
 import { getDb } from '@/lib/db';
+import { requireRole } from '@/lib/authz';
+import { getPaymentInfo, getRates } from '@/lib/billing';
+import { cycleFor, issueMonthlyBill, recordReading } from '@/lib/meters';
 import {
   createInitialSmartMeterFleet,
   computeInstantElectricalMetrics,
   executeAutoBillingCalculation,
-  IOT_DEFAULT_API_KEY,
   ELECTRIC_RATE_THB,
   type SmartMeterRoomNode,
   type Esp32CommandItem,
@@ -48,15 +51,41 @@ let telemetryLogs: Esp32TelemetryLog[] = [
 ];
 
 let latestPipelineResult: AutoBillingPipelineResult | null = null;
+
+// ── commit 29 security ──────────────────────────────────────────────────────────────────────────────────────────────
+// - an ESP32 sends with the key in env IOT_DEVICE_KEY (header x-iot-api-key); no key in the code, never sent back
+// - relay commands, setting a meter number and auto billing: owner / manager only; the lab view: + researcher
+// - a bill is made only from a reading an ESP32 really sent this cycle (rates from the settings table, a Draft bill
+//   through lib/meters like the meter page) — never from simulated numbers
+/** Last energy reading each room's ESP32 really sent (authenticated device packets only) */
+const realEnergyByRoom = new Map<string, { kwh: number; at: string }>();
+
+function deviceKeyProblem(req: NextRequest, body?: any): NextResponse | null {
+  const expected = process.env.IOT_DEVICE_KEY || '';
+  if (!expected) {
+    return NextResponse.json({ success: false, message: 'ยังไม่ได้ตั้งค่า IOT_DEVICE_KEY บนเซิร์ฟเวอร์' }, { status: 503 });
+  }
+  const given = String(req.headers.get('x-iot-api-key') || body?.apiKey || '');
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    return NextResponse.json({ success: false, message: 'Invalid IoT API Key (x-iot-api-key ไม่ถูกต้อง)' }, { status: 401 });
+  }
+  return null;
+}
+
+const STAFF_ONLY = ['owner', 'manager'] as const;
+const LAB_VIEW = ['owner', 'manager', 'researcher'] as const;
+const STAFF_ACTIONS = new Set(['esp32_command', 'set_meter_reading', 'run_auto_billing_pipeline', 'execute_auto_billing']);
 let room101HardwareBaseKwh = 367.50;
 let room101LatestRawPzemKwh = 0.0;
 
-function buildFleetSummary(rooms: SmartMeterRoomNode[]) {
+function buildFleetSummary(rooms: SmartMeterRoomNode[], electricRate: number = ELECTRIC_RATE_THB) {
   const totalLoadWatt = rooms.reduce((sum, r) => sum + r.activePowerWatt, 0);
   const totalMonthlyKwh = Number(
     rooms.reduce((sum, r) => sum + Math.max(0, r.currentMeterKwh - r.previousMonthKwh), 0).toFixed(2)
   );
-  const estimatedElectricRevenue = Number((totalMonthlyKwh * ELECTRIC_RATE_THB).toFixed(2));
+  const estimatedElectricRevenue = Number((totalMonthlyKwh * electricRate).toFixed(2));
   const hardwareConnectedCount = rooms.filter((r) => r.esp32Meta.isHardwareConnected).length;
   const activeRelaysCount = rooms.filter((r) => r.relayState === 'ON').length;
   const highLoadRooms = rooms.filter(
@@ -169,8 +198,10 @@ export async function GET(req: NextRequest) {
   const pollDeviceId = searchParams.get('deviceId');
   const pollRoom = searchParams.get('roomNumber');
 
-  // Lightweight polling endpoint if an ESP32 polls via HTTP GET
+  // Lightweight polling endpoint if an ESP32 polls via HTTP GET (device key required)
   if (pollDeviceId || pollRoom) {
+    const bad = deviceKeyProblem(req);
+    if (bad) return bad;
     const queued = commandQueue.find(
       (c) =>
         c.status === 'QUEUED' &&
@@ -188,17 +219,22 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  const guard = await requireRole([...LAB_VIEW]);
+  if ('response' in guard) return guard.response;
+
   await syncDbRoomsToFleet(smartMeterFleet);
   smartMeterFleet = evaluateFleetLiveness(smartMeterFleet);
+  const rates = await getRates(getDb());
 
   return NextResponse.json({
     success: true,
-    summary: buildFleetSummary(smartMeterFleet),
+    summary: buildFleetSummary(smartMeterFleet, rates.electricityPerUnit),
     rooms: smartMeterFleet,
     commandQueue: commandQueue.slice(0, 20),
     telemetryLogs: telemetryLogs.slice(0, 25),
     latestPipelineResult,
-    iotApiKey: IOT_DEFAULT_API_KEY,
+    iotKeyConfigured: Boolean(process.env.IOT_DEVICE_KEY),
+    realReadings: Object.fromEntries(realEnergyByRoom),
   });
 }
 
@@ -207,19 +243,27 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { action } = body;
 
+    let fromDevice = false;
+    if (action === 'esp32_telemetry') {
+      const bad = deviceKeyProblem(req, body);
+      if (bad) return bad;
+      fromDevice = true;
+    } else if (action === 'simulate_esp32_packet') {
+      // The lab's "simulate an ESP32 packet" button: signed-in lab users, not on production, never a real reading
+      if (process.env.NODE_ENV === 'production') {
+        return NextResponse.json({ success: false, message: 'ปิดการจำลองแพ็กเก็ต ESP32 บนเซิร์ฟเวอร์จริง' }, { status: 403 });
+      }
+      const g = await requireRole([...LAB_VIEW]);
+      if ('response' in g) return g.response;
+    } else {
+      const g = await requireRole(STAFF_ACTIONS.has(action) ? [...STAFF_ONLY] : [...LAB_VIEW]);
+      if ('response' in g) return g.response;
+    }
+
     // -------------------------------------------------------------------------
     // 1. REAL ESP32 HARDWARE TELEMETRY INGESTION (OR SIMULATED ESP32 PACKET)
     // -------------------------------------------------------------------------
-    if (action === 'esp32_telemetry') {
-      const headerKey = req.headers.get('x-iot-api-key');
-      const providedKey = headerKey || body.apiKey || IOT_DEFAULT_API_KEY;
-
-      if (providedKey !== IOT_DEFAULT_API_KEY) {
-        return NextResponse.json(
-          { success: false, message: 'Invalid IoT API Key (x-iot-api-key ไม่ถูกต้อง)' },
-          { status: 401 }
-        );
-      }
+    if (action === 'esp32_telemetry' || action === 'simulate_esp32_packet') {
 
       const roomNumber = String(body.roomNumber || '101');
       const targetIdx = smartMeterFleet.findIndex((r) => r.roomNumber === roomNumber);
@@ -246,10 +290,8 @@ export async function POST(req: NextRequest) {
           ? Math.round(Number(body.power))
           : Math.round(voltage * current * 0.95);
       // Real Hardware PEA Meter Calibration (5(15)A Meter No. 5900359398)
-      const rawPzemKwh =
-        body.energyKwh !== undefined && !isNaN(Number(body.energyKwh))
-          ? Number(body.energyKwh)
-          : 0;
+      const hasEnergy = body.energyKwh !== undefined && body.energyKwh !== null && body.energyKwh !== '' && Number.isFinite(Number(body.energyKwh));
+      const rawPzemKwh = hasEnergy ? Number(body.energyKwh) : 0;
       if (roomNumber === '101') {
         room101LatestRawPzemKwh = rawPzemKwh;
       }
@@ -333,13 +375,15 @@ export async function POST(req: NextRequest) {
       };
 
       smartMeterFleet[targetIdx] = updatedRoom;
+      // Only a packet from an authenticated ESP32 with an energy value counts as a real reading (billing uses it)
+      if (fromDevice && hasEnergy) realEnergyByRoom.set(roomNumber, { kwh: currentKwhVal, at: nowIso });
 
       const logItem: Esp32TelemetryLog = {
         id: `TEL-${Date.now()}-${Math.floor(Math.random() * 900 + 100)}`,
         timestamp: nowIso,
         roomNumber,
         deviceId: body.deviceId || room.deviceId,
-        source: 'ESP32_HARDWARE',
+        source: fromDevice ? 'ESP32_HARDWARE' : 'SIMULATOR_ENGINE',
         voltage: updatedRoom.voltage,
         current: updatedRoom.current,
         powerWatt: updatedRoom.activePowerWatt,
@@ -544,6 +588,8 @@ export async function POST(req: NextRequest) {
       if (roomNumber === '101') {
         room101HardwareBaseKwh = Number((newCurrentKwh - room101LatestRawPzemKwh).toFixed(2));
       }
+      // a number typed here is not a reading from the ESP32: wait for the next device packet before billing
+      realEnergyByRoom.delete(roomNumber);
 
       smartMeterFleet[idx] = {
         ...room,
@@ -644,18 +690,38 @@ export async function POST(req: NextRequest) {
     // 5. ONE-CLICK AUTO BILLING PIPELINE (20 ROOMS -> METERS -> BILLS + PUSH)
     // -------------------------------------------------------------------------
     if (action === 'run_auto_billing_pipeline' || action === 'execute_auto_billing') {
-      const billingCycle = String(body.billingCycle || new Date().toISOString().slice(0, 7));
+      const g = await requireRole([...STAFF_ONLY]);
+      if ('response' in g) return g.response;
+      const actor = { id: g.user.id, role: g.user.role };
+      const now = new Date();
+      // A reading is recorded in the cycle of today (lib/meters), so bills are for that cycle
+      const billingCycle = cycleFor(now);
       const syncToDb = Boolean(body.syncToDb);
       const triggerPush = body.triggerPush !== false;
 
-      const pipelineResult = executeAutoBillingCalculation(smartMeterFleet, billingCycle);
+      const sqlRates = getDb();
+      const rates = await getRates(sqlRates);
+      const pay = await getPaymentInfo(sqlRates);
+      const pipelineResult = executeAutoBillingCalculation(smartMeterFleet, billingCycle, {
+        electricityPerUnit: rates.electricityPerUnit,
+        waterPerPerson: rates.waterPerPerson,
+        commonFee: rates.commonFee,
+        promptpayNumber: pay.promptpayNumber,
+      });
       let syncedCount = 0;
+      const dbSync: { issued: { roomNumber: string; billId: number; amount: number }[]; skipped: { roomNumber: string; reason: string }[] } = { issued: [], skipped: [] };
 
       if (syncToDb) {
         try {
           const sql = getDb();
-          for (const bill of pipelineResult.bills) {
-            const rawRoom = bill.roomNumber;
+          // every room the lab shows as occupied, and every room an ESP32 really reported
+          const roomsToBill = Array.from(new Set([...pipelineResult.bills.map((b) => b.roomNumber), ...realEnergyByRoom.keys()]));
+          for (const rawRoom of roomsToBill) {
+            const real = realEnergyByRoom.get(rawRoom);
+            if (!real || cycleFor(new Date(real.at)) !== billingCycle) {
+              dbSync.skipped.push({ roomNumber: rawRoom, reason: 'ไม่มีค่าจริงจาก ESP32 ในรอบนี้ — ไม่ออกบิล' });
+              continue;
+            }
             const simpleNum = String(parseInt(rawRoom, 10));
             const moduloNum = String(parseInt(rawRoom, 10) % 100);
 
@@ -667,79 +733,26 @@ export async function POST(req: NextRequest) {
               ORDER BY (room_number = ${rawRoom}) DESC
               LIMIT 1
             `;
-            if (roomRows.length > 0) {
-              const roomId = roomRows[0].id;
-              const dormId = roomRows[0].dorm_id || 1;
-
-              // 1. Upsert Electricity Meter Snapshot into meter_readings table
-              const existingReading = await sql`
-                SELECT id FROM meter_readings 
-                WHERE room_id = ${roomId} AND type = 'Electricity' AND billing_cycle = ${billingCycle} AND kind = 'cycle'
-                LIMIT 1
-              `;
-
-              if (existingReading.length > 0) {
-                await sql`
-                  UPDATE meter_readings
-                  SET previous_reading = ${bill.previousKwh},
-                      current_reading = ${bill.currentKwh},
-                      units_used = ${bill.electricUnits},
-                      recorded_at = NOW(),
-                      confirmed_at = NOW()
-                  WHERE id = ${existingReading[0].id}
-                `;
-              } else {
-                await sql`
-                  INSERT INTO meter_readings (
-                    dorm_id, room_id, type, billing_cycle, kind,
-                    previous_reading, current_reading, units_used,
-                    event, large_confirmed, recorded_by, recorded_at, confirmed_by, confirmed_at
-                  ) VALUES (
-                    ${dormId}, ${roomId}, 'Electricity', ${billingCycle}, 'cycle',
-                    ${bill.previousKwh}, ${bill.currentKwh}, ${bill.electricUnits},
-                    'normal', 1, 1, NOW(), 1, NOW()
-                  )
-                `;
+            if (roomRows.length === 0) {
+              dbSync.skipped.push({ roomNumber: rawRoom, reason: 'ไม่พบห้องนี้ในระบบ' });
+              continue;
+            }
+            {
+              const roomId = Number(roomRows[0].id);
+              // 1. The ESP32 reading as this cycle's meter reading (same checks as the meter page; over 200 units
+              //    needs a person to confirm it on the meter page)
+              const rec = await recordReading(roomId, { current: real.kwh, note: `ESP32 ${real.at}` }, actor, now);
+              if (!rec.ok) {
+                dbSync.skipped.push({ roomNumber: rawRoom, reason: rec.message });
+                continue;
               }
               syncedCount++;
-
-              // 2. Check if active tenant exists for this room and upsert bill
-              const tenantRows = await sql`
-                SELECT id FROM tenants
-                WHERE room_id = ${roomId} AND status IN ('Active', 'active')
-                LIMIT 1
-              `;
-              if (tenantRows.length > 0) {
-                const tenantId = tenantRows[0].id;
-                const existingBill = await sql`
-                  SELECT id FROM bills
-                  WHERE tenant_id = ${tenantId} AND billing_cycle = ${billingCycle}
-                  LIMIT 1
-                `;
-                if (existingBill.length === 0) {
-                  await sql`
-                    INSERT INTO bills (
-                      tenant_id, title, amount, billing_cycle, due_date, status,
-                      dorm_id, room_number, room_amount, water_units, electric_units,
-                      water_amount, electric_amount
-                    ) VALUES (
-                      ${tenantId},
-                      ${'ค่าเช่าและค่าไฟ IoT อัตโนมัติ รอบบิล ' + billingCycle},
-                      ${bill.totalAmount},
-                      ${billingCycle},
-                      ${bill.dueDate},
-                      'Unpaid',
-                      ${dormId},
-                      ${bill.roomNumber},
-                      ${bill.roomRent},
-                      ${bill.waterUnits},
-                      ${bill.electricUnits},
-                      ${bill.waterAmount},
-                      ${bill.electricAmount}
-                    )
-                  `;
-                }
-              }
+              // 2. A Draft monthly bill priced from the settings table (the owner checks and sends it)
+              const roomNumber = String((await sql`SELECT room_number FROM rooms WHERE id = ${roomId} LIMIT 1`)[0]?.room_number || rawRoom);
+              const issued = await issueMonthlyBill(roomNumber, billingCycle, actor, now, `ค่าเช่าและค่าไฟ (มิเตอร์ IoT) รอบบิล ${billingCycle}`);
+              if (!issued.ok) dbSync.skipped.push({ roomNumber: rawRoom, reason: issued.message });
+              else if (issued.issued) dbSync.issued.push({ roomNumber, billId: issued.billId as number, amount: issued.amount });
+              else dbSync.skipped.push({ roomNumber: rawRoom, reason: issued.message });
             }
           }
         } catch (dbErr) {
@@ -751,15 +764,16 @@ export async function POST(req: NextRequest) {
       latestPipelineResult = pipelineResult;
 
       let pushResult = null;
-      if (triggerPush) {
+      if (triggerPush && dbSync.issued.length > 0) {
         try {
+          // staff devices only: the bills are drafts until the owner sends them
           const webPush = await import('@/lib/features/web-push-server').catch(() => null);
-          if (webPush && (webPush as any).sendWebPushToAllSubscriptions) {
-            pushResult = await (webPush as any).sendWebPushToAllSubscriptions({
+          if (webPush && (webPush as any).sendWebPushToRole) {
+            pushResult = await (webPush as any).sendWebPushToRole('owner', {
               senderLabel: 'Researcher IoT Auto-Billing',
-              title: `⚡ ออกบิลอัตโนมัติสำเร็จ ${pipelineResult.totalBillsGenerated} ห้อง (รอบ ${billingCycle})`,
-              body: `รวมหน่วยไฟ ${pipelineResult.totalElectricUnitsKwh.toLocaleString()} kWh • ยอดรวมทั้งตึก ฿${pipelineResult.grandTotalRevenue.toLocaleString()}`,
-              url: '/researcher/lab/iot-meter',
+              title: `⚡ บิลร่างจากมิเตอร์ IoT ${dbSync.issued.length} ห้อง (รอบ ${billingCycle})`,
+              body: `ตรวจและส่งบิลได้ที่หน้าบิล • ข้าม ${dbSync.skipped.length} ห้อง (ไม่มีค่าจริงจาก ESP32 หรือมีบิลแล้ว)`,
+              url: '/owner/billing',
             });
           }
         } catch {
@@ -770,8 +784,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         pipelineResult,
+        dbSync,
+        message: syncToDb
+          ? `ออกบิลร่าง ${dbSync.issued.length} ห้อง · ข้าม ${dbSync.skipped.length} ห้อง (รอบ ${billingCycle})`
+          : 'คำนวณตัวอย่างบิลแล้ว (ยังไม่บันทึกลงระบบ)',
         pushResult,
-        summary: buildFleetSummary(smartMeterFleet),
+        summary: buildFleetSummary(smartMeterFleet, rates.electricityPerUnit),
       });
     }
 
@@ -781,6 +799,7 @@ export async function POST(req: NextRequest) {
     if (action === 'reset_fleet') {
       smartMeterFleet = createInitialSmartMeterFleet();
       latestPipelineResult = null;
+      realEnergyByRoom.clear();
       return NextResponse.json({
         success: true,
         rooms: smartMeterFleet,

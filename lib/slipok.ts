@@ -2,7 +2,33 @@
  * lib/slipok.ts
  * SlipOK Automated Bank Slip Verification Service
  * Integration with SlipOK API for PromptPay / Thai QR payment slips
+ *
+ * commit 29c: who may receive the money comes from the settings page only (dormitory_profile: PromptPay number, the
+ * PromptPay / bank account name, the landlord's name, the dorm's name) — no number or person's name in the code.
+ * Not set → a refusal that says what to set.
  */
+
+import { getDb } from '@/lib/db';
+
+/** Receiver names accepted on a slip, from the settings table (lower case, empty ones left out) */
+async function settingsReceiverNames(): Promise<string[]> {
+  try {
+    const rows = await getDb()`SELECT name, promptpay_name, bank_account_name, landlord_name FROM dormitory_profile ORDER BY id LIMIT 1`;
+    const r = rows[0] || {};
+    return [r.promptpay_name, r.bank_account_name, r.landlord_name, r.name]
+      .map((v: unknown) => String(v ?? '').trim().toLowerCase())
+      .filter((v: string) => v.length >= 2);
+  } catch {
+    return [];
+  }
+}
+
+/** A receiver name on a slip matches a configured name: the whole name, or any word of it of 3+ letters (banks shorten names) */
+function receiverNameMatches(receiverName: string, configured: string[]): boolean {
+  const rec = receiverName.toLowerCase();
+  if (!rec) return false;
+  return configured.some((full) => rec.includes(full) || full.split(/\s+/).some((w) => w.replace(/^(นาย|นางสาว|นาง|mr\.?|mrs\.?|ms\.?)/, '').length >= 3 && rec.includes(w.replace(/^(นาย|นางสาว|นาง|mr\.?|mrs\.?|ms\.?)/, ''))));
+}
 
 export interface SlipParty {
   name?: string;
@@ -249,8 +275,9 @@ export async function verifySlipWithSlipOK(
       const sName = 'ผู้ทดสอบระบบ (Test User)';
       const sAcc = 'xxx-xxx-1234';
       const sBank = 'ธนาคารไทยพาณิชย์ (SCB)';
-      const rName = expectedReceiver?.name || 'หอพักเกษร 2 (ม.พะเยา)';
-      const rAcc = expectedReceiver?.promptpay || '063-604-0550';
+      // development mock slip: the receiver is whatever the settings page says (no number in the code)
+      const rName = expectedReceiver?.name || '-';
+      const rAcc = expectedReceiver?.promptpay || '-';
       const rBank = 'ธนาคารกสิกรไทย (KBANK)';
       const finalAmt = expectedAmount || 1000;
 
@@ -484,27 +511,14 @@ export async function verifySlipWithSlipOK(
         }
       } else if (receiverName || receiverAccount) {
         // General billing (monthly rent, water, electric, services)
-        const targetName = (expectedReceiver.name || '').toLowerCase();
-        const targetDorm = (expectedReceiver.dormName || '').toLowerCase();
-        const allowedKeywords = [
-          'เกษร',
-          'kesorn',
-          'smartdom',
-          'ขันแก้ว',
-          'คำบัว',
-          'khankaew',
-          'kambua',
-          'กฤษกร',
-          'บัวอินทร์',
-          'kritsakorn',
-          'buain',
-          'buainth',
-        ];
-        if (targetName) allowedKeywords.push(targetName);
-        if (targetDorm) allowedKeywords.push(targetDorm);
-
-        const recLower = receiverName.toLowerCase();
-        const nameMatches = allowedKeywords.some((kw) => kw && recLower.includes(kw));
+        // commit 29c: names from the settings page only (PromptPay / bank account name, landlord, dorm) + what the
+        // caller passed (also read from the settings table) — no people's names written in the code
+        const configuredNames = await settingsReceiverNames();
+        for (const v of [expectedReceiver.name, expectedReceiver.dormName]) {
+          const s = String(v || '').trim().toLowerCase();
+          if (s.length >= 2 && !configuredNames.includes(s)) configuredNames.push(s);
+        }
+        const nameMatches = receiverNameMatches(receiverName, configuredNames);
 
         if (!nameMatches && !accountMatches) {
           return {
@@ -519,7 +533,7 @@ export async function verifySlipWithSlipOK(
             sender: { name: senderName, account: senderAccount, bank: senderBank },
             receiver: { name: receiverName, account: receiverAccount, bank: receiverBank },
             reason: 'ชื่อหรือบัญชีผู้รับเงินไม่ตรงกับบัญชีหอพัก',
-            message: `❌ บัญชีผู้รับไม่ตรง: สลิปนี้อ่านข้อมูลได้สำเร็จ โอนจาก ${senderName || 'ผู้โอน'} (${fromBankDisplay}) แต่โอนไปยัง "${receiverName || receiverAccount || 'ไม่ระบุ'}" (${toBankDisplay} / ${receiverAccount || '-'}) ยอด ฿${slipAmount?.toLocaleString('th-TH') || '-'} เมื่อ ${formattedTime} ซึ่งไม่ตรงกับบัญชีหอพัก (${expectedReceiver.name || 'หอพักเกษร 2'}) หรือพร้อมเพย์ ${targetPromptPay}`,
+            message: `❌ บัญชีผู้รับไม่ตรง: สลิปนี้อ่านข้อมูลได้สำเร็จ โอนจาก ${senderName || 'ผู้โอน'} (${fromBankDisplay}) แต่โอนไปยัง "${receiverName || receiverAccount || 'ไม่ระบุ'}" (${toBankDisplay} / ${receiverAccount || '-'}) ยอด ฿${slipAmount?.toLocaleString('th-TH') || '-'} เมื่อ ${formattedTime} ซึ่งไม่ตรงกับบัญชีหอพัก (${expectedReceiver.name || 'ตามหน้าตั้งค่า'}) หรือพร้อมเพย์ ${targetPromptPay}`,
             rawData: payload,
           };
         }

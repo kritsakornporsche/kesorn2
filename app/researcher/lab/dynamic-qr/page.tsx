@@ -4,13 +4,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ResearcherLabNavBar } from '@/components/features/ResearcherLabNavBar';
 import { DynamicBillQrPaymentButton } from '@/components/features/DynamicBillQrModal';
 import type { DynamicPaymentSession } from '@/lib/features/dynamic-bill-qr';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
 
 const QUICK_AMOUNTS = [1, 1.01, 2, 5, 10, 3500];
 
 const ROOM_LIST = [
   { room: '101', tenant: 'นายธนกฤต วงศ์สวัสดิ์' },
   { room: '102', tenant: 'นางสาวพิมพ์ชนก สุขเกษม' },
-  { room: '104', tenant: 'นายกฤษกร บัวอินทร์' },
+  { room: '104', tenant: 'ผู้เช่าทดลอง' },
   { room: '108', tenant: 'นางสาวกมลชนก ศรีวิชัย' },
   { room: '205', tenant: 'นายศุภณัฐ อินทร์แก้ว' },
 ];
@@ -18,7 +19,7 @@ const ROOM_LIST = [
 export default function Module2DynamicQrLabPage() {
   const [amountInput, setAmountInput] = useState<string>('1.00');
   const [selectedRoom, setSelectedRoom] = useState<string>('104');
-  const [tenantName, setTenantName] = useState<string>('นายกฤษกร บัวอินทร์');
+  const [tenantName, setTenantName] = useState<string>('ผู้เช่าทดลอง');
   const [enableSatang, setEnableSatang] = useState<boolean>(true);
 
   const [session, setSession] = useState<DynamicPaymentSession | null>(null);
@@ -29,7 +30,7 @@ export default function Module2DynamicQrLabPage() {
   const [checking, setChecking] = useState<boolean>(false);
   const [status, setStatus] = useState<{ type: 'info' | 'success' | 'error'; text: string }>({
     type: 'info',
-    text: 'พร้อมรับโอนเข้าพร้อมเพย์ 063-604-0550 (นาย กฤษกร บัวอินทร์ • ธนาคารกรุงไทย)',
+    text: 'พร้อมรับโอนเข้าพร้อมเพย์ของหอพัก (ตามหน้าตั้งค่า)',
   });
 
   const createQr = useCallback(
@@ -68,7 +69,7 @@ export default function Module2DynamicQrLabPage() {
   );
 
   useEffect(() => {
-    createQr(1, true, '104', 'นายกฤษกร บัวอินทร์');
+    createQr(1, true, '104', 'ผู้เช่าทดลอง');
   }, []);
 
   // Auto-poll Gmail & Webhook status every 5 seconds when enabled
@@ -149,7 +150,7 @@ export default function Module2DynamicQrLabPage() {
       setStatus({
         type: json.matched ? 'success' : 'error',
         text: json.matched
-          ? `อนุมัติอัตโนมัติสำเร็จ! (ยอดโอน ฿${testAmount.toFixed(2)} เข้ากรุงไทย 063-604-0550)`
+          ? `อนุมัติอัตโนมัติสำเร็จ! (ยอดโอน ฿${testAmount.toFixed(2)} เข้าพร้อมเพย์ของหอพัก)`
           : `ปฏิเสธอัตโนมัติ: ยอดโอน ฿${testAmount.toFixed(2)} ไม่ตรงกับ QR (฿${session.expectedAmount.toFixed(2)})`,
       });
     } catch (e: any) {
@@ -170,7 +171,7 @@ export default function Module2DynamicQrLabPage() {
             📲 ระบบชำระเงินและอนุมัติบิลอัตโนมัติ (Dynamic QR • Zero-Slip)
           </h1>
           <p className="text-xs text-slate-400">
-            โอนตรงเข้าพร้อมเพย์ 063-604-0550 (นาย กฤษกร บัวอินทร์ • ธนาคารกรุงไทย) เงินเข้าบัญชีทันที 100%
+            โอนตรงเข้าพร้อมเพย์ของหอพัก (ตามหน้าตั้งค่า) เงินเข้าบัญชีทันที 100%
           </p>
         </div>
         <DynamicBillQrPaymentButton
@@ -225,7 +226,7 @@ export default function Module2DynamicQrLabPage() {
                 <label className="text-xs font-bold text-slate-300 block mb-1">ยอดเงินทดสอบ (บาท)</label>
                 <div className="flex gap-2">
                   <input
-                    type="number"
+                    type="number" {...NUMBER_INPUT_PROPS}
                     step="0.01"
                     min="0.01"
                     value={amountInput}
@@ -381,7 +382,7 @@ export default function Module2DynamicQrLabPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">เข้าบัญชี:</span>
-                  <span className="text-amber-300 font-bold">063-604-0550 (กรุงไทย)</span>
+                  <span className="text-amber-300 font-bold">พร้อมเพย์ของหอพัก</span>
                 </div>
               </div>
 
@@ -448,10 +449,10 @@ export default function Module2DynamicQrLabPage() {
                   </div>
                 )}
                 <p className="text-xs font-bold text-white pt-1">
-                  พร้อมเพย์ <span className="text-cyan-300 font-mono">063-604-0550</span>
+                  พร้อมเพย์ <span className="text-cyan-300 font-mono">ตามหน้าตั้งค่า</span>
                 </p>
                 <p className="text-[11px] text-slate-400">
-                  นาย กฤษกร บัวอินทร์ (ธนาคารกรุงไทย)
+                  (ชื่อบัญชีตามหน้าตั้งค่าหอพัก)
                 </p>
               </div>
             </div>

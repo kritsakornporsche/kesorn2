@@ -126,7 +126,8 @@ async function dispatchPushToSubscriptions(
 
   const keys = getOrGenerateVapidKeys();
   webpush.setVapidDetails(
-    'mailto:kritsakorn801@gmail.com',
+    // commit 29: the contact comes from env (no personal email in the code)
+    process.env.VAPID_SUBJECT || 'mailto:no-reply@localhost',
     keys.publicKey,
     keys.privateKey
   );

@@ -68,8 +68,9 @@ export async function POST(req: NextRequest) {
     // commit 28a: phones digits only, 9–10 digits (lib/phone)
     const ph = parsePhone(effectivePhone, true);
     if (!ph.ok) return NextResponse.json({ success: false, message: ph.message }, { status: 400 });
-    const pph = parsePhone(effectiveParentPhone);
-    if (!pph.ok) return NextResponse.json({ success: false, message: pph.message }, { status: 400 });
+    // commit 29b-2: the parent's phone is required like the tenant's (from the form or the account; neither → 400)
+    const pph = parsePhone(effectiveParentPhone, true);
+    if (!pph.ok) return NextResponse.json({ success: false, reason: 'bad_parent_phone', message: `เบอร์โทรผู้ปกครอง: ${pph.message}` }, { status: 400 });
     const occ = parseOccupants(occupants);
     if (!occ.ok) return NextResponse.json({ success: false, message: occ.message }, { status: 400 });
 

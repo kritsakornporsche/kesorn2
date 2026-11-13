@@ -181,8 +181,8 @@ export default function BookingStatusPage() {
             expectedAmount: data.session.expectedAmount,
             sessionId: data.session.sessionId,
             status: data.session.status,
-            promptpayNumber: data.session.promptpayNumber || '063-604-0550',
-            promptpayName: data.session.promptpayName || 'นาย กฤษกร บัวอินทร์',
+            promptpayNumber: data.session.promptpayNumber || '',
+            promptpayName: data.session.promptpayName || '',
           });
         }
       })
@@ -347,7 +347,7 @@ export default function BookingStatusPage() {
               {booking.status === 'BookingRequested' && (
                 <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-xs text-amber-300 leading-relaxed">
                   ส่งคำขอจองแล้ว รอหอพักอนุมัติ
-                  
+                  <span className="block mt-1 text-amber-300/90">{BOOKING_REQUEST_NOTE}</span>
                 </div>
               )}
 
@@ -497,9 +497,8 @@ export default function BookingStatusPage() {
                   
                 </div>
               )}
-
-              {/* Step 4: acknowledge the inspection on the guest page */}
-              {booking.steps?.current === 4 && booking.inspection_status === 'pending_ack' && (
+              {/* Step 3 (main's 4 steps: the inspection is inside step 3): acknowledge the inspection on the guest page — 29b-2 fix, it said step 4 */}
+              {booking.steps?.current === 3 && booking.inspection_status === 'pending_ack' && (
                 <Link href="/guest" className="block w-full py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-xs text-center">
                   🔍 ดูผลตรวจห้องและกดรับทราบ
                 </Link>

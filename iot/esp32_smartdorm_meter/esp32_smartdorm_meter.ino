@@ -35,7 +35,7 @@ WiFiMulti wifiMulti;
 const char* SERVER_URL    = "https://kesorn.phannext.com/api/features/iot-meter";
 const char* ROOM_NUMBER   = "101";
 const char* DEVICE_ID     = "ESP32-PZEM-101";
-const char* IOT_API_KEY   = "KESORN2-ESP32-SMARTMETER-2026";
+const char* IOT_API_KEY   = "SET-IOT_DEVICE_KEY-FROM-SERVER-ENV";  // must equal IOT_DEVICE_KEY in the server .env (never commit the real key)
 
 // ---------------- 2. ตั้งค่าขาพิน GPIO บนบอร์ด ESP32 ---------------------
 #define PZEM_RX_PIN   16  // GPIO 16 (RX2) ต่อเข้า TX ของ PZEM

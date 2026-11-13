@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { DynamicBillQrPaymentButton } from '@/components/features/DynamicBillQrModal';
+import { NUMBER_INPUT_PROPS } from '@/lib/number-input';
+import { roomTypeLabel } from '@/lib/room-types';
 import {
   generateEsp32ArduinoSketch,
-  IOT_DEFAULT_API_KEY,
+  IOT_KEY_PLACEHOLDER,
   type SmartMeterRoomNode,
   type Esp32CommandItem,
   type Esp32CommandType,
@@ -272,11 +274,10 @@ export function IotSmartMeterLab() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-iot-api-key': IOT_DEFAULT_API_KEY,
         },
         body: JSON.stringify({
-          action: 'esp32_telemetry',
-          apiKey: IOT_DEFAULT_API_KEY,
+          // commit 29: the browser never has the device key; a simulated packet is not a real reading (no bill)
+          action: 'simulate_esp32_packet',
           roomNumber: simHwRoom,
           deviceId: `ESP32-PZEM-${simHwRoom}`,
           voltage: simHwVoltage,
@@ -373,7 +374,7 @@ export function IotSmartMeterLab() {
     wifiPassword: wifiPass,
     serverBaseUrl: serverUrl,
     roomNumber: scriptRoom,
-    apiKey: IOT_DEFAULT_API_KEY,
+    apiKey: IOT_KEY_PLACEHOLDER,
     pzemRxPin,
     pzemTxPin,
     relayGpioPin: relayPin,
@@ -1113,7 +1114,7 @@ export function IotSmartMeterLab() {
                       </div>
                       <div className="flex items-center justify-between bg-slate-950 p-2.5 rounded-xl border border-white/5">
                         <span className="text-slate-400">ประเภทห้อง:</span>
-                        <span className="font-bold text-cyan-300">{inspectingRoom.roomType} (ชั้น {inspectingRoom.floor})</span>
+                        <span className="font-bold text-cyan-300">{roomTypeLabel(inspectingRoom.roomType)} (ชั้น {inspectingRoom.floor})</span>
                       </div>
                       <div className="flex items-center justify-between bg-slate-950 p-2.5 rounded-xl border border-white/5">
                         <span className="text-slate-400">มิเตอร์น้ำประปา:</span>
@@ -1753,7 +1754,7 @@ export function IotSmartMeterLab() {
                 <div>
                   <label className="text-[10px] font-bold text-slate-400 block mb-1">แรงดัน (Voltage V)</label>
                   <input
-                    type="number"
+                    type="number" {...NUMBER_INPUT_PROPS}
                     step="0.1"
                     value={simHwVoltage}
                     onChange={(e) => setSimHwVoltage(Number(e.target.value))}
@@ -1763,7 +1764,7 @@ export function IotSmartMeterLab() {
                 <div>
                   <label className="text-[10px] font-bold text-slate-400 block mb-1">กระแส (Current A)</label>
                   <input
-                    type="number"
+                    type="number" {...NUMBER_INPUT_PROPS}
                     step="0.01"
                     value={simHwCurrent}
                     onChange={(e) => setSimHwCurrent(Number(e.target.value))}
@@ -1773,7 +1774,7 @@ export function IotSmartMeterLab() {
                 <div>
                   <label className="text-[10px] font-bold text-slate-400 block mb-1">กำลังไฟ (Power W)</label>
                   <input
-                    type="number"
+                    type="number" {...NUMBER_INPUT_PROPS}
                     value={simHwPower}
                     onChange={(e) => setSimHwPower(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs font-mono font-bold text-white"
@@ -1782,7 +1783,7 @@ export function IotSmartMeterLab() {
                 <div>
                   <label className="text-[10px] font-bold text-slate-400 block mb-1">เลขมิเตอร์สะสม (kWh)</label>
                   <input
-                    type="number"
+                    type="number" {...NUMBER_INPUT_PROPS}
                     step="0.1"
                     value={simHwEnergy}
                     onChange={(e) => setSimHwEnergy(Number(e.target.value))}
@@ -1937,7 +1938,7 @@ export function IotSmartMeterLab() {
                   <div>
                     <label className="text-slate-400 font-bold block mb-1">ความถี่ส่งข้อมูล (ms)</label>
                     <input
-                      type="number"
+                      type="number" {...NUMBER_INPUT_PROPS}
                       step="500"
                       value={intervalMs}
                       onChange={(e) => setIntervalMs(Number(e.target.value))}
@@ -1950,7 +1951,7 @@ export function IotSmartMeterLab() {
                   <div>
                     <label className="text-slate-400 font-bold block mb-1">PZEM RX (GPIO)</label>
                     <input
-                      type="number"
+                      type="number" {...NUMBER_INPUT_PROPS}
                       value={pzemRxPin}
                       onChange={(e) => setPzemRxPin(Number(e.target.value))}
                       className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 font-mono text-white"
@@ -1959,7 +1960,7 @@ export function IotSmartMeterLab() {
                   <div>
                     <label className="text-slate-400 font-bold block mb-1">PZEM TX (GPIO)</label>
                     <input
-                      type="number"
+                      type="number" {...NUMBER_INPUT_PROPS}
                       value={pzemTxPin}
                       onChange={(e) => setPzemTxPin(Number(e.target.value))}
                       className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 font-mono text-white"
@@ -1968,7 +1969,7 @@ export function IotSmartMeterLab() {
                   <div>
                     <label className="text-slate-400 font-bold block mb-1">Relay IN (GPIO)</label>
                     <input
-                      type="number"
+                      type="number" {...NUMBER_INPUT_PROPS}
                       value={relayPin}
                       onChange={(e) => setRelayPin(Number(e.target.value))}
                       className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 font-mono text-white"
@@ -2091,7 +2092,7 @@ export function IotSmartMeterLab() {
                 </div>
                 <h3 className="text-base sm:text-lg font-black text-white mt-1 flex items-center gap-2">
                   <span>⚙️ ปรับตั้งเลขมิเตอร์ ห้อง {editingMeterRoom.roomNumber}</span>
-                  <span className="text-sm font-normal text-slate-400">({editingMeterRoom.roomType})</span>
+                  <span className="text-sm font-normal text-slate-400">({roomTypeLabel(editingMeterRoom.roomType)})</span>
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
                   ผู้เช่า: {editingMeterRoom.tenantName || 'ห้องว่าง'}
@@ -2123,7 +2124,7 @@ export function IotSmartMeterLab() {
                       </label>
                       <div className="relative">
                         <input
-                          type="number"
+                          type="number" {...NUMBER_INPUT_PROPS}
                           step="0.01"
                           required
                           value={editCurrentKwh}
@@ -2141,7 +2142,7 @@ export function IotSmartMeterLab() {
                       </label>
                       <div className="relative">
                         <input
-                          type="number"
+                          type="number" {...NUMBER_INPUT_PROPS}
                           step="0.01"
                           required
                           value={editPrevKwh}
@@ -2231,7 +2232,7 @@ export function IotSmartMeterLab() {
                       </label>
                       <div className="relative">
                         <input
-                          type="number"
+                          type="number" {...NUMBER_INPUT_PROPS}
                           step="1"
                           required
                           value={editWaterCurrent}
@@ -2248,7 +2249,7 @@ export function IotSmartMeterLab() {
                       </label>
                       <div className="relative">
                         <input
-                          type="number"
+                          type="number" {...NUMBER_INPUT_PROPS}
                           step="1"
                           required
                           value={editWaterPrev}

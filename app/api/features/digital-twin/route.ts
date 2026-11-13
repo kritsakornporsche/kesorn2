@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { requireRole } from '@/lib/authz';
 import { dynamicQrHistory } from '@/lib/features/dynamic-bill-qr';
+
+// Researcher digital twin (commit 29): signed-in owner / manager / researcher only; the room data here is a simulation
+// (placeholder tenants, no real names or phones). Broadcasting to every account in the database is owner / manager
+// only; the lab's test pushes go to staff and researcher devices, not to tenants.
+const LAB_ROLES = ['owner', 'manager', 'researcher'] as const;
 
 async function sendWebPushToAllSubscriptions(payload: any) {
   try {
@@ -12,6 +18,24 @@ async function sendWebPushToAllSubscriptions(payload: any) {
     // ignore
   }
   return { success: false, sentCount: 0, failedCount: 0 };
+}
+
+/** A lab test push: owner, manager and researcher devices only */
+async function sendWebPushToLab(payload: any) {
+  const total = { success: true, sentCount: 0, failedCount: 0 };
+  try {
+    const webPush = await import('@/lib/features/web-push-server').catch(() => null);
+    if (webPush && (webPush as any).sendWebPushToRole) {
+      for (const role of LAB_ROLES) {
+        const r = await (webPush as any).sendWebPushToRole(role, payload);
+        total.sentCount += Number(r?.sentCount || 0);
+        total.failedCount += Number(r?.failedCount || 0);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return total;
 }
 
 export type OccupancyStatus = 'OCCUPIED' | 'AVAILABLE' | 'RESERVED' | 'MAINTENANCE';
@@ -59,8 +83,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องแอร์ Standard (IoT จริง)',
     rentPrice: 3500,
     occupancyStatus: 'OCCUPIED',
-    tenantName: 'นายธนกฤต วงศ์สวัสดิ์',
-    tenantPhone: '081-234-5601',
+    tenantName: 'ผู้เช่าทดลอง',
+    tenantPhone: null,
     billingStatus: 'PAID',
     billAmount: 4320,
     overdueDays: 0,
@@ -78,8 +102,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องแอร์ Standard',
     rentPrice: 3500,
     occupancyStatus: 'OCCUPIED',
-    tenantName: 'นางสาวพิมพ์ชนก สุขเกษม',
-    tenantPhone: '089-412-8802',
+    tenantName: 'ผู้เช่าทดลอง',
+    tenantPhone: null,
     billingStatus: 'PENDING',
     billAmount: 4180,
     overdueDays: 0,
@@ -116,8 +140,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องแอร์ VIP',
     rentPrice: 4000,
     occupancyStatus: 'OCCUPIED',
-    tenantName: 'นายกฤษกร บัวอินทร์',
-    tenantPhone: '063-604-0550',
+    tenantName: 'ผู้เช่าทดลอง',
+    tenantPhone: null,
     billingStatus: 'OVERDUE',
     billAmount: 6190,
     overdueDays: 5,
@@ -135,8 +159,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องแอร์ Standard',
     rentPrice: 3500,
     occupancyStatus: 'OCCUPIED',
-    tenantName: 'นายณัฐวุฒิ ศรีสุวรรณ',
-    tenantPhone: '082-991-1105',
+    tenantName: 'ผู้เช่าทดลอง',
+    tenantPhone: null,
     billingStatus: 'PAID',
     billAmount: 4450,
     overdueDays: 0,
@@ -154,8 +178,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องพัดลม Standard',
     rentPrice: 2800,
     occupancyStatus: 'OCCUPIED',
-    tenantName: 'นางสาวกัญญาณัฐ ทองดี',
-    tenantPhone: '084-510-2206',
+    tenantName: 'ผู้เช่าทดลอง',
+    tenantPhone: null,
     billingStatus: 'PAID',
     billAmount: 3290,
     overdueDays: 0,
@@ -192,8 +216,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องแอร์ Standard',
     rentPrice: 3500,
     occupancyStatus: 'OCCUPIED',
-    tenantName: 'นางสาวกมลชนก ศรีวิชัย',
-    tenantPhone: '086-773-4108',
+    tenantName: 'ผู้เช่าทดลอง',
+    tenantPhone: null,
     billingStatus: 'OVERDUE',
     billAmount: 5840,
     overdueDays: 7,
@@ -211,8 +235,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องแอร์ Standard',
     rentPrice: 3500,
     occupancyStatus: 'RESERVED',
-    tenantName: 'นายพีรพัฒน์ จันทร์เพ็ญ (จองเข้าพัก)',
-    tenantPhone: '091-334-9109',
+    tenantName: 'ผู้เช่าทดลอง (จองเข้าพัก)',
+    tenantPhone: null,
     billingStatus: 'PAID',
     billAmount: 3500,
     overdueDays: 0,
@@ -230,8 +254,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องแอร์ VIP',
     rentPrice: 4000,
     occupancyStatus: 'OCCUPIED',
-    tenantName: 'นายอภิสิทธิ์ รัตนโชติ',
-    tenantPhone: '088-612-0110',
+    tenantName: 'ผู้เช่าทดลอง',
+    tenantPhone: null,
     billingStatus: 'PAID',
     billAmount: 4920,
     overdueDays: 0,
@@ -251,8 +275,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องแอร์ Standard',
     rentPrice: 3600,
     occupancyStatus: 'OCCUPIED',
-    tenantName: 'นางสาวชลธิชา วัฒนากูล',
-    tenantPhone: '083-112-5201',
+    tenantName: 'ผู้เช่าทดลอง',
+    tenantPhone: null,
     billingStatus: 'PAID',
     billAmount: 4510,
     overdueDays: 0,
@@ -270,8 +294,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องแอร์ Standard',
     rentPrice: 3600,
     occupancyStatus: 'OCCUPIED',
-    tenantName: 'นายภูริทัต เจริญผล',
-    tenantPhone: '085-449-6202',
+    tenantName: 'ผู้เช่าทดลอง',
+    tenantPhone: null,
     billingStatus: 'PENDING',
     billAmount: 4680,
     overdueDays: 0,
@@ -289,8 +313,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องแอร์ Standard',
     rentPrice: 3600,
     occupancyStatus: 'OCCUPIED',
-    tenantName: 'นางสาวสุพิชชา อมรรัตน์',
-    tenantPhone: '087-203-7203',
+    tenantName: 'ผู้เช่าทดลอง',
+    tenantPhone: null,
     billingStatus: 'PAID',
     billAmount: 4390,
     overdueDays: 0,
@@ -327,8 +351,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องแอร์ VIP',
     rentPrice: 4200,
     occupancyStatus: 'OCCUPIED',
-    tenantName: 'นายศุภณัฐ อินทร์แก้ว',
-    tenantPhone: '092-881-2205',
+    tenantName: 'ผู้เช่าทดลอง',
+    tenantPhone: null,
     billingStatus: 'OVERDUE',
     billAmount: 6580,
     overdueDays: 4,
@@ -346,8 +370,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องพัดลม Standard',
     rentPrice: 2900,
     occupancyStatus: 'OCCUPIED',
-    tenantName: 'นายกิตติพงศ์ สายทอง',
-    tenantPhone: '081-908-3206',
+    tenantName: 'ผู้เช่าทดลอง',
+    tenantPhone: null,
     billingStatus: 'PAID',
     billAmount: 3420,
     overdueDays: 0,
@@ -365,8 +389,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องพัดลม Standard',
     rentPrice: 2900,
     occupancyStatus: 'OCCUPIED',
-    tenantName: 'นางสาววรัญญา นาคประสิทธิ์',
-    tenantPhone: '089-654-4207',
+    tenantName: 'ผู้เช่าทดลอง',
+    tenantPhone: null,
     billingStatus: 'PENDING',
     billAmount: 3560,
     overdueDays: 0,
@@ -384,8 +408,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องแอร์ Standard',
     rentPrice: 3600,
     occupancyStatus: 'OCCUPIED',
-    tenantName: 'นายเจษฎา ภักดี',
-    tenantPhone: '090-117-5208',
+    tenantName: 'ผู้เช่าทดลอง',
+    tenantPhone: null,
     billingStatus: 'PAID',
     billAmount: 4720,
     overdueDays: 0,
@@ -422,8 +446,8 @@ const DEFAULT_20_ROOMS_SEED: Omit<DigitalTwinRoom, 'updatedAt'>[] = [
     roomType: 'ห้องแอร์ VIP',
     rentPrice: 4200,
     occupancyStatus: 'OCCUPIED',
-    tenantName: 'นางสาวณัฐนิชา พงษ์พานิช',
-    tenantPhone: '094-552-9210',
+    tenantName: 'ผู้เช่าทดลอง',
+    tenantPhone: null,
     billingStatus: 'PAID',
     billAmount: 5190,
     overdueDays: 0,
@@ -469,7 +493,7 @@ function getPushLogs(): ResearcherPushLogItem[] {
         category: 'OVERDUE_BILL',
         roomNumber: '104',
         title: '💳 แจ้งเตือนบิลค้างชำระ ห้อง 104 (฿6,190)',
-        body: 'ชั้น 1 ห้อง 104 (นายกฤษกร) ค้างชำระเกินกำหนด 5 วัน กดเพื่อเปิด QR ชำระเงิน',
+        body: 'ชั้น 1 ห้อง 104 ค้างชำระเกินกำหนด 5 วัน กดเพื่อเปิด QR ชำระเงิน',
         url: '/researcher/lab/dynamic-qr',
         createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
       },
@@ -479,6 +503,8 @@ function getPushLogs(): ResearcherPushLogItem[] {
 }
 
 export async function GET() {
+  const guard = await requireRole([...LAB_ROLES]);
+  if ('response' in guard) return guard.response;
   try {
     const roomsMap = getTwinRoomsMap();
     const pushLogs = getPushLogs();
@@ -551,6 +577,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const guard = await requireRole([...LAB_ROLES]);
+  if ('response' in guard) return guard.response;
   try {
     const body = await req.json();
     const { action, roomNumber } = body;
@@ -605,6 +633,10 @@ export async function POST(req: NextRequest) {
 
     // 2. Broadcast Test Notification from Researcher to ALL Authenticated Member Roles in Database (Excluding Guest)
     if (action === 'broadcast_all_roles') {
+      // writes a notification to every account and pushes to every device: owner / manager only
+      if (guard.user.role !== 'owner' && guard.user.role !== 'manager') {
+        return NextResponse.json({ success: false, message: 'ส่งประกาศถึงทุกบัญชีได้เฉพาะเจ้าของหอ/ผู้จัดการ' }, { status: 403 });
+      }
       const senderLabel = body.senderLabel || 'Researcher (ผู้วิจัยระบบ)';
       const rawMessage = body.message || 'นี้คือการทดสอบการแจ้งเดือน';
       let notifiedCount = 0;
@@ -614,12 +646,7 @@ export async function POST(req: NextRequest) {
       try {
         const sql = getDb();
 
-        // Clean up any historical notifications that still mention Guest
-        await sql`
-          DELETE FROM notifications
-          WHERE title LIKE '%Guest%' OR message LIKE '%Guest%'
-        `;
-
+        // commit 29: no longer deletes other notifications (it removed every row mentioning "Guest")
         const allUsers = await sql`
           SELECT
             u.id,
@@ -728,9 +755,10 @@ export async function POST(req: NextRequest) {
     if (action === 'log_push') {
       const pushTitle = body.title || '🔔 แจ้งเตือนจาก Researcher Digital Twin';
       const pushBody = body.body || 'ตรวจพบเหตุการณ์สำคัญในแผนผังอาคาร 2 มิติ';
-      const pushUrl = body.url || '/researcher/lab/digital-twin';
+      const pushUrl = typeof body.url === 'string' && body.url.startsWith('/') ? body.url : '/researcher/lab/digital-twin';
 
-      const vapidPushResult = await sendWebPushToAllSubscriptions({
+      // a simulated event: staff and researcher devices only (never tenants)
+      const vapidPushResult = await sendWebPushToLab({
         title: pushTitle,
         body: pushBody,
         url: pushUrl,

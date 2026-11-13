@@ -899,7 +899,9 @@ export default function OwnerContractsPage() {
               <div className="bg-slate-50 border-b border-border p-8 flex items-center justify-between shrink-0">
                 <div>
                   <h2 className="text-2xl font-black text-foreground">📝 บันทึกผู้เช่าเดิม (ก่อนใช้ระบบ)</h2>
-                  
+                  <p data-walkin-note className="text-xs text-muted-foreground font-medium mt-1">
+                    ใช้กับผู้เช่าที่อยู่ก่อนใช้ระบบเท่านั้น — สัญญามีผลทันที · ผู้เช่าใหม่ให้ใช้ Walk-in ที่หน้าทะเบียนผู้เช่า
+                  </p>
                 </div>
                 <button 
                   onClick={() => setIsCreateModalOpen(false)}

@@ -1,7 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import type { DynamicPaymentSession } from '@/lib/features/dynamic-bill-qr';
+
+// commit 29: "ยืนยันเงินเข้า (จำลอง)" only for owner / manager, and never in a production build (the API refuses it too)
+const SIMULATE_ALLOWED = process.env.NODE_ENV !== 'production';
 
 export interface DynamicBillQrModalProps {
   isOpen: boolean;
@@ -33,6 +37,9 @@ export const DynamicBillQrModal: React.FC<DynamicBillQrModalProps> = ({
   const [session, setSession] = useState<DynamicPaymentSession | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string>('');
+  const { data: authSession } = useSession();
+  const viewerRole = String((authSession?.user as any)?.role || '');
+  const canSimulate = SIMULATE_ALLOWED && (viewerRole === 'owner' || viewerRole === 'manager');
 
   const initPaymentSession = async () => {
     setLoading(true);
@@ -52,7 +59,7 @@ export const DynamicBillQrModal: React.FC<DynamicBillQrModalProps> = ({
       if (json.success) {
         setSession(json.session);
         setQrDataUrl(json.qrDataUrl);
-        setStatusMsg(`รอรับยอดโอน ฿${json.session.expectedAmount.toFixed(2)} เข้าพร้อมเพย์ 063-604-0550...`);
+        setStatusMsg(`รอรับยอดโอน ฿${json.session.expectedAmount.toFixed(2)} เข้าพร้อมเพย์ ${json.session.promptpayNumber}...`);
       } else {
         setStatusMsg(json.message || 'สร้าง QR ไม่สำเร็จ');
       }
@@ -218,8 +225,8 @@ export const DynamicBillQrModal: React.FC<DynamicBillQrModalProps> = ({
                 </div>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/80 text-[11px] font-bold text-foreground mt-1">
                   <span>📱 พร้อมเพย์:</span>
-                  <span className="font-mono text-primary font-black">063-604-0550</span>
-                  <span className="text-muted-foreground">({session?.promptpayName || 'นาย กฤษกร บัวอินทร์'})</span>
+                  <span className="font-mono text-primary font-black">{session?.promptpayNumber || '-'}</span>
+                  {session?.promptpayName && <span className="text-muted-foreground">({session.promptpayName})</span>}
                 </div>
               </div>
 
@@ -266,6 +273,7 @@ export const DynamicBillQrModal: React.FC<DynamicBillQrModalProps> = ({
                 >
                   {checkingEmail ? 'กำลังเช็ค...' : '🔄 เช็คยอดเงิน'}
                 </button>
+                {canSimulate && (
                 <button
                   type="button"
                   disabled={checkingEmail || loading}
@@ -275,6 +283,7 @@ export const DynamicBillQrModal: React.FC<DynamicBillQrModalProps> = ({
                 >
                   ⚡ ยืนยันเงินเข้า (จำลอง)
                 </button>
+                )}
               </>
             )}
           </div>

@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { requireRole } from '@/lib/authz';
 
+// commit 29: signed-in owner / manager / researcher only
 export async function GET() {
+  const guard = await requireRole(['owner', 'manager', 'researcher']);
+  if ('response' in guard) return guard.response;
   const startTime = Date.now();
   const sql = getDb();
 

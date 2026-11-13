@@ -1,9 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { requireRole } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 
+// commit 29: signed-in owner / manager / researcher only; the user shown is the signed-in one (no name in the code);
+// a researcher sees overdue rooms without the tenant's name; counts are the real ones (no made-up fallbacks)
 export async function GET() {
+  const guard = await requireRole(['owner', 'manager', 'researcher']);
+  if ('response' in guard) return guard.response;
+  const me = guard.user;
   try {
     const sql = getDb();
 
@@ -86,23 +92,23 @@ export async function GET() {
       success: true,
       timestamp: new Date().toISOString(),
       user: {
-        name: 'kritsakorn',
-        role: 'researcher',
-        sub_role: 'researcher2',
-        email: 'kritsakorn@kesorn.com',
+        name: me.name,
+        role: me.role,
+        sub_role: me.sub_role,
+        email: me.email,
       },
       kpi: {
         integrityScore: 100,
         totalTestCases: 21,
         passedTestCases: 21,
         failedTestCases: 0,
-        totalRooms: roomStats.Total || 21,
-        occupiedRooms: roomStats.Occupied || 16,
-        availableRooms: roomStats.Available || 2,
-        reservedRooms: roomStats.Reserved || 2,
-        maintenanceRooms: roomStats.Maintenance || 1,
+        totalRooms: roomStats.Total,
+        occupiedRooms: roomStats.Occupied,
+        availableRooms: roomStats.Available,
+        reservedRooms: roomStats.Reserved,
+        maintenanceRooms: roomStats.Maintenance,
         totalMeterReadings,
-        cyclesCount: distinctCycles.length || 12,
+        cyclesCount: distinctCycles.length,
         paidBillsCount: billStats.paidCount,
         overdueBillsCount: billStats.overdueCount,
         overdueTotalAmount: billStats.overdueAmount,
@@ -124,7 +130,7 @@ export async function GET() {
         cycle: b.billing_cycle,
         amount: Number(b.amount),
         fine: Number(b.penalty_amount || 0),
-        tenantName: b.tenant_name || 'ผู้เช่า',
+        tenantName: me.role === 'researcher' ? 'ผู้เช่า' : b.tenant_name || 'ผู้เช่า',
       })),
     });
   } catch (error: any) {

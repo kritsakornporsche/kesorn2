@@ -500,9 +500,9 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   <span>•</span>
                   <span>{room.has_parking ? '🚗 มีที่จอดรถ' : '🛵 จอดมอเตอร์ไซค์'}</span>
                   <span>•</span>
-                  <span>🚭 ห้ามสูบบุหรี่</span>
+                  <span>🚭 ห้ามสูบบุหรี่ทุกพื้นที่ภายในหอพัก</span>
                   <span>•</span>
-                  <span>🕒 เข้า-ออก 24 ชม.</span>
+                  <span>🕒 เข้า-ออกได้ตลอด 24 ชม.</span>
                   <span>•</span>
                   <span>📶 ฟรี Wi-Fi</span>
                 </div>
@@ -639,7 +639,8 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-foreground">จำนวนผู้พัก:</span>
                     <div className="flex items-center gap-1.5">
-                      {[1, 2].map((n) => {
+                      {/* commit 29b-2: the choices from lib/occupants (MAX_OCCUPANTS), not written here */}
+                      {OCCUPANT_CHOICES.map((n) => {
                         const active = (bookingData.occupants ?? 1) === n;
                         return (
                           <button
@@ -697,6 +698,11 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                       </Link>
                     </div>
                   ) : (
+                    <>
+                    {/* commit 29b-2: the booking terms (commit 23) shown again before sending */}
+                    <div className="p-3 bg-sky-500/10 border border-sky-500/20 rounded-xl text-[11px] text-sky-600 dark:text-sky-300 leading-relaxed" data-booking-note>
+                      {BOOKING_REQUEST_NOTE}
+                    </div>
                     <button
                       onClick={handleFinalSubmit}
                       disabled={isProcessing || !costs || !bookingData.phone || !bookingData.parent_phone}
@@ -704,6 +710,7 @@ export default function RoomBookingPage({ params }: { params: Promise<{ id: stri
                     >
                       {isProcessing ? 'กำลังส่งคำขอจอง...' : '✓ ยืนยันและส่งคำขอจองห้องพัก →'}
                     </button>
+                    </>
                   )}
                 </div>
               </div>

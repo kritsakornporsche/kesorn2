@@ -89,7 +89,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const session = await auth();
     const userRole = (session?.user as any)?.role;
-    if (!session || !['owner', 'manager', 'researcher'].includes(userRole)) {
+    if (!session || userRole !== 'owner') { // commit 29b-2: owner only (24b); manager / researcher read only
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
@@ -171,7 +171,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   try {
     const session = await auth();
     const userRole = (session?.user as any)?.role;
-    if (!session || !['owner', 'manager', 'researcher'].includes(userRole)) {
+    if (!session || userRole !== 'owner') { // commit 29b-2: owner only (24b); manager / researcher read only
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
