@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { getCurrentUser, requireRole } from '@/lib/authz';
 import { getDb } from '@/lib/db';
 import {
   getOrGenerateVapidKeys,
@@ -12,14 +12,24 @@ import {
   formatRoleThaiLabel,
 } from '@/lib/features/web-push-server';
 
+// Web Push (commit 29 security):
+// - every action needs a signed-in user; a device is subscribed for the signed-in account only (role, name and email
+//   from the database — never what the page sends)
+// - unsubscribe: by the device's own endpoint (it works right after sign-out too); the account's other devices only
+//   when signed in
+// - sending to everyone / a role / an email: owner / manager; a researcher may send a test to their own devices only
+const ALL_ROLES = ['owner', 'manager', 'keeper', 'tenant', 'guest', 'researcher', 'platform_admin', 'admin'] as const;
+
 export async function GET() {
+  const guard = await requireRole([...ALL_ROLES]);
+  if ('response' in guard) return guard.response;
   try {
     const keys = getOrGenerateVapidKeys();
-    const subs = loadPushSubscriptions();
+    const staff = guard.user.role === 'owner' || guard.user.role === 'manager';
     return NextResponse.json({
       success: true,
       publicKey: keys.publicKey,
-      subscriberCount: subs.length,
+      ...(staff ? { subscriberCount: loadPushSubscriptions().length } : {}),
     });
   } catch (error: any) {
     return NextResponse.json(
@@ -32,70 +42,45 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const session = await auth();
     const { action, subscription, endpoint, title, message, url, targetRole, targetEmail } = body;
 
-    // 1. Unsubscribe on sign-out so logged-out users never receive notifications
+    // 1. Unsubscribe: the device's own endpoint (no sign-in needed — the endpoint is the device's secret); the account's
+    //    other devices only for the signed-in user
     if (action === 'unsubscribe') {
-      const email = body.userEmail || session?.user?.email || undefined;
-      const updated = removePushSubscription(endpoint || subscription?.endpoint, email);
-      return NextResponse.json({
-        success: true,
-        subscriberCount: updated.length,
-      });
+      const me = await getCurrentUser();
+      const ep = endpoint || subscription?.endpoint;
+      if (!ep && !me) {
+        return NextResponse.json({ success: false, message: 'กรุณาเข้าสู่ระบบ' }, { status: 401 });
+      }
+      const updated = removePushSubscription(ep, me?.email || undefined);
+      return NextResponse.json({ success: true, ...(me && (me.role === 'owner' || me.role === 'manager') ? { subscriberCount: updated.length } : {}) });
     }
 
-    // 2. Subscribe device
-    if (action === 'subscribe' && subscription?.endpoint && subscription?.keys) {
-      const email = (session?.user?.email || body.userEmail || '').trim().toLowerCase();
-      const requestedRole = String(body.role || '').toLowerCase();
+    const guard = await requireRole([...ALL_ROLES]);
+    if ('response' in guard) return guard.response;
+    const me = guard.user;
 
-      if (!session?.user && !email && requestedRole !== 'researcher') {
-        removePushSubscription(subscription.endpoint);
-        return NextResponse.json(
-          { success: false, message: 'ต้องเข้าสู่ระบบก่อนจึงจะเปิดรับการแจ้งเตือนได้' },
-          { status: 401 }
-        );
+    // 2. Subscribe this device for the signed-in account
+    if (action === 'subscribe') {
+      if (!subscription?.endpoint || !subscription?.keys) {
+        return NextResponse.json({ success: false, message: 'ข้อมูลการสมัครรับแจ้งเตือนไม่ครบ' }, { status: 400 });
       }
+      const email = String(me.email || '').trim().toLowerCase();
+      let resolvedRole = String(me.role || '').toLowerCase();
+      const resolvedSubRole = String(me.sub_role || '').toLowerCase();
+      let resolvedName = String(me.name || '').trim();
 
-      let resolvedRole = String((session?.user as any)?.role || requestedRole || '').toLowerCase();
-      let resolvedSubRole = String((session?.user as any)?.sub_role || body.subRole || '').toLowerCase();
-      let resolvedName = String(
-        session?.user?.name || body.userName || (resolvedRole === 'researcher' ? 'Researcher' : '')
-      ).trim();
-
-      // Query MySQL users & tenants table to resolve the role accurately
-      if (email) {
+      // A guest account with an Active tenant record is a tenant
+      if (email && resolvedRole === 'guest') {
         try {
           const sql = getDb();
-          const uRows = await sql`
-            SELECT u.id, u.name, u.email,
-                   COALESCE(u.role, u.primary_role) as db_role,
-                   u.sub_role,
-                   (SELECT COUNT(*) FROM tenants t WHERE LOWER(t.email) = LOWER(u.email) AND t.status = 'Active') as is_active_tenant
-            FROM users u
-            WHERE LOWER(u.email) = ${email}
-            LIMIT 1
-          `;
-          if (uRows.length > 0) {
-            const u = uRows[0];
-            if (u.name) resolvedName = u.name;
-            if (u.sub_role) resolvedSubRole = String(u.sub_role).toLowerCase();
-            const dbRole = String(u.db_role || '').toLowerCase();
-            if (dbRole) {
-              resolvedRole = dbRole;
-            } else if (Number(u.is_active_tenant) > 0) {
-              resolvedRole = 'tenant';
-            }
-          }
+          const rows = await sql`SELECT COUNT(*) AS n FROM tenants WHERE LOWER(email) = ${email} AND status = 'Active'`;
+          if (Number(rows[0]?.n) > 0) resolvedRole = 'tenant';
         } catch {
           // ignore DB lookup error
         }
       }
-
-      if (!resolvedRole) {
-        resolvedRole = 'guest';
-      }
+      if (!resolvedName) resolvedName = email;
 
       const updatedList = savePushSubscription({
         endpoint: subscription.endpoint,
@@ -105,7 +90,7 @@ export async function POST(req: NextRequest) {
         },
         role: resolvedRole,
         subRole: resolvedSubRole || undefined,
-        userName: resolvedName || email,
+        userName: resolvedName,
         userEmail: email,
         userAgent: req.headers.get('user-agent') || '',
         createdAt: new Date().toISOString(),
@@ -114,33 +99,38 @@ export async function POST(req: NextRequest) {
       // Send confirmation push if requested
       let pushRes = null;
       if (body.sendConfirmationPush) {
-        const roleLabel = formatRoleThaiLabel(resolvedRole, resolvedSubRole);
         pushRes = await sendWebPushToEmail(email, {
           title: `🔔 ระบบแจ้งเตือน SmartDom`,
-          body: message || 'เปิดรับการแจ้งเตือนสำเร็จแล้ว คุณจะได้รับการแจ้งเตือนผลอนุมัติการจองและบิลต่างๆ ทันที',
+          body: 'เปิดรับการแจ้งเตือนสำเร็จแล้ว คุณจะได้รับการแจ้งเตือนผลอนุมัติการจองและบิลต่างๆ ทันที',
           senderLabel: 'หอพักเกษร 2',
-          url: url || '/explore/booking-status',
+          url: typeof url === 'string' && url.startsWith('/') ? url : '/explore/booking-status',
           tag: `confirm-sub-${Date.now()}`,
         });
       }
 
       return NextResponse.json({
         success: true,
-        subscriberCount: updatedList.length,
         roleLabel: formatRoleThaiLabel(resolvedRole, resolvedSubRole),
         message: 'เปิดรับการแจ้งเตือนเรียบร้อยแล้ว',
         pushResult: pushRes,
+        ...(me.role === 'owner' || me.role === 'manager' ? { subscriberCount: updatedList.length } : {}),
       });
     }
 
-    // 3. Send Push Notification to all, by role, or by email
-    const sender = (session?.user as any)?.role || 'system';
+    // 3. Sending: owner / manager; a researcher only a test to their own devices
+    const staff = me.role === 'owner' || me.role === 'manager';
+    const ownTest = me.role === 'researcher' && action === 'send_email'
+      && String(targetEmail || '').trim().toLowerCase() === String(me.email || '').toLowerCase();
+    if (['send_all', 'send_role', 'send_email'].includes(action) && !staff && !ownTest) {
+      return NextResponse.json({ success: false, message: 'ส่งแจ้งเตือนได้เฉพาะเจ้าของหอ/ผู้จัดการ' }, { status: 403 });
+    }
+    const safeUrl = typeof url === 'string' && url.startsWith('/') ? url : '/';
 
     if (action === 'send_all') {
       const res = await sendWebPushToAllSubscriptions({
         title: title || 'ประกาศจากหอพักเกษร 2',
         body: message || 'มีประกาศสำคัญจากระบบ กรุณาตรวจสอบในระบบ',
-        url: url || '/',
+        url: safeUrl,
         tag: `push-all-${Date.now()}`,
       });
       return NextResponse.json({ success: true, ...res });
@@ -153,7 +143,7 @@ export async function POST(req: NextRequest) {
       const res = await sendWebPushToRole(targetRole, {
         title: title || 'แจ้งเตือนตามบทบาทหน้าที่',
         body: message || '',
-        url: url || '/',
+        url: safeUrl,
         tag: `push-role-${targetRole}-${Date.now()}`,
       });
       return NextResponse.json({ success: true, ...res });
@@ -166,7 +156,7 @@ export async function POST(req: NextRequest) {
       const res = await sendWebPushToEmail(targetEmail, {
         title: title || 'แจ้งเตือนเฉพาะบุคคล',
         body: message || '',
-        url: url || '/',
+        url: safeUrl,
         tag: `push-email-${Date.now()}`,
       });
       return NextResponse.json({ success: true, ...res });
