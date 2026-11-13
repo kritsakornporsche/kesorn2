@@ -135,7 +135,7 @@ export default function Researcher2DashboardPage() {
     runAllTests();
   }, []);
 
-  const userName = session?.user?.name || data?.user?.name || 'kritsakorn';
+  const userName = session?.user?.name || data?.user?.name || 'Researcher';
   const userSubRole = (session?.user as any)?.sub_role || data?.user?.sub_role || 'researcher2';
   const kpi = data?.kpi;
   const node = data?.iotNode101;
@@ -368,7 +368,7 @@ export default function Researcher2DashboardPage() {
                   📲
                 </span>
                 <span className="px-2 py-0.5 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-[10px] font-black">
-                  063-604-0550
+                  พร้อมเพย์ของหอพัก
                 </span>
               </div>
               <h3 className="text-sm font-black text-slate-900 group-hover:text-blue-600 transition-colors mt-3">

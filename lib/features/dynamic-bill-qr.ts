@@ -26,11 +26,15 @@ export interface ParsedBankEmail {
   receivedAt: string;
   rawSnippet: string;
   screenshotDataUrl?: string | null;
+  /** the amount exactly as written in the message (e.g. "1,234.56") — a match needs both satang digits */
+  amountText?: string | null;
 }
 
 export interface DynamicPaymentSession {
   sessionId: string;
   billId?: number | null;
+  /** user who opened the QR (commit 29: only they or staff may read / check it) */
+  ownerUserId?: number | null;
   roomNumber: string;
   tenantName: string;
   billTitle: string;
@@ -97,7 +101,7 @@ const EMVCO_TAG_DICTIONARY: Record<string, { label: string; desc: (val: string) 
   },
   '29': {
     label: 'Merchant Account Info (PromptPay)',
-    desc: () => 'AID A000000677010111 + เบอร์พร้อมเพย์ผู้รับเงิน (063-604-0550)',
+    desc: () => 'AID A000000677010111 + เลขพร้อมเพย์ผู้รับเงิน (จากหน้าตั้งค่าหอพัก)',
   },
   '53': {
     label: 'Transaction Currency (ISO 4217)',
@@ -268,17 +272,27 @@ export function computeDynamicAmountWithSatang(
   };
 }
 
+/** PromptPay account of the dorm, from the settings table (lib/billing getPaymentInfo) */
+export interface DormPromptPay {
+  number: string;
+  name: string;
+  bank: string;
+}
+
 export function createDynamicPaymentSession(params: {
   sessionId?: string;
   billId?: number | null;
+  ownerUserId?: number | null;
   roomNumber?: string;
   tenantName?: string;
   billTitle?: string;
   baseAmount: number;
   enableSatang?: boolean;
+  /** commit 29: the dorm's PromptPay from the settings page — never a number written in the code */
+  promptpay: DormPromptPay;
 }): DynamicPaymentSession {
-  const roomNumber = params.roomNumber || '104';
-  const tenantName = params.tenantName || 'นายกฤษกร บัวอินทร์';
+  const roomNumber = params.roomNumber || '-';
+  const tenantName = params.tenantName || 'ผู้เช่า';
   const billTitle = params.billTitle || `ค่าเช่าและสาธารณูปโภค ห้อง ${roomNumber}`;
   const enableSatang = params.enableSatang !== undefined ? params.enableSatang : true;
 
@@ -297,9 +311,10 @@ export function createDynamicPaymentSession(params: {
     enableSatang
   );
 
-  const promptpayNumber = '0636040550';
-  const promptpayName = 'นาย กฤษกร บัวอินทร์';
-  const promptpayBank = 'ธนาคารกรุงไทย (Krungthai NEXT)';
+  const promptpayNumber = String(params.promptpay?.number || '').replace(/[\s-]/g, '');
+  if (!promptpayNumber) throw new Error('ยังไม่ได้ตั้งค่าเลขพร้อมเพย์ของหอพัก (หน้าตั้งค่า → ช่องทางชำระเงิน)');
+  const promptpayName = params.promptpay.name || '';
+  const promptpayBank = params.promptpay.bank || 'พร้อมเพย์';
 
   const emvcoPayload = generatePayload(promptpayNumber, { amount: expectedAmount });
   const emvcoTags = decodeEmvcoTlvPayload(emvcoPayload);
@@ -315,6 +330,7 @@ export function createDynamicPaymentSession(params: {
   const session: DynamicPaymentSession = {
     sessionId,
     billId: params.billId ?? null,
+    ownerUserId: params.ownerUserId ?? null,
     roomNumber,
     tenantName,
     billTitle,
@@ -328,7 +344,8 @@ export function createDynamicPaymentSession(params: {
     emvcoPayload,
     emvcoTags,
     crc16Checksum,
-    baselineToastCount: 0,
+    // how many times this exact amount is already on the LINE screen: only a newer message can pay this QR
+    baselineToastCount: findExactAmount(globalForQr.__lastLineOcrText || '', expectedAmount).length,
     status: 'PENDING',
     verifiedBy: null,
     matchedEmail: null,
@@ -350,7 +367,10 @@ export function generateReceiptSlipDataUrl(params: {
   transRef: string;
   paidAt: string;
   methodTitle?: string;
+  promptpayNumber?: string;
+  promptpayName?: string;
 }): string {
+  const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] as string));
   const formattedAmt = params.amount.toLocaleString('th-TH', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -383,8 +403,8 @@ export function generateReceiptSlipDataUrl(params: {
     
     <g transform="translate(50, 340)" font-family="sans-serif">
       <text x="0" y="25" font-size="14" fill="#94a3b8">ไปยังบัญชี</text>
-      <text x="500" y="25" text-anchor="end" font-size="14" font-weight="bold" fill="#f8fafc">พร้อมเพย์ 063-604-0550</text>
-      <text x="500" y="48" text-anchor="end" font-size="12" fill="#94a3b8">นาย กฤษกร บัวอินทร์ (เจ้าของหอพัก)</text>
+      <text x="500" y="25" text-anchor="end" font-size="14" font-weight="bold" fill="#f8fafc">พร้อมเพย์ ${esc(params.promptpayNumber || '-')}</text>
+      <text x="500" y="48" text-anchor="end" font-size="12" fill="#94a3b8">${esc(params.promptpayName || '')}</text>
       <line x1="0" y1="65" x2="500" y2="65" stroke="#334155" stroke-dasharray="4" />
 
       <text x="0" y="95" font-size="14" fill="#94a3b8">ห้องพัก</text>
@@ -392,7 +412,7 @@ export function generateReceiptSlipDataUrl(params: {
       <line x1="0" y1="115" x2="500" y2="115" stroke="#334155" stroke-dasharray="4" />
 
       <text x="0" y="145" font-size="14" fill="#94a3b8">ชื่อผู้เช่า / ผู้ชำระ</text>
-      <text x="500" y="145" text-anchor="end" font-size="14" font-weight="bold" fill="#f8fafc">${params.tenantName || 'ผู้เช่าห้อง ' + params.roomNumber}</text>
+      <text x="500" y="145" text-anchor="end" font-size="14" font-weight="bold" fill="#f8fafc">${esc(params.tenantName || 'ผู้เช่าห้อง ' + params.roomNumber)}</text>
       <line x1="0" y1="165" x2="500" y2="165" stroke="#334155" stroke-dasharray="4" />
 
       <text x="0" y="195" font-size="14" fill="#94a3b8">ช่องทางตรวจจับ</text>
@@ -436,6 +456,8 @@ export function approveDynamicPaymentSession(
       tenantName: session.tenantName,
       transRef: matchedEmail.transRef,
       paidAt,
+      promptpayNumber: session.promptpayNumber,
+      promptpayName: session.promptpayName,
       methodTitle: verifiedBy === 'LINE_SERVER_LISTENER' ? 'LINE Krungthai Connext (Screen OCR)' : 'Krungthai Connext Notification',
     });
 
@@ -481,12 +503,14 @@ export function parseThaiBankEmailContent(
   ];
 
   let parsedAmount: number | null = null;
+  let amountText: string | null = null;
   for (const regex of amountPatterns) {
     const m = combined.match(regex);
     if (m && m[1]) {
       const val = parseFloat(m[1].replace(/,/g, ''));
       if (!isNaN(val) && val > 0) {
         parsedAmount = Number(val.toFixed(2));
+        amountText = m[1];
         break;
       }
     }
@@ -500,18 +524,60 @@ export function parseThaiBankEmailContent(
     senderEmail: meta?.from || 'LINE: Krungthai Connext',
     subject: meta?.subject || 'ตรวจพบยอดเงินเข้าจากหน้าต่างแชท LINE Krungthai Connext',
     amount: parsedAmount,
-    accountMask: 'พร้อมเพย์ 063-604-0550 (กรุงไทย)',
+    amountText,
+    accountMask: 'พร้อมเพย์ของหอพัก',
     transRef,
     receivedAt: meta?.date || new Date().toISOString(),
     rawSnippet: cleanText.slice(0, 280),
   };
 }
 
+/**
+ * commit 29: a bank message pays a QR only with the full amount including both satang digits (1,234.56 — never
+ * 1,234 or 1,234.5) and only when it was received after the QR was made.
+ */
+export function messageMatchesSession(parsed: ParsedBankEmail, session: DynamicPaymentSession): { ok: boolean; reason: string } {
+  if (parsed.amount === null || !parsed.amountText) return { ok: false, reason: 'ไม่พบยอดเงินในข้อความ' };
+  if (!/\.\d{2}$/.test(parsed.amountText)) return { ok: false, reason: `ยอด ${parsed.amountText} ไม่มีสตางค์ครบ 2 หลัก — ต้องตรงยอดเต็ม` };
+  if (Math.round(parsed.amount * 100) !== Math.round(session.expectedAmount * 100)) {
+    return { ok: false, reason: `ยอด ฿${parsed.amount.toFixed(2)} ไม่ตรงกับยอดใน QR (฿${session.expectedAmount.toFixed(2)})` };
+  }
+  const received = new Date(parsed.receivedAt).getTime();
+  if (Number.isNaN(received) || received < new Date(session.createdAt).getTime()) {
+    return { ok: false, reason: 'ข้อความเงินเข้าเก่ากว่าเวลาที่สร้าง QR' };
+  }
+  return { ok: true, reason: '' };
+}
+
+/** Positions of an exact amount in OCR text ("1,234.56" or "1234.56", not part of a longer number) */
+export function findExactAmount(text: string, amount: number): number[] {
+  const plain = amount.toFixed(2);
+  const grouped = amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const alt = [grouped, plain].filter((v, i, a) => a.indexOf(v) === i).map((v) => v.replace(/[.,]/g, (c) => '\\' + c));
+  const re = new RegExp(`(?<![\\d.,])(?:${alt.join('|')})(?![\\d]|[.,]\\d)`, 'g');
+  const at: number[] = [];
+  for (let m = re.exec(text); m; m = re.exec(text)) at.push(m.index);
+  return at;
+}
+
+/** A chat time (HH:MM) near a position in OCR text, as a time today in Thai time; null when none is close by */
+function chatTimeNear(text: string, index: number, now: Date): Date | null {
+  const around = text.slice(Math.max(0, index - 60), index + 80);
+  const m = around.match(/(?<!\d)([01]?\d|2[0-3])[:.]([0-5]\d)(?!\d)/);
+  if (!m) return null;
+  const ymd = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  const t = new Date(`${ymd}T${m[1].padStart(2, '0')}:${m[2]}:00+07:00`);
+  return Number.isNaN(t.getTime()) ? null : t;
+}
+
 export function buildSimulatedKrungthaiEmail(params: {
   amount: number;
   roomNumber: string;
   tenantName?: string;
+  promptpayNumber?: string;
+  promptpayName?: string;
 }): { subject: string; from: string; to: string; body: string } {
+  const account = `${params.promptpayNumber || '-'}${params.promptpayName ? ` (${params.promptpayName})` : ''}`;
   const formattedAmt = params.amount.toLocaleString('th-TH', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -525,10 +591,10 @@ export function buildSimulatedKrungthaiEmail(params: {
   return {
     subject: `[Krungthai Connext] เงินเข้า +${formattedAmt} บาท`,
     from: 'LINE: Krungthai Connext',
-    to: '063-604-0550 (นาย กฤษกร บัวอินทร์)',
+    to: account,
     body: [
       `Krungthai Connext แจ้งเตือนเงินเข้า`,
-      `- บัญชีพร้อมเพย์: 063-604-0550 (นาย กฤษกร บัวอินทร์)`,
+      `- บัญชีพร้อมเพย์: ${account}`,
       `- จำนวนเงินเข้า: +${formattedAmt} บาท`,
       `- เวลา: ${nowThai}`,
       `- เลขที่อ้างอิง: ${refCode}`,
@@ -543,6 +609,9 @@ export async function checkGmailImapForAmount(params: {
   expectedAmount: number;
   sessionCreatedAt?: string;
   sessionId?: string;
+  /** occurrences of the amount already on screen when the QR was made (session.baselineToastCount) */
+  baselineCount?: number;
+  promptpayNumber?: string;
 }): Promise<{
   connected: boolean;
   emailUser: string;
@@ -571,7 +640,14 @@ export async function checkGmailImapForAmount(params: {
   }
 
   const ocrText = ocrRes.text || '';
-  const hasExactMatch = ocrText.includes(targetFormatted) || ocrText.includes(targetPlain);
+  // commit 29: the exact amount (both satang digits, not inside a longer number), seen more times than when the QR was
+  // made (a new message), and when a chat time is next to it, not earlier than the QR
+  const found = findExactAmount(ocrText, targetAmt);
+  const createdAt = params.sessionCreatedAt ? new Date(params.sessionCreatedAt) : null;
+  const newest = found.length > (params.baselineCount ?? 0) ? found[found.length - 1] : -1;
+  const chatTime = newest >= 0 ? chatTimeNear(ocrText, newest, new Date()) : null;
+  const createdMinute = createdAt ? Math.floor(createdAt.getTime() / 60000) * 60000 : 0;
+  const hasExactMatch = newest >= 0 && (!chatTime || chatTime.getTime() >= createdMinute);
 
   if (hasExactMatch) {
     let matchingScreenshot = ocrRes.screenshotDataUrl || null;
@@ -590,7 +666,8 @@ export async function checkGmailImapForAmount(params: {
       senderEmail: `หน้าต่างแชท: ${ocrRes.windows}`,
       subject: `ตรวจพบยอดเงินเข้า +${targetFormatted} บาท ในแชท Krungthai Connext`,
       amount: targetAmt,
-      accountMask: 'พร้อมเพย์ 063-604-0550 (กรุงไทย)',
+      amountText: targetPlain,
+      accountMask: `พร้อมเพย์ ${params.promptpayNumber || 'ของหอพัก'}`,
       transRef: `KTB-LINE-${Date.now().toString(36).toUpperCase()}`,
       receivedAt: new Date().toISOString(),
       rawSnippet: ocrText.slice(0, 240),

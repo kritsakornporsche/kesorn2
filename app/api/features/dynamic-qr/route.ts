@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import qrcode from 'qrcode';
 import { getDb } from '@/lib/db';
-import { recordPayment } from '@/lib/payments';
+import { requireRole, type CurrentUser } from '@/lib/authz';
+import { recordPayment, outstandingFor, getPaymentSummaries } from '@/lib/payments';
+import { getPaymentInfo, getRates } from '@/lib/billing';
 import { saveBase64Image } from '@/lib/file-storage';
+import { getAutoPaymentConfig } from '@/lib/features/line-window-manager';
 import {
   createDynamicPaymentSession,
   dynamicQrSessions,
@@ -12,8 +15,68 @@ import {
   readLineChatWindowOcr,
   parseThaiBankEmailContent,
   buildSimulatedKrungthaiEmail,
+  messageMatchesSession,
+  type DormPromptPay,
   type DynamicPaymentSession,
 } from '@/lib/features/dynamic-bill-qr';
+
+// Dynamic Bill QR (commit 29 security):
+// - every action needs a signed-in user; a tenant / guest may open a QR only for their own unpaid bill, and the amount
+//   is the bill's outstanding amount from the database (never the amount sent by the page)
+// - the PromptPay number / name come from the settings table (dormitory_profile), not from the code
+// - automatic confirmation (LINE screen / webhook) works only while the owner has "auto-payment" switched on, and a
+//   message pays a QR only with the exact full amount (with satang) received after the QR was made
+// - "simulate_bank_email" is for owner / manager on a non-production server only
+
+const STAFF = ['owner', 'manager'];
+const isStaff = (u: CurrentUser) => STAFF.includes(u.role);
+const ROLES = ['owner', 'manager', 'researcher', 'tenant', 'guest'] as const;
+
+async function dormPromptPay(): Promise<DormPromptPay | null> {
+  const info = await getPaymentInfo(getDb());
+  if (!info.promptpayNumber) return null;
+  return { number: info.promptpayNumber, name: info.promptpayName || '', bank: info.bankName || 'พร้อมเพย์' };
+}
+
+const noPromptPay = () => NextResponse.json(
+  { success: false, message: 'ยังไม่ได้ตั้งค่าเลขพร้อมเพย์ของหอพัก (หน้าตั้งค่า → ช่องทางชำระเงิน)' },
+  { status: 409 }
+);
+
+/** The session, if this user may see it: staff, or the user who opened it */
+function sessionFor(user: CurrentUser, sessionId: string): DynamicPaymentSession | null {
+  const s = sessionId ? dynamicQrSessions.get(sessionId) : undefined;
+  if (!s) return null;
+  if (isStaff(user) || (s.ownerUserId && s.ownerUserId === user.id)) return s;
+  return null;
+}
+
+const autoPaymentOff = () => !getAutoPaymentConfig().enabled;
+const AUTO_OFF_MESSAGE = 'ปิดการยืนยันเงินเข้าอัตโนมัติอยู่ (หน้าตั้งค่า) — ให้ผู้เช่าแนบสลิป หรือเจ้าของหอยืนยันการรับเงินเอง';
+
+/** The bill a user may pay by QR: staff any unpaid bill; tenant / guest only their own */
+async function payableBill(user: CurrentUser, billId: number) {
+  const sql = getDb();
+  const rows = await sql`
+    SELECT b.id, b.amount, b.status, b.bill_type, b.due_date, b.late_fee_rate, b.room_number, b.title,
+           t.name AS tenant_name, t.user_id AS tenant_user_id, t.email AS tenant_email
+    FROM bills b LEFT JOIN tenants t ON t.id = b.tenant_id
+    WHERE b.id = ${billId} LIMIT 1
+  `;
+  const bill = rows[0];
+  if (!bill) return { error: 'ไม่พบบิล', status: 404 } as const;
+  const mine = Number(bill.tenant_user_id) === user.id
+    || (Boolean(bill.tenant_email) && String(bill.tenant_email).toLowerCase() === String(user.email || '').toLowerCase());
+  if (!isStaff(user) && !mine) return { error: 'ไม่มีสิทธิ์ชำระบิลนี้', status: 403 } as const;
+  const st = String(bill.status || '').toLowerCase();
+  if (st === 'paid') return { error: 'บิลนี้ชำระแล้ว', status: 409 } as const;
+  if (st === 'cancelled' || st === 'canceled') return { error: 'บิลนี้ถูกยกเลิกแล้ว', status: 409 } as const;
+  if (st === 'draft') return { error: 'บิลนี้ยังไม่ได้ส่งให้ผู้เช่า', status: 409 } as const;
+  const paid = (await getPaymentSummaries(sql, [billId])).get(billId)?.paid_total || 0;
+  const { outstanding } = outstandingFor(bill, paid, new Date(), await getRates(sql));
+  if (outstanding <= 0) return { error: 'บิลนี้ไม่มียอดค้างชำระ', status: 409 } as const;
+  return { bill, outstanding } as const;
+}
 
 async function syncApprovedBillToDatabase(session: DynamicPaymentSession) {
   if (!session.billId) return;
@@ -40,15 +103,16 @@ async function syncApprovedBillToDatabase(session: DynamicPaymentSession) {
       storedSlipUrl = saveBase64Image(slipDataUrl, 'slips', `dqr_auto_${session.roomNumber}_${session.sessionId}`);
     }
 
-    // 1. Record payment through central ACID transaction runner
-    // If Dynamic QR added random satang, pay the bill amount so recordPayment doesn't reject with 'exceeds'
-    const billAmount = Number(bill.amount || 0);
-    const recordAmount = billAmount > 0 ? Math.min(session.expectedAmount, billAmount) : session.expectedAmount;
+    // 1. Record payment through central ACID transaction runner.
+    // commit 29: the amount owed when the QR was made (the satang added to tell QRs apart is not revenue); the late fee
+    // is counted as of that time too, so a payment made just after midnight is not short.
+    const recordAmount = Math.min(session.expectedAmount, session.baseAmount);
 
     const paymentResult = await recordPayment(session.billId, {
       amount: recordAmount,
       method: 'transfer',
       paidAt: new Date(session.paidAt || Date.now()),
+      lateFeeAsOf: new Date(session.createdAt),
       slipRef: transRef,
       slipUrl: storedSlipUrl || undefined,
       slipData: rawMeta,
@@ -56,6 +120,7 @@ async function syncApprovedBillToDatabase(session: DynamicPaymentSession) {
       allowPartial: false,
     });
     console.log('[Dynamic QR recordPayment result]:', paymentResult);
+    if (!paymentResult.ok) return;
 
     // 2. Also ensure bills table metadata is recorded
     if (storedSlipUrl) {
@@ -122,75 +187,86 @@ async function syncApprovedBillToDatabase(session: DynamicPaymentSession) {
   }
 }
 
+/** Sessions shown back: staff see the history, others only their own */
+const historyFor = (user: CurrentUser) =>
+  isStaff(user) ? dynamicQrHistory : dynamicQrHistory.filter((h) => h.ownerUserId === user.id);
+
+/** Check the LINE screen for this session's amount (only while auto-payment is switched on) */
+async function checkLineScreen(session: DynamicPaymentSession) {
+  if (autoPaymentOff()) return { connected: false, matched: false, message: AUTO_OFF_MESSAGE, autoPaymentEnabled: false };
+  const res = await checkGmailImapForAmount({
+    expectedAmount: session.expectedAmount,
+    sessionCreatedAt: session.createdAt,
+    sessionId: session.sessionId,
+    baselineCount: session.baselineToastCount,
+    promptpayNumber: session.promptpayNumber,
+  });
+  if (res.matched && res.parsedEmail && session.status === 'PENDING') {
+    approveDynamicPaymentSession(session, res.parsedEmail, 'LINE_SERVER_LISTENER');
+    await syncApprovedBillToDatabase(session);
+  }
+  return { ...res, autoPaymentEnabled: true };
+}
+
 export async function GET(req: NextRequest) {
+  const guard = await requireRole([...ROLES]);
+  if ('response' in guard) return guard.response;
+  const user = guard.user;
   try {
     const { searchParams } = new URL(req.url);
     const action = searchParams.get('action');
 
-    // 1. Check Session Status & Real-time Gmail IMAP Poll
+    // 1. Check session status & real-time LINE screen check
     if (action === 'status') {
-      const sessionId = searchParams.get('sessionId') || '';
-      const checkImap = searchParams.get('checkImap') === 'true';
-      const fallbackAmount = parseFloat(searchParams.get('amount') || '1.00');
-      const fallbackRoom = searchParams.get('roomNumber') || '104';
-
-      let session = dynamicQrSessions.get(sessionId);
-      if (!session && sessionId) {
-        session = createDynamicPaymentSession({
-          sessionId,
-          roomNumber: fallbackRoom,
-          baseAmount: isNaN(fallbackAmount) || fallbackAmount <= 0 ? 1.0 : fallbackAmount,
-          enableSatang: false,
-        });
-      }
-
+      const session = sessionFor(user, searchParams.get('sessionId') || '');
       if (!session) {
-        return NextResponse.json(
-          { success: false, message: 'ไม่พบเซสชันการชำระเงิน' },
-          { status: 404 }
-        );
+        return NextResponse.json({ success: false, message: 'ไม่พบเซสชันการชำระเงิน กรุณาสร้าง QR ใหม่' }, { status: 404 });
       }
-
       let imapResult = null;
-      if (session.status === 'PENDING' && checkImap) {
-        imapResult = await checkGmailImapForAmount({
-          expectedAmount: session.expectedAmount,
-          sessionCreatedAt: session.createdAt,
-          sessionId: session.sessionId,
-        });
-
-        if (imapResult.matched && imapResult.parsedEmail) {
-          approveDynamicPaymentSession(session, imapResult.parsedEmail, 'LINE_SERVER_LISTENER');
-          await syncApprovedBillToDatabase(session);
-        }
+      if (session.status === 'PENDING' && searchParams.get('checkImap') === 'true') {
+        imapResult = await checkLineScreen(session);
       }
-
-      return NextResponse.json({
-        success: true,
-        session,
-        imapResult,
-        history: dynamicQrHistory,
-      });
+      return NextResponse.json({ success: true, session, imapResult, history: historyFor(user) });
     }
 
-    // 2. Create New Direct Krungthai PromptPay (063-604-0550) QR Session
-    const amountParam = parseFloat(searchParams.get('amount') || '1.00');
-    const roomNumber = searchParams.get('roomNumber') || '104';
-    const tenantName = searchParams.get('tenantName') || 'นายกฤษกร บัวอินทร์';
-    const billTitle = searchParams.get('billTitle') || `ค่าเช่าห้อง ${roomNumber}`;
-    const billIdParam = searchParams.get('billId');
+    // 2. Create a new Dynamic PromptPay QR session
+    const promptpay = await dormPromptPay();
+    if (!promptpay) return noPromptPay();
+    const billIdParam = Number(searchParams.get('billId'));
     const enableSatang = searchParams.get('enableSatang') !== 'false';
+    let params: { billId: number | null; roomNumber: string; tenantName: string; billTitle: string; baseAmount: number };
 
+    if (Number.isInteger(billIdParam) && billIdParam > 0) {
+      // A real bill: amount, room and name from the database
+      const found = await payableBill(user, billIdParam);
+      if ('error' in found) return NextResponse.json({ success: false, message: found.error }, { status: found.status });
+      params = {
+        billId: billIdParam,
+        roomNumber: String(found.bill.room_number || '-'),
+        tenantName: String(found.bill.tenant_name || 'ผู้เช่า'),
+        billTitle: String(found.bill.title || `ค่าเช่าห้อง ${found.bill.room_number || ''}`),
+        baseAmount: found.outstanding,
+      };
+    } else {
+      // A QR without a bill (researcher lab / demo): staff or researcher only, never linked to a bill
+      if (!['owner', 'manager', 'researcher'].includes(user.role)) {
+        return NextResponse.json({ success: false, message: 'กรุณาเลือกบิลที่ต้องการชำระ' }, { status: 400 });
+      }
+      const amountParam = parseFloat(searchParams.get('amount') || '1.00');
+      const roomNumber = searchParams.get('roomNumber') || '-';
+      params = {
+        billId: null,
+        roomNumber,
+        tenantName: searchParams.get('tenantName') || 'ผู้เช่าทดลอง',
+        billTitle: searchParams.get('billTitle') || `QR ทดลอง ห้อง ${roomNumber}`,
+        baseAmount: isNaN(amountParam) || amountParam <= 0 ? 1.0 : amountParam,
+      };
+    }
+
+    // Reads the LINE screen first, so the satang chosen is not one already shown there
     await readLineChatWindowOcr();
 
-    const session = createDynamicPaymentSession({
-      billId: billIdParam ? parseInt(billIdParam, 10) : null,
-      roomNumber,
-      tenantName,
-      billTitle,
-      baseAmount: isNaN(amountParam) || amountParam <= 0 ? 1.0 : amountParam,
-      enableSatang,
-    });
+    const session = createDynamicPaymentSession({ ...params, ownerUserId: user.id, enableSatang, promptpay });
 
     const qrDataUrl = await qrcode.toDataURL(session.emvcoPayload, {
       type: 'image/png',
@@ -207,7 +283,8 @@ export async function GET(req: NextRequest) {
       success: true,
       session,
       qrDataUrl,
-      history: dynamicQrHistory,
+      history: historyFor(user),
+      autoPaymentEnabled: !autoPaymentOff(),
     });
   } catch (error: any) {
     console.error('[Dynamic QR GET Error]:', error);
@@ -219,56 +296,59 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const guard = await requireRole([...ROLES]);
+  if ('response' in guard) return guard.response;
+  const user = guard.user;
   try {
     const body = await req.json();
-    const { action, sessionId, simulatedAmount, text, fallbackAmount, fallbackRoom } = body;
+    const { action, sessionId, simulatedAmount, text } = body;
 
-    // Support iOS Shortcuts / LINE Webhook
+    // LINE / iOS Shortcuts notification forwarded by the dorm's own device: staff accounts only
     if (action === 'ios_webhook' || text) {
+      if (!isStaff(user)) {
+        return NextResponse.json({ success: false, message: 'ส่งแจ้งเตือนเงินเข้าได้เฉพาะเจ้าของหอ/ผู้จัดการ' }, { status: 403 });
+      }
+      if (autoPaymentOff()) {
+        return NextResponse.json({ success: false, matched: false, autoPaymentEnabled: false, message: AUTO_OFF_MESSAGE });
+      }
+      const receivedAt = body.receivedAt || body.date;
       const parsed = parseThaiBankEmailContent(String(text || ''), {
         subject: 'LINE / iOS Notification Webhook',
         from: 'LINE Krungthai Connext',
-        date: new Date().toISOString(),
+        date: receivedAt && !Number.isNaN(new Date(receivedAt).getTime()) ? new Date(receivedAt).toISOString() : new Date().toISOString(),
       });
 
-      const targetSession = sessionId
-        ? dynamicQrSessions.get(sessionId)
-        : Array.from(dynamicQrSessions.values()).find(
-            (s) =>
-              s.status === 'PENDING' &&
-              parsed.amount !== null &&
-              Math.abs(s.expectedAmount - parsed.amount) <= 0.005
-          );
+      const now = Date.now();
+      const candidates = sessionId
+        ? ([dynamicQrSessions.get(sessionId)].filter(Boolean) as DynamicPaymentSession[])
+        : Array.from(dynamicQrSessions.values()).filter((s) => s.status === 'PENDING' && new Date(s.expiresAt).getTime() > now);
+      const matching = candidates.filter((s) => s.status === 'PENDING' && messageMatchesSession(parsed, s).ok);
 
-      if (targetSession && parsed.amount !== null) {
-        approveDynamicPaymentSession(targetSession, parsed, 'LINE_SERVER_LISTENER');
-        await syncApprovedBillToDatabase(targetSession);
+      // Two open QRs with the same amount: do not guess which one was paid
+      if (matching.length === 1) {
+        const target = matching[0];
+        approveDynamicPaymentSession(target, parsed, 'LINE_SERVER_LISTENER');
+        await syncApprovedBillToDatabase(target);
         return NextResponse.json({
           success: true,
           matched: true,
-          session: targetSession,
-          message: `✅ อนุมัติยอด ฿${parsed.amount.toFixed(2)} จากแจ้งเตือน LINE สำเร็จ!`,
+          session: target,
+          message: `✅ อนุมัติยอด ฿${target.expectedAmount.toFixed(2)} จากแจ้งเตือน LINE สำเร็จ!`,
         });
       }
 
+      const why = candidates.length === 1 ? messageMatchesSession(parsed, candidates[0]).reason : '';
       return NextResponse.json({
         success: false,
         matched: false,
         parsed,
-        message: 'รับข้อมูลแจ้งเตือนแล้ว แต่ยังไม่พบเซสชันที่มียอดตรงกัน',
+        message: matching.length > 1
+          ? 'พบ QR ที่รอชำระยอดเดียวกันมากกว่า 1 รายการ — ให้เจ้าของหอยืนยันเอง'
+          : `รับข้อมูลแจ้งเตือนแล้ว แต่ยังไม่พบเซสชันที่มียอดตรงกัน${why ? ` (${why})` : ''}`,
       });
     }
 
-    let session = sessionId ? dynamicQrSessions.get(sessionId) : undefined;
-    if (!session && sessionId) {
-      session = createDynamicPaymentSession({
-        sessionId,
-        roomNumber: fallbackRoom || '104',
-        baseAmount: Number(fallbackAmount) || 1.0,
-        enableSatang: false,
-      });
-    }
-
+    const session = sessionFor(user, String(sessionId || ''));
     if (!session) {
       return NextResponse.json(
         { success: false, message: 'ไม่พบเซสชัน QR กรุณากดสร้าง QR ใหม่' },
@@ -276,19 +356,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Action 1: Check Server LINE Notification + Gmail
+    // Action 1: Check the LINE notification screen
     if (action === 'check_imap') {
-      const imapRes = await checkGmailImapForAmount({
-        expectedAmount: session.expectedAmount,
-        sessionCreatedAt: session.createdAt,
-        sessionId: session.sessionId,
-      });
-
-      if (imapRes.matched && imapRes.parsedEmail) {
-        approveDynamicPaymentSession(session, imapRes.parsedEmail, 'LINE_SERVER_LISTENER');
-        await syncApprovedBillToDatabase(session);
-      }
-
+      const imapRes = await checkLineScreen(session);
       return NextResponse.json({
         success: true,
         matched: imapRes.matched,
@@ -296,12 +366,21 @@ export async function POST(req: NextRequest) {
         message: imapRes.message,
         imapResult: imapRes,
         session,
-        history: dynamicQrHistory,
+        history: historyFor(user),
       });
     }
 
-    // Action 2: Simulate / Approve Incoming Krungthai Transfer
+    // Action 2: Simulate an incoming transfer — owner / manager on a non-production server only
     if (action === 'simulate_bank_email') {
+      if (process.env.NODE_ENV === 'production') {
+        return NextResponse.json({ success: false, message: 'ปิดการจำลองเงินเข้าบนเซิร์ฟเวอร์จริง' }, { status: 403 });
+      }
+      if (!isStaff(user)) {
+        return NextResponse.json({ success: false, message: 'จำลองเงินเข้าได้เฉพาะเจ้าของหอ/ผู้จัดการ' }, { status: 403 });
+      }
+      if (session.status !== 'PENDING') {
+        return NextResponse.json({ success: false, matched: false, session, message: 'QR นี้ไม่ได้รอชำระแล้ว' }, { status: 409 });
+      }
       const transferAmt =
         simulatedAmount !== undefined && simulatedAmount !== null && simulatedAmount !== ''
           ? Number(simulatedAmount)
@@ -311,6 +390,8 @@ export async function POST(req: NextRequest) {
         amount: transferAmt,
         roomNumber: session.roomNumber,
         tenantName: session.tenantName,
+        promptpayNumber: session.promptpayNumber,
+        promptpayName: session.promptpayName,
       });
 
       const parsed = parseThaiBankEmailContent(simMail.body, {
@@ -319,15 +400,13 @@ export async function POST(req: NextRequest) {
         date: new Date().toISOString(),
       });
 
-      const isAmountMatch =
-        parsed.amount !== null && Math.abs(parsed.amount - session.expectedAmount) <= 0.005;
-
-      if (!isAmountMatch) {
+      const check = messageMatchesSession(parsed, session);
+      if (!check.ok) {
         return NextResponse.json({
           success: false,
           matched: false,
           session,
-          message: `❌ ปฏิเสธการอนุมัติอัตโนมัติ: ยอดเงินเข้า ฿${(parsed.amount ?? 0).toFixed(2)} ไม่ตรงกับยอดใน QR (฿${session.expectedAmount.toFixed(2)})`,
+          message: `❌ ปฏิเสธการอนุมัติอัตโนมัติ: ${check.reason}`,
         });
       }
 
@@ -338,8 +417,8 @@ export async function POST(req: NextRequest) {
         success: true,
         matched: true,
         session,
-        history: dynamicQrHistory,
-        message: `✅ ยืนยันยอดเงินเข้า ฿${session.expectedAmount.toFixed(2)} เข้าพร้อมเพย์ 063-604-0550 สำเร็จ! อนุมัติบิลห้อง ${session.roomNumber} ทันที`,
+        history: historyFor(user),
+        message: `✅ (จำลอง) ยืนยันยอดเงินเข้า ฿${session.expectedAmount.toFixed(2)} เข้าพร้อมเพย์ ${session.promptpayNumber} — อนุมัติบิลห้อง ${session.roomNumber}`,
       });
     }
 

@@ -181,8 +181,8 @@ export default function BookingStatusPage() {
             expectedAmount: data.session.expectedAmount,
             sessionId: data.session.sessionId,
             status: data.session.status,
-            promptpayNumber: data.session.promptpayNumber || '063-604-0550',
-            promptpayName: data.session.promptpayName || 'นาย กฤษกร บัวอินทร์',
+            promptpayNumber: data.session.promptpayNumber || '',
+            promptpayName: data.session.promptpayName || '',
           });
         }
       })
