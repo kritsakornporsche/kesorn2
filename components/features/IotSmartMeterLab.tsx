@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { DynamicBillQrPaymentButton } from '@/components/features/DynamicBillQrModal';
 import {
   generateEsp32ArduinoSketch,
-  IOT_DEFAULT_API_KEY,
+  IOT_KEY_PLACEHOLDER,
   type SmartMeterRoomNode,
   type Esp32CommandItem,
   type Esp32CommandType,
@@ -272,11 +272,10 @@ export function IotSmartMeterLab() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-iot-api-key': IOT_DEFAULT_API_KEY,
         },
         body: JSON.stringify({
-          action: 'esp32_telemetry',
-          apiKey: IOT_DEFAULT_API_KEY,
+          // commit 29: the browser never has the device key; a simulated packet is not a real reading (no bill)
+          action: 'simulate_esp32_packet',
           roomNumber: simHwRoom,
           deviceId: `ESP32-PZEM-${simHwRoom}`,
           voltage: simHwVoltage,
@@ -373,7 +372,7 @@ export function IotSmartMeterLab() {
     wifiPassword: wifiPass,
     serverBaseUrl: serverUrl,
     roomNumber: scriptRoom,
-    apiKey: IOT_DEFAULT_API_KEY,
+    apiKey: IOT_KEY_PLACEHOLDER,
     pzemRxPin,
     pzemTxPin,
     relayGpioPin: relayPin,
